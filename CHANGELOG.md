@@ -1,5 +1,11 @@
 # Cambios
 
+## Frontera canónica durante misiones — 2026-09-10
+
+- Corregir START.md: una misión operativa no edita el framework canónico para adaptar su procedimiento ni pide hacerlo durante la misma misión.
+- Añadir `framework_clean()` y regresión permanente para detectar cambios inesperados en la raíz Git del framework.
+- Mantener las propuestas de evolución fuera del árbol hasta una misión de mantenimiento autorizada.
+
 ## START.md — punto de entrada legible por agentes — 2026-09-10
 
 - Crear START.md: procedimiento de incorporación de proyecto con alcance, límites y retorno, todo consultable sin exigir al usuario un prompt largo.

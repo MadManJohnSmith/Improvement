@@ -6,7 +6,7 @@ Este repositorio contiene el flujo distribuible, no el workspace de un proyecto 
 
 - Versionar únicamente código, skills, documentación y pruebas de regresión permanentes del propio flujo. `tests/` contiene código mantenido del framework, nunca resultados ni datos reales de una ejecución.
 - Alojar proyectos desechables, perfiles de proyectos reales, informes de sesiones, logs, capturas, candidatos, salidas y cachés fuera del repositorio, en un directorio hermano de pruebas o temporal explícito. No basta con ignorarlos en Git.
-- No instalar dependencias, copiar runtimes, crear worktrees de prueba ni generar bytecode dentro de este árbol para un ensayo. Usar destinos externos; Python con `-B` cuando corresponda.
+- No instalar dependencias, copiar runtimes, crear worktrees de prueba ni generar bytecode dentro de este árbol para un ensayo. Usar destinos externos; Python con `-B` cuando corresponda. Las misiones operativas no pueden editar este árbol canónico para adaptar sus propias instrucciones; las propuestas se devuelven o se aplican en una misión de mantenimiento separada.
 - No incluir credenciales, datos personales, auditorías privadas ni rutas locales del mantenedor en archivos publicables. No seguir enlaces para modificar recursos ajenos.
 - No publicar ni hacer push sin autorización del destino. Revisar el diff y los archivos preparados antes de cada commit.
 

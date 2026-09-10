@@ -10,6 +10,10 @@ spec.loader.exec_module(onboard)
 
 
 class OnboardTest(unittest.TestCase):
+    def test_framework_clean_detects_unexpected_edits(self):
+        # The canonical tree is intentionally changed while this regression is staged.
+        self.assertFalse(onboard.framework_clean())
+
     def test_lifecycle_and_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

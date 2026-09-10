@@ -9,6 +9,18 @@ import re
 FRAMEWORK = Path(__file__).resolve().parents[1]
 
 
+def framework_clean():
+    """Return whether the canonical framework worktree is unchanged."""
+    import subprocess
+    result = subprocess.run(
+        ['git', '-C', str(FRAMEWORK), '--no-optional-locks', 'status', '--porcelain'],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError('No se pudo comprobar el estado Git del framework')
+    return not result.stdout
+
+
 def checked(raw):
     p = Path(raw)
     if not p.is_absolute() or '..' in p.parts:
