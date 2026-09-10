@@ -1,5 +1,11 @@
 # Cambios
 
+## START.md — punto de entrada legible por agentes — 2026-09-10
+
+- Crear START.md: procedimiento de incorporación de proyecto con alcance, límites y retorno, todo consultable sin exigir al usuario un prompt largo.
+- Actualizar README: instrucción breve de arranque DSH Standard y modelo de publicación commit→push→pull.
+- Publicación por commit con push autorizado; el usuario jala cambios con pull en su clon de Syncify.
+
 ## Repositorio canónico — 2026-09-10
 
 - Establecer reglas persistentes en AGENTS.md: solo archivos distribuibles y regresiones permanentes en Git; datos y resultados de ensayos fuera del árbol.

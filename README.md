@@ -2,7 +2,13 @@
 
 Método reusable de auditoría y reparación con agentes. Clona este repositorio **junto a cualquier proyecto**, no dentro. Distribución inicial funcional de onboarding local; no es todavía un motor autónomo DSH.
 
-## Inicio
+## Inicio con DSH Standard
+
+Con este clon junto al proyecto, pide al agente: **«Lee START.md de este framework e incorpora el proyecto vecino que te indico, sin modificar su producto.»** Identifica el archivo por su ruta relativa si la sesión está abierta en el producto. [START.md](START.md) contiene el procedimiento, límites y devolución: el usuario no necesita copiarlos en cada turno.
+
+El clon de consumo se actualiza mediante pull; no se utiliza para editar el framework ni guardar resultados de ensayos. Las correcciones del flujo se realizan en el repositorio del mantenedor, se verifican, se comitean y se publican al remoto autorizado antes del siguiente ensayo. Cada devolución identifica la revisión probada. No es una sincronización automática de sesiones.
+
+## Inicio por CLI
 
 Requisito: Python 3.9+; Git solo para versionar el framework. Desde el clon:
 
