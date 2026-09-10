@@ -55,6 +55,11 @@ def task_at(path):
             raise ValueError('Falta ' + field)
     root = external(task['root'])
     snapshot(root, task['files'])
+    if task['mode'] == 'repair':
+        scope = task.get('change_scope')
+        if (not isinstance(scope, list) or not scope or
+                any(not isinstance(name, str) or name not in task['files'] for name in scope)):
+            raise ValueError('Repair requiere change_scope con archivos incluidos en files')
     return task
 
 
@@ -116,6 +121,13 @@ def verify(task_path, result_path):
     if not findings.is_file() or digest(findings.read_bytes()) != result.get('findings_sha256'):
         raise ValueError('Entrega ausente o alterada')
     if task['mode'] == 'repair':
+        base = task.get('base')
+        if not isinstance(base, dict) or any(name not in base for name in task['files']):
+            raise ValueError('Base incompleta para comprobar alcance de reparación')
+        unauthorized = [name for name in task['files']
+                        if current[name] != base[name] and name not in task['change_scope']]
+        if unauthorized:
+            raise ValueError('Cambio fuera de change_scope: ' + ', '.join(unauthorized))
         check_path = checked(result['check_ref'])
         check = read_json(check_path)
         if (check.get('task_sha256') != result['task_sha256'] or check.get('root') != task['root']

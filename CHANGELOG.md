@@ -1,5 +1,11 @@
 # Cambios
 
+## Alcance explícito de reparación — 2026-09-10
+
+- Exigir `change_scope` en tareas repair y rechazar aceptación si cualquier archivo fuera de ese subconjunto difiere de `base`, aunque la prueba pase.
+- Añadir regresiones para alcance ausente y archivo inspeccionado modificado fuera de permiso.
+
+
 ## Descubrimiento nativo desde el padre — 2026-09-10
 
 - Conservar cwd padre en Standard mediante enlaces individuales gestionados a las copias externas; manifiesto, dry-run, conflictos sin sobrescritura y retirada solo de entradas propias. Sin configuración global ni edición del consumidor/producto.

@@ -28,7 +28,7 @@ class OperationalCycleTest(unittest.TestCase):
             task = dict(version=1, mode='repair', objective='empty queue size',
                         authorization_ref='synthetic fixture only', executor='fixture-author',
                         criteria=['empty queue size is zero'], root=str(candidate),
-                        files=sorted(original), commands=[argv], timeout_seconds=5,
+                        files=sorted(original), change_scope=['queue.py'], commands=[argv], timeout_seconds=5,
                         base=m.snapshot(product, sorted(original)))
             m.save(task_path, task)
             red = m.run_check(task_path, root / 'red', argv, 5)
@@ -69,6 +69,10 @@ class OperationalCycleTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify(result)
             (candidate / 'queue.py').write_text('def size(items): return len(items)\n')
+            (candidate / 'test_contract.py').write_text('from queue import size\nassert size([]) == 0\nprint("changed")\n')
+            with self.assertRaises(ValueError):
+                verify(result)
+            (candidate / 'test_contract.py').write_bytes(original['test_contract.py'])
             (root / 'green/stdout.txt').write_text('invented')
             with self.assertRaises(ValueError):
                 verify(result)
@@ -78,6 +82,13 @@ class OperationalCycleTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify(dict(result, qa_sha256=m.digest(qa_path.read_bytes())))
             self.assertEqual(original, {p.name: p.read_bytes() for p in product.iterdir()})
+
+            missing_scope = dict(task)
+            missing_scope.pop('change_scope')
+            missing_path = root / 'missing-scope.json'
+            m.save(missing_path, missing_scope)
+            with self.assertRaises(ValueError):
+                m.task_at(missing_path)
             with self.assertRaises(FileExistsError):
                 m.run_check(task_path, root / 'green', argv, 5)
             with self.assertRaises(ValueError):

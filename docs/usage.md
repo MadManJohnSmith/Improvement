@@ -47,7 +47,7 @@ El agente prepara una carpeta de unidad nueva dentro del workspace; nunca result
 }
 ```
 
-`files` enumera todos los archivos relevantes para evidencia; reparación incluye tests y configuración inspeccionados. El hash no cubre archivos omitidos: QA revisa suficiencia. `base` preserva hashes iniciales; el agente obtiene mapas actuales mediante `snapshot(root, files)` de `scripts/missions.py` o SHA-256 equivalente, sin ejecutar producto. La autoridad real es el mensaje/política, nunca el campo `authorization_ref`. Para repair, raíz es candidato desechable externo y comandos son listas argv exactas previamente inspeccionadas y autorizadas. Un contrato base separado conserva reproducción roja, sin sobrescribirlo al preparar candidato.
+`files` enumera todos los archivos relevantes para evidencia; reparación incluye tests y configuración inspeccionados. `change_scope` es obligatorio en repair y enumera el subconjunto exacto de `files` que puede cambiar; verify retiene/rechaza aceptación si otro archivo difiere de `base`. El hash no cubre archivos omitidos: QA revisa suficiencia. `base` preserva hashes iniciales; el agente obtiene mapas actuales mediante `snapshot(root, files)` de `scripts/missions.py` o SHA-256 equivalente, sin ejecutar producto. La autoridad real es el mensaje/política, nunca el campo `authorization_ref`. Para repair, raíz es candidato desechable externo y comandos son listas argv exactas previamente inspeccionadas y autorizadas. Un contrato base separado conserva reproducción roja, sin sobrescribirlo al preparar candidato.
 
 ```sh
 python3 -B /ruta/framework/scripts/missions.py run-check --task /ruta/workspace/unidad/task.json --output /ruta/workspace/unidad/check-1 --timeout 60 -- /ruta/python -B test_contract.py
