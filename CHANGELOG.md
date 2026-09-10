@@ -3,6 +3,7 @@
 ## Aceptación acotada en Standard — 2026-09-10
 
 - Registrar carga nativa y aplicación observadas en tres turnos de un caso sintético: ACCEPTABLE → RETAINED → ACCEPTABLE, sin ampliar requisitos ni escribir archivos.
+- Comprobar un cuarto turno con evidencia necesaria ausente: UNVERIFIED, solicitud ligada al candidato, sin ejecución ni ampliación de alcance.
 - No modificar la skill: no se observó un defecto en este recorrido. Conservar límites de validación y trayectoria privada externa.
 
 ## Corrección de descubrimiento DSH
