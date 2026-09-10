@@ -12,6 +12,8 @@ Se inspeccionó la fuente local suministrada `packages/skill/skill-filesystem/sr
 
 Copiar skills al workspace externo no activa el proveedor en una sesión ya iniciada. En el runtime 0.1.5-rc.1 reportado, `@deepseek-ai/dsh-skill-filesystem` admite `customSkillDirs`, `includeDefaultRoots`, `dshHome` y `agentsHome`. El perfil Web puede desactivar la fila global y dejar que el preset la monte; por eso la configuración efectiva del preset debe inspeccionarse antes de probar.
 
+Usa una sola estrategia en un Host/perfil dedicado. La plantilla versionada [dsh-project-profile.patch.yml](dsh-project-profile.patch.yml) contiene únicamente la forma del override; `SKILL_ROOT` debe reemplazarse en una copia externa por la ruta absoluta del workspace concreto. Nunca edites la plantilla canónica con una ruta de usuario.
+
 Usa una sola estrategia en un Host/perfil dedicado:
 
 ```yaml

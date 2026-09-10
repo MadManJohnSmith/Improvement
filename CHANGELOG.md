@@ -1,5 +1,11 @@
 # Cambios
 
+## Overlay portable para skills por proyecto — 2026-09-10
+
+- Añadir `docs/dsh-project-profile.patch.yml` como plantilla de override con `customSkillDirs` y placeholder explícito.
+- Mantener la ruta real fuera del repositorio; no aplicar ni modificar perfiles globales.
+- Documentar que el override debe probarse en un perfil dedicado y que el preset efectivo puede montar el proveedor en alcance propio.
+
 ## Skills por proyecto: adaptador de loader documentado — 2026-09-10
 
 - Documentar que la copia en `.agents/skills` no activa el proveedor en DSH.
