@@ -1,5 +1,11 @@
 # Cambios
 
+## Cierre honesto del contrato v0.1 — 2026-09-10
+
+- Añadir `missions.py reaudit` para ligar mecánicamente candidato, prueba y resultado antes de la revisión semántica.
+- Extender el ciclo sintético con la reauditoría incremental; se conserva explícitamente la revisión semántica para Auditor/QA.
+- v0.1 se declara operativa acotada, no autonomía ni piloto real de producto.
+
 ## Alcance de Reparación continua verificado — 2026-09-10
 
 - Trayectoria Standard sintética cargó `workflow-continuous-repair` y `workflow-bounded-acceptance`.

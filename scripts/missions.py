@@ -104,6 +104,29 @@ def run_check(task_path, output, argv, timeout):
     return record
 
 
+def reaudit(task_path, result_path, report_path):
+    """Write a bounded incremental re-audit receipt; semantic review stays external."""
+    task_path = checked(task_path)
+    task = task_at(task_path)
+    result = read_json(result_path)
+    report_path = external(report_path)
+    current = snapshot(task['root'], task['files'])
+    if (result.get('version') != 1 or result.get('task_sha256') != digest(task_path.read_bytes())
+            or result.get('files') != current or result.get('status') != 'ACCEPTED'):
+        raise ValueError('Resultado no aceptado o candidato obsoleto')
+    check_ref = result.get('check_ref')
+    if check_ref:
+        check = read_json(check_ref)
+        if check.get('after') != current or check.get('exit_code') != 0:
+            raise ValueError('Prueba no corresponde al candidato vigente')
+    receipt = dict(version=1, task_sha256=result['task_sha256'], files=current,
+                   result_sha256=digest(checked(result_path).read_bytes()),
+                   verdict='PENDING_SEMANTIC_REVIEW',
+                   review='Revisión incremental mecánica completada; semántica requiere Auditor/QA.')
+    save(report_path, receipt)
+    return receipt
+
+
 def verify(task_path, result_path):
     task_path = checked(task_path)
     task = task_at(task_path)
@@ -162,10 +185,16 @@ def main():
     check = sub.add_parser('verify')
     check.add_argument('--task', required=True)
     check.add_argument('--result', required=True)
+    audit = sub.add_parser('reaudit')
+    audit.add_argument('--task', required=True)
+    audit.add_argument('--result', required=True)
+    audit.add_argument('--output', required=True)
     args = parser.parse_args()
     try:
         if args.action == 'verify':
             print(verify(args.task, args.result))
+        elif args.action == 'reaudit':
+            print(json.dumps(reaudit(args.task, args.result, args.output)))
         else:
             argv = args.argv[1:] if args.argv[:1] == ['--'] else args.argv
             result = run_check(args.task, args.output, argv, args.timeout)

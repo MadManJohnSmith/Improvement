@@ -58,6 +58,9 @@ class OperationalCycleTest(unittest.TestCase):
                 return m.verify(task_path, result_path)
 
             self.assertTrue(verify(result).startswith('ACCEPTED'))
+            reaudit = m.reaudit(task_path, result_path, root / 'reaudit.json')
+            self.assertEqual(reaudit['verdict'], 'PENDING_SEMANTIC_REVIEW')
+            self.assertEqual(reaudit['files'], green['files'])
             for field in ('qa_ref', 'check_ref', 'findings_ref'):
                 invalid = dict(result)
                 invalid.pop(field)
