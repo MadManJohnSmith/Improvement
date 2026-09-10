@@ -1,5 +1,12 @@
 # Cambios
 
+## Reconciliación del plan arquitectónico — 2026-09-10
+
+- Conservar el plan original archivado como arquitectura de destino completa, sin presentarlo como implementación terminada.
+- Añadir `PLAN_IMPLEMENTACION.md` como índice compacto de progreso por etapas; los detalles históricos y la evidencia de ejecución permanecen fuera de este repositorio.
+- Reclasificar publicador Host, handoff automático, flujo habitual, recuperación, integración y transferencia como capacidades futuras o parcialmente ensayadas, según evidencia disponible.
+- Mantener v0.1 como operación acotada con recibos locales, controles mecánicos y reauditoría mecánica; no acreditar autonomía LLM, IPC Tauri nativo, sandbox OS, durabilidad ni QA semántica por documentación o hashes.
+
 ## Separación H1-only de QueueItem — 2026-09-10
 
 - Preparar fuera del repositorio una unidad nueva que retira únicamente `service`, `quality`, `effective_service`, `original_service` y `allow_fallback` en `ui/src/api/types.ts`; no aceptar la expansión completa previa.

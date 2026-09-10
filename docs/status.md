@@ -1,5 +1,7 @@
 # Estado de la distribución
 
+La arquitectura de destino completa se conserva en [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md). El progreso compacto por etapas está en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md). Este archivo registra evidencia y límites comprobados; no convierte el diseño en capacidad disponible.
+
 ## Entregado y comprobado localmente
 
 - Arquitectura normativa completa, separada de historial y hechos privados.
@@ -16,6 +18,7 @@
 - `tests/test_operational_cycle.py`: ejecución real en fixture temporal de reproducción roja, candidato corregido y prueba verde; rechazo de candidato obsoleto, stdout alterado, QA ausente/mismo autor, comando no permitido, salida dentro del candidato, timeout y cambios fuera de `change_scope` (incluido alcance ausente). También comprueba `reaudit`, que liga mecánicamente resultado, prueba y candidato y conserva la semántica como pendiente. Producto sintético conservado. QA del fixture es simulada y no demuestra calidad/independencia de un agente.
 - Registro y herramienta DSH instalados cargaron los siete cuerpos vigentes, incluidas ambas entradas; sin llamadas a modelos. Trayectoria Standard posterior verificada en un caso sintético: Reparación continua cargó ambas skills, ejecutó prueba verde con cambio fuera de `change_scope`, rechazó `ACCEPTED` y conservó `RETAINED`; sin cambios de repositorios. No se ensayaron estas entradas con QA semántica multimodelo, producto real ni agentes remotos.
 - Unidad externa H1-only de QueueItem separada de la expansión retenida: `change_scope` único `ui/src/api/types.ts`, reproducción base roja (`exit_code 1`) y candidato H1-only verde (`exit_code 0`, 35 campos). `missions.py verify` conserva `RETAINED` por ausencia de QA independiente observable; reauditoría mecánica de hashes y alcance queda `UNVERIFIED`. No se modificaron Syncify ni este framework.
+- El plan original archivado se reconcilió con el estado vigente: publicador Host, handoff automático, flujo habitual, recuperación, integración y transferencia a segundo proyecto siguen siendo destino o pendientes, no capacidades acreditadas. Los ensayos históricos de publicador/handoff/piloto Syncify son evidencia externa supervisada; no hubo llamadas LLM, IPC Tauri nativo, tests Rust del producto, integración ni prueba de sandbox OS fuerte.
 
 ## Antecedentes externos, no pruebas de esta distribución
 

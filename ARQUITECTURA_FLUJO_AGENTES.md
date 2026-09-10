@@ -1,8 +1,8 @@
 # Arquitectura del flujo de trabajo con agentes
 
-**Versión:** 2.1
+**Versión:** 2.2
 **Actualización:** 2026-09-10
-**Estado:** v0.1 operativa acotada mediante skills Standard y recibos locales; piloto real de nuevas entradas y autonomía integral pendientes.
+**Estado:** arquitectura objetivo completa; implementación comprobada limitada a v0.1 acotada mediante skills Standard, recibos locales y controles mecánicos. Consultar [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md) para el progreso por etapas.
 **Responsable de las decisiones de alcance y autorización:** usuario.
 **Propósito de este archivo:** ser la referencia vigente del diseño, sin depender de la memoria de una conversación.
 
@@ -44,7 +44,7 @@ La función original de Search era ayudar a mejorar la arquitectura, no redactar
 
 ### DSH — dos modos de entrada para el usuario final
 
-El usuario interactúa directamente con **Auditor** y **Reparación continua**. Los nombres describen los modos objetivo; esta decisión no acredita que los presets actuales ya los implementen completamente.
+El usuario interactúa directamente con **Auditor** y **Reparación continua**. El plan original archivado usaba «Auditor de Completitud y Calidad» y «Syncify Lead Architect & Orquestador»; esos nombres quedan como antecedentes del diseño, no como modos adicionales ni presets actuales. Esta decisión no acredita que los modos objetivo ya estén implementados completamente.
 
 - **Auditor:** incorpora o reconoce el proyecto mediante skills compartidas, inspecciona el alcance autorizado, revisa hallazgos y soluciones cuando corresponda y publica entregas recuperables. No modifica producto; preparación de artefactos internos solo mediante capacidades autorizadas. La reauditoría incremental reutiliza este rol, no exige un tercer modo del usuario.
 - **Reparación continua:** evolución del Orquestador. Recibe una misión o lote suficiente, comprueba base, alcance y autorización, coordina un ejecutor y QA independiente, gestiona correcciones, solicita reauditoría y continúa con las unidades autorizadas. Conserva candidatos y evidencia, integra solo si está autorizado y devuelve cierre o excepción. «Continua» significa continuidad dentro de límites, no ejecución infinita ni ampliación automática de alcance.
@@ -130,7 +130,7 @@ Reauditoría incremental cuando la misión la requiere
 Integración autorizada → archivo y devolución compacta
 ```
 
-DSH determina la siguiente acción desde el estado persistente, sin depender de Search, ZCode ni otro asesor externo. En una misión de solo auditoría el recorrido termina con su entrega; no inicia reparación sin autorización. Las unidades independientes pueden continuar cuando una queda retenida, siempre que no compartan un escritor o recursos conflictivos.
+El destino arquitectónico prevé que el Host/DSH determine la siguiente acción desde estado persistente, sin depender de Search, ZCode ni otro asesor externo. En v0.1, los recibos locales permiten ensayos y la continuación automática no está acreditada: una misión de solo auditoría termina con su entrega y no inicia reparación sin autorización. Las unidades independientes pueden continuar cuando una queda retenida, siempre que no compartan un escritor o recursos conflictivos.
 
 No crear varios agentes por apariencia. No abrir goals ilimitados como sustituto de una misión controlada. Una tarea trivial puede ejecutarse y verificarse sin esta separación completa de roles.
 
@@ -223,7 +223,25 @@ Comprobar el DSL y validar dentro del handler, además del esquema. El Host dete
 
 Avanzar por incorporación local, carga real de skills, misión normal completa, coordinación de los dos modos, excepciones/recuperación y transferencia a un segundo proyecto. Reutilizar el código existente cuando sus límites encajen, sin desarrollar un motor universal por adelantado. Medir base fija, resultados aceptados, intervenciones, coste disponible y regresiones; no actividad ni número de agentes.
 
-## 16. Aceptación de la distribución y fuentes vigentes
+## 16. Hoja de ruta y estado de implementación
+
+El plan original archivado en `PLAN_ARQUITECTURA_ORIGINAL.md` se conserva como arquitectura de destino completa: publicador Host, handoff determinista, coordinación persistente, QA independiente, reauditoría, integración autorizada, archivo y recuperación. No se considera que esas capacidades existan por estar descritas aquí.
+
+La implementación actual es una reordenación acotada y comprobada parcialmente: onboarding, distribución/carga nativa de skills, recibos locales, ejecución argv controlada, snapshots/hash, límites de `change_scope`, ciclo sintético rojo→verde, retención por evidencia ausente y reauditoría mecánica. Los ensayos históricos de publicador, lector, handoff y piloto Syncify permanecen como evidencia externa supervisada; no equivalen a un Host operativo, autonomía LLM, IPC Tauri nativo, integración del producto ni recuperación ante crash.
+
+La matriz breve y vigente de etapas está en [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md). Cada etapa distingue salida, evidencia, bloqueo y siguiente salida. `docs/status.md` conserva el estado comprobado; `CHANGELOG.md` conserva decisiones históricas. No se importan logs, candidatos, rutas privadas ni resultados de ejecución al repositorio.
+
+El criterio final de éxito sigue siendo el flujo de destino:
+
+```text
+diagnóstico sustentado → solución revisada → encargo suficiente
+→ implementación acotada → QA independiente → reauditoría incremental
+→ integración autorizada → archivo recuperable
+```
+
+Hasta que la matriz y la evidencia indiquen lo contrario, el framework debe describirse como operación v0.1 acotada, no como autonomía completa.
+
+## 17. Aceptación de la distribución y fuentes vigentes
 
 El inicializador debe funcionar en directorios desechables, no modificar producto ni framework, rechazar conflictos y permitir repetición sin pérdida. La carga DSH exige comprobar descubrimiento, cuerpo y ejecución real con presupuesto autorizado. Una prueba Python no acredita estas propiedades del runtime.
 
