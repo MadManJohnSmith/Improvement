@@ -1,5 +1,11 @@
 # Cambios
 
+## Alcance de Reparación continua verificado — 2026-09-10
+
+- Trayectoria Standard sintética cargó `workflow-continuous-repair` y `workflow-bounded-acceptance`.
+- Una prueba verde con archivo fuera de `change_scope` fue rechazada por `missions.py verify`; `RETAINED` se conservó.
+- No se modificó producto/framework y no se afirma QA semántica multimodelo.
+
 ## Alcance explícito de reparación — 2026-09-10
 
 - Exigir `change_scope` en tareas repair y rechazar aceptación si cualquier archivo fuera de ese subconjunto difiere de `base`, aunque la prueba pase.
