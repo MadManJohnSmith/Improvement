@@ -1,5 +1,11 @@
 # Cambios
 
+## Skills por proyecto: adaptador de loader documentado — 2026-09-10
+
+- Documentar que la copia en `.agents/skills` no activa el proveedor en DSH.
+- Registrar el fragmento conceptual `customSkillDirs`/`includeDefaultRoots` para un Host/preset dedicado, sin aplicarlo globalmente ni presentarlo como configuración universal.
+- Mantener la activación efectiva pendiente de una sesión DSH reiniciada con overlay comprobado.
+
 ## Frontera canónica durante misiones — 2026-09-10
 
 - Corregir START.md: una misión operativa no edita el framework canónico para adaptar su procedimiento ni pide hacerlo durante la misma misión.

@@ -8,6 +8,24 @@ El usuario reportó DSH **0.1.5-rc.1** y un loader con raíces `.dsh/skills` y `
 
 Se inspeccionó la fuente local suministrada `packages/skill/skill-filesystem/src/index.ts`: `Config` admite `includeDefaultRoots`, `customSkillDirs`, `dshHome`, `agentsHome`; el proveedor descubre `SKILL.md`, separa catálogo y carga de cuerpo, y resuelve raíces respecto al proyecto efectivo. Esa fuente no acredita equivalencia con el binario rc.1. No copiar ejemplos `persona.text`/`prefix` sin comprobar el esquema efectivo.
 
+## Configuración de skills por proyecto
+
+Copiar skills al workspace externo no activa el proveedor en una sesión ya iniciada. En el runtime 0.1.5-rc.1 reportado, `@deepseek-ai/dsh-skill-filesystem` admite `customSkillDirs`, `includeDefaultRoots`, `dshHome` y `agentsHome`. El perfil Web puede desactivar la fila global y dejar que el preset la monte; por eso la configuración efectiva del preset debe inspeccionarse antes de probar.
+
+Usa una sola estrategia en un Host/perfil dedicado:
+
+```yaml
+# Fragmento conceptual: adaptar al patch/config real comprobado; no pegar sin validar el esquema.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    customSkillDirs:
+      - /ruta/absoluta/al/workspace/.agents/skills
+```
+
+Este fragmento no es un preset completo ni una orden para modificar `~/.dsh`. La ruta debe ser externa al producto y específica del workspace. Si el preset efectivo monta `skill-filesystem` dentro del alcance del agente, el override debe aplicarse a esa fila/preset y no a una raíz global. No mezclar `customSkillDirs` con copias globales para aparentar descubrimiento. Después de reiniciar la sesión, comprobar por separado catálogo, origen, carga del cuerpo y ejecución de una skill. Si la API real no acepta el fragmento, conservar el error y adaptar el overlay a su DSL; no cambiar `text`/`prefix` ni otros presets por analogía.
+
 ## Procedimiento sin sobrescritura
 
 1. Identificar ejecutable, paquete/version real, Host, preset efectivo y entorno dedicado autorizado. No instalar ni iniciar llamadas LLM sin presupuesto.
