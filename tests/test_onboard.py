@@ -11,9 +11,36 @@ spec.loader.exec_module(onboard)
 
 class OnboardTest(unittest.TestCase):
     def test_framework_clean_detects_unexpected_edits(self):
-        # The canonical tree is intentionally changed while this regression is staged.
-        self.assertFalse(onboard.framework_clean())
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            (root / 'tracked.txt').write_text('base')
+            subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'base'], check=True)
+            original = onboard.FRAMEWORK
+            try:
+                onboard.FRAMEWORK = root
+                self.assertTrue(onboard.framework_clean())
+                (root / 'tracked.txt').write_text('changed')
+                self.assertFalse(onboard.framework_clean())
+            finally:
+                onboard.FRAMEWORK = original
 
+    def test_prepare_project_skills_is_external_and_no_clobber(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / 'workspace'
+            workspace.mkdir()
+            source = root / 'skills'
+            (source / 'demo').mkdir(parents=True)
+            content = '---\\nname: demo\\ndescription: "demo"\\n---\\n'
+            (source / 'demo' / 'SKILL.md').write_text(content)
+            self.assertIn('DRY-RUN', onboard.prepare_project_skills(workspace, source))
+            self.assertIn('CREADO', onboard.prepare_project_skills(workspace, source, apply=True))
+            self.assertEqual((workspace / '.agents/skills/demo/SKILL.md').read_text(), content)
+            with self.assertRaises(ValueError):
+                onboard.prepare_project_skills(workspace, source, apply=True)
     def test_lifecycle_and_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

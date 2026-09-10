@@ -31,6 +31,27 @@ def checked(raw):
     return p
 
 
+def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False):
+    """Prepare a non-overwriting DSH project skill root in the external workspace."""
+    workspace, source = checked(workspace), checked(source)
+    if not workspace.is_dir() or not source.is_dir():
+        raise ValueError('Workspace y origen de skills deben existir')
+    names = sorted(p.name for p in source.iterdir() if p.is_dir() and (p / 'SKILL.md').is_file())
+    if not names:
+        raise ValueError('No hay skills portables en el origen')
+    target = workspace / '.agents' / 'skills'
+    if not apply:
+        return f'DRY-RUN: preparar {len(names)} skills en {target}; sin escrituras'
+    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for name in names:
+        destination = target / name
+        if destination.exists() or destination.is_symlink():
+            raise ValueError(f'Skill existente en conflicto: {destination}')
+        destination.mkdir(mode=0o700)
+        (destination / 'SKILL.md').write_bytes((source / name / 'SKILL.md').read_bytes())
+    return f'CREADO: {len(names)} skills en {target}'
+
+
 def initialize(project, workspace, name, apply=False):
     project, workspace = checked(project), checked(workspace)
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', name):
@@ -84,9 +105,16 @@ def main():
     parser.add_argument('--workspace', required=True)
     parser.add_argument('--name', required=True)
     parser.add_argument('--init', action='store_true', help='Crear; sin esta opción solo inspecciona')
+    parser.add_argument('--prepare-skills', action='store_true', help='Copiar skills al workspace externo sin sobrescribir')
     args = parser.parse_args()
     try:
-        print(initialize(args.project, args.workspace, args.name, args.init))
+        result = initialize(args.project, args.workspace, args.name, args.init)
+        if args.prepare_skills:
+            workspace = checked(args.workspace)
+            if not workspace.is_dir():
+                raise ValueError('Inicializa primero el workspace con --init')
+            result += '\n' + prepare_project_skills(workspace, apply=args.init)
+        print(result)
     except (OSError, ValueError) as error:
         parser.exit(1, f'ERROR: {error}\n')
 
