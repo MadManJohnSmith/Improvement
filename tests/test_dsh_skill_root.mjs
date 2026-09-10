@@ -1,7 +1,7 @@
 // Run with DSH_MODULE_ROOT=/absolute/node_modules node tests/test_dsh_skill_root.mjs [workspace]
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, cp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, cp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,13 +35,16 @@ try {
   const parent = await ctx.skills.list({ cwd: dirname(workspace), scope: agent });
   assert.equal(parent.length, 0, 'parent cwd must not discover child workspace');
   const skills = await ctx.skills.list({ cwd: workspace, scope: agent });
-  assert.equal(skills.length, 5);
+  const expected = (await readdir(fileURLToPath(new URL('../skills', import.meta.url)), { withFileTypes: true }))
+    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  assert.deepEqual(skills.map(skill => skill.name).sort(), expected);
   for (const skill of skills) {
     assert.equal(skill.source, 'project-agents');
     assert.equal(skill.provider, 'filesystem');
     const base = join(workspace, '.agents/skills', skill.name);
     assert.equal(skill.resourceBase.path, base);
     const source = await readFile(join(base, 'SKILL.md'), 'utf8');
+    assert.equal(source, await readFile(fileURLToPath(new URL(`../skills/${skill.name}/SKILL.md`, import.meta.url)), 'utf8'), 'stale skill copy');
     const result = await ctx.tools.execute({
       name: 'skill', arguments: { name: skill.name }, agent,
       callId: skill.name, signal: new AbortController().signal,
@@ -55,7 +58,7 @@ try {
       sha256: createHash('sha256').update(source).digest('hex'), loaded: true }));
   }
   await scope.dispose();
-  console.log('PASS: parent=0 workspace=5; scoped registry and native tools.execute; no models');
+  console.log(`PASS: parent=0 workspace=${skills.length}; scoped registry and native tools.execute; no models`);
 } finally {
   await ctx.fiber.dispose();
   await rm(temporary, { recursive: true, force: true });

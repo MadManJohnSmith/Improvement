@@ -1,6 +1,6 @@
 # agent-workflow
 
-Método reusable de auditoría y reparación con agentes. Clona este repositorio **junto a cualquier proyecto**, no dentro. Distribución inicial funcional de onboarding local; no es todavía un motor autónomo DSH.
+Método reusable de auditoría y reparación con agentes. Clona este repositorio **junto a cualquier proyecto**, no dentro. Versión operativa v0.1: incorporación, Auditor y Reparación continua acotada en Standard; no es todavía un motor autónomo DSH.
 
 ## Inicio con DSH Standard
 
@@ -33,7 +33,7 @@ Revisa instrucciones y canónicos del proyecto, completa el primer encargo y sus
 
 ## Uso con agentes
 
-Los dos modos finales son **Auditor** y **Reparación continua**, con incorporación compartida y Ejecutor/QA internos. Son la arquitectura objetivo, no presets ya activados. Puedes usar hoy los procedimientos manualmente y el inicializador sin DSH.
+Los dos modos finales son **Auditor** y **Reparación continua**, con incorporación compartida y Ejecutor/QA internos. Disponibles como skills conductuales de una unidad en Standard, no presets ni autonomía Host. Protocolo ejecutable y prompt breve en [docs/usage.md](docs/usage.md).
 
 - [Arquitectura completa](ARQUITECTURA_FLUJO_AGENTES.md).
 - [Preparación DSH y límites del loader](docs/setup-dsh.md).

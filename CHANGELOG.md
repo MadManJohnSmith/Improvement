@@ -1,5 +1,12 @@
 # Cambios
 
+## Operación acotada v0.1 — 2026-09-10
+
+- Añadir entradas Auditor y Reparación continua en Standard, despacho START y guía con permisos efectivos del producto hermano; sin producto vivo, presets nuevos ni autonomía Host.
+- Añadir recibos task/result, runner argv explícito con timeout/salidas/digests y verificación documental de candidato/prueba/referencia QA; no autentica revisión semántica ni autoridad.
+- Copiar skills completas recursivamente; repetición idéntica y actualización explícita respaldada, conservando conflictos y ediciones locales.
+- Seis regresiones Python aprobadas, incluido ciclo sintético rojo/verde y rechazos negativos; QA fixture declaradamente simulada. Carga nativa determinista de siete skills con DSH instalado, sin modelos. Piloto real pendiente.
+
 ## Aceptación acotada en Standard — 2026-09-10
 
 - Registrar carga nativa y aplicación observadas en tres turnos de un caso sintético: ACCEPTABLE → RETAINED → ACCEPTABLE, sin ampliar requisitos ni escribir archivos.

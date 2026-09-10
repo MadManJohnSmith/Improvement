@@ -1,8 +1,8 @@
 # Arquitectura del flujo de trabajo con agentes
 
-**Versión:** 2.0
-**Actualización:** 2026-09-09
-**Estado:** diseño acordado con componentes y ensayos parciales; autonomía integral pendiente de implementación y verificación.
+**Versión:** 2.1
+**Actualización:** 2026-09-10
+**Estado:** v0.1 operativa acotada mediante skills Standard y recibos locales; piloto real de nuevas entradas y autonomía integral pendientes.
 **Responsable de las decisiones de alcance y autorización:** usuario.
 **Propósito de este archivo:** ser la referencia vigente del diseño, sin depender de la memoria de una conversación.
 
@@ -56,6 +56,14 @@ La incorporación es una capacidad compartida disponible desde ambos modos, no u
 **Standard y Creator/Cordis son herramientas de desarrollo/transición**, no modos adicionales exigidos al usuario final. Standard puede alojar ensayos de skills y ejecución; Creator se usa solo para necesidades reales de composición. No cambian presets, permisos ni instalaciones automáticamente por esta actualización documental.
 
 Una sesión separada con el mismo modelo puede proporcionar separación autor/revisor, pero no independencia estadística garantizada. Cambiar de proveedor o renombrar el mismo autor no acredita una revisión independiente. QA debe inspeccionar el candidato real y tener acceso suficiente a la evidencia.
+
+### Alcance operativo v0.1
+
+Standard aloja `workflow-auditor` y `workflow-continuous-repair` como entradas conductuales nativas de una unidad supervisada, no presets ni enforcement Host. START despacha el pedido ordinario; docs/usage.md define bootstrap, permisos efectivos y protocolo. Auditor termina en informe/propuesta sin modificar producto. Reparación requiere encargo separado, candidato externo, un escritor, autoprueba registrada y QA de subagente nativo disponible o revisor humano; sin QA se retiene, no se simula. Máximo dos intentos de corrección, sin goals ni siguiente objetivo automático. No integra producto por defecto.
+
+Dos archivos centrales task/result referencian evidencia externa. `scripts/missions.py` ejecuta argv explícito autorizado con shell=false, timeout POSIX y stdout/stderr con hashes; verify rechaza aceptación documental sin prueba vigente o referencia QA correspondiente en reparación. No autentica autorización, independencia ni semántica y no es sandbox. El publicador histórico no se adapta mientras este alcance local no lo necesite. Permisos del producto hermano se comprueban por lectura mínima; si faltan, se detiene para decisión nativa del usuario sin eludir límites.
+
+Las skills se copian recursivamente al workspace, idénticas son idempotentes; actualización conflictiva exige autorización explícita y respaldo externo completo. No hay actualización operativa del framework ni cambios globales. La carga con servicios DSH y el ciclo sintético prueban mecanismos locales; operación LLM, QA nativa real y recuperación se acreditan por separado.
 
 ## 4. Capas de la solución
 

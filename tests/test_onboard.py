@@ -39,8 +39,27 @@ class OnboardTest(unittest.TestCase):
             self.assertIn('DRY-RUN', onboard.prepare_project_skills(workspace, source))
             self.assertIn('CREADO', onboard.prepare_project_skills(workspace, source, apply=True))
             self.assertEqual((workspace / '.agents/skills/demo/SKILL.md').read_text(), content)
+            self.assertIn('0 cambios', onboard.prepare_project_skills(workspace, source, apply=True))
+            refs = source / 'demo/references'
+            refs.mkdir()
+            (refs / 'contract.txt').write_text('reference')
             with self.assertRaises(ValueError):
                 onboard.prepare_project_skills(workspace, source, apply=True)
+            destination = workspace / '.agents/skills/demo/SKILL.md'
+            destination.write_text('user edit')
+            self.assertIn('DRY-RUN', onboard.prepare_project_skills(workspace, source, update=True))
+            self.assertEqual(destination.read_text(), 'user edit')
+            onboard.prepare_project_skills(workspace, source, apply=True, update=True)
+            backups = list(workspace.glob('skills-backup-*/demo/SKILL.md'))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(), 'user edit')
+            self.assertEqual((destination.parent / 'references/contract.txt').read_text(), 'reference')
+            (refs / 'linked').symlink_to(refs / 'contract.txt')
+            with self.assertRaises(ValueError):
+                onboard.prepare_project_skills(workspace, source, apply=True, update=True)
+            with self.assertRaises(ValueError):
+                onboard.prepare_project_skills(onboard.FRAMEWORK, source, apply=True)
+
     def test_skill_destination_symlinks_fail_closed(self):
         for relative in ('.agents', '.agents/skills'):
             for apply in (False, True):

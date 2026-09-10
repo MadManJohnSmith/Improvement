@@ -2,7 +2,7 @@
 
 ## Entrada nativa, sin overlay
 
-Con las cinco skills ya preparadas en `.agents/skills/` del workspace externo, selecciona **ese workspace como raíz de una nueva sesión Standard**, no su directorio padre. No modificar `~/.dsh`, instalar perfiles ni alterar presets.
+Con las siete skills ya preparadas en `.agents/skills/` del workspace externo, selecciona **ese workspace como raíz de una nueva sesión Standard**, no su directorio padre. No modificar `~/.dsh`, instalar perfiles ni alterar presets.
 
 Prompt de aceptación:
 
@@ -21,6 +21,6 @@ DSH_MODULE_ROOT=/absolute/installed/node_modules node tests/test_dsh_skill_root.
 python3 -B -m unittest discover -s tests -v
 ```
 
-El test Node importa Cordis, registro, proveedor filesystem y herramienta instalados; monta proveedor/herramienta en un alcance, compara padre (0) y workspace (5), ejecuta `ctx.tools.execute` para las cinco skills y verifica cuerpo completo, origen y SHA-256. Crea únicamente fixtures temporales externos y redirige raíces personales a destinos temporales vacíos. Admite un workspace existente como argumento adicional, solo lectura. No inicia servidor, proveedor de modelos ni sesión LLM. No reproduce todo el Host ni certifica el montaje GUI Standard.
+El test Node importa Cordis, registro, proveedor filesystem y herramienta instalados; monta proveedor/herramienta en un alcance, compara padre (0) y workspace (7), ejecuta `ctx.tools.execute` para las siete skills y verifica cuerpo completo, origen y SHA-256. Crea únicamente fixtures temporales externos y redirige raíces personales a destinos temporales vacíos. Admite un workspace existente como argumento adicional, solo lectura. No inicia servidor, proveedor de modelos ni sesión LLM. No reproduce todo el Host ni certifica el montaje GUI Standard.
 
 La carga determinista nativa está comprobada; la aceptación con el modelo en la sesión del usuario sigue pendiente. Producto fuera del workspace no queda autorizado por seleccionar esta raíz: lectura/escritura posterior depende de permisos efectivos del Host y mandato separado. `framework_clean()` es una consulta Git no invocada por el inicializador, no una barrera de seguridad ni aislamiento OS.
