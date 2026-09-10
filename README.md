@@ -8,7 +8,7 @@ Con este clon junto al proyecto, pide al agente: **«Lee START.md de este framew
 
 El clon de consumo se actualiza mediante pull; no se utiliza para editar el framework ni guardar resultados de ensayos. Las correcciones del flujo se realizan en el repositorio del mantenedor, se verifican, se comitean y se publican al remoto autorizado antes del siguiente ensayo. Cada devolución identifica la revisión probada. No es una sincronización automática de sesiones.
 
-Con skills ya copiadas, abre una nueva sesión Standard seleccionando el **workspace externo** como raíz, no su padre. No requiere overlay ni perfil dedicado. [Aceptación nativa y prueba sin modelos](docs/setup-dsh.md).
+Con skills preparadas y enlaces gestionados mediante `--session-root`, conserva la misma raíz padre de Standard. No requiere overlay, perfil dedicado ni cambiar cwd. [Aceptación nativa y prueba sin modelos](docs/setup-dsh.md).
 
 ## Inicio por CLI
 

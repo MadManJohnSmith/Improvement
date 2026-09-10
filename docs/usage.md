@@ -13,13 +13,13 @@ START resuelve incorporación, preparación explícita y despacho. La preparaci�
 Preparación con rutas absolutas sustituidas por las observadas:
 
 ```sh
-python3 -B /ruta/framework/scripts/onboard.py --project /ruta/producto --workspace /ruta/workspace --name proyecto --prepare-skills
-python3 -B /ruta/framework/scripts/onboard.py --project /ruta/producto --workspace /ruta/workspace --name proyecto --prepare-skills --init
+python3 -B /ruta/framework/scripts/onboard.py --project /ruta/producto --workspace /ruta/workspace --name proyecto --prepare-skills --session-root /ruta
+python3 -B /ruta/framework/scripts/onboard.py --project /ruta/producto --workspace /ruta/workspace --name proyecto --prepare-skills --session-root /ruta --init
 ```
 
 Repetir copia idéntica no escribe skills. Conflicto se conserva y bloquea; con autorización explícita repetir ambas órdenes con `--update-skills`: dry-run primero, después `--init`. El actualizador respalda cada directorio sustituido completo en `skills-backup-*` dentro del workspace, incluidas ediciones locales; no fusiona ni borra skills ajenas. Revisar diferencias antes de autorizar. Copia recursiva incluye referencias/scripts y rechaza enlaces. Un fallo parcial conserva respaldo, no implica recuperación automática. No cambiar configuración global ni borrar carpetas a mano.
 
-Abrir nueva sesión Standard cuya raíz sea exactamente el workspace externo, sin ancestro Git. Cargar mediante herramienta nativa `skill` la entrada elegida, comprobar origen/cuerpo contra copia vigente y registrar revisión. Descubrimiento no es ejecución. Con esto preparado, petición habitual:
+Mantener la raíz padre actual de Standard, sin ancestro Git. La preparación incluye enlaces gestionados en su `.agents/skills` y manifiesto externo, un workspace por padre; no modifica entradas ajenas ni configuración global. Retirada propia mediante `--remove-links` según START. Si hace falta refrescar sesión, usar el mismo padre. Cargar mediante herramienta nativa `skill` la entrada elegida, comprobar origen/cuerpo contra copia vigente y registrar revisión. Descubrimiento no es ejecución. Con esto preparado, petición habitual:
 
 > Audita el contrato queue/library de Syncify, sin modificar producto.
 

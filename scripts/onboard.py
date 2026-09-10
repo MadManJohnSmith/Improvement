@@ -83,7 +83,67 @@ def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False, 
             shutil.rmtree(destination)
         shutil.copytree(source / name, destination)
     return (f'CREADO: {len(changes)} cambios; {len(names)} skills en {target}; respaldo: {backup}\n'
-            f'DSH: abre una sesión Standard con raíz {workspace}; no su directorio padre.')
+            f'DSH: preparar --session-root para conservar la raíz padre de Standard.')
+
+
+def link_project_skills(session_root, workspace, apply=False, remove=False):
+    """Expose one workspace through native project roots; never write through links."""
+    root, workspace = checked(session_root), checked(workspace)
+    if (workspace.parent != root or root == Path.home() or root == FRAMEWORK
+            or FRAMEWORK in root.parents or workspace == FRAMEWORK or FRAMEWORK in workspace.parents):
+        raise ValueError('Raíz debe ser el padre externo del workspace')
+    for parent in (root, *root.parents):
+        if (parent / '.git').exists() or (parent / '.git').is_symlink():
+            raise ValueError('Raíz de sesión con ancestro Git: descubrimiento ambiguo')
+    source = checked(workspace / '.agents/skills')
+    names = sorted(p.name for p in source.iterdir() if p.is_dir() and (p / 'SKILL.md').is_file())
+    for name in names:
+        checked(source / name / 'SKILL.md')
+    if not names:
+        raise ValueError('Preparar primero las skills del workspace')
+    target = checked(root / '.agents/skills')
+    manifest = checked(root / '.agents/workflow-skills.json')
+    identity = {'schema': 1, 'workspace': str(workspace), 'skills': names}
+    previous = None
+    if manifest.exists():
+        if not manifest.is_file() or manifest.stat().st_nlink != 1 or manifest.stat().st_size > 65536:
+            raise ValueError('Manifiesto no regular o excesivo')
+        previous = json.loads(manifest.read_text())
+        if previous != identity:
+            raise ValueError('Manifiesto en conflicto; conservar y reconciliar antes de actualizar')
+    if remove and previous is None:
+        raise ValueError('Sin manifiesto propio: no retirar entradas')
+    missing = []
+    for name in names:
+        link = target / name
+        if link.is_symlink():
+            if previous is None or os.readlink(link) != str(source / name):
+                raise ValueError(f'Enlace ajeno o alterado: {link}')
+        elif link.exists():
+            raise ValueError(f'Entrada ajena: {link}')
+        else:
+            missing.append(name)
+        # project-dsh wins over project-agents; do not silently load an override.
+        override = checked(root / '.dsh/skills' / name)
+        if override.exists():
+            raise ValueError(f'Skill de mayor prioridad en conflicto: {override}')
+    if not apply:
+        return f'DRY-RUN: enlaces en {target}; retirar={remove}; sin escrituras'
+    # ponytail: escritor único y padres confiables; manifiesto primero permite recuperar interrupciones.
+    if remove:
+        for name in names:
+            if name not in missing:
+                (target / name).unlink()
+        manifest.unlink()
+        return 'RETIRADO: solo enlaces propios; copias y entradas ajenas conservadas'
+    target.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if previous is None:
+        with manifest.open('x') as stream:
+            json.dump(identity, stream, indent=2)
+            stream.write('\n')
+    for name in missing:
+        (target / name).symlink_to(source / name, target_is_directory=True)
+    return f'ENLAZADO: {len(missing)} cambios; mantener raíz Standard {root}'
 
 
 def initialize(project, workspace, name, apply=False):
@@ -141,7 +201,11 @@ def main():
     parser.add_argument('--init', action='store_true', help='Crear; sin esta opción solo inspecciona')
     parser.add_argument('--prepare-skills', action='store_true', help='Copiar skills al workspace externo sin sobrescribir')
     parser.add_argument('--update-skills', action='store_true', help='Actualizar skills en conflicto conservando copia externa completa')
+    parser.add_argument('--session-root', help='Padre de sesión: enlaces nativos gestionados, sin cambiar cwd')
+    parser.add_argument('--remove-links', action='store_true', help='Retirar solo enlaces del manifiesto propio')
     args = parser.parse_args()
+    if args.remove_links and (not args.session_root or args.prepare_skills):
+        parser.error('--remove-links requiere --session-root y excluye --prepare-skills')
     if args.update_skills and not args.prepare_skills:
         parser.error('--update-skills requiere --prepare-skills')
     try:
@@ -152,6 +216,11 @@ def main():
                 result += '\nDRY-RUN: después de crear workspace se prepararán las skills vigentes'
             else:
                 result += '\n' + prepare_project_skills(workspace, apply=args.init, update=args.update_skills)
+        if args.session_root:
+            if not (Path(args.workspace) / '.agents/skills').is_dir() and not args.init and args.prepare_skills:
+                result += '\nDRY-RUN: tras copiar skills se prepararán enlaces en la raíz de sesión'
+            else:
+                result += '\n' + link_project_skills(args.session_root, args.workspace, args.init, args.remove_links)
         print(result)
     except (OSError, ValueError) as error:
         parser.exit(1, f'ERROR: {error}\n')

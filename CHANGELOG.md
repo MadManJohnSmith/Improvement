@@ -1,5 +1,12 @@
 # Cambios
 
+## Descubrimiento nativo desde el padre — 2026-09-10
+
+- Conservar cwd padre en Standard mediante enlaces individuales gestionados a las copias externas; manifiesto, dry-run, conflictos sin sobrescritura y retirada solo de entradas propias. Sin configuración global ni edición del consumidor/producto.
+- Regresión DSH instalada: dos padres, un scope compartido con las filas reales de skills de Standard, cuerpos y destinos exactos, rechazo cruzado y retorno al primer agente. No Host completo, modelos ni garantía de sandbox.
+- Separar errores de argumentos bash de denegaciones; no escalada automática a acceso total. Validación nativa de emparejamiento/rechazo y escenarios conductuales documentados, no enforcement nuevo.
+- Siete tests Python aprobados; guía de preparación integrada y límites de permisos explícitos.
+
 ## Operación acotada v0.1 — 2026-09-10
 
 - Añadir entradas Auditor y Reparación continua en Standard, despacho START y guía con permisos efectivos del producto hermano; sin producto vivo, presets nuevos ni autonomía Host.

@@ -75,6 +75,58 @@ class OnboardTest(unittest.TestCase):
                         onboard.prepare_project_skills(workspace, apply=apply)
                     self.assertEqual(list(outside.iterdir()), [])
 
+    def test_parent_links_owned_idempotent_and_removable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / 'private'
+            workspace.mkdir()
+            onboard.prepare_project_skills(workspace, apply=True)
+            target = root / '.agents/skills'
+            self.assertIn('DRY-RUN', onboard.link_project_skills(root, workspace))
+            self.assertFalse(target.exists())
+            onboard.link_project_skills(root, workspace, apply=True)
+            self.assertIn('0 cambios', onboard.link_project_skills(root, workspace, apply=True))
+            unrelated = target / 'personal'
+            unrelated.mkdir()
+            link = target / 'project-onboarding'
+            link.unlink()
+            link.symlink_to(root / 'foreign')
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, workspace, apply=True, remove=True)
+            self.assertTrue(link.is_symlink())
+            link.unlink()
+            onboard.link_project_skills(root, workspace, apply=True)
+            onboard.link_project_skills(root, workspace, apply=True, remove=True)
+            self.assertEqual(list(target.iterdir()), [unrelated])
+            self.assertTrue((workspace / '.agents/skills/project-onboarding/SKILL.md').is_file())
+            link.mkdir()
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, workspace, apply=True)
+            self.assertFalse((root / '.agents/workflow-skills.json').exists())
+            link.rmdir()
+            manifest = root / '.agents/workflow-skills.json'
+            foreign = root / 'foreign.json'
+            foreign.write_text('{}')
+            manifest.symlink_to(foreign)
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, workspace, apply=True)
+            self.assertEqual(foreign.read_text(), '{}')
+            manifest.unlink()
+            override = root / '.dsh/skills/project-onboarding'
+            override.mkdir(parents=True)
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, workspace, apply=True)
+            override.rmdir()
+            onboard.link_project_skills(root, workspace, apply=True)
+            second = root / 'second'
+            second.mkdir()
+            onboard.prepare_project_skills(second, apply=True)
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, second, apply=True)
+            (root / '.git').write_text('gitdir: elsewhere')
+            with self.assertRaises(ValueError):
+                onboard.link_project_skills(root, workspace, apply=True)
+
     def test_lifecycle_and_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
