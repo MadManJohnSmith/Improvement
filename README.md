@@ -1,0 +1,40 @@
+# agent-workflow
+
+Método reusable de auditoría y reparación con agentes. Clona este repositorio **junto a cualquier proyecto**, no dentro. Distribución inicial funcional de onboarding local; no es todavía un motor autónomo DSH.
+
+## Inicio
+
+Requisito: Python 3.9+; Git solo para versionar el framework. Desde el clon:
+
+```sh
+python3 -B scripts/onboard.py --project /ruta/proyecto --workspace /ruta/proyecto-workspace --name mi-proyecto
+python3 -B scripts/onboard.py --project /ruta/proyecto --workspace /ruta/proyecto-workspace --name mi-proyecto --init
+python3 -B -m unittest discover -s tests -v
+```
+
+Sustituye las rutas por destinos absolutos reales. Proyecto y padre del workspace deben existir. La primera orden no escribe; `--init` crea únicamente `PROJECT.md` y `project.json`, con directorio privado. Una repetición compatible conserva las decisiones; conflictos o inicializaciones incompletas se rechazan sin borrar. No usar padres mutables por terceros: validación de rutas no es sandbox ni protección contra carreras hostiles.
+
+```text
+carpeta/
+├── agent-workflow/         # framework versionable
+├── proyecto/               # producto, nunca inicializado por este script
+└── proyecto-workspace/     # perfil y evidencia privados
+```
+
+Revisa instrucciones y canónicos del proyecto, completa el primer encargo y sus límites en el perfil. No se crean dashboards, no se ejecuta código del producto ni se instalan dependencias o skills automáticamente. El workspace privado no sustituye un entorno aislado de pruebas; revisa permisos, backups y sincronización.
+
+## Uso con agentes
+
+Los dos modos finales son **Auditor** y **Reparación continua**, con incorporación compartida y Ejecutor/QA internos. Son la arquitectura objetivo, no presets ya activados. Puedes usar hoy los procedimientos manualmente y el inicializador sin DSH.
+
+- [Arquitectura completa](ARQUITECTURA_FLUJO_AGENTES.md).
+- [Preparación DSH y límites del loader](docs/setup-dsh.md).
+- [Estado y evidencia](docs/status.md).
+- [Cambios de distribución](CHANGELOG.md).
+- `skills/`: incorporación, evidencia, validación segura, aceptación acotada y entrega proporcional.
+
+Search y otros asesores son opcionales para mantenedores; no son una dependencia del usuario. No hay CI, instalador global, modelos configurados ni llamadas a proveedores.
+
+## Publicación
+
+Versionar solo el framework revisado. Nunca agregar perfiles reales, logs, auditorías privadas, candidatos, archivos históricos ni credenciales. `.gitignore` es una ayuda, no una revisión de seguridad. No se incluye remoto. **Licencia pendiente de decisión del titular**: esta distribución no concede una licencia abierta por estar preparada para GitHub.
