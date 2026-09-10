@@ -1,5 +1,11 @@
 # Cambios
 
+## Separación H1-only de QueueItem — 2026-09-10
+
+- Preparar fuera del repositorio una unidad nueva que retira únicamente `service`, `quality`, `effective_service`, `original_service` y `allow_fallback` en `ui/src/api/types.ts`; no aceptar la expansión completa previa.
+- Conservar reproducción roja y prueba verde, `change_scope` explícito de un archivo y reauditoría mecánica de hashes/alcance.
+- Mantener `RETAINED`/`UNVERIFIED` por falta de QA independiente real observable; no modificar ni integrar Syncify.
+
 ## Cierre honesto del contrato v0.1 — 2026-09-10
 
 - Añadir `missions.py reaudit` para ligar mecánicamente candidato, prueba y resultado antes de la revisión semántica.
