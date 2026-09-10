@@ -41,6 +41,21 @@ class OnboardTest(unittest.TestCase):
             self.assertEqual((workspace / '.agents/skills/demo/SKILL.md').read_text(), content)
             with self.assertRaises(ValueError):
                 onboard.prepare_project_skills(workspace, source, apply=True)
+    def test_skill_destination_symlinks_fail_closed(self):
+        for relative in ('.agents', '.agents/skills'):
+            for apply in (False, True):
+                with self.subTest(relative=relative, apply=apply), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    workspace, outside = root / 'workspace', root / 'outside'
+                    workspace.mkdir()
+                    outside.mkdir()
+                    link = workspace / relative
+                    link.parent.mkdir(parents=True, exist_ok=True)
+                    link.symlink_to(outside, target_is_directory=True)
+                    with self.assertRaises(ValueError):
+                        onboard.prepare_project_skills(workspace, apply=apply)
+                    self.assertEqual(list(outside.iterdir()), [])
+
     def test_lifecycle_and_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

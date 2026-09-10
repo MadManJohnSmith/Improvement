@@ -203,7 +203,7 @@ Seguir contratos desde productor real hasta consumidor, incluidos serialización
 
 ## 14. Distribución y perfil privado
 
-Clonar agent-workflow junto al proyecto, nunca dentro de su árbol. El repositorio contiene método, skills, inicializador y pruebas sintéticas. El workspace externo contiene PROJECT.md, identidad mínima y evidencia necesaria; no se versiona aquí. Producto, framework y workspace son ámbitos distintos. El inicializador no instala runtime, no autoriza ejecución y no descubre automáticamente todos los canónicos.
+Clonar agent-workflow junto al proyecto, nunca dentro de su árbol. El repositorio contiene método, skills, inicializador y pruebas sintéticas. El workspace externo contiene PROJECT.md, identidad mínima y evidencia necesaria; no se versiona aquí. Producto, framework y workspace son ámbitos distintos. El inicializador no instala runtime, no autoriza ejecución y no descubre automáticamente todos los canónicos. Para cargar las skills copiadas en `.agents/skills`, la sesión Standard elige el workspace externo como raíz: sin ancestro Git, el loader nativo usa ese cwd, no busca hijos del directorio padre. No requiere overlay. Producto fuera de esa raíz sigue sujeto a autoridad efectiva del Host; seleccionar raíz no concede acceso ni aislamiento OS.
 
 La incorporación exige rutas explícitas, evita enlaces y sobrescrituras, conserva el perfil existente y falla ante conflictos. No crear dashboards ni backlogs vacíos. Configuración, credenciales, fuentes privadas, logs, clones y candidatos quedan fuera de la distribución. La publicación requiere revisión explícita y licencia decidida por el titular.
 

@@ -39,7 +39,9 @@ def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False):
     names = sorted(p.name for p in source.iterdir() if p.is_dir() and (p / 'SKILL.md').is_file())
     if not names:
         raise ValueError('No hay skills portables en el origen')
-    target = workspace / '.agents' / 'skills'
+    target = checked(workspace / '.agents' / 'skills')
+    for name in names:
+        checked(source / name / 'SKILL.md')
     if not apply:
         return f'DRY-RUN: preparar {len(names)} skills en {target}; sin escrituras'
     target.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -49,7 +51,8 @@ def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False):
             raise ValueError(f'Skill existente en conflicto: {destination}')
         destination.mkdir(mode=0o700)
         (destination / 'SKILL.md').write_bytes((source / name / 'SKILL.md').read_bytes())
-    return f'CREADO: {len(names)} skills en {target}'
+    return (f'CREADO: {len(names)} skills en {target}\n'
+            f'DSH: abre una sesión Standard con raíz {workspace}; no su directorio padre.')
 
 
 def initialize(project, workspace, name, apply=False):
