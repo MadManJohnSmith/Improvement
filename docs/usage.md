@@ -2,6 +2,10 @@
 
 Dos entradas conductuales en **DSH Standard**, una unidad por encargo. Son la operación v0.1 acotada, no el destino completo del plan: no son presets, publicador Host, controles Host, recuperación ni autonomía probada. El framework se mantiene aparte; ninguna misión operativa puede editarlo. No se toca producto vivo durante este piloto. El progreso por etapas se consulta en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md). El checklist previo a una prueba completa está en [docs/trial-readiness.md](trial-readiness.md); la regresión sintética combinada es `tests/test_two_mode_cycle.py` y no sustituye un piloto real.
 
+## Decisión mínima antes del prompt
+
+El prompt corto solo inicia una unidad cuando el estado externo ya está preparado. Antes de pedir Auditor o Reparación, el agente comprueba y comunica una línea compacta: `modo`, `objetivo`, `producto legible`, `workspace externo escribible`, `skill cargada nativamente`, `evidencia/checkpoint`. El usuario decide únicamente lo que falte materialmente. Si alguna comprobación es `PENDIENTE`, no se ejecuta la unidad y se conserva `RETAINED` con ruta exacta y siguiente acción; no se pide aprobar copias, hashes o transiciones mecánicas una por una. Auditor requiere lectura y entrega externa; Reparación añade candidato externo, `change_scope`, comandos autorizados y QA independiente.
+
 ## Arranque y permisos
 
 Desde una sesión con lectura del clon del framework:

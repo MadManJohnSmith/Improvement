@@ -1,6 +1,6 @@
 # Entrada de usuario: incorporar, auditar o reparar una unidad
 
-El mensaje identifica proyecto y objetivo; el procedimiento vive aquí para no exigir prompts largos. Lee `docs/usage.md` para el protocolo operativo v0.1.
+El mensaje identifica proyecto y objetivo; el procedimiento vive aquí para no exigir prompts largos. Lee `docs/usage.md` para el protocolo operativo v0.1. Antes de ejecutar, muestra el estado compacto de preparación; si falta una precondición material, conserva `RETAINED` y no conviertas pasos mecánicos en preguntas.
 
 ## Despacho
 
