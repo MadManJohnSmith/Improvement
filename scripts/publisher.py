@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -89,11 +90,30 @@ class Publisher:
             return json.loads(existing)
         return envelope
 
+    def handoff(self, record_id):
+        if not isinstance(record_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', record_id):
+            raise ValueError('ID inválido')
+        receipt = self.resolve(record_id)
+        if receipt.get('payload', {}).get('status') != 'OPEN':
+            raise ValueError('Recibo no entregable')
+        return 'INICIO_LOTE: {"receipt_id":"' + record_id + '"}'
+
+    def resolve_handoff(self, text):
+        if not isinstance(text, str) or len(text) > 160:
+            raise ValueError('Handoff inválido')
+        match = re.fullmatch(r'INICIO_LOTE: \{"receipt_id":"([A-Za-z0-9_-]{1,80})"\}', text)
+        if not match:
+            raise ValueError('Handoff inválido')
+        return self.resolve(match.group(1))
+
     def resolve(self, record_id):
         if not isinstance(record_id, str) or not record_id or not all(c.isalnum() or c in '_-' for c in record_id):
             raise ValueError('ID inválido')
         path = self.root / (record_id + '.json')
-        raw = path.read_bytes()
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError as error:
+            raise ValueError('Recibo ausente') from error
         if len(raw) > MAX_RECEIPT:
             raise ValueError('Recibo demasiado grande')
         value = json.loads(raw)

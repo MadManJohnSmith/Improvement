@@ -1,5 +1,11 @@
 # Cambios
 
+## Handoff local mínimo — 2026-09-10
+
+- Añadir emisión y resolución validada de `INICIO_LOTE: {"receipt_id":"..."}` sobre el publicador local.
+- Verificar formato exacto, ID inexistente, corrupción, recibo no entregable y resolución desde otro proceso.
+- Mantener la etapa 4 como `PARCIAL`; no implementar todavía handoff Host, roles ni entrega multi-registro.
+
 ## Robustez del publicador local — 2026-09-10
 
 - Añadir límites de recibo y cantidad de registros, escritura mediante temporal exclusivo y enlace sin sobrescritura, y validación reforzada al resolver.

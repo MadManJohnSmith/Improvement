@@ -19,6 +19,15 @@ class PublisherTest(unittest.TestCase):
             self.assertTrue(value['record_id'].startswith('r_'))
             self.assertEqual(publisher.resolve(value['record_id']), value)
             self.assertEqual(publisher.publish('agent-1', 'task-1', {'status': 'OPEN'}, value['record_id']), value)
+            handoff = publisher.handoff(value['record_id'])
+            self.assertEqual(handoff, 'INICIO_LOTE: {"receipt_id":"' + value['record_id'] + '"}')
+            self.assertEqual(publisher.resolve_handoff(handoff), value)
+            with self.assertRaises(ValueError):
+                publisher.resolve_handoff('INICIO_LOTE: {"receipt_id":"missing"}')
+            with self.assertRaises(ValueError):
+                publisher.resolve_handoff('INICIO_LOTE: {"receipt_id":"../escape"}')
+            with self.assertRaises(ValueError):
+                publisher.resolve_handoff('bad handoff')
             with self.assertRaises(ValueError):
                 publisher.publish('agent-1', 'task-1', {'status': 'CLOSED'}, value['record_id'])
             with self.assertRaises(ValueError):
@@ -38,6 +47,9 @@ class PublisherTest(unittest.TestCase):
             path.write_text(json.dumps({'version': 1, 'record_id': value['record_id']}))
             with self.assertRaises(ValueError):
                 publisher.resolve(value['record_id'])
+
+            with self.assertRaises(ValueError):
+                publisher.handoff(value['record_id'])
 
             for index in range(1, 16):
                 publisher.publish('agent-1', 'task-1', {'index': index}, 'record-' + str(index))
