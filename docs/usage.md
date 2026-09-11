@@ -23,7 +23,12 @@ Mantener la raíz padre actual de Standard, sin ancestro Git. La preparación in
 
 > Audita el contrato queue/library de Syncify, sin modificar producto.
 
-Otra petición separada puede ser «Repara la tarea de auditoría indicada en candidato externo; no integres». El agente reutiliza decisiones suficientes; pregunta solamente comandos/recursos/permisos materialmente ausentes. QA usa subagente nativo si realmente está disponible; de lo contrario conserva RETAINED para revisión humana. No requiere proveedor externo.
+Dos prompts reutilizables bastan para iniciar una unidad:
+
+- **Auditor:** «Audita `<objetivo>` en `<proyecto>`; no cambies producto ni integres/publices. Usa el perfil/estado externo ya preparado y entrega informe o excepción con evidencia externa.»
+- **Reparación continua:** «Repara `<tarea o candidato>` dentro de `<change_scope>`; no cambies fuera del candidato, producto, framework ni integres/publices. Reutiliza perfil, estado y recibos externos; continúa las unidades autorizadas y pregúntame solo decisiones materiales.»
+
+El agente reutiliza el perfil, estado y recibos externos disponibles; el usuario no los transporta ni redacta un prompt para cada transición. Pregunta solo por decisiones materiales o permisos/recursos realmente ausentes. Estos prompts no autorizan cambios de producto, integración, publicación, credenciales, instalaciones, red ni proveedores; tampoco convierten al Host en autónomo ni constituyen una afirmación de QA semántica. QA usa subagente nativo si realmente está disponible; de lo contrario conserva RETAINED para revisión humana. No requiere proveedor externo.
 
 ## Contrato y entrega mínimos
 
