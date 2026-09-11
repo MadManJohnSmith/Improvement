@@ -1,5 +1,12 @@
 # Cambios
 
+## Integridad e inmutabilidad de cierres — 2026-09-10
+
+- Hacer idempotente el cierre de lote y rechazar conflictos de cierre.
+- Exigir que cada tarea de una entrega completa enlace evidencia del mismo lote.
+- Validar hashes y existencia de todos los registros referenciados al resolver un handoff completo.
+- Mantener la etapa 4 como `PARCIAL`; no implementar recuperación ni autorización Host.
+
 ## Entrega local multi-registro — 2026-09-10
 
 - Añadir apertura de lote, registros `evidence`/`task` y cierre `COMPLETE`/`PARTIAL` con referencias hashadas, owner, gaps y validación de entrega.

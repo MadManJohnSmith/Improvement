@@ -153,12 +153,30 @@ class Publisher:
             types.add(record['payload']['type'])
         if status == 'COMPLETE' and (gaps or types != {'evidence', 'task'}):
             raise ValueError('Entrega incompleta')
+        if status == 'COMPLETE':
+            record_map = {item['record_id']: self.resolve(item['record_id']) for item in records}
+            for item in records:
+                record = record_map[item['record_id']]
+                if record['payload']['type'] == 'task':
+                    evidence_id = record['payload']['payload'].get('evidence_id')
+                    if evidence_id not in record_map or record_map[evidence_id]['payload']['type'] != 'evidence':
+                        raise ValueError('Tarea sin evidencia')
         if status == 'PARTIAL' and not gaps:
             raise ValueError('Entrega parcial requiere gaps')
-        closed = self.publish(caller, authorization, {
+        close_id = self._batch_key(batch_id, 'close')
+        try:
+            existing = self.resolve(close_id)
+        except ValueError:
+            existing = None
+        payload = {
             'type': 'receipt', 'batch_id': batch_id, 'status': status,
             'records': records, 'gaps': gaps, 'open': opened['content_sha256'],
-        }, self._batch_key(batch_id, 'close'))
+        }
+        if existing is not None:
+            if existing['caller'] != caller or existing['authorization'] != authorization or existing['payload'] != payload:
+                raise ValueError('Conflicto de cierre')
+            return existing
+        closed = self.publish(caller, authorization, payload, close_id)
         return closed
 
     def handoff(self, record_id):
@@ -175,7 +193,17 @@ class Publisher:
         match = re.fullmatch(r'INICIO_LOTE: \{"receipt_id":"([A-Za-z0-9_-]{1,80})"\}', text)
         if not match:
             raise ValueError('Handoff inválido')
-        return self.resolve(match.group(1))
+        receipt = self.resolve(match.group(1))
+        payload = receipt.get('payload', {})
+        if payload.get('type') == 'receipt' and payload.get('status') == 'COMPLETE':
+            for reference in payload.get('records', []):
+                record = self.resolve(reference['record_id'])
+                if record.get('content_sha256') != reference.get('sha256'):
+                    raise ValueError('Referencia alterada')
+            return receipt
+        if payload.get('status') == 'OPEN':
+            return receipt
+        raise ValueError('Handoff incompleto')
 
     def resolve(self, record_id):
         if not isinstance(record_id, str) or not record_id or not all(c.isalnum() or c in '_-' for c in record_id):

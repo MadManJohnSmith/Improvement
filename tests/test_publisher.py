@@ -62,8 +62,17 @@ class PublisherTest(unittest.TestCase):
             task = batch_publisher.publish_batch_record('agent-1', 'task-1', 'batch-1', 'task', {'evidence_id': evidence['record_id']}, 'task-1')
             closed = batch_publisher.close_batch('agent-1', 'task-1', 'batch-1', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
             self.assertEqual(closed['payload']['status'], 'COMPLETE')
+            self.assertEqual(batch_publisher.close_batch('agent-1', 'task-1', 'batch-1', 'COMPLETE', [evidence['record_id'], task['record_id']], []), closed)
+            with self.assertRaises(ValueError):
+                batch_publisher.close_batch('agent-1', 'task-1', 'batch-1', 'PARTIAL', [evidence['record_id']], ['changed'])
             with self.assertRaises(ValueError):
                 batch_publisher.publish_batch_record('other', 'task-1', 'batch-1', 'evidence', {'finding': 'no'})
+            orphan_publisher = Publisher(Path(tmp) / 'orphan-receipts')
+            orphan_publisher.open_batch('agent-1', 'task-1', 'Orphan test', 'batch-orphan')
+            orphan_task = orphan_publisher.publish_batch_record('agent-1', 'task-1', 'batch-orphan', 'task', {'evidence_id': 'batch-orphan-missing'}, 'task-1')
+            with self.assertRaises(ValueError):
+                orphan_publisher.close_batch('agent-1', 'task-1', 'batch-orphan', 'COMPLETE', [orphan_task['record_id']], [])
+
             opened_partial = batch_publisher.open_batch('agent-1', 'task-1', 'Partial delivery', 'batch-2')
             partial = batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'PARTIAL', [], ['missing QA'])
             self.assertEqual(partial['payload']['status'], 'PARTIAL')
