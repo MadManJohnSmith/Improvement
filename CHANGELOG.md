@@ -1,5 +1,10 @@
 # Cambios
 
+## Primitive local de publicación — 2026-09-10
+
+- Añadir `scripts/publisher.py` y su regresión para publicación/resolución externa, IDs opacos, identidad/autorización suministradas, límites, idempotencia, conflictos y detección de corrupción.
+- Reclasificar la etapa 2 como `PARCIAL`; el módulo no es publicador Host, sandbox, autenticación fuerte ni prueba de durabilidad ante crash.
+
 ## Reconciliación del plan arquitectónico — 2026-09-10
 
 - Conservar el plan original archivado como arquitectura de destino completa, sin presentarlo como implementación terminada.

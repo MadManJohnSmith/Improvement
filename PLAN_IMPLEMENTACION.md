@@ -20,7 +20,7 @@ Este archivo es un índice compacto, no un diario. Cada etapa conserva solo esta
 |---|---|---|---|---|
 | 0 | Herramientas y capacidades observadas sin bucles inválidos | PARCIAL | `docs/status.md`; regresiones DSH y validación local | Falta enforcement Host durable y validación de recuperación |
 | 1 | Inventario dirigido, base y límites de pruebas | PARCIAL | `docs/status.md`; perfiles y recibos externos | Completar inventario solo cuando una misión lo necesite |
-| 2 | Publicador restringido con identidad, autorización, idempotencia y recuperación | PENDIENTE | Ensayo histórico externo, no distribución operativa | Adaptador Host y pruebas de crash/durabilidad |
+| 2 | Publicador restringido con identidad, autorización, idempotencia y recuperación | PARCIAL | `scripts/publisher.py`, `tests/test_publisher.py`; primitive local con resolución en proceso nuevo | Adaptador Host, autenticidad fuerte y pruebas de crash/durabilidad |
 | 3 | Fixture contractual roja→verde con aceptación acotada | PARCIAL | `tests/test_operational_cycle.py`; fixtures externos | QA semántica real cuando el impacto lo requiera |
 | 4 | Handoff determinista Auditor→Reparación | PARCIAL | Ensayo histórico supervisado externo | Resolución Host sin ayuda semántica del operador |
 | 5 | Piloto real de una unidad de producto | RETENIDO | Candidatos externos queue/library; piloto histórico externo sin integración | QA/reauditoría/integración autorizadas según unidad vigente |
