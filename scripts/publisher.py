@@ -12,6 +12,7 @@ from onboard import FRAMEWORK, checked
 MAX_PAYLOAD = 8192
 MAX_RECEIPT = 16384
 MAX_RECORDS = 16
+MAX_TEXT = 3000
 
 
 def _digest(data):
@@ -89,6 +90,76 @@ class Publisher:
                 raise ValueError('Conflicto de registro')
             return json.loads(existing)
         return envelope
+
+    def _batch_key(self, batch_id, suffix):
+        if not isinstance(batch_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', batch_id):
+            raise ValueError('ID de lote inválido')
+        return batch_id + '-' + suffix
+
+    def open_batch(self, caller, authorization, objective, batch_id=None):
+        if not isinstance(caller, str) or not caller or not isinstance(authorization, str) or not authorization:
+            raise ValueError('Identidad y autorización requeridas')
+        if not isinstance(objective, str) or not objective.strip() or len(objective) > MAX_TEXT:
+            raise ValueError('Objetivo inválido')
+        batch_id = batch_id or 'b_' + secrets.token_urlsafe(18)
+        key = self._batch_key(batch_id, 'open')
+        receipt = self.publish(caller, authorization, {
+            'type': 'open', 'batch_id': batch_id, 'objective': objective,
+            'status': 'OPEN', 'records': [], 'gaps': [],
+        }, key)
+        return {'batch_id': batch_id, 'record_id': key, 'receipt': receipt}
+
+    def _read_batch(self, caller, authorization, batch_id):
+        opened = self.resolve(self._batch_key(batch_id, 'open'))
+        if opened.get('caller') != caller or opened.get('authorization') != authorization:
+            raise ValueError('Propietario de lote incorrecto')
+        return opened
+
+    def publish_batch_record(self, caller, authorization, batch_id, record_type, payload, record_id=None):
+        if record_type not in ('evidence', 'task'):
+            raise ValueError('Tipo de registro inválido')
+        opened = self._read_batch(caller, authorization, batch_id)
+        if opened['payload'].get('status') != 'OPEN':
+            raise ValueError('Lote cerrado')
+        if len(opened['payload'].get('records', [])) >= MAX_RECORDS:
+            raise ValueError('Límite de registros alcanzado')
+        if not isinstance(payload, dict):
+            raise ValueError('Payload de registro inválido')
+        record_id = record_id or 'r_' + secrets.token_urlsafe(18)
+        record = self.publish(caller, authorization, {
+            'type': record_type, 'batch_id': batch_id, 'payload': payload,
+        }, self._batch_key(batch_id, record_id))
+        return {'record_id': self._batch_key(batch_id, record_id), 'receipt': record}
+
+    def close_batch(self, caller, authorization, batch_id, status, record_ids, gaps):
+        opened = self._read_batch(caller, authorization, batch_id)
+        if opened['payload'].get('status') != 'OPEN':
+            raise ValueError('Lote cerrado')
+        if status not in ('COMPLETE', 'PARTIAL') or not isinstance(record_ids, list) or len(record_ids) > MAX_RECORDS or len(set(record_ids)) != len(record_ids):
+            raise ValueError('Cierre inválido')
+        if not isinstance(gaps, list) or len(gaps) > MAX_RECORDS or any(not isinstance(g, str) or not g.strip() or len(g) > MAX_TEXT for g in gaps):
+            raise ValueError('Gaps inválidos')
+        records = []
+        types = set()
+        for record_id in record_ids:
+            if not isinstance(record_id, str) or not record_id.startswith(batch_id + '-'):
+                raise ValueError('Referencia extranjera')
+            record = self.resolve(record_id)
+            if record['caller'] != caller or record['authorization'] != authorization or record['payload'].get('batch_id') != batch_id:
+                raise ValueError('Registro ajeno')
+            if record['payload'].get('type') not in ('evidence', 'task'):
+                raise ValueError('Registro inválido')
+            records.append({'record_id': record_id, 'sha256': record['content_sha256']})
+            types.add(record['payload']['type'])
+        if status == 'COMPLETE' and (gaps or types != {'evidence', 'task'}):
+            raise ValueError('Entrega incompleta')
+        if status == 'PARTIAL' and not gaps:
+            raise ValueError('Entrega parcial requiere gaps')
+        closed = self.publish(caller, authorization, {
+            'type': 'receipt', 'batch_id': batch_id, 'status': status,
+            'records': records, 'gaps': gaps, 'open': opened['content_sha256'],
+        }, self._batch_key(batch_id, 'close'))
+        return closed
 
     def handoff(self, record_id):
         if not isinstance(record_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', record_id):

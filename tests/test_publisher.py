@@ -56,6 +56,20 @@ class PublisherTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 publisher.publish('agent-1', 'task-1', {'index': 16}, 'record-16')
 
+            batch_publisher = Publisher(Path(tmp) / 'batch-receipts')
+            opened = batch_publisher.open_batch('agent-1', 'task-1', 'Audit delivery', 'batch-1')
+            evidence = batch_publisher.publish_batch_record('agent-1', 'task-1', 'batch-1', 'evidence', {'finding': 'ok'}, 'evidence-1')
+            task = batch_publisher.publish_batch_record('agent-1', 'task-1', 'batch-1', 'task', {'evidence_id': evidence['record_id']}, 'task-1')
+            closed = batch_publisher.close_batch('agent-1', 'task-1', 'batch-1', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
+            self.assertEqual(closed['payload']['status'], 'COMPLETE')
+            with self.assertRaises(ValueError):
+                batch_publisher.publish_batch_record('other', 'task-1', 'batch-1', 'evidence', {'finding': 'no'})
+            opened_partial = batch_publisher.open_batch('agent-1', 'task-1', 'Partial delivery', 'batch-2')
+            partial = batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'PARTIAL', [], ['missing QA'])
+            self.assertEqual(partial['payload']['status'], 'PARTIAL')
+            with self.assertRaises(ValueError):
+                batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'COMPLETE', [], [])
+
             oversized = root / 'oversized.json'
             oversized.write_bytes(b'x' * (MAX_RECEIPT + 1))
             with self.assertRaises(ValueError):

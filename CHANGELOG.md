@@ -1,5 +1,11 @@
 # Cambios
 
+## Entrega local multi-registro — 2026-09-10
+
+- Añadir apertura de lote, registros `evidence`/`task` y cierre `COMPLETE`/`PARTIAL` con referencias hashadas, owner, gaps y validación de entrega.
+- Verificar entrega completa, parcial, owner incorrecto y cierre incompleto en el fixture local.
+- Mantener la etapa 4 como `PARCIAL`; no implementar todavía roles Host, continuación ni recuperación durable.
+
 ## Handoff local mínimo — 2026-09-10
 
 - Añadir emisión y resolución validada de `INICIO_LOTE: {"receipt_id":"..."}` sobre el publicador local.
