@@ -140,6 +140,8 @@ Objetivo/autorización, base, unidad y dependencias necesarias, candidato/eviden
 
 Un checkpoint debe permitir continuar sin importar toda la conversación. Al reiniciar, una ejecución incierta se reconcilia antes de lanzar otro escritor. Persistencia de una sesión no significa que su tarea terminó.
 
+Para tareas programadas del framework, la persistencia externa comienza antes de cualquier trabajo: crear un directorio de sesión nuevo (sin sobrescribir uno existente) y escribir `started.json` de inmediato con identidad, hora, raíces, alcance y estado. La tarea debe crear explícitamente sus fixtures y prerequisitos, registrar sus rutas absolutas y no depender de cwd, scheduler o contexto de otra sesión. Cada salida termina con `checkpoint.json`, `report.md` y `finish.json`; si falta un prerequisito o la ejecución queda bloqueada, checkpoint e informe deben conservar `RETAINED` con causa, evidencia, límites y siguiente acción. `finish.json` referencia los tres artefactos y el estado final. Esta garantía de protocolo no acredita durabilidad ante crash o pérdida de energía ni sustituye controles Host.
+
 ## 8. Publicador, entrega y evidencia
 
 Reutilizar el publicador de referencia al preparar el adaptador; generalizar bindings y alcance antes de distribuirlo como operativo. El archivo histórico no es una dependencia de instalación.
@@ -233,7 +235,7 @@ El plan original archivado en `PLAN_ARQUITECTURA_ORIGINAL.md` se conserva como a
 
 La implementación actual es una reordenación acotada y comprobada parcialmente: onboarding, distribución/carga nativa de skills, recibos locales, ejecución argv controlada, snapshots/hash, límites de `change_scope`, ciclo sintético rojo→verde, retención por evidencia ausente y reauditoría mecánica. Los ensayos históricos de publicador, lector, handoff y piloto Syncify permanecen como evidencia externa supervisada; no equivalen a un Host operativo, autonomía LLM, IPC Tauri nativo, integración del producto ni recuperación ante crash.
 
-La matriz breve y vigente de etapas está en [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md). Cada etapa distingue salida, evidencia, bloqueo y siguiente salida. `docs/status.md` conserva el estado comprobado; `CHANGELOG.md` conserva decisiones históricas. No se importan logs, candidatos, rutas privadas ni resultados de ejecución al repositorio.
+La matriz breve y vigente de etapas está en [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md). Los diagramas interactivos del sistema están en [docs/diagrams/README.md](docs/diagrams/README.md). `docs/status.md` conserva el estado comprobado; `CHANGELOG.md` conserva decisiones históricas. No se importan logs, candidatos, rutas privadas ni resultados de ejecución al repositorio.
 
 El criterio final de éxito sigue siendo el flujo de destino:
 

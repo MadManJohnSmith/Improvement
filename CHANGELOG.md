@@ -1,5 +1,11 @@
 # Cambios
 
+## Integridad de sesiones programadas — 2026-09-10
+
+- Exigir `started.json` inmediato en un directorio externo nuevo, creación autónoma de fixtures/prerequisitos y paths absolutos, sin depender del scheduler o contexto implícito.
+- Exigir `checkpoint.json` y `report.md` siempre, con `RETAINED` ante bloqueo o prerequisito ausente, y `finish.json` como cierre referenciado; nunca sobrescribir artefactos previos.
+- La regresión se aplica al protocolo documental externo; no se añadió código porque el framework no ejecuta ni administra estas sesiones programadas.
+
 ## Corrección tras revisión 3 — 2026-09-10
 
 - Rechazar payloads anidados no objeto de evidencia/tareas genéricas antes de persistir COMPLETE, consistente con el consumidor; comprobar ausencia de cierre y recuperación por registros corregidos o PARTIAL.
