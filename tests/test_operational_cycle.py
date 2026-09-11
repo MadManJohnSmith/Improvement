@@ -72,6 +72,9 @@ class OperationalCycleTest(unittest.TestCase):
                 invalid.pop(field)
                 with self.subTest(field=field), self.assertRaises((ValueError, KeyError)):
                     verify(invalid)
+                with self.subTest(reaudit_field=field), self.assertRaises((ValueError, KeyError)):
+                    m.reaudit(task_path, result_path, root / 'invalid-reaudit.json')
+                self.assertFalse((root / 'invalid-reaudit.json').exists())
             with self.assertRaises(ValueError):
                 verify(dict(result, check_ref=str(root / 'red/check.json')))
             (candidate / 'queue.py').write_text('def size(items): return 99\n')

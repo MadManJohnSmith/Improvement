@@ -82,14 +82,25 @@ class TwoModeCycleTest(unittest.TestCase):
 
             publisher = Publisher(root / 'receipts')
             opened = publisher.open_batch('owner', 'auth', 'synthetic repair', 'trial-batch')
-            evidence = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'evidence', {'finding': 'verified'}, 'evidence')
+            evidence = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'evidence', {'task_ref': str(repair_task), 'task_sha256': missions.digest(repair_task.read_bytes()),
+                'result_ref': str(result), 'result_sha256': missions.digest(result.read_bytes())}, 'evidence')
             task = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'task', {'evidence_id': evidence['record_id']}, 'task')
-            publisher.close_batch('owner', 'auth', 'trial-batch', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
-            publisher.report_stage('owner', 'auth', 'trial-batch', 'executor', 'CANDIDATE', 'candidate green', 'executor-actor')
-            publisher.report_stage('owner', 'auth', 'trial-batch', 'qa', 'VERIFIED', 'fixture QA only', 'qa-actor')
-            publisher.report_stage('owner', 'auth', 'trial-batch', 'auditor', 'ACCEPTED', 'mechanical acceptance only', 'auditor-actor')
-            handoff = publisher.handoff(opened['record_id'])
-            self.assertEqual(publisher.resolve_handoff(handoff)['payload']['status'], 'OPEN')
+            closed = publisher.close_batch('owner', 'auth', 'trial-batch', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
+            publisher.report_stage('owner', 'auth', 'trial-batch', 'executor', 'CANDIDATE', evidence['record_id'], 'executor-actor')
+            with self.assertRaises(ValueError):
+                publisher.report_stage('owner', 'auth', 'trial-batch', 'qa', 'VERIFIED', evidence['record_id'], 'executor-actor')
+            publisher.report_stage('owner', 'auth', 'trial-batch', 'qa', 'VERIFIED', evidence['record_id'], 'qa-actor')
+            with self.assertRaises(ValueError):
+                publisher.report_stage('owner', 'auth', 'trial-batch', 'auditor', 'ACCEPTED', evidence['record_id'], 'executor-actor')
+            for artifact in (findings, qa, root / 'repair-green/check.json', root / 'repair-green/stdout.txt', candidate / 'value.py', result):
+                original = artifact.read_bytes()
+                artifact.unlink()
+                with self.subTest(artifact=artifact.name), self.assertRaises(ValueError):
+                    publisher.report_stage('owner', 'auth', 'trial-batch', 'auditor', 'ACCEPTED', evidence['record_id'], 'auditor-actor')
+                artifact.write_bytes(original)
+            publisher.report_stage('owner', 'auth', 'trial-batch', 'auditor', 'ACCEPTED', evidence['record_id'], 'auditor-actor')
+            handoff = publisher.handoff(closed['record_id'])
+            self.assertEqual(publisher.resolve_handoff(handoff)['payload']['status'], 'COMPLETE')
             self.assertEqual((product / 'value.py').read_bytes(), product_before)
 
 

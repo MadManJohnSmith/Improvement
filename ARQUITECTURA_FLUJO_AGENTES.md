@@ -154,6 +154,8 @@ El ID es opaco y realmente emitido. No imponer convenciones ficticias como `rece
 
 Distinguir visibilidad atómica, no sobrescritura, persistencia tras proceso, crash y pérdida de energía. Un rename o un reinicio normal no prueba todas esas propiedades. Multiarchivo necesita mecanismo propio; edición manual no aporta atomicidad por sí misma.
 
+El publicador local entrega únicamente cierres `COMPLETE`; rechaza `OPEN` y escrituras de lote tras cierre. Las etapas positivas reciben como `evidence` el ID de evidencia incluida y enlazada por una tarea del lote: su payload contiene `task_ref`, `task_sha256`, `result_ref` y `result_sha256`. Revalida recibos, hashes y `missions.verify` en cada transición; executor/QA/auditor comparten esa referencia y declaran actores distintos. `CANDIDATE` significa aquí una misión ya aceptada documentalmente, no un candidato previo a QA. `reaudit` reutiliza todos los prerrequisitos de `verify`. Esto no autentica actores ni revisión semántica; almacén local confiable, sin garantía de concurrencia hostil.
+
 ## 9. Aceptación sin bucles
 
 - Fijar alcance y criterios antes de implementar. Un cambio material versiona el contrato con autorización pertinente.

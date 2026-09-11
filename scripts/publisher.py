@@ -5,7 +5,11 @@ import json
 import os
 import re
 import secrets
+import tempfile
+
 from pathlib import Path
+
+import missions
 
 from onboard import FRAMEWORK, checked
 
@@ -75,21 +79,22 @@ class Publisher:
             if _digest(existing) != digest:
                 raise ValueError('Conflicto de registro')
             return json.loads(existing)
-        temporary = self.root / ('.' + record_id + '.tmp')
-        try:
-            with temporary.open('xb') as stream:
+        # ponytail: almacén local confiable; concurrencia hostil requiere Host.
+        with tempfile.NamedTemporaryFile(dir=self.root, prefix='.receipt-', delete=False) as stream:
+            temporary = Path(stream.name)
+            try:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.link(temporary, path)
-            temporary.unlink()
-        except FileExistsError:
-            if temporary.exists():
+                try:
+                    os.link(temporary, path)
+                except FileExistsError:
+                    existing = self.resolve(record_id)
+                    if existing != envelope:
+                        raise ValueError('Conflicto de registro')
+                    return existing
+            finally:
                 temporary.unlink()
-            existing = path.read_bytes()
-            if _digest(existing) != digest:
-                raise ValueError('Conflicto de registro')
-            return json.loads(existing)
         return envelope
 
     def _batch_key(self, batch_id, suffix):
@@ -120,7 +125,8 @@ class Publisher:
         if record_type not in ('evidence', 'task'):
             raise ValueError('Tipo de registro inválido')
         opened = self._read_batch(caller, authorization, batch_id)
-        if opened['payload'].get('status') != 'OPEN':
+        close_path = self.root / (self._batch_key(batch_id, 'close') + '.json')
+        if close_path.exists() or close_path.is_symlink():
             raise ValueError('Lote cerrado')
         if len(opened['payload'].get('records', [])) >= MAX_RECORDS:
             raise ValueError('Límite de registros alcanzado')
@@ -207,6 +213,7 @@ class Publisher:
             closed = self.resolve(self._batch_key(batch_id, 'close'))
         except ValueError as error:
             raise ValueError('Requiere entrega completa') from error
+        self.resolve_handoff(self.handoff(closed['record_id']))
         payload = closed['payload']
         if payload.get('type') != 'receipt' or payload.get('status') != 'COMPLETE':
             raise ValueError('Requiere entrega completa')
@@ -221,10 +228,36 @@ class Publisher:
                 raise ValueError('QA requiere actor distinto')
         if stage == 'auditor':
             qa = self._require_stage(batch_id, 'qa')
-            if qa['payload'].get('actor_id') == actor_id:
+            executor = self._require_stage(batch_id, 'executor', 'CANDIDATE')
+            if actor_id in (qa['payload'].get('actor_id'), executor['payload'].get('actor_id')):
                 raise ValueError('Auditor requiere actor distinto')
             if status == 'ACCEPTED' and qa['payload']['status'] != 'VERIFIED':
                 raise ValueError('Aceptación bloqueada por QA')
+        if status in ('CANDIDATE', 'VERIFIED', 'ACCEPTED'):
+            references = {item['record_id'] for item in payload['records']}
+            if evidence not in references:
+                raise ValueError('Etapa requiere evidencia del lote')
+            if not any(self.resolve(item)['payload'].get('type') == 'task' and
+                       self.resolve(item)['payload']['payload'].get('evidence_id') == evidence
+                       for item in references):
+                raise ValueError('Evidencia sin tarea enlazada')
+            artifact = self.resolve(evidence)['payload']
+            if artifact.get('type') != 'evidence':
+                raise ValueError('Referencia no es evidencia')
+            artifact = artifact['payload']
+            try:
+                for name in ('task', 'result'):
+                    if missions.digest(checked(artifact[name + '_ref']).read_bytes()) != artifact.get(name + '_sha256'):
+                        raise ValueError('Artefacto de misión alterado')
+                verdict = missions.verify(artifact['task_ref'], artifact['result_ref'])
+            except (OSError, KeyError, TypeError) as error:
+                raise ValueError('Artefactos de misión ausentes o inválidos') from error
+            if not verdict.startswith('ACCEPTED:'):
+                raise ValueError('Misión no aceptada')
+            if stage != 'executor' and executor['payload']['evidence'] != evidence:
+                raise ValueError('Etapa de otro candidato')
+            if stage == 'auditor' and qa['payload']['evidence'] != evidence:
+                raise ValueError('QA de otro candidato')
         stage_payload = {'type': 'stage', 'batch_id': batch_id, 'stage': stage, 'status': status, 'evidence': evidence, 'actor_id': actor_id}
         if existing is not None:
             if existing['caller'] != caller or existing['authorization'] != authorization or existing['payload'] != stage_payload:
@@ -242,7 +275,7 @@ class Publisher:
         if not isinstance(record_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', record_id):
             raise ValueError('ID inválido')
         receipt = self.resolve(record_id)
-        if receipt.get('payload', {}).get('status') != 'OPEN':
+        if receipt.get('payload', {}).get('type') != 'receipt' or receipt['payload'].get('status') != 'COMPLETE':
             raise ValueError('Recibo no entregable')
         return 'INICIO_LOTE: {"receipt_id":"' + record_id + '"}'
 
@@ -260,14 +293,14 @@ class Publisher:
                 if record.get('content_sha256') != reference.get('sha256'):
                     raise ValueError('Referencia alterada')
             return receipt
-        if payload.get('status') == 'OPEN':
-            return receipt
         raise ValueError('Handoff incompleto')
 
     def resolve(self, record_id):
         if not isinstance(record_id, str) or not record_id or not all(c.isalnum() or c in '_-' for c in record_id):
             raise ValueError('ID inválido')
-        path = self.root / (record_id + '.json')
+        path = checked(self.root / (record_id + '.json'))
+        if not path.is_file():
+            raise ValueError('Recibo ausente o inválido')
         try:
             raw = path.read_bytes()
         except FileNotFoundError as error:

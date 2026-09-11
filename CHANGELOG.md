@@ -1,5 +1,11 @@
 # Cambios
 
+## Integridad del ciclo local — 2026-09-10
+
+- Corregir handoff COMPLETE/OPEN, escrituras poscierre, temporales ajenos y resolución de enlaces.
+- Ligar etapas positivas a evidencia de misión hashada y `verify`; reauditoría comparte sus prerrequisitos. Auditor distinto también del ejecutor.
+- Reforzar ciclo sintético con artefactos reales del fixture y entrega COMPLETE; no acredita QA real ni concurrencia hostil.
+
 ## Preparación de prueba completa — 2026-09-10
 
 - Añadir `docs/trial-readiness.md` como checklist compacto de gates, evidencia, paradas y salida para Auditor/Reparación continua.

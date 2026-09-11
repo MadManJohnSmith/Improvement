@@ -114,19 +114,10 @@ def reaudit(task_path, result_path, report_path):
     if (result.get('version') != 1 or result.get('task_sha256') != digest(task_path.read_bytes())
             or result.get('files') != current or result.get('status') != 'ACCEPTED'):
         raise ValueError('Resultado no aceptado o candidato obsoleto')
-    check_ref = result.get('check_ref')
-    if task['mode'] == 'repair' and not check_ref:
+    if task['mode'] == 'repair' and not result.get('check_ref'):
         raise ValueError('Reaudit de repair requiere check_ref')
-    if check_ref:
-        check = read_json(check_ref)
-        if (check.get('after') != current or check.get('exit_code') != 0
-                or check.get('timed_out') is not False
-                or check.get('argv') not in task.get('commands', [])):
-            raise ValueError('Prueba no corresponde al candidato vigente')
-        for name in ('stdout', 'stderr'):
-            output = checked(Path(check_ref).parent / (name + '.txt')).read_bytes()
-            if digest(output) != check.get(name + '_sha256'):
-                raise ValueError('Salida de prueba ausente o alterada')
+    if not verify(task_path, result_path).startswith('ACCEPTED:'):
+        raise ValueError('Resultado no aceptado')
     receipt = dict(version=1, task_sha256=result['task_sha256'], files=current,
                    result_sha256=digest(checked(result_path).read_bytes()),
                    verdict='PENDING_SEMANTIC_REVIEW',

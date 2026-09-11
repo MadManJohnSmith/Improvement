@@ -19,9 +19,10 @@ class PublisherTest(unittest.TestCase):
             self.assertTrue(value['record_id'].startswith('r_'))
             self.assertEqual(publisher.resolve(value['record_id']), value)
             self.assertEqual(publisher.publish('agent-1', 'task-1', {'status': 'OPEN'}, value['record_id']), value)
-            handoff = publisher.handoff(value['record_id'])
-            self.assertEqual(handoff, 'INICIO_LOTE: {"receipt_id":"' + value['record_id'] + '"}')
-            self.assertEqual(publisher.resolve_handoff(handoff), value)
+            with self.assertRaises(ValueError):
+                publisher.handoff(value['record_id'])
+            with self.assertRaises(ValueError):
+                publisher.resolve_handoff('INICIO_LOTE: {"receipt_id":"' + value['record_id'] + '"}')
             with self.assertRaises(ValueError):
                 publisher.resolve_handoff('INICIO_LOTE: {"receipt_id":"missing"}')
             with self.assertRaises(ValueError):
@@ -92,27 +93,25 @@ class PublisherTest(unittest.TestCase):
                 batch_publisher.report_stage('wrong-caller', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor', 'qa-actor')
             with self.assertRaises(ValueError):
                 batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor', 'qa-actor')
-            executor = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready', 'executor-actor')
             with self.assertRaises(ValueError):
-                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'same actor', 'executor-actor')
-            qa_pending = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'independent QA unavailable', 'qa-actor')
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready', 'executor-actor')
+            self.assertEqual(batch_publisher.resolve_handoff(batch_publisher.handoff(closed['record_id'])), closed)
+            for kind in ('evidence', 'task'):
+                with self.assertRaises(ValueError):
+                    batch_publisher.publish_batch_record('agent-1', 'task-1', 'batch-1', kind, {}, 'late')
+            foreign = batch_publisher.root / '.collision.tmp'
+            foreign.write_text('owned by someone else')
+            batch_publisher.publish('agent-1', 'task-1', {}, 'collision')
+            self.assertEqual(foreign.read_text(), 'owned by someone else')
+            link = batch_publisher.root / 'linked.json'
+            link.symlink_to(batch_publisher.root / (closed['record_id'] + '.json'))
             with self.assertRaises(ValueError):
-                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'ACCEPTED', 'approve', 'qa-actor')
-            retained = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'RETAINED', 'QA pending', 'auditor-actor')
-            self.assertEqual(retained['payload']['status'], 'RETAINED')
-            verified_publisher = Publisher(Path(tmp) / 'verified-receipts')
-            verified_publisher.open_batch('agent-1', 'task-1', 'Verified', 'batch-verified')
-            ve = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'evidence', {'finding': 'ok'}, 'evidence-1')
-            vt = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'task', {'evidence_id': ve['record_id']}, 'task-1')
-            verified_publisher.close_batch('agent-1', 'task-1', 'batch-verified', 'COMPLETE', [ve['record_id'], vt['record_id']], [])
-            verified_publisher.bind_role('executor-caller', 'executor')
-            verified_publisher.bind_role('qa-caller', 'qa')
-            verified_publisher.bind_role('auditor-caller', 'auditor')
-            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'executor', 'CANDIDATE', 'ready', 'executor-actor')
-            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'qa', 'VERIFIED', 'checked', 'qa-actor')
-            accepted = verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'auditor', 'ACCEPTED', 'accepted within scope', 'auditor-actor')
-
-            self.assertEqual(accepted['payload']['status'], 'ACCEPTED')
+                batch_publisher.resolve('linked')
+            (batch_publisher.root / (evidence['record_id'] + '.json')).unlink()
+            with self.assertRaises(ValueError):
+                batch_publisher.resolve_handoff(batch_publisher.handoff(closed['record_id']))
+            with self.assertRaises(ValueError):
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', evidence['record_id'], 'executor-actor')
 
             oversized = root / 'oversized.json'
             oversized.write_bytes(b'x' * (MAX_RECEIPT + 1))
