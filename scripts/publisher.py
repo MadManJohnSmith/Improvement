@@ -2,12 +2,14 @@
 """Publicación local acotada de recibos; no es un publicador Host ni sandbox."""
 import hashlib
 import json
+import os
 import secrets
 from pathlib import Path
 
 from onboard import FRAMEWORK, checked
 
 MAX_PAYLOAD = 8192
+MAX_RECEIPT = 16384
 MAX_RECORDS = 16
 
 
@@ -59,6 +61,10 @@ class Publisher:
         raw = json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2).encode() + b'\n'
         path = self.root / (record_id + '.json')
         digest = _digest(raw)
+        if len(raw) > MAX_RECEIPT:
+            raise ValueError('Recibo demasiado grande')
+        if not path.exists() and len(tuple(self.root.glob('*.json'))) >= MAX_RECORDS:
+            raise ValueError('Límite de registros alcanzado')
         if path.exists():
             if not path.is_file() or path.is_symlink():
                 raise ValueError('Registro inválido')
@@ -66,10 +72,17 @@ class Publisher:
             if _digest(existing) != digest:
                 raise ValueError('Conflicto de registro')
             return json.loads(existing)
+        temporary = self.root / ('.' + record_id + '.tmp')
         try:
-            with path.open('xb') as stream:
+            with temporary.open('xb') as stream:
                 stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(temporary, path)
+            temporary.unlink()
         except FileExistsError:
+            if temporary.exists():
+                temporary.unlink()
             existing = path.read_bytes()
             if _digest(existing) != digest:
                 raise ValueError('Conflicto de registro')
@@ -81,6 +94,8 @@ class Publisher:
             raise ValueError('ID inválido')
         path = self.root / (record_id + '.json')
         raw = path.read_bytes()
+        if len(raw) > MAX_RECEIPT:
+            raise ValueError('Recibo demasiado grande')
         value = json.loads(raw)
         if value.get('version') != 1 or value.get('record_id') != record_id:
             raise ValueError('Recibo inválido')

@@ -1,5 +1,10 @@
 # Cambios
 
+## Robustez del publicador local — 2026-09-10
+
+- Añadir límites de recibo y cantidad de registros, escritura mediante temporal exclusivo y enlace sin sobrescritura, y validación reforzada al resolver.
+- Mantener etapa 2 como `PARCIAL`: no se afirma durabilidad ante crash/pérdida de energía ni publicación Host.
+
 ## Primitive local de publicación — 2026-09-10
 
 - Añadir `scripts/publisher.py` y su regresión para publicación/resolución externa, IDs opacos, identidad/autorización suministradas, límites, idempotencia, conflictos y detección de corrupción.

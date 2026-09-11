@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from publisher import Publisher
+from publisher import MAX_RECEIPT, Publisher
 
 
 class PublisherTest(unittest.TestCase):
@@ -38,6 +38,16 @@ class PublisherTest(unittest.TestCase):
             path.write_text(json.dumps({'version': 1, 'record_id': value['record_id']}))
             with self.assertRaises(ValueError):
                 publisher.resolve(value['record_id'])
+
+            for index in range(1, 16):
+                publisher.publish('agent-1', 'task-1', {'index': index}, 'record-' + str(index))
+            with self.assertRaises(ValueError):
+                publisher.publish('agent-1', 'task-1', {'index': 16}, 'record-16')
+
+            oversized = root / 'oversized.json'
+            oversized.write_bytes(b'x' * (MAX_RECEIPT + 1))
+            with self.assertRaises(ValueError):
+                Publisher(root).resolve('oversized')
 
 
 if __name__ == '__main__':
