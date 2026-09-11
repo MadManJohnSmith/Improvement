@@ -179,6 +179,48 @@ class Publisher:
         closed = self.publish(caller, authorization, payload, close_id)
         return closed
 
+    def report_stage(self, caller, authorization, batch_id, stage, status, evidence):
+        if stage not in ('executor', 'qa', 'auditor'):
+            raise ValueError('Etapa inválida')
+        allowed = {
+            'executor': {'CANDIDATE', 'FAILED'},
+            'qa': {'VERIFIED', 'UNVERIFIED', 'REJECTED'},
+            'auditor': {'ACCEPTED', 'RETAINED'},
+        }
+        if status not in allowed[stage] or not isinstance(evidence, str) or not evidence.strip() or len(evidence) > MAX_TEXT:
+            raise ValueError('Estado o evidencia inválidos')
+        self._read_batch(caller, authorization, batch_id)
+        try:
+            closed = self.resolve(self._batch_key(batch_id, 'close'))
+        except ValueError as error:
+            raise ValueError('Requiere entrega completa') from error
+        payload = closed['payload']
+        if payload.get('type') != 'receipt' or payload.get('status') != 'COMPLETE':
+            raise ValueError('Requiere entrega completa')
+        existing_key = self._batch_key(batch_id, stage)
+        try:
+            existing = self.resolve(existing_key)
+        except ValueError:
+            existing = None
+        if stage == 'qa':
+            self._require_stage(batch_id, 'executor', 'CANDIDATE')
+        if stage == 'auditor':
+            qa = self._require_stage(batch_id, 'qa')
+            if status == 'ACCEPTED' and qa['payload']['status'] != 'VERIFIED':
+                raise ValueError('Aceptación bloqueada por QA')
+        stage_payload = {'type': 'stage', 'batch_id': batch_id, 'stage': stage, 'status': status, 'evidence': evidence}
+        if existing is not None:
+            if existing['caller'] != caller or existing['authorization'] != authorization or existing['payload'] != stage_payload:
+                raise ValueError('Conflicto de estado')
+            return existing
+        return self.publish(caller, authorization, stage_payload, existing_key)
+
+    def _require_stage(self, batch_id, stage, status=None):
+        receipt = self.resolve(self._batch_key(batch_id, stage))
+        if receipt['payload'].get('type') != 'stage' or (status and receipt['payload'].get('status') != status):
+            raise ValueError('Transición de etapa inválida')
+        return receipt
+
     def handoff(self, record_id):
         if not isinstance(record_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', record_id):
             raise ValueError('ID inválido')

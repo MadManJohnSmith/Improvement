@@ -78,6 +78,23 @@ class PublisherTest(unittest.TestCase):
             self.assertEqual(partial['payload']['status'], 'PARTIAL')
             with self.assertRaises(ValueError):
                 batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'COMPLETE', [], [])
+            with self.assertRaises(ValueError):
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor')
+            executor = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready')
+            qa_pending = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'independent QA unavailable')
+            with self.assertRaises(ValueError):
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'ACCEPTED', 'approve')
+            retained = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'RETAINED', 'QA pending')
+            self.assertEqual(retained['payload']['status'], 'RETAINED')
+            verified_publisher = Publisher(Path(tmp) / 'verified-receipts')
+            verified_publisher.open_batch('agent-1', 'task-1', 'Verified', 'batch-verified')
+            ve = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'evidence', {'finding': 'ok'}, 'evidence-1')
+            vt = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'task', {'evidence_id': ve['record_id']}, 'task-1')
+            verified_publisher.close_batch('agent-1', 'task-1', 'batch-verified', 'COMPLETE', [ve['record_id'], vt['record_id']], [])
+            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'executor', 'CANDIDATE', 'ready')
+            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'qa', 'VERIFIED', 'checked')
+            accepted = verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'auditor', 'ACCEPTED', 'accepted within scope')
+            self.assertEqual(accepted['payload']['status'], 'ACCEPTED')
 
             oversized = root / 'oversized.json'
             oversized.write_bytes(b'x' * (MAX_RECEIPT + 1))

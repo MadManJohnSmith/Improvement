@@ -1,5 +1,11 @@
 # Cambios
 
+## Estados locales de ciclo — 2026-09-10
+
+- Añadir estados mecánicos `executor`, `qa` y `auditor` a lotes completos.
+- Requerir candidato antes de QA y QA `VERIFIED` antes de `ACCEPTED`; conservar `RETAINED` cuando QA queda `UNVERIFIED`.
+- Mantener la etapa 4 como `PARCIAL`: los estados no acreditan independencia real, autorización Host ni continuidad autónoma.
+
 ## Integridad e inmutabilidad de cierres — 2026-09-10
 
 - Hacer idempotente el cierre de lote y rechazar conflictos de cierre.
