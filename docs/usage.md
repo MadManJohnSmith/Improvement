@@ -1,6 +1,6 @@
 # Uso operativo v0.1
 
-Dos entradas conductuales en **DSH Standard**, una unidad por encargo. Son la operación v0.1 acotada, no el destino completo del plan: no son presets, publicador Host, controles Host, recuperación ni autonomía probada. El framework se mantiene aparte; ninguna misión operativa puede editarlo. No se toca producto vivo durante este piloto. El progreso por etapas se consulta en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md).
+Dos entradas conductuales en **DSH Standard**, una unidad por encargo. Son la operación v0.1 acotada, no el destino completo del plan: no son presets, publicador Host, controles Host, recuperación ni autonomía probada. El framework se mantiene aparte; ninguna misión operativa puede editarlo. No se toca producto vivo durante este piloto. El progreso por etapas se consulta en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md). El checklist previo a una prueba completa está en [docs/trial-readiness.md](trial-readiness.md); la regresión sintética combinada es `tests/test_two_mode_cycle.py` y no sustituye un piloto real.
 
 ## Arranque y permisos
 

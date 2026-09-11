@@ -61,6 +61,12 @@ class OperationalCycleTest(unittest.TestCase):
             reaudit = m.reaudit(task_path, result_path, root / 'reaudit.json')
             self.assertEqual(reaudit['verdict'], 'PENDING_SEMANTIC_REVIEW')
             self.assertEqual(reaudit['files'], green['files'])
+            missing_check_result = dict(result)
+            missing_check_result.pop('check_ref')
+            result_path.write_text(json.dumps(missing_check_result))
+            with self.assertRaises(ValueError):
+                m.reaudit(task_path, result_path, root / 'reaudit-missing-check.json')
+            result_path.write_text(json.dumps(result))
             for field in ('qa_ref', 'check_ref', 'findings_ref'):
                 invalid = dict(result)
                 invalid.pop(field)

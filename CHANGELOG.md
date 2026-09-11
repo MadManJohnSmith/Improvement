@@ -1,5 +1,12 @@
 # Cambios
 
+## Preparación de prueba completa — 2026-09-10
+
+- Añadir `docs/trial-readiness.md` como checklist compacto de gates, evidencia, paradas y salida para Auditor/Reparación continua.
+- Añadir `tests/test_two_mode_cycle.py` con onboarding externo, auditoría, reparación roja→verde, QA fixture, reauditoría mecánica, entrega y handoff, sin modificar producto.
+- Reforzar `missions.py reaudit` para exigir check íntegro y hashes de salida en reparaciones aceptadas.
+- Mantener los límites: QA fixture no es QA independiente real; no se acredita Host, sandbox, recuperación, IPC Tauri, integración ni autonomía.
+
 ## Mapa técnico de roles — 2026-09-10
 
 - Añadir `bind_role()` para declarar bindings locales `executor`/`qa`/`auditor` y rechazar reasignaciones incompatibles.
