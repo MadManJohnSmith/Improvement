@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -137,6 +138,34 @@ class OperationalCycleTest(unittest.TestCase):
             result_path = root / 'result.json'
             m.save(result_path, result)
             self.assertTrue(m.verify(path, result_path).startswith('ACCEPTED'))
+            self.assertEqual(m.reaudit(path, result_path, root / 'audit.json')['verdict'], 'PENDING_SEMANTIC_REVIEW')
+            for ref in (root / 'missing/check.json', root / 'timeout/check.json'):
+                result_path.write_text(json.dumps(dict(result, check_ref=str(ref))))
+                with self.subTest(ref=ref), self.assertRaises((ValueError, OSError)):
+                    m.reaudit(path, result_path, root / 'rejected.json')
+                self.assertFalse((root / 'rejected.json').exists())
+            (candidate / 'test.py').write_text('print("ok")\n')
+            m.run_check(path, root / 'valid', argv, 1)
+            result.update(files=m.snapshot(candidate, task['files']), check_ref=str(root / 'valid/check.json'))
+            result_path.write_text(json.dumps(result))
+            self.assertEqual(m.reaudit(path, result_path, root / 'valid-audit.json')['verdict'], 'PENDING_SEMANTIC_REVIEW')
+            (root / 'valid/stdout.txt').write_text('corrupted')
+            with self.assertRaises(ValueError):
+                m.reaudit(path, result_path, root / 'rejected.json')
+
+    def test_json_shapes_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'task.json'
+            for value in ([], None, 'text', 1):
+                path.write_text(json.dumps(value))
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    m.read_json(path)
+                process = subprocess.run([shutil.which('python3'), '-B', str(Path(m.__file__)),
+                                          'verify', '--task', str(path), '--result', str(path)],
+                                         capture_output=True, text=True)
+                self.assertEqual(process.returncode, 1)
+                self.assertIn('RETAINED:', process.stderr)
+                self.assertNotIn('Traceback', process.stderr)
 
 
 if __name__ == '__main__':

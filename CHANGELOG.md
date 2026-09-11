@@ -1,5 +1,23 @@
 # Cambios
 
+## Corrección tras revisión 3 — 2026-09-10
+
+- Rechazar payloads anidados no objeto de evidencia/tareas genéricas antes de persistir COMPLETE, consistente con el consumidor; comprobar ausencia de cierre y recuperación por registros corregidos o PARTIAL.
+- Tres revisiones independientes realizadas: 5 / 3 / 1 hallazgos encontrados y corregidos, además de las seis correcciones originales. Esta corrección no constituye una cuarta revisión.
+- Suite final: 17 tests Python y regresión Node nativa aprobados, sin instalación ni modelos. Reproducciones 2/3 originales se detienen en rechazos corregidos; no se declara QA real ni autonomía de producto.
+
+## Correcciones de revisión 2 — 2026-09-10
+
+- Impedir colisiones de ciclo entre lotes solapados reservando el componente final de los IDs ordinarios.
+- Mantener cuota de 16 con reservas de cierre y etapas reconstruidas en toda publicación; PARTIAL libera etapas, COMPLETE las conserva. Documentar política conservadora.
+- Validar IDs y enlaces anidados antes de conjuntos/mapas; regresiones dirigidas y ciclo positivo al límite de cuota. 16 tests Python aprobados; sin QA semántica ni garantías Host nuevas.
+
+## Correcciones de revisión 1 — 2026-09-10
+
+- Validar check opcional de audit y rechazar JSON no objeto sin traceback de AttributeError.
+- Reservar sufijos de ciclo, limitar lotes a 53 caracteres y validar el esquema COMPLETE al consumir handoff.
+- Añadir regresiones dirigidas; 13 tests Python aprobados. Autopruebas de corrección, no revisión independiente 2.
+
 ## Integridad del ciclo local — 2026-09-10
 
 - Corregir handoff COMPLETE/OPEN, escrituras poscierre, temporales ajenos y resolución de enlaces.

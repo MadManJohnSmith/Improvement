@@ -20,7 +20,10 @@ def read_json(path):
     path = checked(path)
     if not path.is_file() or path.stat().st_size > 1024 * 1024:
         raise ValueError('JSON ausente o demasiado grande')
-    return json.loads(path.read_text())
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict):
+        raise ValueError('Se requiere objeto JSON')
+    return value
 
 
 def external(path):
@@ -150,6 +153,7 @@ def verify(task_path, result_path):
                         if current[name] != base[name] and name not in task['change_scope']]
         if unauthorized:
             raise ValueError('Cambio fuera de change_scope: ' + ', '.join(unauthorized))
+    if task['mode'] == 'repair' or 'check_ref' in result:
         check_path = checked(result['check_ref'])
         check = read_json(check_path)
         if (check.get('task_sha256') != result['task_sha256'] or check.get('root') != task['root']
@@ -161,6 +165,7 @@ def verify(task_path, result_path):
             data = checked(check_path.parent / (name + '.txt')).read_bytes()
             if digest(data) != check.get(name + '_sha256'):
                 raise ValueError('Salida ausente o alterada')
+    if task['mode'] == 'repair':
         qa_path = checked(result['qa_ref'])
         if digest(qa_path.read_bytes()) != result.get('qa_sha256'):
             raise ValueError('QA alterada')

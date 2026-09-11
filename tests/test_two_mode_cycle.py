@@ -86,6 +86,11 @@ class TwoModeCycleTest(unittest.TestCase):
                 'result_ref': str(result), 'result_sha256': missions.digest(result.read_bytes())}, 'evidence')
             task = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'task', {'evidence_id': evidence['record_id']}, 'task')
             closed = publisher.close_batch('owner', 'auth', 'trial-batch', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
+            for index in range(9):
+                publisher.publish('owner', 'auth', {}, 'generic-' + str(index))
+            with self.assertRaises(ValueError):
+                publisher.publish('owner', 'auth', {}, 'overflow')
+            publisher = Publisher(root / 'receipts')
             publisher.report_stage('owner', 'auth', 'trial-batch', 'executor', 'CANDIDATE', evidence['record_id'], 'executor-actor')
             with self.assertRaises(ValueError):
                 publisher.report_stage('owner', 'auth', 'trial-batch', 'qa', 'VERIFIED', evidence['record_id'], 'executor-actor')
