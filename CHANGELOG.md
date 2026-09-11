@@ -1,5 +1,10 @@
 # Cambios
 
+## Identidad declarada por etapa — 2026-09-10
+
+- Añadir `actor_id` a los estados executor/QA/auditor y rechazar el mismo actor para QA y auditor respecto de la etapa anterior.
+- Mantener la diferenciación como control mecánico declarado, no como prueba de independencia estadística o autenticidad fuerte.
+
 ## Estados locales de ciclo — 2026-09-10
 
 - Añadir estados mecánicos `executor`, `qa` y `auditor` a lotes completos.

@@ -179,7 +179,7 @@ class Publisher:
         closed = self.publish(caller, authorization, payload, close_id)
         return closed
 
-    def report_stage(self, caller, authorization, batch_id, stage, status, evidence):
+    def report_stage(self, caller, authorization, batch_id, stage, status, evidence, actor_id):
         if stage not in ('executor', 'qa', 'auditor'):
             raise ValueError('Etapa inválida')
         allowed = {
@@ -189,6 +189,8 @@ class Publisher:
         }
         if status not in allowed[stage] or not isinstance(evidence, str) or not evidence.strip() or len(evidence) > MAX_TEXT:
             raise ValueError('Estado o evidencia inválidos')
+        if not isinstance(actor_id, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', actor_id):
+            raise ValueError('Actor inválido')
         self._read_batch(caller, authorization, batch_id)
         try:
             closed = self.resolve(self._batch_key(batch_id, 'close'))
@@ -203,12 +205,16 @@ class Publisher:
         except ValueError:
             existing = None
         if stage == 'qa':
-            self._require_stage(batch_id, 'executor', 'CANDIDATE')
+            executor = self._require_stage(batch_id, 'executor', 'CANDIDATE')
+            if executor['payload'].get('actor_id') == actor_id:
+                raise ValueError('QA requiere actor distinto')
         if stage == 'auditor':
             qa = self._require_stage(batch_id, 'qa')
+            if qa['payload'].get('actor_id') == actor_id:
+                raise ValueError('Auditor requiere actor distinto')
             if status == 'ACCEPTED' and qa['payload']['status'] != 'VERIFIED':
                 raise ValueError('Aceptación bloqueada por QA')
-        stage_payload = {'type': 'stage', 'batch_id': batch_id, 'stage': stage, 'status': status, 'evidence': evidence}
+        stage_payload = {'type': 'stage', 'batch_id': batch_id, 'stage': stage, 'status': status, 'evidence': evidence, 'actor_id': actor_id}
         if existing is not None:
             if existing['caller'] != caller or existing['authorization'] != authorization or existing['payload'] != stage_payload:
                 raise ValueError('Conflicto de estado')

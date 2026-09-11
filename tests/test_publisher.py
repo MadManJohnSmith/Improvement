@@ -79,21 +79,24 @@ class PublisherTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'COMPLETE', [], [])
             with self.assertRaises(ValueError):
-                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor')
-            executor = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready')
-            qa_pending = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'independent QA unavailable')
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor', 'qa-actor')
+            executor = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready', 'executor-actor')
             with self.assertRaises(ValueError):
-                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'ACCEPTED', 'approve')
-            retained = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'RETAINED', 'QA pending')
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'same actor', 'executor-actor')
+            qa_pending = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'UNVERIFIED', 'independent QA unavailable', 'qa-actor')
+            with self.assertRaises(ValueError):
+                batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'ACCEPTED', 'approve', 'qa-actor')
+            retained = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'auditor', 'RETAINED', 'QA pending', 'auditor-actor')
             self.assertEqual(retained['payload']['status'], 'RETAINED')
             verified_publisher = Publisher(Path(tmp) / 'verified-receipts')
             verified_publisher.open_batch('agent-1', 'task-1', 'Verified', 'batch-verified')
             ve = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'evidence', {'finding': 'ok'}, 'evidence-1')
             vt = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'task', {'evidence_id': ve['record_id']}, 'task-1')
             verified_publisher.close_batch('agent-1', 'task-1', 'batch-verified', 'COMPLETE', [ve['record_id'], vt['record_id']], [])
-            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'executor', 'CANDIDATE', 'ready')
-            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'qa', 'VERIFIED', 'checked')
-            accepted = verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'auditor', 'ACCEPTED', 'accepted within scope')
+            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'executor', 'CANDIDATE', 'ready', 'executor-actor')
+            verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'qa', 'VERIFIED', 'checked', 'qa-actor')
+            accepted = verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'auditor', 'ACCEPTED', 'accepted within scope', 'auditor-actor')
+
             self.assertEqual(accepted['payload']['status'], 'ACCEPTED')
 
             oversized = root / 'oversized.json'
