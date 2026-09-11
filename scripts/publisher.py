@@ -42,6 +42,7 @@ class Publisher:
     def __init__(self, root):
         self.root = _external(root)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self._roles = {}
         if not self.root.is_dir() or self.root.is_symlink():
             raise ValueError('Destino inválido')
 
@@ -179,9 +180,19 @@ class Publisher:
         closed = self.publish(caller, authorization, payload, close_id)
         return closed
 
+    def bind_role(self, caller, role):
+        if not isinstance(caller, str) or not caller or role not in ('executor', 'qa', 'auditor'):
+            raise ValueError('Binding inválido')
+        current = self._roles.get(caller)
+        if current is not None and current != role:
+            raise ValueError('Caller ya ligado a otro rol')
+        self._roles[caller] = role
+        return {'caller': caller, 'role': role}
+
     def report_stage(self, caller, authorization, batch_id, stage, status, evidence, actor_id):
         if stage not in ('executor', 'qa', 'auditor'):
             raise ValueError('Etapa inválida')
+        # Role bindings are advisory until Host ownership can authorize multiple callers per batch.
         allowed = {
             'executor': {'CANDIDATE', 'FAILED'},
             'qa': {'VERIFIED', 'UNVERIFIED', 'REJECTED'},

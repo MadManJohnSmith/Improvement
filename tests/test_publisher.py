@@ -78,6 +78,18 @@ class PublisherTest(unittest.TestCase):
             self.assertEqual(partial['payload']['status'], 'PARTIAL')
             with self.assertRaises(ValueError):
                 batch_publisher.close_batch('agent-1', 'task-1', 'batch-2', 'COMPLETE', [], [])
+            role_publisher = Publisher(Path(tmp) / 'role-receipts')
+            role_publisher.bind_role('executor-caller', 'executor')
+            role_publisher.bind_role('qa-caller', 'qa')
+            role_publisher.bind_role('auditor-caller', 'auditor')
+            self.assertEqual(role_publisher.bind_role('executor-caller', 'executor')['role'], 'executor')
+            with self.assertRaises(ValueError):
+                role_publisher.bind_role('executor-caller', 'qa')
+            role_publisher.open_batch('executor-caller', 'task-1', 'Role test', 'role-batch')
+            with self.assertRaises(ValueError):
+                role_publisher.report_stage('qa-caller', 'task-1', 'role-batch', 'executor', 'CANDIDATE', 'wrong role', 'executor-actor')
+            with self.assertRaises(ValueError):
+                batch_publisher.report_stage('wrong-caller', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor', 'qa-actor')
             with self.assertRaises(ValueError):
                 batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'qa', 'VERIFIED', 'without executor', 'qa-actor')
             executor = batch_publisher.report_stage('agent-1', 'task-1', 'batch-1', 'executor', 'CANDIDATE', 'candidate ready', 'executor-actor')
@@ -93,6 +105,9 @@ class PublisherTest(unittest.TestCase):
             ve = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'evidence', {'finding': 'ok'}, 'evidence-1')
             vt = verified_publisher.publish_batch_record('agent-1', 'task-1', 'batch-verified', 'task', {'evidence_id': ve['record_id']}, 'task-1')
             verified_publisher.close_batch('agent-1', 'task-1', 'batch-verified', 'COMPLETE', [ve['record_id'], vt['record_id']], [])
+            verified_publisher.bind_role('executor-caller', 'executor')
+            verified_publisher.bind_role('qa-caller', 'qa')
+            verified_publisher.bind_role('auditor-caller', 'auditor')
             verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'executor', 'CANDIDATE', 'ready', 'executor-actor')
             verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'qa', 'VERIFIED', 'checked', 'qa-actor')
             accepted = verified_publisher.report_stage('agent-1', 'task-1', 'batch-verified', 'auditor', 'ACCEPTED', 'accepted within scope', 'auditor-actor')

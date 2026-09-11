@@ -1,5 +1,10 @@
 # Cambios
 
+## Mapa técnico de roles — 2026-09-10
+
+- Añadir `bind_role()` para declarar bindings locales `executor`/`qa`/`auditor` y rechazar reasignaciones incompatibles.
+- Mantener el binding como control declarativo aislado: la propiedad de lote sigue siendo de un caller local y la autenticidad/autoridad Host multi-actor permanece pendiente.
+
 ## Identidad declarada por etapa — 2026-09-10
 
 - Añadir `actor_id` a los estados executor/QA/auditor y rechazar el mismo actor para QA y auditor respecto de la etapa anterior.
