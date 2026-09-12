@@ -39,7 +39,7 @@ El paquete instalado DSH 0.1.5-rc.1 fue inspeccionado y sus servicios nativos ej
 ## Evidencia externa reciente
 
 - Syncify `syncify-audit-001`: 8 unidades, base `9c9711e`, 73 reparaciones con recibos `ACCEPTED` y 15 hallazgos retenidos por decisión.
-- RehabWeb `rehabweb-audit-001`: auditoría completa propia sobre base `5e638f0`, 6 unidades y 381 archivos asignados sin solapamiento; cola externa creada. La primera reparación fue despachada y aún no tiene recibo final. Productos originales permanecen limpios.
+- RehabWeb `rehabweb-audit-001`: auditoría completa propia sobre base `5e638f0`, 6 unidades y 381 archivos asignados sin solapamiento; cola externa de 52 hallazgos creada. La primera pasada de reparación solo produjo propuestas/estados unitarios (`DONE`, `ACCEPTED`, `COMPLETED`) sin candidato, green y QA independiente uniformes; por contrato no se marca ningún hallazgo como reparado. Productos originales permanecen limpios.
 - El launcher operativo externo fue corregido para derivar el workspace desde `dshHome` y usar el nombre del proyecto en el prompt; no modifica el runtime DSH ni plugins.
 
 ## Pendiente
