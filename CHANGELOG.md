@@ -1,5 +1,11 @@
 # Cambios
 
+## Hito 1: launcher Host externo — 2026-09-12
+
+- Añadida envolvente Linux/bubblewrap reusable con lecturas explícitas, estado externo nuevo, namespaces privados y fallo cerrado; sin entorno heredado, instalación ni cambios de runtime/modelos.
+- Una regresión permanente con servicios DSH reales y fixtures externos verifica lecturas/escrituras autorizadas, denegaciones aun con policy permisiva, descendientes, secretos/sockets ocultos y rechazo sin fallback. Suite: 23 tests Python y check Node aprobados.
+- Arranque externo de composición web observado con listener privado; HTTP 401 bloquea verificación funcional autenticada. No se declara Host completo validado ni autonomía.
+
 ## Evidencia externa Syncify/RehabWeb — 2026-09-12
 
 - Syncify completó 73 reparaciones externas con recibos `ACCEPTED`; 15 hallazgos permanecen retenidos por decisión humana.
