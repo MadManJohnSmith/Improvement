@@ -36,6 +36,12 @@ El kit previo contiene publicador/resolver Cordis y ensayos deterministas report
 
 El paquete instalado DSH 0.1.5-rc.1 fue inspeccionado y sus servicios nativos ejecutados con Node 26.8.1. Ver setup-dsh.md para alcance y reproducción.
 
+## Evidencia externa reciente
+
+- Syncify `syncify-audit-001`: 8 unidades, base `9c9711e`, 73 reparaciones con recibos `ACCEPTED` y 15 hallazgos retenidos por decisión.
+- RehabWeb `rehabweb-audit-001`: auditoría completa propia sobre base `5e638f0`, 6 unidades y 381 archivos asignados sin solapamiento; cola externa creada. La primera reparación fue despachada y aún no tiene recibo final. Productos originales permanecen limpios.
+- El launcher operativo externo fue corregido para derivar el workspace desde `dshHome` y usar el nombre del proyecto en el prompt; no modifica el runtime DSH ni plugins.
+
 ## Pendiente
 
 El contrato v0.1 queda cerrado como operación acotada, no como autonomía. El framework añade contratos locales para capability externa, partición/consolidación de auditoría, cola CLI y archivo circular compacto; estas funciones validan artefactos, pero no conceden permisos ni sustituyen al Host. El piloto real externo de Syncify quedó `RETAINED`: onboarding e inventario pasaron; Cargo alcanzó el checkout real pero `frontendDist`/proc-macro bloqueó compilación y UI no tenía `node_modules`. Falta cargar el preset neutral mediante Creator/DSH, resolver dependencias con autorización y demostrar subagentes/QA efectivos. Presets dedicados activos, continuación Host, QA automática, límites durables, recuperación y transferencia a segundo proyecto real siguen pendientes hasta evidencia externa. El publicador histórico no se necesita para recibos locales de una unidad. No hubo llamadas de modelos, instalación, cambios globales ni QA independiente en esta reorganización.

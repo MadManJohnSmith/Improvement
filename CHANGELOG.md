@@ -1,5 +1,12 @@
 # Cambios
 
+## Evidencia externa Syncify/RehabWeb — 2026-09-12
+
+- Syncify completó 73 reparaciones externas con recibos `ACCEPTED`; 15 hallazgos permanecen retenidos por decisión humana.
+- RehabWeb completó su propia auditoría `rehabweb-audit-001` sobre 6 unidades y 381 archivos, con cola externa independiente.
+- Corregido el launcher operativo externo para aislar el estado por `dshHome` y parametrizar el nombre del proyecto; no se modificó DSH ni sus plugins.
+- La reparación de RehabWeb queda pendiente de recibo final; ambos productos permanecen sin cambios.
+
 ## Auditoría completa y ciclo circular — 2026-09-11
 
 - Añadidos contratos stdlib para capabilities externas reutilizables y ciclos de auditoría con partición, deduplicación, DAG y archivo compacto.
