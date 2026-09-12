@@ -25,7 +25,9 @@ for (const [name, config] of [
   ['dsh-bash-sandbox', {cwd:'/inputs/product', timeoutMs:5000}],
 ]) await ctx.plugin((await load(name)).default, config);
 assert(ctx.fs && ctx.shell && ctx.subprocess && ctx.sandboxPolicy);
-assert.equal(process.cwd(), '/inputs/product');
+assert.equal(process.cwd(), process.argv[3]);
+assert.equal(existsSync(`${process.cwd()}/../private-credential`), false);
+assert.equal(readFileSync('source.txt', 'utf8'), 'product sentinel\n');
 assert.equal(process.env.INHERITED_SECRET, undefined);
 assert.equal(process.env.SSH_AUTH_SOCK, undefined);
 for (const path of ['/home', '/run', '/etc', '/proc/1/root/home', '/inputs/product/escape']) {
@@ -40,7 +42,7 @@ await ctx.fs.writeText(await ctx.fs.resolve('/state/fs.txt'), 'evidence', undefi
 symlinkSync('/inputs/product', '/state/link');
 const denials = [];
 for (const path of ['/inputs/product/source.txt', '/inputs/product/new.txt',
-  '/state/../inputs/product/source.txt', '/state/link/source.txt', '/inputs/framework']) {
+  '/state/../inputs/product/source.txt', '/state/link/source.txt', '/inputs/framework', `${process.cwd()}/source.txt`]) {
   await assert.rejects(async () => ctx.fs.writeText(await ctx.fs.resolve(path), 'forbidden', undefined, undefined, policy), error => {
     assert(/read-only|EROFS|permission denied|EACCES/i.test(String(error)), String(error));
     denials.push(String(error).slice(0, 180));
@@ -48,7 +50,7 @@ for (const path of ['/inputs/product/source.txt', '/inputs/product/new.txt',
   });
 }
 const run = command => ctx.shell.run(ctx.shell.resolve({command, sandboxPolicy:policy}));
-const success = await run('test "$PWD" = /inputs/product && printf bash-evidence > /state/bash.txt && /bin/sh -c "printf child-evidence"');
+const success = await run(`test "$PWD" = '${process.argv[3]}' && printf bash-evidence > /state/bash.txt && /bin/sh -c "printf child-evidence"`);
 assert.equal(success.exitCode, 0, JSON.stringify(success));
 assert(success.stdout.text.includes('child-evidence'));
 const denied = await run('/bin/sh -c "printf forbidden > /inputs/product/source.txt"');
@@ -82,11 +84,11 @@ class HostLauncherTest(unittest.TestCase):
         check = root / 'check.mjs'
         check.write_text(JS)
         reads = {'node_modules': runtime, 'product': product, 'framework': FRAMEWORK / 'AGENTS.md', 'check': check}
-        options = dict(reads=reads, state_parent=state_parent, cwd='/inputs/product')
+        options = dict(reads=reads, state_parent=state_parent, cwd=product)
         with socket.socket() as server:
             server.bind(('127.0.0.1', 0))
             server.listen()
-            state, code = launch(**options, argv=['/usr/bin/node', '/inputs/check', str(server.getsockname()[1])])
+            state, code = launch(**options, argv=['/usr/bin/node', '/inputs/check', str(server.getsockname()[1]), str(product)])
         self.assertEqual(code, 0, (state / 'stderr.log').read_text()[-3000:])
         self.assertEqual((product / 'source.txt').read_text(), 'product sentinel\n')
         self.assertEqual((state / 'fs.txt').read_text(), 'evidence')

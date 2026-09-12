@@ -49,8 +49,11 @@ def launch(*, reads, state_parent, cwd, argv, timeout=45):
         if any(stat.S_ISSOCK(item.lstat().st_mode) for item in entries):
             raise ValueError("Read input contains a host socket")
         sources[name] = path
-    if cwd not in {f'/inputs/{name}' for name, path in sources.items() if path.is_dir()}:
-        raise ValueError("cwd must be an explicit directory input")
+    cwd = canonical(cwd)
+    if cwd not in sources.values() or not cwd.is_dir():
+        raise ValueError("cwd must be an original explicit directory input")
+    if cwd.parts[1] in {'inputs', 'state', 'usr', 'bin', 'lib', 'lib64', 'proc', 'dev', 'etc', 'run'}:
+        raise ValueError("cwd overlaps a reserved sandbox root")
     state = Path(tempfile.mkdtemp(prefix='host-', dir=parent))
     for name in ('home', 'dsh-home', 'tmp', 'config', 'cache', 'data', 'run'):
         (state / name).mkdir(mode=0o700)
@@ -63,16 +66,18 @@ def launch(*, reads, state_parent, cwd, argv, timeout=45):
         elif path.is_dir():
             command += ['--ro-bind', str(path), str(path)]
     command += ['--proc', '/proc', '--dev', '/dev', '--dir', '/inputs',
-                '--bind', str(state), '/state', '--symlink', '/state/tmp', '/tmp']
+                '--bind', str(state), '/state', '--bind', str(state / 'tmp'), '/tmp']
     for name, path in sources.items():
         command += ['--ro-bind', str(path), f'/inputs/{name}']
+    # Only this input is also mounted at its original path; parents are empty scaffolding.
+    command += ['--ro-bind', str(cwd), str(cwd)]
     env = {'PATH': '/usr/bin:/bin', 'HOME': '/state/home', 'DSH_HOME': '/state/dsh-home',
            'TMPDIR': '/state/tmp', 'XDG_CONFIG_HOME': '/state/config',
            'XDG_CACHE_HOME': '/state/cache', 'XDG_DATA_HOME': '/state/data',
            'XDG_RUNTIME_DIR': '/state/run', 'LANG': 'C.UTF-8'}
     for key, value in env.items():
         command += ['--setenv', key, value]
-    command += ['--remount-ro', '/', '--chdir', cwd, '--', *argv]
+    command += ['--remount-ro', '/', '--chdir', str(cwd), '--', *argv]
     # ponytail: trusted stable input trees, not hostile concurrent mount-source mutation.
     with (state / 'stdout.log').open('wb') as out, (state / 'stderr.log').open('wb') as err:
         try:

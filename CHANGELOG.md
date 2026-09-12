@@ -4,7 +4,8 @@
 
 - Añadida envolvente Linux/bubblewrap reusable con lecturas explícitas, estado externo nuevo, namespaces privados y fallo cerrado; sin entorno heredado, instalación ni cambios de runtime/modelos.
 - Una regresión permanente con servicios DSH reales y fixtures externos verifica lecturas/escrituras autorizadas, denegaciones aun con policy permisiva, descendientes, secretos/sockets ocultos y rechazo sin fallback. Suite: 23 tests Python y check Node aprobados.
-- Arranque externo de composición web observado con listener privado; HTTP 401 bloquea verificación funcional autenticada. No se declara Host completo validado ni autonomía.
+- Composición web completa arrancada con listener privado: el 401 inicial era autenticación esperada. Cliente con secreto exclusivamente desechable obtuvo HTTP 200/HTML, creó sesión Standard y cargó ambos modos con `ctx.tools.execute` sobre su agente real; proveedor/origen/cuerpos exactos comprobados, sin modelos ni credenciales activas.
+- Conservado cwd original con bind explícito RO y padres vacíos; `/tmp` privado mediante bind, sin remapeo por symlink. Misma regresión extendida: cwd Node/bash exacto, lectura relativa, denegación de escritura original y secreto hermano oculto. 23 tests Python y Node aprobados; Host autenticado repetido. No acredita conducta LLM, QA ni autonomía; acceso acotado a red/proveedor queda pendiente.
 
 ## Evidencia externa Syncify/RehabWeb — 2026-09-12
 
