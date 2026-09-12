@@ -7,6 +7,11 @@
 - Composición web completa arrancada con listener privado: el 401 inicial era autenticación esperada. Cliente con secreto exclusivamente desechable obtuvo HTTP 200/HTML, creó sesión Standard y cargó ambos modos con `ctx.tools.execute` sobre su agente real; proveedor/origen/cuerpos exactos comprobados, sin modelos ni credenciales activas.
 - Conservado cwd original con bind explícito RO y padres vacíos; `/tmp` privado mediante bind, sin remapeo por symlink. Misma regresión extendida: cwd Node/bash exacto, lectura relativa, denegación de escritura original y secreto hermano oculto. 23 tests Python y Node aprobados; Host autenticado repetido. No acredita conducta LLM, QA ni autonomía; acceso acotado a red/proveedor queda pendiente.
 
+## Diagnóstico de inferencia aislada — 2026-09-12
+
+- La selección vigente `nrouter/Orquestrador` terminó `EMPTY_RESPONSE` con `responseModel=muse-spark-1.3-contributor-free` y sin `text-delta`; se clasificó como fallo de contenido/modelo upstream, no como fallo QA ni del broker.
+- Sin tocar routing persistente, una selección temporal explícita ya declarada por Host (`nrouter/ag/gemini-3.8-flash-high`) devolvió `OK`, `text-delta`, `finish=stop` y `responseModel=gemini-3.8-flash` mediante el launcher aislado. La unidad Syncify completa permanece pendiente.
+
 ## Evidencia externa Syncify/RehabWeb — 2026-09-12
 
 - Syncify completó 73 reparaciones externas con recibos `ACCEPTED`; 15 hallazgos permanecen retenidos por decisión humana.
