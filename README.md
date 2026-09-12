@@ -36,6 +36,7 @@ Revisa instrucciones y canónicos del proyecto, completa el primer encargo y sus
 Los dos modos finales son **Auditor** y **Reparación continua**, con incorporación compartida y Ejecutor/QA internos. Disponibles como skills conductuales de una unidad en Standard, no presets ni autonomía Host. Protocolo ejecutable y prompt breve en [docs/usage.md](docs/usage.md).
 
 - [Arquitectura completa](ARQUITECTURA_FLUJO_AGENTES.md).
+- [Diagramas interactivos (HTML/SVG)](docs/diagrams/README.md).
 - [Preparación DSH y límites del loader](docs/setup-dsh.md).
 - [Estado y evidencia](docs/status.md).
 - [Cambios de distribución](CHANGELOG.md).

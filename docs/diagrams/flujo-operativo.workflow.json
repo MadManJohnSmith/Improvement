@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Flujo Operativo de Auditoría y Reparación Continua",
+    "output": "docs/diagrams/flujo-operativo.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "full-cycle",
+        "label": "Ciclo completo de remediación",
+        "focus": ["user_start", "onboard", "audit_run", "findings", "candidate", "test_runner", "qa_gate", "verify_gate", "user_decision"],
+        "note": "Recorrido desde la incorporación inicial hasta la decisión final de integración."
+      },
+      {
+        "id": "audit-only",
+        "label": "Fase de auditoría acotada",
+        "focus": ["user_start", "onboard", "audit_run", "findings"],
+        "note": "El Auditor inspecciona el código sin mutar el producto y emite hallazgos con criterios."
+      },
+      {
+        "id": "repair-loop",
+        "label": "Reparación y QA independiente",
+        "focus": ["candidate", "test_runner", "qa_gate", "reaudit", "verify_gate"],
+        "note": "Candidato externo con change_scope estricto, pruebas roja→verde y validación de hashes."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "user", "label": "Operador Humano" },
+    { "id": "auditor", "label": "Modo Auditor" },
+    { "id": "repair", "label": "Reparación Continua" },
+    { "id": "qa_host", "label": "Host Runner & QA" }
+  ],
+  "phases": [
+    { "id": "audit_phase", "label": "Incorporación y Auditoría", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "repair_phase", "label": "Candidato y Pruebas", "fromCol": 3, "toCol": 4, "variant": "security" },
+    { "id": "close_phase", "label": "Verificación y Cierre", "fromCol": 5, "toCol": 5 }
+  ],
+  "groups": [
+    { "id": "audit_grp", "label": "Diagnóstico", "lane": "auditor", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "repair_grp", "label": "Candidato", "lane": "repair", "fromCol": 3, "toCol": 4, "variant": "security" },
+    { "id": "qa_grp", "label": "Verificación", "lane": "qa_host", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["user_start", "onboard", "audit_run", "findings", "candidate", "test_runner", "qa_gate", "verify_gate", "user_decision"],
+  "nodes": [
+    { "id": "user_start", "lane": "user", "col": 0, "type": "external", "label": "Orden", "sublabel": "Mando sucinto", "width": 146 },
+    { "id": "onboard", "lane": "auditor", "col": 0, "type": "backend", "label": "Onboarding", "sublabel": "onboard.py", "tag": "Init", "width": 146 },
+    { "id": "audit_run", "lane": "auditor", "col": 1, "type": "backend", "label": "Auditoría", "sublabel": "workflow-auditor", "tag": "Read-Only", "width": 146 },
+    { "id": "findings", "lane": "auditor", "col": 2, "type": "security", "label": "Dictamen", "sublabel": "task.json", "width": 146 },
+    { "id": "candidate", "lane": "repair", "col": 3, "type": "backend", "label": "Candidato", "sublabel": "Workspace", "tag": "change_scope", "width": 146 },
+    { "id": "test_runner", "lane": "repair", "col": 4, "type": "messagebus", "label": "Runner", "sublabel": "run-check", "tag": "Roja / Verde", "width": 146 },
+    { "id": "qa_gate", "lane": "qa_host", "col": 4, "type": "security", "label": "QA Subagent", "sublabel": "qa.json", "tag": "Firma", "width": 146 },
+    { "id": "reaudit", "lane": "repair", "col": 5, "type": "backend", "label": "Reauditoría", "sublabel": "reaudit", "width": 146 },
+    { "id": "verify_gate", "lane": "qa_host", "col": 5, "type": "security", "label": "Verify Gate", "sublabel": "missions.py", "tag": "Scope OK", "width": 146 },
+    { "id": "user_decision", "lane": "user", "col": 5, "type": "external", "label": "Decisión", "sublabel": "ACCEPTED", "tag": "Cierre", "width": 146 }
+  ],
+  "edges": [
+    { "id": "e-start-onboard", "from": "user_start", "to": "onboard", "variant": "emphasis" },
+    { "id": "e-onboard-audit", "from": "onboard", "to": "audit_run", "variant": "default" },
+    { "id": "e-audit-findings", "from": "audit_run", "to": "findings", "variant": "emphasis" },
+    { "id": "e-findings-cand", "from": "findings", "to": "candidate", "label": "Autoriza", "variant": "emphasis" },
+    { "id": "e-cand-test", "from": "candidate", "to": "test_runner", "variant": "default" },
+    { "id": "e-test-qa", "from": "test_runner", "to": "qa_gate", "label": "Pasa verde", "variant": "security" },
+    { "id": "e-test-reaudit", "from": "test_runner", "to": "reaudit", "variant": "default" },
+    { "id": "e-qa-verify", "from": "qa_gate", "to": "verify_gate", "label": "QA firmado", "variant": "security" },
+    { "id": "e-reaudit-verify", "from": "reaudit", "to": "verify_gate", "variant": "default" },
+    { "id": "e-verify-user", "from": "verify_gate", "to": "user_decision", "label": "Veredicto", "variant": "emphasis" }
+  ]
+}

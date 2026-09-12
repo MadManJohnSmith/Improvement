@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Secuencia de Verificación y Reauditoría de Unidades",
+    "output": "docs/diagrams/secuencia-ejecucion.html",
+    "viewBox": [1060, 640],
+    "quality_profile": "showcase",
+    "legend": { "mode": "hidden" },
+    "views": [
+      {
+        "id": "full-sequence",
+        "label": "Secuencia completa de unidad",
+        "focus": ["user", "dsh", "runner", "store", "qa"],
+        "note": "Traza de extremo a extremo desde el mandato inicial hasta el reporte verificado."
+      },
+      {
+        "id": "red-green-check",
+        "label": "Comprobación roja → verde",
+        "focus": ["dsh", "runner", "store"],
+        "note": "missions.py aísla la ejecución y captura la prueba roja antes de validar el candidato."
+      },
+      {
+        "id": "qa-reaudit",
+        "label": "QA independiente y reauditoría",
+        "focus": ["dsh", "qa", "runner", "store"],
+        "note": "QA evalúa de forma desacoplada y el runner verifica criptográficamente hashes y scope."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "Operador", "sublabel": "Humano" },
+    { "id": "dsh", "type": "backend", "label": "DSH Agent", "sublabel": "Standard" },
+    { "id": "store", "type": "database", "label": "Workspace", "sublabel": "Almacén" },
+    { "id": "runner", "type": "security", "label": "missions.py", "sublabel": "Runner" },
+    { "id": "qa", "type": "security", "label": "QA Subagent", "sublabel": "Revisor" }
+  ],
+  "segments": [
+    { "from": 150, "to": 238, "label": "1. Mandato y línea base" },
+    { "from": 248, "to": 395, "label": "2. Ejecución y prueba roja → verde" },
+    { "from": 405, "to": 528, "label": "3. QA, reauditoría y cierre" }
+  ],
+  "messages": [
+    { "from": "user", "to": "dsh", "y": 165, "label": "Orden sucinta", "variant": "emphasis" },
+    { "from": "dsh", "to": "store", "y": 195, "label": "Lee project.json + task.json", "variant": "default" },
+    { "from": "store", "to": "dsh", "y": 225, "label": "Base hashes y change_scope", "variant": "return" },
+    { "from": "dsh", "to": "runner", "y": 260, "label": "run-check --task task-base.json", "variant": "emphasis" },
+    { "from": "runner", "to": "store", "y": 290, "label": "check-base (roja capturada)", "variant": "security" },
+    { "from": "dsh", "to": "store", "y": 320, "label": "Escribe candidate/ con fix acotado", "variant": "emphasis" },
+    { "from": "dsh", "to": "runner", "y": 350, "label": "run-check --task task.json", "variant": "emphasis" },
+    { "from": "runner", "to": "store", "y": 380, "label": "check-1 (verde exit 0)", "variant": "default" },
+    { "from": "dsh", "to": "qa", "y": 418, "label": "Solicita evaluación independiente", "variant": "security" },
+    { "from": "qa", "to": "store", "y": 448, "label": "Inspecciona diff y firma qa.json", "variant": "security" },
+    { "from": "runner", "to": "dsh", "y": 480, "label": "verify task, qa y scope: ACCEPTED", "variant": "return" },
+    { "from": "dsh", "to": "user", "y": 512, "label": "Informe final sucinto", "variant": "return" }
+  ]
+}

@@ -1,5 +1,12 @@
 # Cambios
 
+## Auditoría completa y ciclo circular — 2026-09-11
+
+- Añadidos contratos stdlib para capabilities externas reutilizables y ciclos de auditoría con partición, deduplicación, DAG y archivo compacto.
+- Añadida la skill `workflow-complete-auditor` para auditoría completa por unidades, cola externa de reparación y reauditoría circular.
+- Reparación continua consume la cola vigente sin pedir el siguiente hallazgo; permisos y capacidades no se autoconceden.
+- El piloto real de Syncify queda como criterio externo de aceptación, sin convertir sus artefactos en contenido versionado.
+
 ## Integridad de sesiones programadas — 2026-09-10
 
 - Exigir `started.json` inmediato en un directorio externo nuevo, creación autónoma de fixtures/prerequisitos y paths absolutos, sin depender del scheduler o contexto implícito.

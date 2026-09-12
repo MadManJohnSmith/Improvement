@@ -1,6 +1,6 @@
-# Uso operativo v0.1
+# Uso operativo: Auditoría completa y Reparación continua
 
-Dos entradas conductuales en **DSH Standard**, una unidad por encargo. Son la operación v0.1 acotada, no el destino completo del plan: no son presets, publicador Host, controles Host, recuperación ni autonomía probada. El framework se mantiene aparte; ninguna misión operativa puede editarlo. No se toca producto vivo durante este piloto. El progreso por etapas se consulta en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md). El checklist previo a una prueba completa está en [docs/trial-readiness.md](trial-readiness.md); la regresión sintética combinada es `tests/test_two_mode_cycle.py` y no sustituye un piloto real.
+Hay dos entradas de usuario en **DSH Standard**: Auditoría completa y Reparación continua. La auditoría unitaria sigue disponible como worker interno o encargo explícito. El framework se mantiene aparte; ninguna misión operativa puede editarlo. El destino completo se prueba por ciclos externos y conserva `RETAINED`/`UNVERIFIED` cuando faltan capacidades Host. El progreso se consulta en [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md) y el checklist en [docs/trial-readiness.md](trial-readiness.md).
 
 ## Decisión mínima antes del prompt
 
@@ -29,8 +29,9 @@ Mantener la raíz padre actual de Standard, sin ancestro Git. La preparación in
 
 Dos prompts reutilizables bastan para iniciar una unidad:
 
-- **Auditor:** «Audita `<objetivo>` en `<proyecto>`; no cambies producto ni integres/publices. Usa el perfil/estado externo ya preparado y entrega informe o excepción con evidencia externa.»
-- **Reparación continua:** «Repara `<tarea o candidato>` dentro de `<change_scope>`; no cambies fuera del candidato, producto, framework ni integres/publices. Reutiliza perfil, estado y recibos externos; continúa las unidades autorizadas y pregúntame solo decisiones materiales.»
+- **Auditoría completa:** «Audita completamente `<proyecto>` por unidades funcionales; no modifiques producto ni integres/publices. Divide, revisa, consolida y deja la cola externa para Reparación continua.»
+- **Auditor unitario:** «Audita `<objetivo>` en `<proyecto>`; no cambies producto ni integres/publices. Usa el perfil/estado externo ya preparado y entrega informe o excepción con evidencia externa.»
+- **Reparación continua:** «Repara la auditoría vigente dentro de su alcance autorizado; procesa la cola externa completa sin modificar ni integrar el producto. Reutiliza el estado y pregúntame solo decisiones materiales.»
 
 El agente reutiliza el perfil, estado y recibos externos disponibles; el usuario no los transporta ni redacta un prompt para cada transición. Pregunta solo por decisiones materiales o permisos/recursos realmente ausentes. Estos prompts no autorizan cambios de producto, integración, publicación, credenciales, instalaciones, red ni proveedores; tampoco convierten al Host en autónomo ni constituyen una afirmación de QA semántica. QA usa subagente nativo si realmente está disponible; de lo contrario conserva RETAINED para revisión humana. No requiere proveedor externo.
 

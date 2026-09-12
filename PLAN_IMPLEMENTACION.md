@@ -4,7 +4,7 @@
 **Actualización:** 2026-09-10
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md)
 
-Este archivo es un índice compacto, no un diario. Cada etapa conserva solo estado, evidencia principal, bloqueo y siguiente salida. Los detalles históricos van en `CHANGELOG.md`; los artefactos de ejecución permanecen fuera del repositorio.
+Este archivo es un índice compacto, no un diario. Cada etapa conserva solo estado, evidencia principal, bloqueo y siguiente salida. Los detalles históricos van en `CHANGELOG.md`; los artefactos de ejecución permanecen fuera del repositorio. La auditoría completa usa ciclos externos versionados, cola activa compacta y archivo indexado; no importa historiales completos en el estado vigente.
 
 ## Estados
 
@@ -24,7 +24,7 @@ Este archivo es un índice compacto, no un diario. Cada etapa conserva solo esta
 | 3 | Fixture contractual roja→verde con aceptación acotada | PARCIAL | `tests/test_operational_cycle.py`, `tests/test_two_mode_cycle.py`; ciclo externo combinado | QA semántica real y límites de runtime cuando el impacto lo requiera |
 | 4 | Handoff determinista Auditor→Reparación | PARCIAL | Lotes locales + estados `executor/qa/auditor` con `actor_id` distinto por rol; `bind_role()` declara roles técnicos y aceptación bloqueada sin QA `VERIFIED` y artefactos vigentes vía `missions.verify`; handoff solo `COMPLETE` | Autorización Host multi-actor, independencia real y autenticidad |
 | 5 | Piloto real de una unidad de producto | RETENIDO | Candidatos externos queue/library; piloto histórico externo sin integración | QA/reauditoría/integración autorizadas según unidad vigente |
-| 6 | Flujo habitual con coste y calidad comparables | PENDIENTE | Sin medición LLM de campo | Lote real autorizado y métricas comparables |
+| 6 | Flujo habitual con coste y calidad comparables | PARCIAL | `scripts/audit.py`, capability local y archivo circular; sin medición LLM de campo | Piloto real de Auditoría completa/Reparación y métricas comparables |
 | 7 | Controlador Host y recuperación ante fallos | PENDIENTE | Diseño en arquitectura; sin prueba de campo | Intención/entrega/ack, unicidad, cancelación y reconciliación |
 | 8 | Transferencia a un segundo proyecto | PENDIENTE | Sin piloto acreditado | Repetir ciclo con otro proyecto y conservar límites |
 

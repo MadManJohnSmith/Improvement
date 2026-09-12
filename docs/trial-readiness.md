@@ -25,20 +25,26 @@ Este runbook es una lista de gates, no un diario ni un plan alternativo. Registr
 | Entrega | Recibo completo/parcial, referencias y hashes verificables | recibos externos y handoff | `PARCIAL` local | Handoff Host pendiente |
 | Integración | Autorización separada, destino y diff revisados | decisión humana y registro externo | Pendiente por defecto | No integrar automáticamente |
 | Recuperación | Timeout/cancelación/crash/reinicio reconciliados antes de otro escritor | pruebas de fallo específicas | Pendiente | Intervención supervisada |
+| Capability | Lectura de producto, ejecución de framework y escritura externa concedidas una vez y reutilizables | recibo nativo y capability externa | `UNVERIFIED` si el Host no lo demuestra | No escalar a acceso total; retener |
+| Auditoría completa | Inventario, unidades, delegación, consolidación y cola externa cerrados | `audit-manifest`, matriz, informe y `repair-queue` | Obligatorio para auditoría global | Sin siguiente prompt manual |
+| Artefactos | Estado activo compacto; detalle histórico indexado por ciclo | `active/`, `cycles/`, `archive/`, hashes | Obligatorio | No cargar históricos completos |
 | Privacidad | Sin credenciales/datos personales; worktree/HOME/XDG/symlink no son sandbox | inspección de rutas y permisos | Obligatorio | Detener si no se puede limitar |
 
 ## Preflight mínimo
 
 1. Confirmar árbol del framework y producto; no mezclar repositorios.
-2. Ejecutar onboarding en workspace externo; repetir en dry-run/idempotencia.
-3. Registrar revisión de skills y capacidades realmente observadas.
-4. Crear una unidad con `task.json`, base, criterios, exclusiones y `change_scope` si aplica.
-5. Inspeccionar scripts, destinos, enlaces y dependencias antes de ejecutar.
-6. Preparar candidato y evidencia fuera de framework/producto.
-7. Ejecutar rojo/verde solo con comandos autorizados.
-8. Solicitar QA independiente real cuando el riesgo lo exige.
-9. Ejecutar `verify` y `reaudit`; conservar `UNVERIFIED` si falta evidencia.
-10. Integrar o publicar solo con autorización separada.
+2. Crear un `cycle_id` externo nuevo y escribir `started.json` antes de trabajar.
+3. Ejecutar onboarding en workspace externo; repetir en dry-run/idempotencia.
+4. Registrar revisión de skills y capacidades realmente observadas.
+5. Para Auditoría completa, crear inventario, unidades, base, criterios, exclusiones y DAG antes de delegar.
+6. Crear una unidad de reparación con `task.json`, base, criterios, exclusiones y `change_scope` si aplica.
+7. Inspeccionar scripts, destinos, enlaces y dependencias antes de ejecutar.
+8. Preparar candidato y evidencia fuera de framework/producto.
+9. Ejecutar rojo/verde solo con comandos autorizados.
+10. Solicitar QA independiente real cuando el riesgo lo exige.
+11. Ejecutar `verify` y `reaudit`; conservar `UNVERIFIED` si falta evidencia.
+12. Actualizar cola/ciclo y archivar detalle sin saturar el estado activo.
+13. Integrar o publicar solo con autorización separada.
 
 ## Paradas obligatorias
 
