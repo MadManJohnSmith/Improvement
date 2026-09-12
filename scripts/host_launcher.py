@@ -7,6 +7,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import threading
 
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
@@ -19,7 +20,7 @@ def canonical(value):
     return path
 
 
-def launch(*, reads, state_parent, cwd, argv, timeout=45):
+def launch(*, reads, state_parent, cwd, argv, timeout=45, inference=None):
     """Mount authorized, non-secret inputs at /inputs/NAME; return state and exit code.
 
     Caller owns input trust and must keep source trees stable during launch.
@@ -77,13 +78,32 @@ def launch(*, reads, state_parent, cwd, argv, timeout=45):
            'XDG_RUNTIME_DIR': '/state/run', 'LANG': 'C.UTF-8'}
     for key, value in env.items():
         command += ['--setenv', key, value]
+    if inference is not None:
+        command += ['--ro-bind', str(FRAMEWORK / 'scripts/inference_channel.py'), '/inference.py']
+        argv = ['/usr/bin/python3', '-B', '/inference.py', *argv]
     command += ['--remount-ro', '/', '--chdir', str(cwd), '--', *argv]
     # ponytail: trusted stable input trees, not hostile concurrent mount-source mutation.
     with (state / 'stdout.log').open('wb') as out, (state / 'stderr.log').open('wb') as err:
         try:
-            result = subprocess.run(command, env={}, stdin=subprocess.DEVNULL,
-                                    stdout=out, stderr=err, timeout=timeout, close_fds=True)
-            code = result.returncode
+            if inference is None:
+                result = subprocess.run(command, env={}, stdin=subprocess.DEVNULL,
+                                        stdout=out, stderr=err, timeout=timeout, close_fds=True)
+                code = result.returncode
+            else:
+                with subprocess.Popen(command, env={}, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=err, close_fds=True) as process:
+                    worker = threading.Thread(target=inference.serve, args=(process.stdout, process.stdin), daemon=True)
+                    worker.start()
+                    try:
+                        code = process.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                        raise
+                    finally:
+                        worker.join(timeout=21)
+                        if worker.is_alive():
+                            raise OSError('Inference worker did not close')
         except (OSError, subprocess.TimeoutExpired) as error:
             err.write(f'FAIL CLOSED: {error}\n'.encode())
             code = 124 if isinstance(error, subprocess.TimeoutExpired) else 126
