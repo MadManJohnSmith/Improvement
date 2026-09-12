@@ -18,6 +18,8 @@ Si el catálogo de una sesión activa no se refresca, abrir otra Standard con **
 
 DSH 0.1.5-rc.1, Node 26.8.1: `findProjectRoot` busca `.git` hacia arriba o usa el cwd; no busca hijos. `nodeEntryKind` sigue enlaces de directorio mediante stat para descubrir skills. La herramienta usa `agent.session.header.cwd`. El preset distribuido `standard/agent.cordis.yml` monta `skill-filesystem` y `tool-skill` en su alcance compartido; los agentes lo heredan. Se conservan sus defaults. El antiguo parche de la fila Host desactivada por Web no configuraba esa fila y no se utiliza.
 
+Los lanzadores de Syncify y Rehabweb comparten intencionalmente el binario instalado en `workspaces/Syncify/runtime/dsh-cli`; no se duplica `node_modules` ni el runtime. El aislamiento operativo se mantiene mediante `DSH_HOME`, caché npm y puerto separados. Ambos seleccionan explícitamente el perfil CLI con `--profile`, usando `DSH_PROFILE` si está definido y `web` como valor predeterminado. El cliente RPC sigue necesitando el puerto y `DSH_HOME` correspondientes al mismo lanzador.
+
 ## Regresión sin modelos
 
 ```sh
