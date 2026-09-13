@@ -1,5 +1,14 @@
 # Cambios
 
+## Arquitectura v2.4 y cobertura verificable — 2026-09-13
+
+- Recuperar memoria de decisiones (identidad, motivo, contrato, sustituciones y revisión QA), métricas finas con fuente/límites y delegación para contener contexto, especializar y contrastar; conservar la prohibición de agentes por apariencia. Corregir la referencia al plan original preservado en archivo externo, sin importar datos privados.
+- Incorporar de los modos DSH las dimensiones de falsa completitud y revisión de contratos, inventario/exclusiones exhaustivos, dos perspectivas por unidad, barrido independiente antes de reconciliar, prevención de recurrencia, cifras de fuente vigente y verificación humana necesaria. Actualizar skills existentes sin instalar/sincronizar copias operativas ni cambiar presets, permisos o routing.
+- `scripts/audit.py`: snapshot determinista SHA-256, reenumeración antes de consolidar, exclusiones explícitas, gaps y unidades pendientes impiden cierre completo; API/manifiesto legacy sin inventario conservan cola como `UNVERIFIED`. Añadir CLI inventory y matriz de partición, sin afirmar lectura o profundidad semántica. Rechazar raíces solapadas, IDs de ciclo inseguros y archivos duplicados. Documentar límite de manifiesto 2 MiB y protocolo de ejecución separado del destino de ciclo.
+- Diez regresiones nuevas de cobertura y expectativas legacy corregidas; revisión independiente detectó incompatibilidad de inicio del ciclo y bypass léxico de raíces con `//`, corregidos con protocolo separado y normalización después del rechazo de symlinks. Suite seleccionada: 48 tests Python aprobados con runtime; excluido el test dependiente de lanzadores personales. Carga nativa de las ocho skills aprobada sin modelos. Pruebas con entorno AppImage saneado; evidencias externas.
+- Reconciliar progreso con recibos: nueve cierres Syncify agrupan 73 hallazgos, con QA parcialmente documental; seis reparaciones RehabWeb con QA original y pruebas acotadas, reauditoría semántica posterior pendiente. Corregir requests declaradas: 73 y 218 en resúmenes distintos, incluyendo denegaciones y sin coste comparable. No acreditar cola completa, integración conjunta ni autonomía por estos resultados. Reflejar la cuota de mensajes por lanzamiento ampliada en el commit de canal precedente.
+- Memoria/medición completa, evidencia humana y profundidad dual siguen siendo contratos de revisión, no servicios Host implementados; recomendaciones posteriores se conservan en informe externo, sin aplicarlas en esta unidad.
+
 ## Recuperación durable sobre fixtures y presupuesto durable — 2026-09-12
 
 - `scripts/budget.py`: contrato local mínimo de límites durables (intentos/coste/tiempo) como ledger de eventos inmutables en estado externo: creación exclusiva, digest, reserva conservadora antes del trabajo, límites fijados una sola vez (reapertura distinta o alterada falla cerrada) y `BudgetExhausted` sin escritura. No mide procesos reales ni concede autoridad.

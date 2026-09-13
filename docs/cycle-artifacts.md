@@ -2,6 +2,8 @@
 
 Los ciclos viven fuera del framework y del producto. La carpeta activa es un índice compacto; el detalle cerrado se conserva en un archivo por ciclo.
 
+El árbol siguiente describe la organización objetivo, no todos los archivos emitidos por un único script. Para usar el consolidador local, seguir [docs/audit-contract.md](audit-contract.md): el directorio de ejecución conserva `started.json`/checkpoint/cierre y el helper crea un destino de ciclo nuevo con manifiesto, matriz de partición y cola. La sustitución de `active/` entre ciclos no está automatizada y no se sobrescribe. Decisiones y verificación humana son registros externos de revisión, no servicios validados por ese helper.
+
 ```text
 <external-root>/
 ├── active/

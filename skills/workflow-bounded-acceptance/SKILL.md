@@ -46,7 +46,7 @@ RETAINED indica incumplimiento o decisión retenida.
 UNVERIFIED indica evidencia necesaria ausente.
 Alto impacto exige QA independiente real vinculada al candidato.
 Si no está disponible, conserva UNVERIFIED; otro rol del autor no es independencia.
-Una excepción humana no convierte incertidumbre en verificación.
+Si un criterio necesario requiere percepción u observación humana no disponible por herramientas autorizadas, registra solicitud con ID, criterio, candidato/hash, entorno y estado; solo el resultado observado permite darlo por verificado. Ausencia, inconclusión o evidencia de otro candidato conserva UNVERIFIED/RETAINED. Una excepción humana no convierte incertidumbre en verificación.
 Al repetir causa sin datos nuevos o agotar presupuesto, detén esa unidad.
 Preserva candidato y diagnóstico; continúa solo unidades independientes.
 Un estado registrado no ejecuta acciones ni concede integración.

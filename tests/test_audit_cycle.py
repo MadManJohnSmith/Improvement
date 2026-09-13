@@ -39,7 +39,8 @@ class AuditCycleTest(unittest.TestCase):
             ]
             result = audit.consolidate(root, 'c1', 'base1', units, findings)
             self.assertEqual([f['fingerprint'] for f in result['repair_queue']], ['f1'])
-            self.assertEqual(result['status'], 'AUDIT_COMPLETE_WITH_RETAINED_ITEMS')
+            self.assertEqual(result['status'], 'UNVERIFIED')
+            self.assertEqual(result['coverage']['coverage_gaps'], ['INVENTORY_MISSING'])
             index = audit.archive_cycle(Path(tmp), 'c1', {'status': 'done'}, result)
             self.assertTrue((Path(tmp) / 'archive/c1/index.json').is_file())
             self.assertEqual(index['cycle_id'], 'c1')
@@ -60,8 +61,10 @@ class AuditCycleTest(unittest.TestCase):
             findings_path.write_text(json.dumps({'findings': [
                 {'fingerprint': 'f1', 'status': 'READY_FOR_REPAIR', 'change_scope': ['a.py']},
                 {'fingerprint': 'f2', 'status': 'RETAINED'}]}))
-            result = audit.write_consolidated(root, 'c1', 'base1', manifest, json.loads(findings_path.read_text())['findings'])
-            self.assertTrue((root / 'active/repair-queue.json').is_file())
+            workspace = root / 'workspace'
+            result = audit.write_consolidated(workspace, 'c1', 'base1', manifest, json.loads(findings_path.read_text())['findings'])
+            self.assertEqual(result['status'], 'UNVERIFIED')
+            self.assertTrue((workspace / 'active/repair-queue.json').is_file())
             self.assertEqual(result['repair_queue'][0]['fingerprint'], 'f1')
 
     def test_rejects_overlap_and_cycle(self):

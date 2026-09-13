@@ -35,6 +35,12 @@ Dos prompts reutilizables bastan para iniciar una unidad:
 
 El agente reutiliza el perfil, estado y recibos externos disponibles; el usuario no los transporta ni redacta un prompt para cada transición. Pregunta solo por decisiones materiales o permisos/recursos realmente ausentes. Estos prompts no autorizan cambios de producto, integración, publicación, credenciales, instalaciones, red ni proveedores; tampoco convierten al Host en autónomo ni constituyen una afirmación de QA semántica. QA usa subagente nativo si realmente está disponible; de lo contrario conserva RETAINED para revisión humana. No requiere proveedor externo.
 
+## Cobertura de la auditoría completa
+
+El inventario, las exclusiones justificadas y la comparación contra archivos vigentes se preparan según [Contrato local de cobertura](audit-contract.md). La partición exhaustiva se valida mecánicamente; no acredita lectura ni profundidad. La skill completa añade dos perspectivas por unidad, reconciliación posterior al barrido independiente, prevención de recurrencia y evidencia humana cuando la aceptación la requiere. Una entrada unitaria no se convierte por ello en una auditoría global.
+
+Los cambios de skills del framework no actualizan automáticamente las copias de proyectos ni los presets externos. Conservar los entornos existentes y preparar/actualizar las copias solo con el procedimiento autorizado de incorporación.
+
 ## Contrato y entrega mínimos
 
 El agente prepara una carpeta de unidad nueva dentro del workspace; nunca resultados dentro del framework/producto. Dos entradas centrales: `task.json` y `result.json`; informe, ejecuciones y QA por referencia externa. Contrato v1 (ejemplo estructural, no autoridad):
