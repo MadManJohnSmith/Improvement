@@ -1,5 +1,12 @@
 # Cambios
 
+## Tanda M1–M5 con subagentes — 2026-09-13
+
+- Tres servicios nuevos por subagentes (revisados y con regresiones): memoria de decisiones (`scripts/decisions.py`), métricas de misión (`scripts/metrics.py`) y controlador Host (`scripts/host_controller.py`, turn_launcher inyectable, reconciliación idempotente, lock de escritor único y presupuesto durable). Suite completa 61 tests.
+- M2 (reauditoría semántica) validado en piloto DSH real: REOPENED correcto ante base obsoleta y CONFIRMED contra el candidato integrado; decisión "reauditar contra la copia integrada" registrada en la nueva memoria de decisiones.
+- M1 unidad 3 (`metadata_bridge`): el ejecutor retuvo sin dependencia (`aiohttp`), adquirida host-side con wheels a destino externo, reparación con rojo→verde real, lote `syncify-u3` COMPLETE e integración en copia; suites del conjunto 3/3 en verde.
+- Primer consumo del ledger de métricas con datos reales: 24 turnos, 684 requests, ~6,8 M tokens de entrada. `PLAN_IMPLEMENTACION.md` y `docs/status.md` actualizados.
+
 ## Plan de pendientes del núcleo — 2026-09-13
 
 - Añadir `docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md`: organización descriptiva de lo restante tras la misión de cierre (M1 cola completa por proyecto, M2 reauditoría semántica propia, M3 controlador Host real, M4 aceptación integral, M5 memoria de decisiones y métricas instrumentadas, M6 durabilidad/descendientes remotos, M7 defecto runtime `write` y M8 distribución/publicación remotas), con base operativa heredada del rig probado, dependencias, trazabilidad y formato de entrega. Documento de planificación; PLAN_IMPLEMENTACION.md sigue siendo el único índice de progreso.
