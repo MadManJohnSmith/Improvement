@@ -1,5 +1,10 @@
 # Cambios
 
+## Payload configurable y partes de assistant en el canal de inferencia — 2026-09-12
+
+- `scripts/inference_channel.py`: payload por request configurable por lanzamiento (`payload_limit`, 1 MiB por defecto, tope duro 8 MiB) en lugar de la constante fija de 64 KiB que hacía morir los turnos de ~16 pasos (RETAINED F6-DUPLICATE-CONVERSATION-500); el tope se impone en las tres capas del lanzamiento y el launcher pasa el valor al receptor interno en argv como entero no secreto. Allowlist de assistant ampliada al formato real del runtime instalado: campos string `reasoning`/`reasoning_content`/`reasoning_text` y contenido como lista no vacía de partes exactas `{type:'text',text}`. Endpoint, modelo, autorización host-side, presupuesto de requests, cuotas de tokens/mensajes y el resto de la allowlist sin cambios; `reasoning_details` y formas malformadas siguen rechazadas.
+- Regresiones nuevas en `tests/test_inference_channel.py`: payload >64 KiB aceptado con el default y rechazado con tope rebajado o sobre el tope duro, validación del argumento, campos/partes de razonamiento aceptados, diez formas malformadas rechazadas y camino real por launcher (payload grande 200; tope rebajado 400 sin upstream). Suite completa: 31 tests Python aprobados con runtime instalado.
+
 ## Canal de sesión multi-request de inferencia — 2026-09-12
 
 - `scripts/inference_channel.py` amplía el canal de una request a una sesión acotada por lanzamiento, sin proxy general: presupuesto de requests configurable al construir el canal (12 por defecto, tope duro 256), cuota por request de hasta 32768 tokens (default del hijo, antes 32) y 64 mensajes (antes 8); los topes solo pueden rebajarse por lanzamiento. Endpoint, modelo, autorización host-side y allowlist de claves sin cambios.

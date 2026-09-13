@@ -10,7 +10,12 @@ import sys
 import threading
 from urllib.parse import urlsplit
 
-LIMIT = 65536
+# Request payload ceiling: per-launch default with a hard cap, both enforced at
+# every layer (pipe frame, broker predicate and sandboxed receiver). A ~16-step
+# child conversation crosses 64 KiB, so the default is 1 MiB; nothing may exceed 8 MiB.
+DEFAULT_PAYLOAD_LIMIT = 1048576
+MAX_PAYLOAD_LIMIT = 8388608
+PAYLOAD_LIMIT_FLAG = '--inference-payload-limit='
 RESPONSE_LIMIT = 1048576
 # Per-launch session quotas: one Inference instance is one broker launch and its
 # budget lives exactly as long as that mission process. Defaults stay conservative.
@@ -18,6 +23,12 @@ DEFAULT_REQUESTS = 12
 MAX_REQUESTS = 256
 MAX_TOKENS = 32768
 MAX_MESSAGES = 64
+# Assistant reasoning fields the installed pi-ai runtime puts on the wire
+# (OPENAI_COMPLETIONS_REASONING_FIELDS, openai-completions.js): one string field
+# per assistant message replayed from a thinking block. No reasoning_details
+# array and no other shape is emitted by this deployment, so nothing else is allowed.
+REASONING_FIELDS = ('reasoning', 'reasoning_content', 'reasoning_text')
+ASSISTANT_KEYS = frozenset({'role', 'content', 'tool_calls', *REASONING_FIELDS})
 PAYLOAD_KEYS = {'model', 'messages', 'max_tokens', 'max_completion_tokens', 'store', 'stream',
                 'stream_options', 'temperature', 'top_p', 'tools', 'tool_choice'}
 TOOL_CHOICE_VALUES = ('auto', 'none')
@@ -55,6 +66,15 @@ def tool_ok(entry):
             and isinstance(function.get('strict', False), bool))
 
 
+def assistant_text_parts(content):
+    """Assistant content array exactly as pi-ai emits it (requiresThinkingAsText):
+    a non-empty list of plain textual {type:'text', text} parts, nothing else."""
+    return (isinstance(content, list) and bool(content)
+            and all(isinstance(part, dict) and set(part) == {'type', 'text'}
+                    and part['type'] == 'text' and isinstance(part['text'], str)
+                    for part in content))
+
+
 def receive(stream, limit):
     size = stream.read(4)
     if len(size) != 4:
@@ -75,7 +95,8 @@ def send(stream, data):
 
 class Inference:
     def __init__(self, *, endpoint, model, authorization,
-                 requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=MAX_MESSAGES):
+                 requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=MAX_MESSAGES,
+                 payload_limit=DEFAULT_PAYLOAD_LIMIT):
         url = urlsplit(endpoint)
         # ponytail: existing local OpenAI gateway only; add another protocol after fixtures.
         if (url.scheme != 'http' or url.hostname not in ('localhost', '127.0.0.1')
@@ -85,16 +106,18 @@ class Inference:
         if not model or not authorization or any(c in authorization for c in '\r\n'):
             raise ValueError('Model and safe host authorization required')
         if not (bounded(requests, MAX_REQUESTS) and bounded(max_tokens, MAX_TOKENS)
-                and bounded(messages, MAX_MESSAGES)):
+                and bounded(messages, MAX_MESSAGES)
+                and bounded(payload_limit, MAX_PAYLOAD_LIMIT)):
             raise ValueError('Per-launch quotas out of bounds')
         self.port, self.model, self.authorization = url.port, model, authorization
         self.budget, self.max_tokens, self.max_messages = requests, max_tokens, messages
+        self.payload_limit = payload_limit
         self.spent = 0
 
     def request(self, data):
         if self.spent >= self.budget:
             raise BudgetExhausted('Request budget exhausted')
-        if len(data) > LIMIT:
+        if len(data) > self.payload_limit:
             raise ValueError('Request payload limit')
         self.spent += 1
         payload = json.loads(data)
@@ -127,10 +150,14 @@ class Inference:
                 calls = message.get('tool_calls')
                 valid_calls = (isinstance(calls, list) and bool(calls)
                                and all(tool_call_ok(entry) for entry in calls))
-                if (keys - {'role', 'content', 'tool_calls'} or 'content' not in message
-                        or not isinstance(message['content'], (str, type(None)))
+                content = message.get('content')
+                reasoning = [message[field] for field in REASONING_FIELDS if field in message]
+                if (keys - ASSISTANT_KEYS or 'content' not in message
+                        or not (isinstance(content, (str, type(None)))
+                                or assistant_text_parts(content))
                         or (calls is not None and not valid_calls)
-                        or (message['content'] is None and not valid_calls)):
+                        or (content is None and not valid_calls)
+                        or any(not isinstance(value, str) for value in reasoning)):
                     raise ValueError('Inference payload denied')
             elif role == 'tool':
                 if (keys != {'role', 'content', 'tool_call_id'}
@@ -171,7 +198,7 @@ class Inference:
     def serve(self, incoming, outgoing):
         try:
             while True:
-                data = receive(incoming, LIMIT)
+                data = receive(incoming, self.payload_limit)
                 try:
                     body = b'\x01' + self.request(data)
                 except BudgetExhausted:
@@ -193,6 +220,14 @@ class Inference:
 
 def isolated(argv):
     incoming, outgoing = sys.stdin.buffer, sys.stdout.buffer
+    # The launcher states the broker's payload limit in argv so every layer of
+    # this launch enforces the same ceiling; the value is not secret.
+    payload_limit = DEFAULT_PAYLOAD_LIMIT
+    if argv and argv[0].startswith(PAYLOAD_LIMIT_FLAG):
+        raw = argv[0][len(PAYLOAD_LIMIT_FLAG):]
+        if not raw.isdigit() or not bounded(int(raw), MAX_PAYLOAD_LIMIT):
+            raise ValueError('Inference payload limit out of bounds')
+        payload_limit, argv = int(raw), argv[1:]
     # The frame pipe has no text layer; park sys.stdout on /dev/null so a cut
     # channel can never surface as a failed stdout flush at interpreter exit.
     sys.stdout = open(os.devnull, 'w')
@@ -202,7 +237,7 @@ def isolated(argv):
                 self.send_error(403)
                 return
             sizes = self.headers.get_all('Content-Length', [])
-            if (len(sizes) != 1 or not sizes[0].isdigit() or not 0 < int(sizes[0]) <= LIMIT
+            if (len(sizes) != 1 or not sizes[0].isdigit() or not 0 < int(sizes[0]) <= payload_limit
                     or self.headers.get('Transfer-Encoding')):
                 self.send_error(400)
                 return

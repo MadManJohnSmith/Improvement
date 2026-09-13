@@ -79,8 +79,15 @@ def launch(*, reads, state_parent, cwd, argv, timeout=45, inference=None):
     for key, value in env.items():
         command += ['--setenv', key, value]
     if inference is not None:
+        from inference_channel import MAX_PAYLOAD_LIMIT, PAYLOAD_LIMIT_FLAG
+        # Every layer of the launch must enforce the same payload ceiling; the
+        # sandboxed receiver learns it through this flag (an integer, not a secret).
+        limit = getattr(inference, 'payload_limit', None)
+        if not (isinstance(limit, int) and not isinstance(limit, bool)
+                and 1 <= limit <= MAX_PAYLOAD_LIMIT):
+            raise ValueError('Inference channel payload limit out of bounds')
         command += ['--ro-bind', str(FRAMEWORK / 'scripts/inference_channel.py'), '/inference.py']
-        argv = ['/usr/bin/python3', '-B', '/inference.py', *argv]
+        argv = ['/usr/bin/python3', '-B', '/inference.py', f'{PAYLOAD_LIMIT_FLAG}{limit}', *argv]
     command += ['--remount-ro', '/', '--chdir', str(cwd), '--', *argv]
     # ponytail: trusted stable input trees, not hostile concurrent mount-source mutation.
     with (state / 'stdout.log').open('wb') as out, (state / 'stderr.log').open('wb') as err:

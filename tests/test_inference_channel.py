@@ -11,7 +11,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
-from inference_channel import (DEFAULT_REQUESTS, MAX_MESSAGES, MAX_REQUESTS, MAX_TOKENS,
+from inference_channel import (DEFAULT_PAYLOAD_LIMIT, DEFAULT_REQUESTS, MAX_MESSAGES,
+                               MAX_PAYLOAD_LIMIT, MAX_REQUESTS, MAX_TOKENS,
                                BudgetExhausted, Inference)
 
 
@@ -100,7 +101,7 @@ print('isolated inference PASS')
             thread.start()
             endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
             payload = json.dumps({'model':'fixture','messages':[{'role':'user','content':'OK'}],'max_tokens':4}).encode()
-            for bad in [b'[]', b'{}', b'x'*65537, payload.replace(b'fixture',b'other')]:
+            for bad in [b'[]', b'{}', b'x' * (DEFAULT_PAYLOAD_LIMIT + 1), payload.replace(b'fixture', b'other')]:
                 with self.assertRaises(ValueError):
                     Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture').request(bad)
             with self.assertRaises(ValueError):
@@ -260,6 +261,149 @@ print('isolated inference PASS')
             history = dict(base, tool_choice='none', tools=[{'type': 'function', 'function': {'name': 'n'}}])
             self.assertEqual(Inference(endpoint=endpoint, model='fixture',
                                        authorization='Bearer fixture-secret').request(json.dumps(history).encode()), body)
+            server.shutdown()
+            thread.join()
+
+    def test_payload_limit_and_reasoning_parts(self):
+        """Per-launch payload ceiling (1 MiB default, 8 MiB hard cap) enforced at the
+        broker, and the assistant reasoning/textual shapes the installed runtime emits."""
+        hits = []
+
+        class Fixture(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                hits.append(self.path)
+                self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Fixture) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            self.assertEqual((DEFAULT_PAYLOAD_LIMIT, MAX_PAYLOAD_LIMIT), (1048576, 8388608))
+            ok = b'{"choices":[{"message":{"content":"OK"}}]}'
+            # A conversation above the old 64 KiB frame now passes at the default ceiling.
+            big = json.dumps({'model': 'fixture', 'max_tokens': 4,
+                              'messages': [{'role': 'user', 'content': 'x' * 70000}]}).encode()
+            self.assertGreater(len(big), 65536)
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                       authorization='Bearer fixture-secret').request(big), ok)
+            # A lower per-launch ceiling denies the same payload without reaching upstream.
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                          payload_limit=1024).request(big)
+            # The hard cap holds even when the launch asks for the maximum.
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                          payload_limit=MAX_PAYLOAD_LIMIT).request(b'x' * (MAX_PAYLOAD_LIMIT + 1))
+            # Quota arguments are validated like every other per-launch quota.
+            for kwargs in ({'payload_limit': 0}, {'payload_limit': MAX_PAYLOAD_LIMIT + 1},
+                           {'payload_limit': True}, {'payload_limit': '1048576'}):
+                with self.assertRaises(ValueError):
+                    Inference(endpoint=endpoint, model='fixture', authorization='Bearer s', **kwargs)
+            # Assistant reasoning fields and textual parts are exactly what the runtime
+            # openai-completions conversion emits on the wire.
+            base = {'model': 'fixture', 'max_tokens': 4,
+                    'messages': [{'role': 'user', 'content': 'turn'}]}
+            reasoning_turns = [
+                {'role': 'assistant', 'content': 'answer', 'reasoning': 'thinking'},
+                {'role': 'assistant', 'content': 'answer', 'reasoning_content': 'thinking'},
+                {'role': 'assistant', 'content': 'answer', 'reasoning_text': 'thinking'},
+                {'role': 'assistant', 'content': 'answer', 'reasoning': 'thinking',
+                 'reasoning_content': ''},
+                {'role': 'assistant', 'content': [{'type': 'text', 'text': 'part one'},
+                                                  {'type': 'text', 'text': 'part two'}]},
+                {'role': 'assistant', 'content': None,
+                 'tool_calls': [{'id': 'call_1', 'type': 'function',
+                                 'function': {'name': 'fs_read', 'arguments': '{}'}}],
+                 'reasoning_content': 'thinking before the call'},
+            ]
+            for message in reasoning_turns:
+                self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                           authorization='Bearer fixture-secret').request(
+                    json.dumps(dict(base, messages=base['messages'] + [message])).encode()), ok)
+            self.assertEqual(hits, ['/v1/chat/completions'] * (1 + len(reasoning_turns)))
+            # Malformed reasoning and textual-part shapes stay denied before upstream.
+            malformed = [
+                {'role': 'assistant', 'content': 'answer', 'reasoning': 7},
+                {'role': 'assistant', 'content': 'answer', 'reasoning_content': {'text': 'x'}},
+                {'role': 'assistant', 'content': 'answer', 'reasoning': None},
+                {'role': 'assistant', 'content': None, 'reasoning': 'thinking'},
+                {'role': 'assistant', 'content': []},
+                {'role': 'assistant', 'content': [{'type': 'text', 'text': 'a', 'extra': 1}]},
+                {'role': 'assistant', 'content': [{'type': 'text'}]},
+                {'role': 'assistant', 'content': [{'type': 'text', 'text': 3}]},
+                {'role': 'assistant', 'content': [{'type': 'image_url', 'image_url': {'url': 'x'}}]},
+                {'role': 'assistant', 'content': 'answer', 'thinking': 'unlisted key'},
+            ]
+            for message in malformed:
+                with self.assertRaises(ValueError):
+                    Inference(endpoint=endpoint, model='fixture',
+                              authorization='Bearer fixture-secret').request(
+                        json.dumps(dict(base, messages=base['messages'] + [message])).encode())
+            # Minimal scope: textual part arrays stay denied outside assistant messages.
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
+                    json.dumps(dict(base, messages=[{'role': 'user',
+                                                     'content': [{'type': 'text', 'text': 'x'}]}])).encode())
+            self.assertEqual(hits, ['/v1/chat/completions'] * (1 + len(reasoning_turns)))
+            server.shutdown()
+            thread.join()
+
+    def test_launch_payload_limit_end_to_end(self):
+        """The per-launch payload limit reaches the sandboxed receiver: above the old
+        64 KiB frame passes at the default ceiling; a small launch ceiling 400s early."""
+        seen = []
+
+        class Fixture(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(len(self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Fixture) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            root = Path(tempfile.mkdtemp(prefix='inference-payload-regression-', dir='/tmp'))
+            product = root / 'product'
+            product.mkdir()
+            runs = root / 'runs'
+            runs.mkdir()
+            check = product / 'check.py'
+            check.write_text('''import os, json, urllib.request
+url = os.environ['INFERENCE_BASE_URL'] + '/chat/completions'
+body = json.dumps({'model': 'fixture', 'max_tokens': 4,
+                   'messages': [{'role': 'user', 'content': 'x' * 70000}]}).encode()
+assert len(body) > 65536
+print(urllib.request.urlopen(urllib.request.Request(url, data=body)).read().decode())
+''')
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            state, code = launch(reads={'product': product}, cwd=product, state_parent=runs,
+                                 argv=['/usr/bin/env', '/usr/bin/python3', '-B', str(check)],
+                                 inference=Inference(endpoint=endpoint, model='fixture',
+                                                     authorization='Bearer fixture-secret'))
+            self.assertEqual(code, 0, (state / 'stderr.log').read_text())
+            self.assertEqual((state / 'stdout.log').read_text().strip(),
+                             '{"choices":[{"message":{"content":"OK"}}]}')
+            # A launch ceiling below the payload size is enforced at the receiver itself:
+            # HTTP 400 before any pipe or upstream traffic.
+            small, code_small = launch(reads={'product': product}, cwd=product, state_parent=runs,
+                                       argv=['/usr/bin/env', '/usr/bin/python3', '-B', str(check)],
+                                       inference=Inference(endpoint=endpoint, model='fixture',
+                                                           authorization='Bearer fixture-secret',
+                                                           payload_limit=1024))
+            self.assertEqual(code_small, 1)
+            self.assertIn('HTTP Error 400', (small / 'stderr.log').read_text())
+            self.assertEqual(len(seen), 1)
+            self.assertGreater(seen[0], 65536)
             server.shutdown()
             thread.join()
 
