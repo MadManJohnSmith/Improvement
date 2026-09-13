@@ -1,5 +1,12 @@
 # Cambios
 
+## Plan de cierre integral y evaluación de orquestación externa — 2026-09-13
+
+- Añadir documento de ejecución descriptivo para otro agente, subordinado a la arquitectura y a la matriz de progreso: cierre de todas las capacidades del núcleo con evidencia, continuidad de trabajo y excepción explícita ante bloqueo real de autoridad o recursos.
+- Exigir aceptación limpia con Syncify y RehabWeb en entornos externos aislados, desde adquisición/configuración hasta auditoría, reparación, QA, ciclo circular, integración solo en copia y recuperación; interacción principal por mensajes cortos DSH, sin edición manual de recibos ni troubleshooting técnico trasladado al usuario.
+- Evaluar las propuestas externas: specs trazables, composición Host y localizadores locales son aprovechables; eventos/remotos e índices avanzados requieren contratos y prueba; Vibe Kanban, clientes alternativos y embeddings no son dependencias obligatorias. Worktree no equivale a sandbox y EARS no verifica semántica.
+- Separar recomendaciones de RSI y extensiones de implementación acreditada. Esta entrega solo añade planificación/evaluación documental; no instala, activa runtime ni ejecuta nuevas misiones de producto.
+
 ## Onboarding de sesión, cuota de mensajes y reintento F6 — 2026-09-13
 
 - `scripts/inference_channel.py`: tope de mensajes por request configurable por lanzamiento (`DEFAULT_MESSAGES=64`, tope duro `MAX_MESSAGES=256`) en lugar del fijo 64 que mataba los turnos del ejecutor (lote 2: 12 denials `messagesBounds`, messageCount 66); presupuesto, tokens, payload, allowlist y fail-closed sin cambios. Regresiones nuevas incluido el camino real por launcher (130 mensajes: 502 al default, 200 con el tope elevado).
