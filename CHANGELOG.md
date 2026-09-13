@@ -1,5 +1,11 @@
 # Cambios
 
+## Extensión del canal para turnos de subagentes — 2026-09-12
+
+- Allowlist del broker de inferencia ampliada de forma mínima y fail-closed a las claves estructurales de turno que emite el runtime (`tools`, `tool_choice`, `tool_calls`/`tool_call_id` en mensajes); endpoint, modelo y autorización siguen fijos host-side y toda clave o forma no listada se rechaza sin alcanzar el upstream.
+- Regresión nueva: turno con `tools` permitido y reenviado, payload con clave no listada rechazado; suite completa 28 tests Python aprobados.
+- En Host aislado con la sesión `nrouter-raw/Orquestrador`, un turno completo de subagente con `tools` completó por el canal sobre la ruta autorizada. Los turnos multi-request siguen limitados por el presupuesto de una request por lanzamiento y las cuotas de tokens/mensajes, registradas como pendiente exacto.
+
 ## Corrección de mapeo de sesión a canal RAW — 2026-09-12
 
 - Fila de sesión/orquestador de las composiciones externas corregida a canal RAW: `nrouter-raw/Orquestrador` en `auditor-preset` y `repair-preset`; QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` (NORMAL) sin cambios. Orquestrador verificado en el catálogo RAW no secreto.

@@ -12,6 +12,31 @@ from urllib.parse import urlsplit
 
 LIMIT = 65536
 RESPONSE_LIMIT = 1048576
+PAYLOAD_KEYS = {'model', 'messages', 'max_tokens', 'max_completion_tokens', 'store', 'stream',
+                'stream_options', 'temperature', 'top_p', 'tools', 'tool_choice'}
+TOOL_CHOICE_VALUES = ('auto', 'none')
+
+
+def tool_call_ok(entry):
+    """Assistant tool_calls entry exactly as the runtime openai-completions API emits it."""
+    return (isinstance(entry, dict) and set(entry) == {'id', 'type', 'function'}
+            and isinstance(entry['id'], str) and entry['type'] == 'function'
+            and isinstance(entry['function'], dict)
+            and set(entry['function']) == {'name', 'arguments'}
+            and isinstance(entry['function']['name'], str)
+            and isinstance(entry['function']['arguments'], str))
+
+
+def tool_ok(entry):
+    """Tool declaration exactly as convertTools emits it (grammar path disabled)."""
+    function = entry.get('function') if isinstance(entry, dict) else None
+    return (isinstance(entry, dict) and set(entry) == {'type', 'function'}
+            and entry['type'] == 'function' and isinstance(function, dict)
+            and set(function) <= {'name', 'description', 'parameters', 'strict'}
+            and isinstance(function.get('name'), str)
+            and isinstance(function.get('description', ''), str)
+            and isinstance(function.get('parameters', {}), dict)
+            and isinstance(function.get('strict', False), bool))
 
 
 def receive(stream, limit):
@@ -50,9 +75,8 @@ class Inference:
             raise ValueError('Request budget exhausted')
         self.used = True
         payload = json.loads(data)
-        allowed = {'model', 'messages', 'max_tokens', 'max_completion_tokens', 'store', 'stream', 'stream_options', 'temperature', 'top_p'}
         tokens = payload.get('max_tokens', payload.get('max_completion_tokens')) if isinstance(payload, dict) else None
-        if (not isinstance(payload, dict) or set(payload) - allowed
+        if (not isinstance(payload, dict) or set(payload) - PAYLOAD_KEYS
                 or payload.get('model') != self.model
                 or not isinstance(payload.get('messages'), list)
                 or not 1 <= len(payload['messages']) <= 8
@@ -62,11 +86,36 @@ class Inference:
                 or payload.get('stream_options', {'include_usage': True}) != {'include_usage': True}
                 or type(tokens) is not int or not 1 <= tokens <= 32):
             raise ValueError('Inference payload denied')
+        # Structural turn keys only: tool declarations, choice and the tool-turn
+        # message shapes the runtime itself emits; every other key stays denied.
+        if ('tools' in payload and not (isinstance(payload['tools'], list)
+                                        and all(tool_ok(entry) for entry in payload['tools']))
+                or ('tool_choice' in payload
+                    and payload['tool_choice'] not in TOOL_CHOICE_VALUES)):
+            raise ValueError('Inference payload denied')
         for message in payload['messages']:
-            if (not isinstance(message, dict) or set(message) != {'role', 'content'}
-                    or message['role'] not in ('system', 'user', 'assistant')
-                    or not isinstance(message['content'], str)):
-                raise ValueError('Text messages only')
+            if not isinstance(message, dict):
+                raise ValueError('Inference payload denied')
+            role, keys = message.get('role'), set(message)
+            if role in ('system', 'user'):
+                if keys != {'role', 'content'} or not isinstance(message['content'], str):
+                    raise ValueError('Inference payload denied')
+            elif role == 'assistant':
+                calls = message.get('tool_calls')
+                valid_calls = (isinstance(calls, list) and bool(calls)
+                               and all(tool_call_ok(entry) for entry in calls))
+                if (keys - {'role', 'content', 'tool_calls'} or 'content' not in message
+                        or not isinstance(message['content'], (str, type(None)))
+                        or (calls is not None and not valid_calls)
+                        or (message['content'] is None and not valid_calls)):
+                    raise ValueError('Inference payload denied')
+            elif role == 'tool':
+                if (keys != {'role', 'content', 'tool_call_id'}
+                        or not isinstance(message['content'], str)
+                        or not isinstance(message['tool_call_id'], str)):
+                    raise ValueError('Inference payload denied')
+            else:
+                raise ValueError('Inference payload denied')
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=20)
         connection.connect()
         transport = connection.sock

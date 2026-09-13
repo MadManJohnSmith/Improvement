@@ -112,6 +112,80 @@ print('isolated inference PASS')
             with self.assertRaises(ValueError):
                 Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture')
 
+    def test_tool_turn_allowlist(self):
+        """Structural turn keys: a tools turn passes; unlisted keys and shapes fail closed."""
+        hits = []
+
+        class Fixture(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                hits.append(self.path)
+                self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Fixture) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            tool = {'type': 'function', 'function': {'name': 'fs_read', 'description': 'read a file',
+                    'parameters': {'type': 'object', 'properties': {}}, 'strict': False}}
+            base = {'model': 'fixture', 'stream': True, 'store': False,
+                    'stream_options': {'include_usage': True}, 'max_completion_tokens': 16,
+                    'tools': [tool],
+                    'messages': [{'role': 'system', 'content': 'sys'},
+                                 {'role': 'user', 'content': 'list files'}]}
+            # The child turn carrying tools is accepted and reaches the upstream.
+            body = Inference(endpoint=endpoint, model='fixture',
+                             authorization='Bearer fixture-secret').request(json.dumps(base).encode())
+            self.assertEqual(body, b'{"choices":[{"message":{"content":"OK"}}]}')
+            # Second leg of a full turn: assistant tool_calls plus tool result accepted.
+            followup = dict(base, messages=base['messages'] + [
+                {'role': 'assistant', 'content': None,
+                 'tool_calls': [{'id': 'call_1', 'type': 'function',
+                                 'function': {'name': 'fs_read', 'arguments': '{"path":"a"}'}}]},
+                {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'file body'},
+            ])
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                       authorization='Bearer fixture-secret').request(json.dumps(followup).encode()), body)
+            self.assertEqual(hits, ['/v1/chat/completions', '/v1/chat/completions'])
+            # Fail-closed: unlisted payload keys never reach the upstream.
+            for extra in ({'logprobs': True}, {'user': 'x'}, {'parallel_tool_calls': False},
+                          {'response_format': {'type': 'json_object'}}):
+                with self.assertRaises(ValueError):
+                    Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
+                        json.dumps(dict(base, **extra)).encode())
+            # Malformed structural shapes stay denied.
+            bad_tools = [dict(base, tools=['x']), dict(base, tools=[dict(tool, extra=1)]),
+                         dict(base, tools=[{'type': 'custom', 'function': {'name': 'n'}}]),
+                         dict(base, tools=[{'type': 'function', 'function': {'parameters': {}}}]),
+                         dict(base, tool_choice='any'), dict(base, tool_choice={'type': 'function'})]
+            bad_messages = [dict(base, messages=base['messages'] + [
+                                {'role': 'assistant', 'content': None,
+                                 'tool_calls': [{'id': 'c', 'type': 'function',
+                                                 'function': {'name': 'n', 'arguments': '{}', 'extra': 1}}]}]),
+                            dict(base, messages=base['messages'] + [
+                                {'role': 'assistant', 'content': None,
+                                 'tool_calls': [{'id': 'c', 'type': 'function',
+                                                 'function': {'name': 'n', 'arguments': '{}'}}],
+                                 'reasoning_details': []}]),
+                            dict(base, messages=base['messages'] + [{'role': 'tool', 'content': 'x'}]),
+                            dict(base, messages=base['messages'] + [{'role': 'developer', 'content': 'x'}])]
+            for bad in bad_tools + bad_messages:
+                with self.assertRaises(ValueError):
+                    Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
+                        json.dumps(bad).encode())
+            self.assertEqual(hits, ['/v1/chat/completions', '/v1/chat/completions'])
+            # Empty tools list is exactly what the runtime sends for tool history only.
+            history = dict(base, tool_choice='none', tools=[{'type': 'function', 'function': {'name': 'n'}}])
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                       authorization='Bearer fixture-secret').request(json.dumps(history).encode()), body)
+            server.shutdown()
+            thread.join()
+
     def test_upstream_deadline(self):
         class Slow(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
