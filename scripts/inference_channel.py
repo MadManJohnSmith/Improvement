@@ -1,4 +1,4 @@
-"""One-request loopback inference capability over anonymous stdin/stdout pipes."""
+"""Bounded multi-request loopback inference session over anonymous stdin/stdout pipes."""
 import http.client
 import http.server
 import json
@@ -12,9 +12,25 @@ from urllib.parse import urlsplit
 
 LIMIT = 65536
 RESPONSE_LIMIT = 1048576
+# Per-launch session quotas: one Inference instance is one broker launch and its
+# budget lives exactly as long as that mission process. Defaults stay conservative.
+DEFAULT_REQUESTS = 12
+MAX_REQUESTS = 256
+MAX_TOKENS = 32768
+MAX_MESSAGES = 64
 PAYLOAD_KEYS = {'model', 'messages', 'max_tokens', 'max_completion_tokens', 'store', 'stream',
                 'stream_options', 'temperature', 'top_p', 'tools', 'tool_choice'}
 TOOL_CHOICE_VALUES = ('auto', 'none')
+
+
+class BudgetExhausted(ValueError):
+    """Per-launch request budget spent; the channel must cut fail-closed."""
+
+
+def bounded(value, ceiling):
+    """Quota argument as a real int (bool excluded) within 1..ceiling."""
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and 1 <= value <= ceiling)
 
 
 def tool_call_ok(entry):
@@ -58,7 +74,8 @@ def send(stream, data):
 
 
 class Inference:
-    def __init__(self, *, endpoint, model, authorization):
+    def __init__(self, *, endpoint, model, authorization,
+                 requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=MAX_MESSAGES):
         url = urlsplit(endpoint)
         # ponytail: existing local OpenAI gateway only; add another protocol after fixtures.
         if (url.scheme != 'http' or url.hostname not in ('localhost', '127.0.0.1')
@@ -67,24 +84,30 @@ class Inference:
             raise ValueError('Only explicit loopback chat completion endpoint allowed')
         if not model or not authorization or any(c in authorization for c in '\r\n'):
             raise ValueError('Model and safe host authorization required')
+        if not (bounded(requests, MAX_REQUESTS) and bounded(max_tokens, MAX_TOKENS)
+                and bounded(messages, MAX_MESSAGES)):
+            raise ValueError('Per-launch quotas out of bounds')
         self.port, self.model, self.authorization = url.port, model, authorization
-        self.used = False
+        self.budget, self.max_tokens, self.max_messages = requests, max_tokens, messages
+        self.spent = 0
 
     def request(self, data):
-        if self.used or len(data) > LIMIT:
-            raise ValueError('Request budget exhausted')
-        self.used = True
+        if self.spent >= self.budget:
+            raise BudgetExhausted('Request budget exhausted')
+        if len(data) > LIMIT:
+            raise ValueError('Request payload limit')
+        self.spent += 1
         payload = json.loads(data)
         tokens = payload.get('max_tokens', payload.get('max_completion_tokens')) if isinstance(payload, dict) else None
         if (not isinstance(payload, dict) or set(payload) - PAYLOAD_KEYS
                 or payload.get('model') != self.model
                 or not isinstance(payload.get('messages'), list)
-                or not 1 <= len(payload['messages']) <= 8
+                or not 1 <= len(payload['messages']) <= self.max_messages
                 or ('max_tokens' in payload and 'max_completion_tokens' in payload)
                 or payload.get('store', False) is not False
                 or type(payload.get('stream', False)) is not bool
                 or payload.get('stream_options', {'include_usage': True}) != {'include_usage': True}
-                or type(tokens) is not int or not 1 <= tokens <= 32):
+                or type(tokens) is not int or not 1 <= tokens <= self.max_tokens):
             raise ValueError('Inference payload denied')
         # Structural turn keys only: tool declarations, choice and the tool-turn
         # message shapes the runtime itself emits; every other key stays denied.
@@ -151,15 +174,28 @@ class Inference:
                 data = receive(incoming, LIMIT)
                 try:
                     body = b'\x01' + self.request(data)
+                except BudgetExhausted:
+                    # Explicit fail-closed error once, then the channel is cut for good.
+                    send(outgoing, b'\x02')
+                    return
                 except (ValueError, OSError, http.client.HTTPException):
                     body = b'\x00'
                 send(outgoing, body)
         except (ValueError, OSError):
             pass
+        finally:
+            for stream in (incoming, outgoing):
+                try:
+                    stream.close()
+                except OSError:
+                    pass
 
 
 def isolated(argv):
     incoming, outgoing = sys.stdin.buffer, sys.stdout.buffer
+    # The frame pipe has no text layer; park sys.stdout on /dev/null so a cut
+    # channel can never surface as a failed stdout flush at interpreter exit.
+    sys.stdout = open(os.devnull, 'w')
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             if self.path != '/v1/chat/completions':
@@ -177,6 +213,11 @@ def isolated(argv):
                     raise ValueError('Incomplete body')
                 send(outgoing, data)
                 body = receive(incoming, RESPONSE_LIMIT + 1)
+                if body[:1] == b'\x02':
+                    sys.stderr.write('FAIL CLOSED: inference request budget exhausted\n')
+                    sys.stderr.flush()
+                    self.send_error(503, 'Inference budget exhausted')
+                    return
                 if body[:1] != b'\x01':
                     raise ValueError('Inference denied')
                 self.send_response(200)

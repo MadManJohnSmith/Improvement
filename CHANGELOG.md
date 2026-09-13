@@ -1,5 +1,12 @@
 # Cambios
 
+## Canal de sesión multi-request de inferencia — 2026-09-12
+
+- `scripts/inference_channel.py` amplía el canal de una request a una sesión acotada por lanzamiento, sin proxy general: presupuesto de requests configurable al construir el canal (12 por defecto, tope duro 256), cuota por request de hasta 32768 tokens (default del hijo, antes 32) y 64 mensajes (antes 8); los topes solo pueden rebajarse por lanzamiento. Endpoint, modelo, autorización host-side y allowlist de claves sin cambios.
+- Agotado el presupuesto: error explícito fail-closed (503 en el canal, línea `FAIL CLOSED` en el log externo) y canal cortado por el resto del lanzamiento; requests posteriores sin upstream. Además, el broker aparta su capa de texto de stdout para que el corte de pipes no degrade el cierre del intérprete (antes exit 120 por flush fallido).
+- Regresiones nuevas: multi-request dentro de presupuesto, corte por agotamiento sin upstream, cuotas nuevas y rebajadas por lanzamiento, validación fail-closed de argumentos de cuota y camino real por launcher con presupuesto 1 (503, 502 y `FAIL CLOSED` con un solo hit upstream). Suite completa: 29 tests Python aprobados con runtime instalado.
+- Sonda real en Host aislado (presets externos, sesión `nrouter-raw/Orquestrador`): turno completo de subagente con herramientas sobre `nrouter-raw/Subagents-Audits` completó con 2 requests por el canal (segunda pierna con `tool_calls` y resultado `tool`), max_tokens 32768 del hijo aceptado sin overrides, presupuesto 12 gasto 2, ningún payload denegado y denegación de ruta no autorizada intacta. Evidencia en `/tmp/inference-multi-request/probe-auditor.json`.
+
 ## Extensión del canal para turnos de subagentes — 2026-09-12
 
 - Allowlist del broker de inferencia ampliada de forma mínima y fail-closed a las claves estructurales de turno que emite el runtime (`tools`, `tool_choice`, `tool_calls`/`tool_call_id` en mensajes); endpoint, modelo y autorización siguen fijos host-side y toda clave o forma no listada se rechaza sin alcanzar el upstream.

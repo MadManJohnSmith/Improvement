@@ -11,7 +11,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
-from inference_channel import Inference
+from inference_channel import (DEFAULT_REQUESTS, MAX_MESSAGES, MAX_REQUESTS, MAX_TOKENS,
+                               BudgetExhausted, Inference)
 
 
 class InferenceTest(unittest.TestCase):
@@ -54,13 +55,16 @@ else: raise AssertionError('host network exposed')
 request=urllib.request.Request(url,data=body,headers={'Authorization':'Bearer attacker','X-Admin':'yes','Content-Type':'application/json'})
 assert b'OK' in urllib.request.urlopen(request).read()
 try: urllib.request.urlopen(request)
+except urllib.error.HTTPError as e: assert e.code == 503 and b'budget' in e.read()
+else: raise AssertionError('budget bypassed')
+try: urllib.request.urlopen(request)
 except urllib.error.HTTPError as e: assert e.code == 502
-else: raise AssertionError('quota bypassed')
+else: raise AssertionError('channel not cut after budget')
 assert 'fixture-host-only-secret' not in str(dict(os.environ))
 print('isolated inference PASS')
 ''')
             endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
-            channel = Inference(endpoint=endpoint, model='fixture', authorization='Bearer ' + secret)
+            channel = Inference(endpoint=endpoint, model='fixture', authorization='Bearer ' + secret, requests=1)
             state, code = launch(reads={'product':product}, cwd=product, state_parent=runs,
                                  argv=['/usr/bin/env', f'FIXTURE_PORT={server.server_port}', '/usr/bin/python3', '-B', str(check)], inference=channel)
             server.shutdown()
@@ -71,6 +75,7 @@ print('isolated inference PASS')
         self.assertEqual(path, '/v1/chat/completions')
         self.assertEqual(headers['Authorization'], 'Bearer ' + secret)
         self.assertNotIn('X-Admin', headers)
+        self.assertIn('FAIL CLOSED: inference request budget exhausted', (state / 'stderr.log').read_text())
         for log in state.glob('*.log'):
             self.assertNotIn(secret, log.read_text())
         print(f'Inference isolation evidence: {root}')
@@ -111,6 +116,78 @@ print('isolated inference PASS')
         for endpoint in ['http://evil/v1/chat/completions', 'http://127.0.0.1:80/admin', 'http://user@127.0.0.1/v1/chat/completions', 'http://127.0.0.1/v1/chat/completions?x=1']:
             with self.assertRaises(ValueError):
                 Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture')
+
+    def test_multi_request_budget_and_quotas(self):
+        """Session channel: in-budget multi-request passes; exhaustion cuts fail-closed;
+        per-launch token/message ceilings apply; quota arguments are validated."""
+        hits = []
+
+        class Fixture(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                hits.append(self.path)
+                self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Fixture) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            self.assertEqual((DEFAULT_REQUESTS, MAX_REQUESTS, MAX_TOKENS, MAX_MESSAGES),
+                             (12, 256, 32768, 64))
+            ok = b'{"choices":[{"message":{"content":"OK"}}]}'
+            body = json.dumps({'model': 'fixture', 'messages': [{'role': 'user', 'content': 'OK'}],
+                               'max_tokens': 32768}).encode()
+            # Multi-request session within a per-launch budget of 3.
+            channel = Inference(endpoint=endpoint, model='fixture',
+                                authorization='Bearer fixture-secret', requests=3)
+            for _ in range(3):
+                self.assertEqual(channel.request(body), ok)
+            self.assertEqual(hits, ['/v1/chat/completions'] * 3)
+            with self.assertRaises(BudgetExhausted):
+                channel.request(body)
+            self.assertEqual(hits, ['/v1/chat/completions'] * 3)
+            # Quota arguments are validated fail-closed (bool excluded).
+            for kwargs in ({'requests': 0}, {'requests': MAX_REQUESTS + 1}, {'requests': True},
+                           {'requests': '3'}, {'max_tokens': 0}, {'max_tokens': MAX_TOKENS + 1},
+                           {'messages': 0}, {'messages': MAX_MESSAGES + 1}):
+                with self.assertRaises(ValueError):
+                    Inference(endpoint=endpoint, model='fixture', authorization='Bearer s', **kwargs)
+            # New token ceiling: the child-loop default 32768 passes, 32769 is denied.
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                       authorization='Bearer fixture-secret').request(body), ok)
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
+                    body.replace(b'32768', b'32769'))
+            # A lower per-launch token ceiling applies to that launch only.
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                          max_tokens=16).request(body)
+            # Message quota: 64 accepted, 65 denied, per-launch lower ceiling applies.
+            full = json.dumps({'model': 'fixture',
+                               'messages': [{'role': 'user', 'content': 'OK'}] * MAX_MESSAGES,
+                               'max_tokens': 1}).encode()
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture',
+                                       authorization='Bearer fixture-secret').request(full), ok)
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
+                    json.dumps({'model': 'fixture',
+                                'messages': [{'role': 'user', 'content': 'OK'}] * (MAX_MESSAGES + 1),
+                                'max_tokens': 1}).encode())
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                          messages=2).request(json.dumps({'model': 'fixture',
+                                                          'messages': [{'role': 'user', 'content': 'a'},
+                                                                       {'role': 'user', 'content': 'b'},
+                                                                       {'role': 'user', 'content': 'c'}],
+                                                          'max_tokens': 1}).encode())
+            self.assertEqual(hits, ['/v1/chat/completions'] * 5)
+            server.shutdown()
+            thread.join()
 
     def test_tool_turn_allowlist(self):
         """Structural turn keys: a tools turn passes; unlisted keys and shapes fail closed."""
