@@ -18,11 +18,15 @@ MAX_PAYLOAD_LIMIT = 8388608
 PAYLOAD_LIMIT_FLAG = '--inference-payload-limit='
 RESPONSE_LIMIT = 1048576
 # Per-launch session quotas: one Inference instance is one broker launch and its
-# budget lives exactly as long as that mission process. Defaults stay conservative.
+# budget lives exactly as long as that mission process. Defaults stay conservative;
+# a launch may raise each ceiling up to its hard cap, never beyond.
+# Messages: a ~16-step child conversation crossed the old fixed 64-message request
+# ceiling (66 observed), so the default stays 64 while a launch may ask for more.
 DEFAULT_REQUESTS = 12
 MAX_REQUESTS = 256
 MAX_TOKENS = 32768
-MAX_MESSAGES = 64
+DEFAULT_MESSAGES = 64
+MAX_MESSAGES = 256
 # Assistant reasoning fields the installed pi-ai runtime puts on the wire
 # (OPENAI_COMPLETIONS_REASONING_FIELDS, openai-completions.js): one string field
 # per assistant message replayed from a thinking block. No reasoning_details
@@ -95,7 +99,7 @@ def send(stream, data):
 
 class Inference:
     def __init__(self, *, endpoint, model, authorization,
-                 requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=MAX_MESSAGES,
+                 requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=DEFAULT_MESSAGES,
                  payload_limit=DEFAULT_PAYLOAD_LIMIT):
         url = urlsplit(endpoint)
         # ponytail: existing local OpenAI gateway only; add another protocol after fixtures.

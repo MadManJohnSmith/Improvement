@@ -11,8 +11,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
-from inference_channel import (DEFAULT_PAYLOAD_LIMIT, DEFAULT_REQUESTS, MAX_MESSAGES,
-                               MAX_PAYLOAD_LIMIT, MAX_REQUESTS, MAX_TOKENS,
+from inference_channel import (DEFAULT_MESSAGES, DEFAULT_PAYLOAD_LIMIT, DEFAULT_REQUESTS,
+                               MAX_MESSAGES, MAX_PAYLOAD_LIMIT, MAX_REQUESTS, MAX_TOKENS,
                                BudgetExhausted, Inference)
 
 
@@ -138,8 +138,8 @@ print('isolated inference PASS')
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
-            self.assertEqual((DEFAULT_REQUESTS, MAX_REQUESTS, MAX_TOKENS, MAX_MESSAGES),
-                             (12, 256, 32768, 64))
+            self.assertEqual((DEFAULT_REQUESTS, MAX_REQUESTS, MAX_TOKENS,
+                              DEFAULT_MESSAGES, MAX_MESSAGES), (12, 256, 32768, 64, 256))
             ok = b'{"choices":[{"message":{"content":"OK"}}]}'
             body = json.dumps({'model': 'fixture', 'messages': [{'role': 'user', 'content': 'OK'}],
                                'max_tokens': 32768}).encode()
@@ -168,17 +168,30 @@ print('isolated inference PASS')
             with self.assertRaises(ValueError):
                 Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
                           max_tokens=16).request(body)
-            # Message quota: 64 accepted, 65 denied, per-launch lower ceiling applies.
+            # Message quota: the default launch keeps the conservative 64-message
+            # request ceiling; a launch may raise it up to the hard cap.
             full = json.dumps({'model': 'fixture',
-                               'messages': [{'role': 'user', 'content': 'OK'}] * MAX_MESSAGES,
+                               'messages': [{'role': 'user', 'content': 'OK'}] * DEFAULT_MESSAGES,
                                'max_tokens': 1}).encode()
             self.assertEqual(Inference(endpoint=endpoint, model='fixture',
                                        authorization='Bearer fixture-secret').request(full), ok)
             with self.assertRaises(ValueError):
                 Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret').request(
                     json.dumps({'model': 'fixture',
+                                'messages': [{'role': 'user', 'content': 'OK'}] * (DEFAULT_MESSAGES + 1),
+                                'max_tokens': 1}).encode())
+            raised = json.dumps({'model': 'fixture',
+                                 'messages': [{'role': 'user', 'content': 'OK'}] * MAX_MESSAGES,
+                                 'max_tokens': 1}).encode()
+            self.assertEqual(Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                                       messages=MAX_MESSAGES).request(raised), ok)
+            with self.assertRaises(ValueError):
+                Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                          messages=MAX_MESSAGES).request(
+                    json.dumps({'model': 'fixture',
                                 'messages': [{'role': 'user', 'content': 'OK'}] * (MAX_MESSAGES + 1),
                                 'max_tokens': 1}).encode())
+            # A lower per-launch message ceiling still applies to that launch only.
             with self.assertRaises(ValueError):
                 Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
                           messages=2).request(json.dumps({'model': 'fixture',
@@ -186,7 +199,7 @@ print('isolated inference PASS')
                                                                        {'role': 'user', 'content': 'b'},
                                                                        {'role': 'user', 'content': 'c'}],
                                                           'max_tokens': 1}).encode())
-            self.assertEqual(hits, ['/v1/chat/completions'] * 5)
+            self.assertEqual(hits, ['/v1/chat/completions'] * 6)
             server.shutdown()
             thread.join()
 
@@ -404,6 +417,57 @@ print(urllib.request.urlopen(urllib.request.Request(url, data=body)).read().deco
             self.assertIn('HTTP Error 400', (small / 'stderr.log').read_text())
             self.assertEqual(len(seen), 1)
             self.assertGreater(seen[0], 65536)
+            server.shutdown()
+            thread.join()
+
+    def test_launch_message_ceiling_end_to_end(self):
+        """A per-launch raised message ceiling reaches a real launch: a 130-message
+        request is denied at the default 64 and passes when the launch raises it."""
+        seen = []
+
+        class Fixture(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(len(json.loads(self.rfile.read(int(self.headers['Content-Length'])))['messages']))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Fixture) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            root = Path(tempfile.mkdtemp(prefix='inference-messages-regression-', dir='/tmp'))
+            product = root / 'product'
+            product.mkdir()
+            runs = root / 'runs'
+            runs.mkdir()
+            check = product / 'check.py'
+            check.write_text('''import os, json, urllib.request
+url = os.environ['INFERENCE_BASE_URL'] + '/chat/completions'
+body = json.dumps({'model': 'fixture', 'max_tokens': 4,
+                   'messages': [{'role': 'user', 'content': 'OK'}] * 130}).encode()
+print(urllib.request.urlopen(urllib.request.Request(url, data=body)).read().decode())
+''')
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            # Default launch keeps the 64-message ceiling: the broker denies fail-closed.
+            state, code = launch(reads={'product': product}, cwd=product, state_parent=runs,
+                                 argv=['/usr/bin/env', '/usr/bin/python3', '-B', str(check)],
+                                 inference=Inference(endpoint=endpoint, model='fixture',
+                                                     authorization='Bearer fixture-secret'))
+            self.assertEqual(code, 1)
+            self.assertIn('HTTP Error 502', (state / 'stderr.log').read_text())
+            # The raised launch accepts the same conversation.
+            state2, code2 = launch(reads={'product': product}, cwd=product, state_parent=runs,
+                                   argv=['/usr/bin/env', '/usr/bin/python3', '-B', str(check)],
+                                   inference=Inference(endpoint=endpoint, model='fixture',
+                                                       authorization='Bearer fixture-secret',
+                                                       messages=MAX_MESSAGES))
+            self.assertEqual(code2, 0, (state2 / 'stderr.log').read_text())
+            self.assertEqual((state2 / 'stdout.log').read_text().strip(),
+                             '{"choices":[{"message":{"content":"OK"}}]}')
+            self.assertEqual(seen, [130])
             server.shutdown()
             thread.join()
 
