@@ -1,5 +1,17 @@
 # Cambios
 
+## Misión de cierre integral en copias aisladas — 2026-09-13
+
+- Ejecución real de P0–P9 del plan de cierre por el agente de mantenimiento, con DSH real aislado (launcher + canal + presets + nrouter) sobre copias limpias de Syncify y RehabWeb; evidencia externa en `Improvement-ensayos/mision-arq-20260913/` (recibos, sesiones, lotes, archivo, métricas, UX).
+- `scripts/inference_channel.py`: deadline de respuesta convertido en cuota por lanzamiento (default 20 s, tope 300) tras matar turnos reales largos; regresión nueva; arquitectura §11 actualizada.
+- `skills/workflow-auditor`, `skills/workflow-continuous-repair`: guía de escritura de evidencia por bash con retención sin aprobación, tras confirmar en rig el rechazo «not strictly wider» de escrituras que piden el modo ya vigente (hallazgo del runtime registrado, no parcheado).
+- Resultados: Syncify dos vueltas completas (auditoría→reparación rojo/verde→QA subagente→verify/reaudit→lotes `syncify-u1b`/`u2b` COMPLETE), integración conjunta en copia con suites verdes y archivo restaurable; RehabWeb una vuelta (autorización de alertas: 403 real a paciente, 73 tests OK integrados, lote `rehabweb-u1b` COMPLETE, archivo restaurable). Caída real del rig sin huérfanos; métricas y UX registradas externamente.
+- Estados actualizados en `PLAN_IMPLEMENTACION.md` (filas 5–8) y `docs/status.md`; siguen PARCIAL: cola completa por proyecto, reauditoría semántica como turno propio, controlador Host real, memoria de decisiones instrumentada y publicación remota sin autorización.
+
+## Deadline de respuesta por lanzamiento en el canal — 2026-09-13
+
+- `scripts/inference_channel.py`: el deadline de respuesta deja de ser el fijo 20 s y pasa a ser cuota por lanzamiento (`DEFAULT_DEADLINE=20`, tope duro `MAX_DEADLINE=300`) con validación idéntica al resto de cuotas. Motivo registrado: en el rig aislado de la misión de cierre integral, el turno real del Auditor sobre la copia de Syncify murió con 502 del receptor tras 35 tool calls cuando una completación con contexto amplio superó el corte histórico; el humo corto no lo ejercitaba. Regresión nueva `test_launch_deadline_per_launch` (default conserva el corte, tope elevable, validación fail-closed de argumentos fuera de rango); suite del canal: 9 tests aprobados. Arquitectura §11 actualizada; el timeout del launcher sigue siendo el límite externo del lanzamiento.
+
 ## Plan de cierre integral y evaluación de orquestación externa — 2026-09-13
 
 - Añadir documento de ejecución descriptivo para otro agente, subordinado a la arquitectura y a la matriz de progreso: cierre de todas las capacidades del núcleo con evidencia, continuidad de trabajo y excepción explícita ante bloqueo real de autoridad o recursos.

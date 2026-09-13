@@ -27,6 +27,11 @@ MAX_REQUESTS = 256
 MAX_TOKENS = 32768
 DEFAULT_MESSAGES = 64
 MAX_MESSAGES = 256
+# Response deadline per request, in seconds. Real multi-step mission turns with
+# large contexts exceed the historical fixed 20 s, so a launch may raise the
+# deadline up to a hard cap; the default stays 20 s.
+DEFAULT_DEADLINE = 20
+MAX_DEADLINE = 300
 # Assistant reasoning fields the installed pi-ai runtime puts on the wire
 # (OPENAI_COMPLETIONS_REASONING_FIELDS, openai-completions.js): one string field
 # per assistant message replayed from a thinking block. No reasoning_details
@@ -100,7 +105,7 @@ def send(stream, data):
 class Inference:
     def __init__(self, *, endpoint, model, authorization,
                  requests=DEFAULT_REQUESTS, max_tokens=MAX_TOKENS, messages=DEFAULT_MESSAGES,
-                 payload_limit=DEFAULT_PAYLOAD_LIMIT):
+                 payload_limit=DEFAULT_PAYLOAD_LIMIT, deadline=DEFAULT_DEADLINE):
         url = urlsplit(endpoint)
         # ponytail: existing local OpenAI gateway only; add another protocol after fixtures.
         if (url.scheme != 'http' or url.hostname not in ('localhost', '127.0.0.1')
@@ -111,11 +116,12 @@ class Inference:
             raise ValueError('Model and safe host authorization required')
         if not (bounded(requests, MAX_REQUESTS) and bounded(max_tokens, MAX_TOKENS)
                 and bounded(messages, MAX_MESSAGES)
-                and bounded(payload_limit, MAX_PAYLOAD_LIMIT)):
+                and bounded(payload_limit, MAX_PAYLOAD_LIMIT)
+                and bounded(deadline, MAX_DEADLINE)):
             raise ValueError('Per-launch quotas out of bounds')
         self.port, self.model, self.authorization = url.port, model, authorization
         self.budget, self.max_tokens, self.max_messages = requests, max_tokens, messages
-        self.payload_limit = payload_limit
+        self.payload_limit, self.deadline = payload_limit, deadline
         self.spent = 0
 
     def request(self, data):
@@ -170,7 +176,7 @@ class Inference:
                     raise ValueError('Inference payload denied')
             else:
                 raise ValueError('Inference payload denied')
-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=20)
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=self.deadline)
         connection.connect()
         transport = connection.sock
         expired = threading.Event()
@@ -180,7 +186,7 @@ class Inference:
                 transport.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-        deadline = threading.Timer(20, expire)
+        deadline = threading.Timer(self.deadline, expire)
         deadline.start()
         try:
             connection.request('POST', '/v1/chat/completions', body=data,

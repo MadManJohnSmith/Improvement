@@ -12,8 +12,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
 from inference_channel import (DEFAULT_MESSAGES, DEFAULT_PAYLOAD_LIMIT, DEFAULT_REQUESTS,
-                               MAX_MESSAGES, MAX_PAYLOAD_LIMIT, MAX_REQUESTS, MAX_TOKENS,
-                               BudgetExhausted, Inference)
+                               MAX_DEADLINE, MAX_MESSAGES, MAX_PAYLOAD_LIMIT, MAX_REQUESTS,
+                               MAX_TOKENS, BudgetExhausted, Inference)
 
 
 class InferenceTest(unittest.TestCase):
@@ -495,6 +495,43 @@ print(urllib.request.urlopen(urllib.request.Request(url, data=body)).read().deco
             with self.assertRaises((ValueError, OSError, http.client.HTTPException)):
                 channel.request(json.dumps({'model':'fixture','messages':[{'role':'user','content':'OK'}],'max_tokens':4}).encode())
             self.assertLess(time.monotonic() - start, 23)
+            server.shutdown()
+            thread.join()
+
+    def test_launch_deadline_per_launch(self):
+        """The response deadline is a per-launch quota: default 20 s keeps the
+        historical cut, a launch may raise it up to MAX_DEADLINE and never beyond."""
+        class Delayed(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                time.sleep(1.5)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"choices":[{"message":{"content":"OK"}}]}')
+
+            def log_message(self, *args):
+                pass
+
+        with http.server.HTTPServer(('127.0.0.1', 0), Delayed) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            endpoint = f'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+            payload = json.dumps({'model': 'fixture', 'messages': [{'role': 'user', 'content': 'OK'}],
+                                  'max_tokens': 4}).encode()
+            # Default 20 s deadline accepts a 1.5 s response.
+            channel = Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret')
+            self.assertEqual(channel.deadline, 20)
+            self.assertIn(b'OK', channel.request(payload))
+            # A raised deadline is accepted within the hard cap.
+            raised = Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                               deadline=MAX_DEADLINE)
+            self.assertEqual(raised.deadline, MAX_DEADLINE)
+            # Quota validation stays fail-closed for out-of-bounds arguments.
+            for value in (0, -1, MAX_DEADLINE + 1, True, '30', 1.5):
+                with self.subTest(value=value):
+                    with self.assertRaises(ValueError):
+                        Inference(endpoint=endpoint, model='fixture', authorization='Bearer fixture-secret',
+                                  deadline=value)
             server.shutdown()
             thread.join()
 
