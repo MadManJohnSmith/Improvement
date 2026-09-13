@@ -138,6 +138,10 @@ Las secciones posteriores conservan evidencia por hito; sus cifras históricas n
 - **Ramas de producto autorizadas por el titular**: `workflow-repairs` creada en los repos originales de Syncify y RehabWeb; las 5 unidades aceptadas y verificadas están integradas y commiteadas por unidad con referencia a recibos (Syncify 3 commits sobre `syncify-graphical`; RehabWeb 2 sobre `main`), suites del conjunto en verde (Syncify 3/3; RehabWeb 74 tests OK) y ambas ramas **publicadas en origin** por instrucción explícita del titular. Las ramas base permanecen intactas. Las futuras unidades de M1/M2 se integrarán en esas ramas.
 - **Resto de decisiones registradas** en la memoria de decisiones (D-0003..D-0007): M6 autorizado sin consulta; RSI acotada y F1–F5 quedan como plan de mejora posterior al MVP; M8 queda aclarado como decisión sobre el framework (descarga por red y publicación del repo del framework con licencia), no sobre los productos.
 
+## Distribución por red (M8) — 2026-09-13
+
+- Con autorización del titular, el framework se acredita distribuible por red: clon limpio desde `github.com/MadManJohnSmith/Improvement` (privado; credenciales globales) con HEAD verificado, incorporación bootstrap desde el clon con repetición idempotente, carga nativa de las 8 skills desde la distribución de red (cuerpo exacto, rechazo cruzado) y suite completa del clon: **62 tests OK**. Los commits del flujo se publican en `origin/fix/local-artifact-integrity` por instrucción del titular. La publicación pública con licencia sigue opcional y no bloquea el núcleo.
+
 ## Antecedentes externos, no pruebas de esta distribución
 
 El kit previo contiene publicador/resolver Cordis y ensayos deterministas reportados, fixture de contrato y QA del piloto. Su lector está ligado a tres archivos de un caso, sus bindings y scripts tienen alcance de ensayo; no se distribuye como adaptador universal. Se preservó todo el código en el archivo externo para reutilización dirigida, no se reconstruyó ni se ejecutó. El enlace histórico de dependencias al producto permanece intacto; el archivo no es operativo.

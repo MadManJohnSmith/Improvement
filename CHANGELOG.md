@@ -1,5 +1,9 @@
 # Cambios
 
+## Distribución por red del framework (M8) — 2026-09-13
+
+- Con el origen privado autorizado por el titular, acreditada la distribución por red: clon clean-room con HEAD verificado, bootstrap desde el clon (idempotente), carga nativa 8/8 skills y suite del clon 62 tests OK. Push del flujo a `origin/fix/local-artifact-integrity` autorizado explícitamente. La publicación pública con licencia queda como opción del titular.
+
 ## M7 como plugin y ramas de producto — 2026-09-13
 
 - `scripts/dsh-plugins/workflow-write.mjs` (nuevo): herramienta `workflow_write` con semántica de escalada corregida (mismo modo = política vigente; mayor = aprobación real; denegación fail-closed fuera del área). Resuelta la sonda de plugins: el loader acepta rutas absolutas en filas de preset y exige `inject` + `output {schema, render}`. Montado en los presets del flujo; regresión mecánica `tests/test_workflow_write_plugin.py`. M7 deja de ser bloqueante: el runtime instalado no se parchea y el hallazgo se reportará upstream.

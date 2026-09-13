@@ -104,10 +104,12 @@ Estos hechos comprobados condicionan cómo ejecutar los hitos siguientes; re-ver
 **Resolución adoptada (decisión del titular):** `scripts/dsh-plugins/workflow-write.mjs` montado en los presets del flujo con regresión `tests/test_workflow_write_plugin.py`; el runtime instalado no se parchea. **Pasos restantes:** 1) consolidar el informe del defecto con las tres sesiones de evidencia y el transcript de producción ya registrado; 2) reportarlo al mantenimiento del runtime (el titular decide canal: upstream, parche local versionado del paquete instalado, o convivencia con el workaround); 3) si hay corrección upstream, repetir la sonda de escritura y retirar el rodeo del rig con regresión; 4) actualizar setup-dsh.md (escenarios conductuales (1) y (3) siguen pendientes de ejecución: incorporarlos a la misma sonda).
 **Criterios:** sonda de escritura ordinaria del agente pasa sin escalada en modo vigente; escenario (2) de setup-dsh.md deja de reproducirse. **Bloqueo real:** decisión del titular sobre cómo tratar el paquete instalado.
 
-## M8 — Distribución y publicación remotas (decisión titular)
+## M8 — Distribución y publicación remotas (DISTRIBUCIÓN RESUELTA 2026-09-13; publicación pública sigue opcional)
 
 **Situación:** probado solo bundle local (clon/directorio); sin autorización de red para origen/destino no se puede acreditar la distribución remota (§14, §17) ni publicar.
-**Pasos cuando haya autorización:** 1) definir origen autorizado (repo remoto del titular) y destino; 2) bootstrap clean-room desde descarga con versiones fijadas y manifiesto de procedencia/hash; 3) repetir P1+P7 de la misión anterior desde esa descarga; 4) publicación solo tras revisión de diff, licencia decidida por el titular y push explícito.
+**Resuelto (autorización del titular, 2026-09-13):** origen autorizado = `github.com/MadManJohnSmith/Improvement` (privado, credenciales globales del titular). Clean-room acreditado: clon por red en directorio nuevo con HEAD verificado (`0ce836e`), incorporación desde el clon (no desde bundle local) con repetición idempotente (0 cambios), carga nativa 8/8 skills con cuerpo exacto y suite completa del clon 62 tests OK. Evidencia externa: `Improvement-ensayos/m8-distribucion-red/`.
+
+**Restante (opcional):** publicación pública del repo con licencia decidida por el titular; no bloquea el núcleo.
 **Criterios:** incorporación desde cero en máquina limpia vía red; repetición idempotente; sin credenciales ni datos privados en la distribución. Sin autorización, este hito permanece `BLOQUEADO` y no bloquea el núcleo local.
 
 ## Orden de ejecución y dependencias
