@@ -199,6 +199,29 @@ class HostController:
                     task_sha256=entry['task_sha256'], result_sha256=entry['result_sha256'])
         return {'unit_id': entry['unit_id'], 'state': 'PENDING'}
 
+    def update_unit_refs(self, unit_id, task_ref, result_ref):
+        """El launcher materializa task/result durante el turno: actualiza referencias y
+        digests esperados (evento auditado) antes de CHECK_RECEIVED. Falla cerrada si la
+        unidad no está en vuelo o los archivos no existen aún."""
+        unit = self._unit_view_unit(unit_id)
+        if unit['state'] != 'IN_FLIGHT':
+            raise HostError('update_unit_refs requiere unidad IN_FLIGHT: ' + unit['state'])
+        task_bytes = Path(task_ref).read_bytes()
+        result_bytes = Path(result_ref).read_bytes()
+        unit['task_ref'], unit['result_ref'] = str(task_ref), str(result_ref)
+        unit['task_sha256'] = missions.digest(task_bytes)
+        unit['result_sha256'] = missions.digest(result_bytes)
+        self._save_queue()
+        self._event('UNIT_REFS_UPDATED', unit=unit_id,
+                    task_sha256=unit['task_sha256'], result_sha256=unit['result_sha256'])
+        return {'unit_id': unit_id, 'task_sha256': unit['task_sha256'], 'result_sha256': unit['result_sha256']}
+
+    def _unit_view_unit(self, unit_id):
+        for existing in self._queue['units']:
+            if existing['unit_id'] == unit_id:
+                return existing
+        raise HostError('Unidad ausente: ' + unit_id)
+
     def units(self):
         """Vista de solo lectura de la cola canónica (copias por unidad)."""
         return [dict(unit) for unit in self._queue['units']]

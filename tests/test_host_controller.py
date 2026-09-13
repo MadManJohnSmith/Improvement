@@ -326,5 +326,29 @@ class HostControllerTest(unittest.TestCase):
         controller.release_locks()
 
 
+
+    # 8. Launcher que materializa recibos durante el turno: update_unit_refs
+    def test_launcher_materializes_refs_during_turn(self):
+        root = self._root()
+        mission = root / 'mission'
+        hc = HostController(mission)
+        hc.register_mandate('host-fixture', LIMITS)
+        task_path = root / 'task-late.json'
+        result_path = root / 'result-late.json'
+
+        def launcher(unit):
+            task_path.write_text(json.dumps({'version': 1, 'unit': unit['unit_id']}))
+            result_path.write_text(json.dumps({'version': 1, 'status': 'done'}))
+            hc.update_unit_refs(unit['unit_id'], str(task_path), str(result_path))
+            return {'artifacts': 'written'}
+
+        hc.enqueue({'unit_id': 'late-1', 'task_ref': 'PENDING', 'result_ref': 'PENDING',
+                    'task_sha256': '0' * 64, 'result_sha256': '0' * 64})
+        outcome = hc.run_next(launcher)
+        self.assertEqual(outcome['outcome'], 'UNIT_DONE')
+        self.assertTrue(task_path.exists() and result_path.exists())
+        self.assertEqual(self._queue(mission)['late-1']['state'], 'DONE')
+
+
 if __name__ == '__main__':
     unittest.main()
