@@ -4,7 +4,7 @@
 **Actualización:** 2026-09-13
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md)
 
-Guía de ejecución para el agente implementador: [Plan de cierre integral](docs/PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md). Define trabajo y aceptación pendientes, no acredita su implementación ni sustituye los estados de esta matriz.
+Guías de ejecución para el agente implementador: [Plan de cierre integral](docs/PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md) (ejecutado en su fase P0–P9 el 2026-09-13) y [Plan de pendientes del núcleo](docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md) (organiza lo restante: cola completa, reauditoría semántica, controlador Host, instrumentación, durabilidad y decisiones del titular). Ninguna de las dos acredita implementación ni sustituye los estados de esta matriz.
 
 Este archivo es un índice compacto, no un diario. Cada etapa conserva solo estado, evidencia principal, bloqueo y siguiente salida. Los detalles históricos van en `CHANGELOG.md`; los artefactos de ejecución permanecen fuera del repositorio. La auditoría completa usa ciclos externos versionados, cola activa compacta y archivo indexado; no importa historiales completos en el estado vigente.
 

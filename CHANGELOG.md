@@ -1,5 +1,9 @@
 # Cambios
 
+## Plan de pendientes del núcleo — 2026-09-13
+
+- Añadir `docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md`: organización descriptiva de lo restante tras la misión de cierre (M1 cola completa por proyecto, M2 reauditoría semántica propia, M3 controlador Host real, M4 aceptación integral, M5 memoria de decisiones y métricas instrumentadas, M6 durabilidad/descendientes remotos, M7 defecto runtime `write` y M8 distribución/publicación remotas), con base operativa heredada del rig probado, dependencias, trazabilidad y formato de entrega. Documento de planificación; PLAN_IMPLEMENTACION.md sigue siendo el único índice de progreso.
+
 ## Misión de cierre integral en copias aisladas — 2026-09-13
 
 - Ejecución real de P0–P9 del plan de cierre por el agente de mantenimiento, con DSH real aislado (launcher + canal + presets + nrouter) sobre copias limpias de Syncify y RehabWeb; evidencia externa en `Improvement-ensayos/mision-arq-20260913/` (recibos, sesiones, lotes, archivo, métricas, UX).
