@@ -1,5 +1,12 @@
 # Cambios
 
+## Onboarding de sesión, cuota de mensajes y reintento F6 — 2026-09-13
+
+- `scripts/inference_channel.py`: tope de mensajes por request configurable por lanzamiento (`DEFAULT_MESSAGES=64`, tope duro `MAX_MESSAGES=256`) en lugar del fijo 64 que mataba los turnos del ejecutor (lote 2: 12 denials `messagesBounds`, messageCount 66); presupuesto, tokens, payload, allowlist y fail-closed sin cambios. Regresiones nuevas incluido el camino real por launcher (130 mensajes: 502 al default, 200 con el tope elevado).
+- `skills/workflow-continuous-repair`: una línea mínima que obliga a retener ante el rechazo de esquema de `bash` o «not strictly wider» en un subagente ejecutor (confirmación empírica del escenario (2) de setup-dsh.md con el transcript de la sesión RehabWeb 3081); corrección esperada documentada en setup-dsh.md.
+- Reintento F6-DUPLICATE-CONVERSATION-500 en rig aislado (`mission-faseb-b3`, patrón lotes 1/2): ejecutor `nrouter/Subagents-Coding` (mensajes 256, gasto 40/256, 0 denials, messageCount máx 82) con rojo-verde real, QA `nrouter-raw/Subagents-Audits` ACCEPTED en sesión separada, run-check dentro del sobre, `verify`/`reaudit` OK; checkpoint `faseb-003` con la excepción resuelta y producto original intacto (integración solo en copia de ensayo).
+- Evidencia de la unidad: onboarding y humo nativo de skills en `/home/alan/DSH-workspace/session-rehabweb-2/evidence/`; canal y lanzamientos en `.../mission-faseb-b3/runs/` (externos al repositorio).
+
 ## Arquitectura v2.4 y cobertura verificable — 2026-09-13
 
 - Recuperar memoria de decisiones (identidad, motivo, contrato, sustituciones y revisión QA), métricas finas con fuente/límites y delegación para contener contexto, especializar y contrastar; conservar la prohibición de agentes por apariencia. Corregir la referencia al plan original preservado en archivo externo, sin importar datos privados.
