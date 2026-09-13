@@ -1,5 +1,11 @@
 # Cambios
 
+## Tanda MVP: controlador real y consumidor de cola — 2026-09-13
+
+- `host_controller`: `update_unit_refs` para launchers que materializan recibos durante el turno (regresión incluida). El controlador condujo su primera unidad real de punta a punta (turno del rig → verificación de hashes → lote del publicador → UNIT_DONE) con suites en verde: M3 acreditado en real para el ciclo mecánico.
+- Driver de misión externo (herramienta de ensayo, fuera del árbol): consume la cola por unidades con auditorías paralelas y reparaciones secuenciadas; integra cada unidad aceptada en la rama `workflow-repairs` del producto con commit+push. Unidades aceptadas e integradas: Syncify 5, RehabWeb 4 (suite 77 tests OK). Excepción declarada: auth-bridge RETAINED por QA fork sin session_id (2 intentos) — hallazgo de runtime registrado (no expone el id del subagente fork).
+- M8 acreditada: distribución del framework por red (clean-room desde el origen privado autorizado).
+
 ## Distribución por red del framework (M8) — 2026-09-13
 
 - Con el origen privado autorizado por el titular, acreditada la distribución por red: clon clean-room con HEAD verificado, bootstrap desde el clon (idempotente), carga nativa 8/8 skills y suite del clon 62 tests OK. Push del flujo a `origin/fix/local-artifact-integrity` autorizado explícitamente. La publicación pública con licencia queda como opción del titular.
