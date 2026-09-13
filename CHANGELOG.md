@@ -1,5 +1,11 @@
 # Cambios
 
+## Corrección de mapeo de sesión a canal RAW — 2026-09-12
+
+- Fila de sesión/orquestador de las composiciones externas corregida a canal RAW: `nrouter-raw/Orquestrador` en `auditor-preset` y `repair-preset`; QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` (NORMAL) sin cambios. Orquestrador verificado en el catálogo RAW no secreto.
+- Re-aceptación aislada por preset con host_launcher: sesión con modelo efectivo `nrouter-raw/Orquestrador`, proyección de política exacta, skills con cuerpo exacto y denegación fail-closed de rutas no listadas; ninguna ruta no autorizada alcanzó el broker.
+- Humo mínimo de la ruta corregida: `nrouter-raw/Orquestrador` respondió `OK` (`text-delta`, `finish=stop`); el `EMPTY_RESPONSE` previo no se reprodujo en el canal RAW. Regresión de mapeo intacta (usa rutas fixture, no nrouter).
+
 ## Presets externos del flujo y mapeo de modelos — 2026-09-12
 
 - Compuestos presets externos de Auditoría y Reparación en el workspace (`workflow-presets`) sin tocar `~/.dsh`, presets distribuidos ni routing global; delegación copiada de Standard con `modelSelectionSettings: true` y skills nativas por workspace, sin declarar proveedores ni modelos.
