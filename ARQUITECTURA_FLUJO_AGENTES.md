@@ -2,7 +2,7 @@
 
 **Versión:** 2.4
 **Actualización:** 2026-09-13
-**Estado:** arquitectura objetivo completa; implementación comprobada limitada a v0.1 acotada mediante skills Standard, recibos locales y controles mecánicos. Consultar [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md) para el progreso por etapas.
+**Estado:** arquitectura objetivo completa; MVP del núcleo aceptado el 2026-09-13 con DSH real, controlador Host, QA, reauditoría semántica, integración en ramas de copia, archivo y recuperación acotada. Extensiones y límites hostiles permanecen explícitos. Consultar [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md) para el progreso por etapas.
 **Responsable de las decisiones de alcance y autorización:** usuario.
 **Propósito de este archivo:** ser la referencia vigente del diseño, sin depender de la memoria de una conversación.
 
@@ -281,7 +281,7 @@ diagnóstico sustentado → solución revisada → encargo suficiente
 → integración autorizada → archivo recuperable
 ```
 
-Hasta que la matriz y la evidencia indiquen lo contrario, el framework debe describirse como operación v0.1 acotada, no como autonomía completa.
+La matriz y la evidencia del 2026-09-13 permiten describir el framework como MVP del núcleo aceptado: misión finita, estados fail-closed y recuperación acotada. No implica autonomía ilimitada, productos libres de defectos, descendientes remotos controlados ni durabilidad ante pérdida física de energía.
 
 ## 17. Aceptación de la distribución y fuentes vigentes
 

@@ -1,5 +1,12 @@
 # Cambios
 
+## MVP del framework aceptado — 2026-09-13
+
+- Cerrar el MVP tras consumir la cola finita de 17 unidades en dos proyectos: 17 auditadas, 3 aceptadas con `missions.verify` vigente y reauditoría semántica CONFIRMED, 14 retenidas con causa/evidencia, cero estados silenciosos. La aceptación corresponde al framework y su comportamiento fail-closed, no a declarar los productos libres de defectos.
+- Demostrar el controlador Host en una unidad real y M6 mediante `docker kill` durante `TURN_STARTED`: presupuesto preservado, reconciliación a PENDING, sin publicación duplicada. Límite: pérdida de energía no ensayada sin hipervisor.
+- Correcciones semánticas finales en ramas de producto: Syncify archive/dependency rollback recuperable y ejecución segura (16+13 tests); RehabWeb agenda/evaluaciones endurecidas (82 tests). Reauditorías finales CONFIRMED y ramas publicadas.
+- Suite final del framework 64 tests OK; archivos finales restaurables con checksums (80/94 archivos). RSI y F1–F5 quedan post post-MVP.
+
 ## Tanda MVP: controlador real y consumidor de cola — 2026-09-13
 
 - `host_controller`: `update_unit_refs` para launchers que materializan recibos durante el turno (regresión incluida). El controlador condujo su primera unidad real de punta a punta (turno del rig → verificación de hashes → lote del publicador → UNIT_DONE) con suites en verde: M3 acreditado en real para el ciclo mecánico.
