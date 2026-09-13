@@ -1,5 +1,11 @@
 # Cambios
 
+## M7 como plugin y ramas de producto — 2026-09-13
+
+- `scripts/dsh-plugins/workflow-write.mjs` (nuevo): herramienta `workflow_write` con semántica de escalada corregida (mismo modo = política vigente; mayor = aprobación real; denegación fail-closed fuera del área). Resuelta la sonda de plugins: el loader acepta rutas absolutas en filas de preset y exige `inject` + `output {schema, render}`. Montado en los presets del flujo; regresión mecánica `tests/test_workflow_write_plugin.py`. M7 deja de ser bloqueante: el runtime instalado no se parchea y el hallazgo se reportará upstream.
+- Ramas `workflow-repairs` en Syncify y RehabWeb (autorización explícita del titular): unidades aceptadas integradas y commiteadas por unidad con referencia a recibos; suites en verde; publicadas en origin. Las futuras unidades de M1/M2 integran allí.
+- Decisiones del titular registradas: M6 autorizado; RSI y F1–F5 como plan de mejora posterior al MVP; M8 aclarada (framework: descarga por red + publicación con licencia).
+
 ## Tanda M1–M5 con subagentes — 2026-09-13
 
 - Tres servicios nuevos por subagentes (revisados y con regresiones): memoria de decisiones (`scripts/decisions.py`), métricas de misión (`scripts/metrics.py`) y controlador Host (`scripts/host_controller.py`, turn_launcher inyectable, reconciliación idempotente, lock de escritor único y presupuesto durable). Suite completa 61 tests.

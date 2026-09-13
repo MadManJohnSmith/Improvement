@@ -98,10 +98,10 @@ Estos hechos comprobados condicionan cómo ejecutar los hitos siguientes; re-ver
 3. Registrar resultados en status.md como capacidad o como límite, con la prueba exacta.
 **Criterios:** tras crash completo, el estado externo reconstruye la misión sin subcontar presupuesto ni duplicar escrituras; o el gate queda abierto con causa de entorno. **Estimación:** 1 sesión + entorno de VM.
 
-## M7 — Defecto runtime: `write` rechaza el modo vigente (decisión titular)
+## M7 — Defecto runtime: `write` rechaza el modo vigente (RESUELTO como plugin, 2026-09-13)
 
 **Situación:** el runtime DSH instalado (0.1.5-alpha.1) rechaza con «not strictly wider» las escrituras que solicitan el mismo modo ya vigente, bloqueando la herramienta `write` del agente con enforcement completo; el workaround actual (bash + modo `read-only` de sesión + aprobación) está probado pero es un rodeo.
-**Pasos:** 1) consolidar el informe del defecto con las tres sesiones de evidencia y el transcript de producción ya registrado; 2) reportarlo al mantenimiento del runtime (el titular decide canal: upstream, parche local versionado del paquete instalado, o convivencia con el workaround); 3) si hay corrección upstream, repetir la sonda de escritura y retirar el rodeo del rig con regresión; 4) actualizar setup-dsh.md (escenarios conductuales (1) y (3) siguen pendientes de ejecución: incorporarlos a la misma sonda).
+**Resolución adoptada (decisión del titular):** `scripts/dsh-plugins/workflow-write.mjs` montado en los presets del flujo con regresión `tests/test_workflow_write_plugin.py`; el runtime instalado no se parchea. **Pasos restantes:** 1) consolidar el informe del defecto con las tres sesiones de evidencia y el transcript de producción ya registrado; 2) reportarlo al mantenimiento del runtime (el titular decide canal: upstream, parche local versionado del paquete instalado, o convivencia con el workaround); 3) si hay corrección upstream, repetir la sonda de escritura y retirar el rodeo del rig con regresión; 4) actualizar setup-dsh.md (escenarios conductuales (1) y (3) siguen pendientes de ejecución: incorporarlos a la misma sonda).
 **Criterios:** sonda de escritura ordinaria del agente pasa sin escalada en modo vigente; escenario (2) de setup-dsh.md deja de reproducirse. **Bloqueo real:** decisión del titular sobre cómo tratar el paquete instalado.
 
 ## M8 — Distribución y publicación remotas (decisión titular)
