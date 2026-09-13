@@ -1,5 +1,12 @@
 # Cambios
 
+## Presets externos del flujo y mapeo de modelos — 2026-09-12
+
+- Compuestos presets externos de Auditoría y Reparación en el workspace (`workflow-presets`) sin tocar `~/.dsh`, presets distribuidos ni routing global; delegación copiada de Standard con `modelSelectionSettings: true` y skills nativas por workspace, sin declarar proveedores ni modelos.
+- Verificados el proveedor NORMAL `nrouter` y el RAW `nrouter-raw` por catálogo no secreto y humo aislado: orquestador `nrouter/Orquestrador`, QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` respondieron `OK`; el `EMPTY_RESPONSE` previo de Orquestrador no se reprodujo.
+- Aceptación aislada por preset: sesión por preset, modelo efectivo de sesión, proyección de política exacta al mapeo, skills con cuerpo exacto y denegación fail-closed de rutas no listadas. Límite material documentado: el broker de humo niega el turno completo del hijo (`tools` fuera de la allowlist del canal).
+- Límite del runtime comprobado: `allowedModels` es ajuste global único del Host; un preset que intenta su propio namespace de selección falla el montaje, sin fallback silencioso. Regresión nueva `tests/test_dsh_preset_mapping.py`; suite completa 27 tests Python aprobados.
+
 ## Hito 1: launcher Host externo — 2026-09-12
 
 - Añadida envolvente Linux/bubblewrap reusable con lecturas explícitas, estado externo nuevo, namespaces privados y fallo cerrado; sin entorno heredado, instalación ni cambios de runtime/modelos.
