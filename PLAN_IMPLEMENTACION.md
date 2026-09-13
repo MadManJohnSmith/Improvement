@@ -20,12 +20,12 @@ Este archivo es un índice compacto, no un diario. Cada etapa conserva solo esta
 |---|---|---|---|---|
 | 0 | Herramientas y capacidades observadas sin bucles inválidos | PARCIAL | `docs/status.md`; regresiones DSH y validación local | Falta enforcement Host durable y validación de recuperación |
 | 1 | Inventario dirigido, base y límites de pruebas | PARCIAL | `docs/status.md`; perfiles y recibos externos | Completar inventario solo cuando una misión lo necesite |
-| 2 | Publicador restringido con identidad, autorización, idempotencia y recuperación | PARCIAL | `scripts/publisher.py`, `tests/test_publisher.py`; primitive local con resolución en proceso nuevo | Adaptador Host, autenticidad fuerte y pruebas de crash/durabilidad |
+| 2 | Publicador restringido con identidad, autorización, idempotencia y recuperación | PARCIAL | `scripts/publisher.py`, `tests/test_publisher.py`; primitive local con resolución en proceso nuevo; cortes en puntos de transición con reanudación idempotente en `tests/test_recovery_durable.py` | Adaptador Host, autenticidad fuerte y durabilidad ante pérdida de energía |
 | 3 | Fixture contractual roja→verde con aceptación acotada | PARCIAL | `tests/test_operational_cycle.py`, `tests/test_two_mode_cycle.py`; ciclo externo combinado | QA semántica real y límites de runtime cuando el impacto lo requiera |
 | 4 | Handoff determinista Auditor→Reparación | PARCIAL | Lotes locales + estados `executor/qa/auditor` con `actor_id` distinto por rol; `bind_role()` declara roles técnicos y aceptación bloqueada sin QA `VERIFIED` y artefactos vigentes vía `missions.verify`; handoff solo `COMPLETE` | Autorización Host multi-actor, independencia real y autenticidad |
 | 5 | Piloto real de una unidad de producto | RETENIDO | Candidatos externos queue/library; piloto histórico externo sin integración | QA/reauditoría/integración autorizadas según unidad vigente |
 | 6 | Flujo habitual con coste y calidad comparables | PARCIAL | `scripts/audit.py`, capability local y archivo circular; sin medición LLM de campo | Piloto real de Auditoría completa/Reparación y métricas comparables |
-| 7 | Controlador Host y recuperación ante fallos | PENDIENTE | Diseño en arquitectura; sin prueba de campo | Intención/entrega/ack, unicidad, cancelación y reconciliación |
+| 7 | Controlador Host y recuperación ante fallos | PARCIAL | `tests/test_recovery_durable.py` sobre fixtures: operación continuada con presupuesto durable (`scripts/budget.py`), reconciliación en durante QA/antes de publicar/después de publicar, timeout/cancelación/caída de worker/reinicio launcher, descendientes locales terminados | Controlador Host real; autonomía LLM; descendientes remotos y concurrencia hostil |
 | 8 | Transferencia a un segundo proyecto | PENDIENTE | Sin piloto acreditado | Repetir ciclo con otro proyecto y conservar límites |
 
 ## Regla de actualización
