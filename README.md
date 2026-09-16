@@ -74,7 +74,6 @@ Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía 
 - [Estado comprobado](docs/status.md)
 - [Uso operativo actual](docs/usage.md)
 - [Preparación DSH](docs/setup-dsh.md)
-- [Diagramas](docs/diagrams/README.md)
 - [Cambios](CHANGELOG.md)
 
 ## Seguridad y publicación
