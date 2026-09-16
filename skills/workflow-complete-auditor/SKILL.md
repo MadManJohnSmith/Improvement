@@ -3,9 +3,9 @@ name: workflow-complete-auditor
 description: "Auditar un proyecto completo por unidades funcionales, consolidar evidencia y entregar una cola externa de reparación sin modificar el producto."
 ---
 
-# Auditoría completa
+# Auditoría completa del MVP (fixture/fuente normativa)
 
-Este modo coordina una misión completa; no reemplaza la revisión unitaria. El usuario autoriza el resultado y los límites, no cada unidad mecánica.
+Esta skill conserva el comportamiento comprobado del MVP y sirve como fixture/regla de referencia. **No es un modo final genérico para terceros.** Arquitectura 3.0 exige que Creator genere `<Proyecto>-auditor` con unidades, contratos, riesgos y skills específicos, preservando estos invariantes. Este procedimiento coordina una misión completa y no reemplaza la revisión unitaria. El usuario autoriza resultado/límites, no cada unidad mecánica.
 
 ## Entrada
 

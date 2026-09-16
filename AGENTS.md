@@ -12,7 +12,7 @@ Este repositorio contiene el flujo distribuible, no el workspace de un proyecto 
 
 ## Desarrollo y evaluación
 
-El mantenedor guía ensayos con DSH Standard, evalúa evidencia real de las sesiones y convierte fallos relevantes en cambios del flujo y regresiones. Standard es el entorno de construcción; los modos finales siguen siendo Auditor y Reparación continua. Los IDs de sesión de DSH no son IDs de ZCode: usar una fuente disponible y autorizada, sin inventar acceso entre sistemas ni importar historiales privados al repo.
+El mantenedor guía ensayos con DSH Standard, evalúa evidencia real de las sesiones y convierte fallos relevantes en cambios del flujo y regresiones. Standard y los modos/skills genéricos del MVP son herramientas de construcción y fixtures; **no son la distribución final para proyectos nuevos**. Tras C0–C7, Creator generará `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` específicos. Los IDs de sesión de DSH no son IDs de ZCode: usar una fuente disponible y autorizada, sin inventar acceso entre sistemas ni importar historiales privados al repo.
 
 Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimos. No repetir toda la arquitectura ni exigir aprobación por cada subpaso ya autorizado. No afirmar autonomía, carga de skills o aislamiento a partir de un prompt o un estado declarativo.
 

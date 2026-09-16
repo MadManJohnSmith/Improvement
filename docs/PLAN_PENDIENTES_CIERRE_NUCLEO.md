@@ -7,7 +7,9 @@
 **Antecedente directo:** [PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md](PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md), ejecutado en P0–P9 el 2026-09-13 (ver hito «Misión de cierre integral en copias aisladas» en status.md). Este documento organiza **solo lo que queda**; no abre otro backlog: las filas de PLAN_IMPLEMENTACION.md siguen siendo la única fuente de estado.
 **Nota:** escribir este plan no ejecuta nada. Cada hito conserva `PARCIAL`/`PENDIENTE` hasta que su gate quede acreditado con evidencia externa y el índice se actualice.
 
-## 0. Base operativa heredada de la misión del 2026-09-13
+> **ARCHIVO HISTÓRICO — NO EJECUTAR.** Las instrucciones M1–M8, rutas, rigs, modelos, workarounds y secuencias siguientes pertenecen al cierre del MVP v2.4. No son configuración ni backlog vigentes. No reutilizar bash con redirección, presets/rutas del mantenedor ni el orden M1–M8; consultar exclusivamente arquitectura 3.0 y C0–C7.
+
+## 0. Base operativa histórica de la misión del 2026-09-13 (no vigente)
 
 Estos hechos comprobados condicionan cómo ejecutar los hitos siguientes; re-verificar al retomar (versiones de runtime, rutas y servicios pueden cambiar):
 
@@ -112,7 +114,7 @@ Estos hechos comprobados condicionan cómo ejecutar los hitos siguientes; re-ver
 **Restante (opcional):** publicación pública del repo con licencia decidida por el titular; no bloquea el núcleo.
 **Criterios:** incorporación desde cero en máquina limpia vía red; repetición idempotente; sin credenciales ni datos privados en la distribución. Sin autorización, este hito permanece `BLOQUEADO` y no bloquea el núcleo local.
 
-## Orden de ejecución y dependencias
+## Orden histórico que se siguió (NO ejecutar; superseded por C0–C7)
 
 ```text
 M7 (decisión titular, paralelizable)   M8 (bloqueado hasta autorización)
@@ -124,7 +126,7 @@ M5 (instrumentación; conviene antes de agotar M1 para no perder métricas de la
 M6 (requiere M3 para crash real; si no, queda abierto)
 ```
 
-Recomendación de secuencia en misiones: (1) M5.1–2 + arranque de M1 (primeras 5 unidades Syncify); (2) M3 + M1 continúa bajo controlador; (3) M2 por unidad desde el inicio de M1; (4) M4 por proyecto al consumir su cola; (5) M6 con el controlador estable; (6) M7/M8 según decisión del titular.
+Secuencia histórica recomendada entonces (no vigente): (1) M5.1–2 + arranque de M1 (primeras 5 unidades Syncify); (2) M3 + M1 continúa bajo controlador; (3) M2 por unidad desde el inicio de M1; (4) M4 por proyecto al consumir su cola; (5) M6 con el controlador estable; (6) M7/M8 según decisión del titular.
 
 ## Trazabilidad
 

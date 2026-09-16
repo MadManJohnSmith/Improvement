@@ -180,8 +180,19 @@ El paquete instalado DSH 0.1.5-rc.1 fue inspeccionado y sus servicios nativos ej
 - RehabWeb `rehabweb-audit-001`: base `5e638f0`, seis unidades y 381 archivos asignados, cola inicial de 52 hallazgos. La primera pasada no acreditaba reparaciones uniformemente; seis cierres posteriores sí aportan cadenas de evidencia acotadas. No confundir estos momentos ni asignación con revisión completa.
 - El launcher operativo externo fue corregido para derivar el workspace desde `dshHome` y usar el nombre del proyecto en el prompt; no modifica el runtime DSH ni plugins.
 
-## Pendiente
+## Pendiente vigente — arquitectura 3.0 (C0–C7)
 
-El contrato v0.1 sigue siendo operación acotada, no autonomía. Hay presets y turnos reales comprobados en sondas, candidatos de dos proyectos y QA limitada de RehabWeb; ya no corresponde declarar todas esas capacidades ausentes. Falta ligarlas en una misión usuario-real completa: carga/aplicación nativa de skills, autorización Host multi-actor, consumo de cola, revisión semántica posterior, integración autorizada y cierre conjunto. Inventario/recibos/ledger validan propiedades locales, no conceden permisos ni sustituyen al Host. La recuperación y el presupuesto durable están probados en fixtures, no integrados con todas las inferencias ni descendientes remotos. Memoria de decisiones, evidencia humana y métricas finas tienen contrato normativo; su instrumentación y enforcement siguen pendientes. El publicador histórico permanece como antecedente de reutilización dirigida, no dependencia de la unidad local.
+El MVP anterior está aceptado y se conserva como base de servicios/fixtures. El trabajo pendiente no es «ligar presets genéricos», sino implementar la experiencia final específica por proyecto:
 
-Remoto origin configurado; publicación sujeta a autorización y autenticación efectiva. El repositorio es canónico: artefactos de ejecución y datos privados permanecen fuera del árbol. `AGENTS.md` establece las reglas de mantenimiento y evaluación con DSH Standard. Licencia pública pendiente del titular. La preparación para GitHub no equivale a publicación ni a motor completo.
+1. C0 schemas, manifests, contracts, fixtures y corpus negativo.
+2. C1 `bootstrap install` determinista.
+3. C2 petición automática a DSH Creator y pipeline interno scope/audit/architect/document/test/develop/check/debug/sync.
+4. C3 validador Host de rutas/hashes/capabilities/routing/grafo/hot paths/licencias.
+5. C4 backups completos, instalación transaccional, rollback/update/uninstall y plugin portable.
+6. C5 aceptación DSH automática con escenarios públicos, holdouts Host, review y reparación RETAINED.
+7. C6 pilotos clean-room en proyectos nuevos.
+8. C7 licencia/avisos, tag y distribución del piloto.
+
+Los presets Auditor/Reparación registrados durante el MVP son fixtures históricos; no deben instalarse en terceros. Las skills `workflow-*` operativas se mantienen para regresiones y como fuentes normativas del MVP mientras Creator 3.0 genera sus reemplazos específicos.
+
+Remoto origin configurado; publicación sujeta a autorización. El repositorio canónico no contiene perfiles reales, logs, auditorías privadas, candidatos ni credenciales. La licencia pública sigue pendiente del titular; preparar GitHub no concede licencia abierta.

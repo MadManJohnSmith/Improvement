@@ -1,6 +1,8 @@
 # Evaluación del borrador de orquestación externa
 
-Fecha: 2026-09-13. Evaluación documental contra arquitectura v2.4, código ya revisado y estado registrado. No se instalaron ni probaron Factory, Kiro, Cursor, Vibe Kanban, Aider, motores de embeddings o perfiles Codex en esta evaluación. Sus capacidades descritas en el borrador requieren verificación antes de cualquier adopción.
+**Estado:** antecedente histórico evaluado contra arquitectura v2.4; superseded por arquitectura 3.0 y C0–C7. No usar sus prioridades/recomendaciones como backlog vigente.
+
+Fecha: 2026-09-13. Evaluación documental contra arquitectura v2.4, código ya revisado y estado registrado. No se instalaron ni probaron Factory, Kiro, Cursor, Vibe Kanban, Aider, motores de embeddings o perfiles Codex en esta evaluación. Sus capacidades descritas en el borrador requerían verificación antes de cualquier adopción.
 
 ## Conclusión
 
@@ -34,4 +36,4 @@ Conviene recuperar capacidades concretas, no adoptar otra plataforma como depend
 
 ## Encaje con el plan de cierre
 
-El [plan de ejecución](PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md) organiza la implementación del núcleo completo y separa las extensiones recomendadas de las dependencias opcionales. Antes de materializar un cambio de diseño, actualizar el mismo documento normativo y mantener la matriz de etapas como única fuente de progreso. Esta evaluación no acredita capacidades implementadas ni autoriza instalaciones, gasto, publicación o cambios de producto.
+El plan P0–P9 enlazado es un antecedente ejecutado del MVP. El único backlog vigente es C0–C7 en `PLAN_IMPLEMENTACION.md`, subordinado a arquitectura 3.0. Las propuestas F1–F5 permanecen post-MVP y no son requisitos actuales salvo adopción explícita futura. Esta evaluación no acredita capacidades ni autoriza instalaciones, gasto, publicación o cambios de producto.

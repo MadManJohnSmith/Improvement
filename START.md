@@ -32,12 +32,16 @@ python3 -B /ruta/framework/scripts/onboard.py \
 # repetir con --init después de revisar
 ```
 
-## Despacho actual
+## Despacho legado del MVP (solo mantenimiento/pilotos controlados)
 
-- Auditoría completa: carga `workflow-complete-auditor`.
-- Auditoría unitaria: carga `workflow-auditor`.
-- Reparación acotada: carga `workflow-continuous-repair`.
+Estos procedimientos no deben instalarse, copiarse ni presentarse como modos finales de un proyecto nuevo:
+
+- Auditoría completa fixture: carga `workflow-complete-auditor`.
+- Auditoría unitaria fixture: carga `workflow-auditor`.
+- Reparación acotada fixture: carga `workflow-continuous-repair`.
 - Ejecutor/QA son funciones internas cuando la composición comprobada los ofrece.
+
+El despacho final se implementará en C0–C7 mediante modos `<Proyecto>-auditor` y `<Proyecto>-continuous-repair`.
 
 Mensajes breves:
 

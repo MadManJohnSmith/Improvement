@@ -1,5 +1,12 @@
 # Cambios
 
+## Auditoría de vigencia documental 3.0 — 2026-09-16
+
+- Auditar archivos versionados para impedir que instrucciones v2.4/v0.1 se interpreten como vigentes. Corregir AGENTS/START/skills del MVP, runbook, status, evaluación externa, planes históricos y guía de diagramas.
+- Los procedimientos `workflow-auditor`, `workflow-complete-auditor` y `workflow-continuous-repair` quedan rotulados como fixtures/fuentes normativas del MVP, no modos finales; ausencia de `workflow_write` retiene antes de escribir (sin fallback por bash).
+- Neutralizar planes P0–P9 y M1–M8 con marcadores locales `NO EJECUTAR`; C0–C7 es el único backlog. Parametrizar el test externo de launchers y rutas de diagramas.
+- Añadir `tests/test_architecture_consistency.py` para detectar regresiones de vigencia, presets genéricos, v0.1 en skills, rutas del mantenedor y fallback de escritura.
+
 ## Arquitectura 3.0 promovida — 2026-09-16
 
 - Promover el diseño aprobado como `ARQUITECTURA_FLUJO_AGENTES.md` v3.0 y retirar el documento candidato para mantener una sola norma. El MVP anterior permanece como base comprobada; la experiencia final de un comando queda pendiente en C0–C7.

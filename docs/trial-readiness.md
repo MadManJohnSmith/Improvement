@@ -1,53 +1,56 @@
-# Preparación para prueba completa
+# Preparación para pruebas: MVP comprobado y arquitectura 3.0
 
-**Estado actual:** operación v0.1 acotada; no autonomía Host.
-**Uso:** checklist previo a una misión real de Auditor o Reparación continua.
-**Fuente:** arquitectura vigente y `PLAN_IMPLEMENTACION.md`.
+**Estado vigente:** arquitectura 3.0 aprobada; base MVP comprobada; flujo final de un comando pendiente C0–C7.
+**Uso:** checklist para no confundir fixtures/MVP con la experiencia final del piloto.
+**Fuente:** `ARQUITECTURA_FLUJO_AGENTES.md`, `PLAN_IMPLEMENTACION.md`, `docs/status.md`.
 
-Este runbook es una lista de gates, no un diario ni un plan alternativo. Registrar la evidencia de ejecución en el workspace externo, no aquí.
+Este runbook no es un plan alternativo. Evidencia de ejecución va al workspace externo.
 
-## Estados
+## A. Gates del MVP comprobado (fixtures/mantenimiento)
 
-`HECHO` = evidencia suficiente y vigente; `PARCIAL` = mecanismo limitado; `PENDIENTE` = sin evidencia; `BLOQUEADO` = decisión/permisos/capacidad faltante; `RETAINED` = candidato preservado sin aceptación; `UNVERIFIED` = evidencia necesaria ausente.
+| Gate | Criterio | Estado vigente |
+|---|---|---|
+| Identidad | Framework/producto/workspace/base fijados | HECHO en MVP |
+| Skills | Origen/cuerpo/carga nativa comprobados | HECHO en fixtures |
+| Onboarding | Perfil/copias/enlaces/conflictos/idempotencia | HECHO mecánico |
+| Misión | Objetivo/autoridad/base/criterios/límites | HECHO por contrato v1 |
+| Reparación | candidato externo, change_scope, un escritor | HECHO |
+| QA/reauditoría | actor/candidato/prueba/evidencia | HECHO con retenciones honestas |
+| Controlador/recuperación | presupuesto/locks/reconciliación/crash de contenedor | HECHO con límites explícitos |
+| Archivo | ciclos y manifests restaurables | HECHO |
 
-## Gates
+Estos gates no acreditan bootstrap Creator 3.0 ni modos generados para terceros.
 
-| Gate | Criterio | Evidencia recuperable | Resultado / estado | Bloqueo o siguiente acción |
-|---|---|---|---|---|
-| Identidad | Framework, producto y workspace externos identificados; revisión/base fijadas | `project.json`, `PROJECT.md`, Git externo | Registrar antes de actuar | Detener ante origen ambiguo |
-| Skills | Origen, revisión, descubrimiento, cuerpo y ejecución nativa comprobados | Recibo externo y prueba de carga | `PARCIAL` en v0.1 | No confundir lectura con carga |
-| Onboarding | Perfil externo, copias idempotentes, enlaces propios y conflictos rechazados | `onboard.py`, tests y workspace | `HECHO` mecánico | Permisos efectivos se comprueban aparte |
-| Misión | Objetivo, autorización, base, rutas, exclusiones, criterios, límites y parada definidos | `task.json` y referencia real al encargo | Obligatorio | JSON no crea autorización |
-| Reparación | `files`, `base` y `change_scope` completos; un escritor y candidato externo | `task.json`, snapshot y diff | Obligatorio | Fuera de scope ⇒ `RETAINED` |
-| Validación | `argv` exacto, `shell=false`, timeout, salida externa y terminación comprobada | `check.json`, stdout/stderr | `PARCIAL` mecánico | Estado incierto ⇒ no reintentar a ciegas |
-| QA | Revisor distinto, candidato/check/hash exactos y revisión suficiente | `qa.json` y referencia de sesión | Necesario en alto impacto | Ausencia ⇒ `UNVERIFIED`/`RETAINED` |
-| Reauditoría | Candidato vigente, prueba íntegra y revisión semántica dirigida | recibo `reaudit` + informe Auditor/QA | Mecánica `PENDING_SEMANTIC_REVIEW` | No equivale a aceptación |
-| Entrega | Recibo completo/parcial, referencias y hashes verificables | recibos externos y handoff | `PARCIAL` local | Handoff Host pendiente |
-| Integración | Autorización separada, destino y diff revisados | decisión humana y registro externo | Pendiente por defecto | No integrar automáticamente |
-| Recuperación | Timeout/cancelación/crash/reinicio reconciliados antes de otro escritor | pruebas de fallo específicas | Pendiente | Intervención supervisada |
-| Capability | Lectura de producto, ejecución de framework y escritura externa concedidas una vez y reutilizables | recibo nativo y capability externa | `UNVERIFIED` si el Host no lo demuestra | No escalar a acceso total; retener |
-| Auditoría completa | Inventario, unidades, delegación, consolidación y cola externa cerrados | `audit-manifest`, matriz, informe y `repair-queue` | Obligatorio para auditoría global | Sin siguiente prompt manual |
-| Artefactos | Estado activo compacto; detalle histórico indexado por ciclo | `active/`, `cycles/`, `archive/`, hashes | Obligatorio | No cargar históricos completos |
-| Privacidad | Sin credenciales/datos personales; worktree/HOME/XDG/symlink no son sandbox | inspección de rutas y permisos | Obligatorio | Detener si no se puede limitar |
+## B. Gates previos a pilotos con usuarios reales (C0–C7)
 
-## Preflight mínimo
+| Gate | Criterio | Estado |
+|---|---|---|
+| C0 schemas/fixtures | generation manifest, contracts, graph, scenarios, handoffs, drift; corpus positivo/negativo | PENDIENTE |
+| C1 install | un comando prepara run/snapshot/authority sin modificar producto/config global | PENDIENTE |
+| C2 Creator automático | RPC local, proveedor ya configurado, generación específica, manifest/finish | PENDIENTE |
+| C3 Host validator | hashes/paths/capabilities/routing/contracts/graph/hot paths/licencias fail-closed | PENDIENTE |
+| C4 transacción | backup completo, staging de conjunto, swap/rollback, update/uninstall | PENDIENTE |
+| C5 acceptance | public scenarios, holdouts Host, verify/review, RETAINED repair, post-promotion smoke | PENDIENTE |
+| C6 clean-room | dos proyectos nuevos, usuario sin contexto privado, install/update/uninstall | PENDIENTE |
+| C7 distribución | licencia/avisos, tag, guía, feedback, clon reproducible | PENDIENTE |
 
-1. Confirmar árbol del framework y producto; no mezclar repositorios.
-2. Crear un `cycle_id` externo nuevo y escribir `started.json` antes de trabajar.
-3. Ejecutar onboarding en workspace externo; repetir en dry-run/idempotencia.
-4. Registrar revisión de skills y capacidades realmente observadas.
-5. Para Auditoría completa, crear inventario, unidades, base, criterios, exclusiones y DAG antes de delegar.
-6. Crear una unidad de reparación con `task.json`, base, criterios, exclusiones y `change_scope` si aplica.
-7. Inspeccionar scripts, destinos, enlaces y dependencias antes de ejecutar.
-8. Preparar candidato y evidencia fuera de framework/producto.
-9. Ejecutar rojo/verde solo con comandos autorizados.
-10. Solicitar QA independiente real cuando el riesgo lo exige.
-11. Ejecutar `verify` y `reaudit`; conservar `UNVERIFIED` si falta evidencia.
-12. Actualizar cola/ciclo y archivar detalle sin saturar el estado activo.
-13. Integrar o publicar solo con autorización separada.
+## Preflight del piloto final
+
+1. DSH compatible, Creator y proveedor/modelo ya configurados.
+2. Clon del tag de piloto.
+3. Proyecto fuera del framework y workspace externo.
+4. Un único `bootstrap install`.
+5. Cero copia manual de prompts/JSON/receipts.
+6. Modos generados `<Proyecto>-auditor` y `<Proyecto>-continuous-repair`.
+7. Skills específicas justificadas, no presets universales.
+8. Creator invoca `accept`; Host decide.
+9. Backups verificados antes de reemplazo.
+10. Aceptación automática real y rollback probado.
+11. Update por drift y uninstall conservador.
+12. Registro de interacciones/feedback sin secretos.
 
 ## Paradas obligatorias
 
-Detener y devolver una excepción concreta ante: fuente inaccesible o ambigua, permisos insuficientes, candidato obsoleto, cambio fuera de alcance, QA ausente, prueba alterada, timeout/estado incierto, causa repetida sin evidencia nueva, datos sensibles no autorizados o solicitud de integrar/publicar sin decisión.
+`RETAINED` ante proveedor/Creator/capability ausente, raíz ambigua, unknown load-bearing, skill ajena/local edit, ruta/hash inválido, routing cambiado, backup fallido, acceptance sin evidencia, reviewer no observable, rollback no verificable o publicación no autorizada.
 
-La prueba sintética del framework cubre mecanismos locales de ambos modos, pero no acredita producto real, IPC Tauri, QA independiente efectiva, autenticidad de actores, sandbox OS, recuperación durable, autonomía Host, coste medido ni transferencia a un segundo proyecto.
+No entregar el enlace como experiencia final de un comando mientras C0–C7 no estén HECHO.

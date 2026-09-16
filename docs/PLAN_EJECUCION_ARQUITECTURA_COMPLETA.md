@@ -4,9 +4,11 @@
 **Fecha de referencia:** 2026-09-13.
 **Destinatario:** agente de mantenimiento encargado de ejecutar una misión posterior autorizada.
 **Jerarquía:** subordinado a [arquitectura vigente](../ARQUITECTURA_FLUJO_AGENTES.md), [plan por etapas](../PLAN_IMPLEMENTACION.md), [estado comprobado](status.md) y [reglas del repositorio](../AGENTS.md).
-**Nota sobre la redacción:** crear este plan no ejecutó su implementación. Esta nota no limita al agente que reciba el encargo de ejecutarlo: ese agente debe realizar las fases siguientes hasta su aceptación, dentro de la autoridad acordada.
+**Advertencia de vigencia:** este documento se conserva como antecedente del MVP v2.4. **No ejecutar sus instrucciones ni su prompt final como plan vigente**; la arquitectura normativa es v3.0 y el único backlog actual es C0–C7 en `PLAN_IMPLEMENTACION.md`. La evidencia histórica sigue siendo útil para regresiones y límites.
 
-## 1. Mandato de la futura ejecución y significado de completar
+> **CONTENIDO HISTÓRICO — NO EJECUTAR.** Las fases P0–P9 y las antiguas etapas 0–8 fueron ejecutadas para el MVP v2.4. Los verbos imperativos siguientes documentan el mandato de aquella misión; no crean trabajo actual ni deben copiarse a un agente. El backlog único vigente es C0–C7.
+
+## 1. Mandato histórico ejecutado y significado que tuvo completar
 
 - Terminar el núcleo de TODA la arquitectura vigente, no otra demostración parcial de sus primitives.
 - Implementar y verificar distribución, incorporación, dos modos DSH, Host, auditoría, reparación, QA, reauditoría, integración en copia, archivo y recuperación.
@@ -342,7 +344,7 @@ Todos los artefactos de misión viven fuera del repositorio distribuible; solo c
 | §16 Hoja de ruta | P0, P9 | Etapas 0–8 reconciliadas por evidencia, no por cantidad de actividad ni éxito de fixtures. |
 | §17 Aceptación distribución | P1, P7, P9 | Descubrimiento/cuerpo/conducta nativos y distribución exacta reproducible desde inicio. |
 
-## 12. Entrega final del ejecutor y prompt listo para pegar
+## 12. Entrega histórica y prompt archivado (NO pegar ni ejecutar)
 
 Entregar un resumen corto con estado del núcleo y de extensiones, gates aprobados/faltantes, evidencia externa recuperable, versiones y límites.
 Informar comandos/intervenciones reales, coste observable, pruebas omitidas, fuentes preservadas y cambios/commits locales del flujo.
