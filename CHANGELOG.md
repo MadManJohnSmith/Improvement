@@ -1,5 +1,175 @@
 # Cambios
 
+## Arquitectura 3.0 promovida — 2026-09-16
+
+- Promover el diseño aprobado como `ARQUITECTURA_FLUJO_AGENTES.md` v3.0 y retirar el documento candidato para mantener una sola norma. El MVP anterior permanece como base comprobada; la experiencia final de un comando queda pendiente en C0–C7.
+- Corregir el flujo de incorporación: usuario configura DSH/proveedor una vez; `bootstrap install` prepara workspace y llama automáticamente a Creator; Creator usa capacidades internas de discovery/design/test/generation y genera `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas; Creator invoca `accept`; solo Host valida, respalda, instala, acepta/retiene y promueve/rollback.
+- Reemplazar la especificación de «preset neutral de dos archivos» por el contrato generacional completo (`creator-runs`, manifests, contracts, scenarios/holdouts, validation, backup, promotion y drift). Presets Syncify/RehabWeb quedan como fixtures históricos, no defaults.
+- Adaptar integralmente patrones de las nueve skills de `jsmastery-pro/skills` (MIT, commit observado `43b69e4`): scope particiona; audit descubre; architect diseña contratos; document normaliza; test deriva escenarios; develop genera; check verifica/revisa; debug repara RETAINED; sync detecta drift. No se adoptan sus modos finales, slash workflow, npx/MCP auto-install ni dependencias Claude/web/Git.
+- Abrir C0–C7 como único backlog vigente: schemas/fixtures, install, automatización Creator, validador Host, transacción/backups, aceptación automática, pilotos clean-room y distribución de piloto.
+
+## MVP del framework aceptado — 2026-09-13
+
+- Cerrar el MVP tras consumir la cola finita de 17 unidades en dos proyectos: 17 auditadas, 3 aceptadas con `missions.verify` vigente y reauditoría semántica CONFIRMED, 14 retenidas con causa/evidencia, cero estados silenciosos. La aceptación corresponde al framework y su comportamiento fail-closed, no a declarar los productos libres de defectos.
+- Demostrar el controlador Host en una unidad real y M6 mediante `docker kill` durante `TURN_STARTED`: presupuesto preservado, reconciliación a PENDING, sin publicación duplicada. Límite: pérdida de energía no ensayada sin hipervisor.
+- Correcciones semánticas finales en ramas de producto: Syncify archive/dependency rollback recuperable y ejecución segura (16+13 tests); RehabWeb agenda/evaluaciones endurecidas (82 tests). Reauditorías finales CONFIRMED y ramas publicadas.
+- Suite final del framework 64 tests OK; archivos finales restaurables con checksums (80/94 archivos). RSI y F1–F5 quedan post post-MVP.
+
+## Tanda MVP: controlador real y consumidor de cola — 2026-09-13
+
+- `host_controller`: `update_unit_refs` para launchers que materializan recibos durante el turno (regresión incluida). El controlador condujo su primera unidad real de punta a punta (turno del rig → verificación de hashes → lote del publicador → UNIT_DONE) con suites en verde: M3 acreditado en real para el ciclo mecánico.
+- Driver de misión externo (herramienta de ensayo, fuera del árbol): consume la cola por unidades con auditorías paralelas y reparaciones secuenciadas; integra cada unidad aceptada en la rama `workflow-repairs` del producto con commit+push. Unidades aceptadas e integradas: Syncify 5, RehabWeb 4 (suite 77 tests OK). Excepción declarada: auth-bridge RETAINED por QA fork sin session_id (2 intentos) — hallazgo de runtime registrado (no expone el id del subagente fork).
+- M8 acreditada: distribución del framework por red (clean-room desde el origen privado autorizado).
+
+## Distribución por red del framework (M8) — 2026-09-13
+
+- Con el origen privado autorizado por el titular, acreditada la distribución por red: clon clean-room con HEAD verificado, bootstrap desde el clon (idempotente), carga nativa 8/8 skills y suite del clon 62 tests OK. Push del flujo a `origin/fix/local-artifact-integrity` autorizado explícitamente. La publicación pública con licencia queda como opción del titular.
+
+## M7 como plugin y ramas de producto — 2026-09-13
+
+- `scripts/dsh-plugins/workflow-write.mjs` (nuevo): herramienta `workflow_write` con semántica de escalada corregida (mismo modo = política vigente; mayor = aprobación real; denegación fail-closed fuera del área). Resuelta la sonda de plugins: el loader acepta rutas absolutas en filas de preset y exige `inject` + `output {schema, render}`. Montado en los presets del flujo; regresión mecánica `tests/test_workflow_write_plugin.py`. M7 deja de ser bloqueante: el runtime instalado no se parchea y el hallazgo se reportará upstream.
+- Ramas `workflow-repairs` en Syncify y RehabWeb (autorización explícita del titular): unidades aceptadas integradas y commiteadas por unidad con referencia a recibos; suites en verde; publicadas en origin. Las futuras unidades de M1/M2 integran allí.
+- Decisiones del titular registradas: M6 autorizado; RSI y F1–F5 como plan de mejora posterior al MVP; M8 aclarada (framework: descarga por red + publicación con licencia).
+
+## Tanda M1–M5 con subagentes — 2026-09-13
+
+- Tres servicios nuevos por subagentes (revisados y con regresiones): memoria de decisiones (`scripts/decisions.py`), métricas de misión (`scripts/metrics.py`) y controlador Host (`scripts/host_controller.py`, turn_launcher inyectable, reconciliación idempotente, lock de escritor único y presupuesto durable). Suite completa 61 tests.
+- M2 (reauditoría semántica) validado en piloto DSH real: REOPENED correcto ante base obsoleta y CONFIRMED contra el candidato integrado; decisión "reauditar contra la copia integrada" registrada en la nueva memoria de decisiones.
+- M1 unidad 3 (`metadata_bridge`): el ejecutor retuvo sin dependencia (`aiohttp`), adquirida host-side con wheels a destino externo, reparación con rojo→verde real, lote `syncify-u3` COMPLETE e integración en copia; suites del conjunto 3/3 en verde.
+- Primer consumo del ledger de métricas con datos reales: 24 turnos, 684 requests, ~6,8 M tokens de entrada. `PLAN_IMPLEMENTACION.md` y `docs/status.md` actualizados.
+
+## Plan de pendientes del núcleo — 2026-09-13
+
+- Añadir `docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md`: organización descriptiva de lo restante tras la misión de cierre (M1 cola completa por proyecto, M2 reauditoría semántica propia, M3 controlador Host real, M4 aceptación integral, M5 memoria de decisiones y métricas instrumentadas, M6 durabilidad/descendientes remotos, M7 defecto runtime `write` y M8 distribución/publicación remotas), con base operativa heredada del rig probado, dependencias, trazabilidad y formato de entrega. Documento de planificación; PLAN_IMPLEMENTACION.md sigue siendo el único índice de progreso.
+
+## Misión de cierre integral en copias aisladas — 2026-09-13
+
+- Ejecución real de P0–P9 del plan de cierre por el agente de mantenimiento, con DSH real aislado (launcher + canal + presets + nrouter) sobre copias limpias de Syncify y RehabWeb; evidencia externa en `Improvement-ensayos/mision-arq-20260913/` (recibos, sesiones, lotes, archivo, métricas, UX).
+- `scripts/inference_channel.py`: deadline de respuesta convertido en cuota por lanzamiento (default 20 s, tope 300) tras matar turnos reales largos; regresión nueva; arquitectura §11 actualizada.
+- `skills/workflow-auditor`, `skills/workflow-continuous-repair`: guía de escritura de evidencia por bash con retención sin aprobación, tras confirmar en rig el rechazo «not strictly wider» de escrituras que piden el modo ya vigente (hallazgo del runtime registrado, no parcheado).
+- Resultados: Syncify dos vueltas completas (auditoría→reparación rojo/verde→QA subagente→verify/reaudit→lotes `syncify-u1b`/`u2b` COMPLETE), integración conjunta en copia con suites verdes y archivo restaurable; RehabWeb dos vueltas (alertas 403 a paciente; adaptaciones autorizadas por el terapeuta responsable), 74 tests OK integrados, lotes `rehabweb-u1b`/`u2` COMPLETE y archivo restaurable. Caída real del rig sin huérfanos; métricas y UX registradas externamente.
+- Estados actualizados en `PLAN_IMPLEMENTACION.md` (filas 5–8) y `docs/status.md`; siguen PARCIAL: cola completa por proyecto, reauditoría semántica como turno propio, controlador Host real, memoria de decisiones instrumentada y publicación remota sin autorización.
+
+## Deadline de respuesta por lanzamiento en el canal — 2026-09-13
+
+- `scripts/inference_channel.py`: el deadline de respuesta deja de ser el fijo 20 s y pasa a ser cuota por lanzamiento (`DEFAULT_DEADLINE=20`, tope duro `MAX_DEADLINE=300`) con validación idéntica al resto de cuotas. Motivo registrado: en el rig aislado de la misión de cierre integral, el turno real del Auditor sobre la copia de Syncify murió con 502 del receptor tras 35 tool calls cuando una completación con contexto amplio superó el corte histórico; el humo corto no lo ejercitaba. Regresión nueva `test_launch_deadline_per_launch` (default conserva el corte, tope elevable, validación fail-closed de argumentos fuera de rango); suite del canal: 9 tests aprobados. Arquitectura §11 actualizada; el timeout del launcher sigue siendo el límite externo del lanzamiento.
+
+## Plan de cierre integral y evaluación de orquestación externa — 2026-09-13
+
+- Añadir documento de ejecución descriptivo para otro agente, subordinado a la arquitectura y a la matriz de progreso: cierre de todas las capacidades del núcleo con evidencia, continuidad de trabajo y excepción explícita ante bloqueo real de autoridad o recursos.
+- Exigir aceptación limpia con Syncify y RehabWeb en entornos externos aislados, desde adquisición/configuración hasta auditoría, reparación, QA, ciclo circular, integración solo en copia y recuperación; interacción principal por mensajes cortos DSH, sin edición manual de recibos ni troubleshooting técnico trasladado al usuario.
+- Evaluar las propuestas externas: specs trazables, composición Host y localizadores locales son aprovechables; eventos/remotos e índices avanzados requieren contratos y prueba; Vibe Kanban, clientes alternativos y embeddings no son dependencias obligatorias. Worktree no equivale a sandbox y EARS no verifica semántica.
+- Separar recomendaciones de RSI y extensiones de implementación acreditada. Esta entrega solo añade planificación/evaluación documental; no instala, activa runtime ni ejecuta nuevas misiones de producto.
+
+## Onboarding de sesión, cuota de mensajes y reintento F6 — 2026-09-13
+
+- `scripts/inference_channel.py`: tope de mensajes por request configurable por lanzamiento (`DEFAULT_MESSAGES=64`, tope duro `MAX_MESSAGES=256`) en lugar del fijo 64 que mataba los turnos del ejecutor (lote 2: 12 denials `messagesBounds`, messageCount 66); presupuesto, tokens, payload, allowlist y fail-closed sin cambios. Regresiones nuevas incluido el camino real por launcher (130 mensajes: 502 al default, 200 con el tope elevado).
+- `skills/workflow-continuous-repair`: una línea mínima que obliga a retener ante el rechazo de esquema de `bash` o «not strictly wider» en un subagente ejecutor (confirmación empírica del escenario (2) de setup-dsh.md con el transcript de la sesión RehabWeb 3081); corrección esperada documentada en setup-dsh.md.
+- Reintento F6-DUPLICATE-CONVERSATION-500 en rig aislado (`mission-faseb-b3`, patrón lotes 1/2): ejecutor `nrouter/Subagents-Coding` (mensajes 256, gasto 40/256, 0 denials, messageCount máx 82) con rojo-verde real, QA `nrouter-raw/Subagents-Audits` ACCEPTED en sesión separada, run-check dentro del sobre, `verify`/`reaudit` OK; checkpoint `faseb-003` con la excepción resuelta y producto original intacto (integración solo en copia de ensayo).
+- Evidencia de la unidad: onboarding y humo nativo de skills en `/home/alan/DSH-workspace/session-rehabweb-2/evidence/`; canal y lanzamientos en `.../mission-faseb-b3/runs/` (externos al repositorio).
+
+## Arquitectura v2.4 y cobertura verificable — 2026-09-13
+
+- Recuperar memoria de decisiones (identidad, motivo, contrato, sustituciones y revisión QA), métricas finas con fuente/límites y delegación para contener contexto, especializar y contrastar; conservar la prohibición de agentes por apariencia. Corregir la referencia al plan original preservado en archivo externo, sin importar datos privados.
+- Incorporar de los modos DSH las dimensiones de falsa completitud y revisión de contratos, inventario/exclusiones exhaustivos, dos perspectivas por unidad, barrido independiente antes de reconciliar, prevención de recurrencia, cifras de fuente vigente y verificación humana necesaria. Actualizar skills existentes sin instalar/sincronizar copias operativas ni cambiar presets, permisos o routing.
+- `scripts/audit.py`: snapshot determinista SHA-256, reenumeración antes de consolidar, exclusiones explícitas, gaps y unidades pendientes impiden cierre completo; API/manifiesto legacy sin inventario conservan cola como `UNVERIFIED`. Añadir CLI inventory y matriz de partición, sin afirmar lectura o profundidad semántica. Rechazar raíces solapadas, IDs de ciclo inseguros y archivos duplicados. Documentar límite de manifiesto 2 MiB y protocolo de ejecución separado del destino de ciclo.
+- Diez regresiones nuevas de cobertura y expectativas legacy corregidas; revisión independiente detectó incompatibilidad de inicio del ciclo y bypass léxico de raíces con `//`, corregidos con protocolo separado y normalización después del rechazo de symlinks. Suite seleccionada: 48 tests Python aprobados con runtime; excluido el test dependiente de lanzadores personales. Carga nativa de las ocho skills aprobada sin modelos. Pruebas con entorno AppImage saneado; evidencias externas.
+- Reconciliar progreso con recibos: nueve cierres Syncify agrupan 73 hallazgos, con QA parcialmente documental; seis reparaciones RehabWeb con QA original y pruebas acotadas, reauditoría semántica posterior pendiente. Corregir requests declaradas: 73 y 218 en resúmenes distintos, incluyendo denegaciones y sin coste comparable. No acreditar cola completa, integración conjunta ni autonomía por estos resultados. Reflejar la cuota de mensajes por lanzamiento ampliada en el commit de canal precedente.
+- Memoria/medición completa, evidencia humana y profundidad dual siguen siendo contratos de revisión, no servicios Host implementados; recomendaciones posteriores se conservan en informe externo, sin aplicarlas en esta unidad.
+
+## Recuperación durable sobre fixtures y presupuesto durable — 2026-09-12
+
+- `scripts/budget.py`: contrato local mínimo de límites durables (intentos/coste/tiempo) como ledger de eventos inmutables en estado externo: creación exclusiva, digest, reserva conservadora antes del trabajo, límites fijados una sola vez (reapertura distinta o alterada falla cerrada) y `BudgetExhausted` sin escritura. No mide procesos reales ni concede autoridad.
+- Regresión `tests/test_recovery_durable.py` (7 tests): operación continuada de 4 unidades de cola fixture en una sola sesión con presupuesto persistente y agotamiento fail-closed; reinicio del controlador en durante QA / antes de publicar / después de publicar-antes de ack con reconciliación idempotente (cero escritores duplicados, cero integración repetida, candidato conservado, presupuesto sin reinicio, rechazo de reenvío ciego); caída de worker SIGKILL con reanudación; cancelación que termina los descendientes locales (evidencia por flock); timeout de turno de `run_check` que mata el grupo y deja RETAINED recuperable; reinicio del Host vía `host_launcher` en los tres puntos con estado host-side preservado, `/state` nueva por lanzamiento, sandbox sin visibilidad de recibos ni escritura del producto y QA invalidada por cambio de candidato.
+- Límites documentados: el controlador fixture demuestra el contrato de reconciliación, no un Host real; descendientes remotos fuera de la capacidad aceptada; sin concurrencia hostil ni garantía ante pérdida de energía; sin QA semántica ni autonomía LLM. Suite completa: 38 tests Python aprobados con runtime instalado.
+
+## Payload configurable y partes de assistant en el canal de inferencia — 2026-09-12
+
+- `scripts/inference_channel.py`: payload por request configurable por lanzamiento (`payload_limit`, 1 MiB por defecto, tope duro 8 MiB) en lugar de la constante fija de 64 KiB que hacía morir los turnos de ~16 pasos (RETAINED F6-DUPLICATE-CONVERSATION-500); el tope se impone en las tres capas del lanzamiento y el launcher pasa el valor al receptor interno en argv como entero no secreto. Allowlist de assistant ampliada al formato real del runtime instalado: campos string `reasoning`/`reasoning_content`/`reasoning_text` y contenido como lista no vacía de partes exactas `{type:'text',text}`. Endpoint, modelo, autorización host-side, presupuesto de requests, cuotas de tokens/mensajes y el resto de la allowlist sin cambios; `reasoning_details` y formas malformadas siguen rechazadas.
+- Regresiones nuevas en `tests/test_inference_channel.py`: payload >64 KiB aceptado con el default y rechazado con tope rebajado o sobre el tope duro, validación del argumento, campos/partes de razonamiento aceptados, diez formas malformadas rechazadas y camino real por launcher (payload grande 200; tope rebajado 400 sin upstream). Suite completa: 31 tests Python aprobados con runtime instalado.
+
+## Canal de sesión multi-request de inferencia — 2026-09-12
+
+- `scripts/inference_channel.py` amplía el canal de una request a una sesión acotada por lanzamiento, sin proxy general: presupuesto de requests configurable al construir el canal (12 por defecto, tope duro 256), cuota por request de hasta 32768 tokens (default del hijo, antes 32) y 64 mensajes (antes 8); los topes solo pueden rebajarse por lanzamiento. Endpoint, modelo, autorización host-side y allowlist de claves sin cambios.
+- Agotado el presupuesto: error explícito fail-closed (503 en el canal, línea `FAIL CLOSED` en el log externo) y canal cortado por el resto del lanzamiento; requests posteriores sin upstream. Además, el broker aparta su capa de texto de stdout para que el corte de pipes no degrade el cierre del intérprete (antes exit 120 por flush fallido).
+- Regresiones nuevas: multi-request dentro de presupuesto, corte por agotamiento sin upstream, cuotas nuevas y rebajadas por lanzamiento, validación fail-closed de argumentos de cuota y camino real por launcher con presupuesto 1 (503, 502 y `FAIL CLOSED` con un solo hit upstream). Suite completa: 29 tests Python aprobados con runtime instalado.
+- Sonda real en Host aislado (presets externos, sesión `nrouter-raw/Orquestrador`): turno completo de subagente con herramientas sobre `nrouter-raw/Subagents-Audits` completó con 2 requests por el canal (segunda pierna con `tool_calls` y resultado `tool`), max_tokens 32768 del hijo aceptado sin overrides, presupuesto 12 gasto 2, ningún payload denegado y denegación de ruta no autorizada intacta. Evidencia en `/tmp/inference-multi-request/probe-auditor.json`.
+
+## Extensión del canal para turnos de subagentes — 2026-09-12
+
+- Allowlist del broker de inferencia ampliada de forma mínima y fail-closed a las claves estructurales de turno que emite el runtime (`tools`, `tool_choice`, `tool_calls`/`tool_call_id` en mensajes); endpoint, modelo y autorización siguen fijos host-side y toda clave o forma no listada se rechaza sin alcanzar el upstream.
+- Regresión nueva: turno con `tools` permitido y reenviado, payload con clave no listada rechazado; suite completa 28 tests Python aprobados.
+- En Host aislado con la sesión `nrouter-raw/Orquestrador`, un turno completo de subagente con `tools` completó por el canal sobre la ruta autorizada. Los turnos multi-request siguen limitados por el presupuesto de una request por lanzamiento y las cuotas de tokens/mensajes, registradas como pendiente exacto.
+
+## Corrección de mapeo de sesión a canal RAW — 2026-09-12
+
+- Fila de sesión/orquestador de las composiciones externas corregida a canal RAW: `nrouter-raw/Orquestrador` en `auditor-preset` y `repair-preset`; QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` (NORMAL) sin cambios. Orquestrador verificado en el catálogo RAW no secreto.
+- Re-aceptación aislada por preset con host_launcher: sesión con modelo efectivo `nrouter-raw/Orquestrador`, proyección de política exacta, skills con cuerpo exacto y denegación fail-closed de rutas no listadas; ninguna ruta no autorizada alcanzó el broker.
+- Humo mínimo de la ruta corregida: `nrouter-raw/Orquestrador` respondió `OK` (`text-delta`, `finish=stop`); el `EMPTY_RESPONSE` previo no se reprodujo en el canal RAW. Regresión de mapeo intacta (usa rutas fixture, no nrouter).
+
+## Presets externos del flujo y mapeo de modelos — 2026-09-12
+
+- Compuestos presets externos de Auditoría y Reparación en el workspace (`workflow-presets`) sin tocar `~/.dsh`, presets distribuidos ni routing global; delegación copiada de Standard con `modelSelectionSettings: true` y skills nativas por workspace, sin declarar proveedores ni modelos.
+- Verificados el proveedor NORMAL `nrouter` y el RAW `nrouter-raw` por catálogo no secreto y humo aislado: orquestador `nrouter/Orquestrador`, QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` respondieron `OK`; el `EMPTY_RESPONSE` previo de Orquestrador no se reprodujo.
+- Aceptación aislada por preset: sesión por preset, modelo efectivo de sesión, proyección de política exacta al mapeo, skills con cuerpo exacto y denegación fail-closed de rutas no listadas. Límite material documentado: el broker de humo niega el turno completo del hijo (`tools` fuera de la allowlist del canal).
+- Límite del runtime comprobado: `allowedModels` es ajuste global único del Host; un preset que intenta su propio namespace de selección falla el montaje, sin fallback silencioso. Regresión nueva `tests/test_dsh_preset_mapping.py`; suite completa 27 tests Python aprobados.
+
+## Hito 1: launcher Host externo — 2026-09-12
+
+- Añadida envolvente Linux/bubblewrap reusable con lecturas explícitas, estado externo nuevo, namespaces privados y fallo cerrado; sin entorno heredado, instalación ni cambios de runtime/modelos.
+- Una regresión permanente con servicios DSH reales y fixtures externos verifica lecturas/escrituras autorizadas, denegaciones aun con policy permisiva, descendientes, secretos/sockets ocultos y rechazo sin fallback. Suite: 23 tests Python y check Node aprobados.
+- Composición web completa arrancada con listener privado: el 401 inicial era autenticación esperada. Cliente con secreto exclusivamente desechable obtuvo HTTP 200/HTML, creó sesión Standard y cargó ambos modos con `ctx.tools.execute` sobre su agente real; proveedor/origen/cuerpos exactos comprobados, sin modelos ni credenciales activas.
+- Conservado cwd original con bind explícito RO y padres vacíos; `/tmp` privado mediante bind, sin remapeo por symlink. Misma regresión extendida: cwd Node/bash exacto, lectura relativa, denegación de escritura original y secreto hermano oculto. 23 tests Python y Node aprobados; Host autenticado repetido. No acredita conducta LLM, QA ni autonomía; acceso acotado a red/proveedor queda pendiente.
+
+## Diagnóstico de inferencia aislada — 2026-09-12
+
+- La selección vigente `nrouter/Orquestrador` terminó `EMPTY_RESPONSE` con `responseModel=muse-spark-1.3-contributor-free` y sin `text-delta`; se clasificó como fallo de contenido/modelo upstream, no como fallo QA ni del broker.
+- Sin tocar routing persistente, una selección temporal explícita ya declarada por Host (`nrouter/ag/gemini-3.8-flash-high`) devolvió `OK`, `text-delta`, `finish=stop` y `responseModel=gemini-3.8-flash` mediante el launcher aislado. La unidad Syncify completa permanece pendiente.
+
+## Evidencia externa Syncify/RehabWeb — 2026-09-12
+
+- Syncify completó 73 reparaciones externas con recibos `ACCEPTED`; 15 hallazgos permanecen retenidos por decisión humana.
+- RehabWeb completó su propia auditoría `rehabweb-audit-001` sobre 6 unidades y 381 archivos, con cola externa independiente.
+- Corregido el launcher operativo externo para aislar el estado por `dshHome` y parametrizar el nombre del proyecto; no se modificó DSH ni sus plugins.
+- La reparación de RehabWeb queda pendiente de recibo final; ambos productos permanecen sin cambios.
+
+## Auditoría completa y ciclo circular — 2026-09-11
+
+- Añadidos contratos stdlib para capabilities externas reutilizables y ciclos de auditoría con partición, deduplicación, DAG y archivo compacto.
+- Añadida la skill `workflow-complete-auditor` para auditoría completa por unidades, cola externa de reparación y reauditoría circular.
+- Reparación continua consume la cola vigente sin pedir el siguiente hallazgo; permisos y capacidades no se autoconceden.
+- El piloto real de Syncify queda como criterio externo de aceptación, sin convertir sus artefactos en contenido versionado.
+
+## Integridad de sesiones programadas — 2026-09-10
+
+- Exigir `started.json` inmediato en un directorio externo nuevo, creación autónoma de fixtures/prerequisitos y paths absolutos, sin depender del scheduler o contexto implícito.
+- Exigir `checkpoint.json` y `report.md` siempre, con `RETAINED` ante bloqueo o prerequisito ausente, y `finish.json` como cierre referenciado; nunca sobrescribir artefactos previos.
+- La regresión se aplica al protocolo documental externo; no se añadió código porque el framework no ejecuta ni administra estas sesiones programadas.
+
+## Corrección tras revisión 3 — 2026-09-10
+
+- Rechazar payloads anidados no objeto de evidencia/tareas genéricas antes de persistir COMPLETE, consistente con el consumidor; comprobar ausencia de cierre y recuperación por registros corregidos o PARTIAL.
+- Tres revisiones independientes realizadas: 5 / 3 / 1 hallazgos encontrados y corregidos, además de las seis correcciones originales. Esta corrección no constituye una cuarta revisión.
+- Suite final: 17 tests Python y regresión Node nativa aprobados, sin instalación ni modelos. Reproducciones 2/3 originales se detienen en rechazos corregidos; no se declara QA real ni autonomía de producto.
+
+## Correcciones de revisión 2 — 2026-09-10
+
+- Impedir colisiones de ciclo entre lotes solapados reservando el componente final de los IDs ordinarios.
+- Mantener cuota de 16 con reservas de cierre y etapas reconstruidas en toda publicación; PARTIAL libera etapas, COMPLETE las conserva. Documentar política conservadora.
+- Validar IDs y enlaces anidados antes de conjuntos/mapas; regresiones dirigidas y ciclo positivo al límite de cuota. 16 tests Python aprobados; sin QA semántica ni garantías Host nuevas.
+
+## Correcciones de revisión 1 — 2026-09-10
+
+- Validar check opcional de audit y rechazar JSON no objeto sin traceback de AttributeError.
+- Reservar sufijos de ciclo, limitar lotes a 53 caracteres y validar el esquema COMPLETE al consumir handoff.
+- Añadir regresiones dirigidas; 13 tests Python aprobados. Autopruebas de corrección, no revisión independiente 2.
+
+## Integridad del ciclo local — 2026-09-10
+
+- Corregir handoff COMPLETE/OPEN, escrituras poscierre, temporales ajenos y resolución de enlaces.
+- Ligar etapas positivas a evidencia de misión hashada y `verify`; reauditoría comparte sus prerrequisitos. Auditor distinto también del ejecutor.
+- Reforzar ciclo sintético con artefactos reales del fixture y entrega COMPLETE; no acredita QA real ni concurrencia hostil.
+
 ## Preparación de prueba completa — 2026-09-10
 
 - Añadir `docs/trial-readiness.md` como checklist compacto de gates, evidencia, paradas y salida para Auditor/Reparación continua.

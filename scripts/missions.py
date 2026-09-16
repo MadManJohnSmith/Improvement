@@ -20,7 +20,10 @@ def read_json(path):
     path = checked(path)
     if not path.is_file() or path.stat().st_size > 1024 * 1024:
         raise ValueError('JSON ausente o demasiado grande')
-    return json.loads(path.read_text())
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict):
+        raise ValueError('Se requiere objeto JSON')
+    return value
 
 
 def external(path):
@@ -114,19 +117,10 @@ def reaudit(task_path, result_path, report_path):
     if (result.get('version') != 1 or result.get('task_sha256') != digest(task_path.read_bytes())
             or result.get('files') != current or result.get('status') != 'ACCEPTED'):
         raise ValueError('Resultado no aceptado o candidato obsoleto')
-    check_ref = result.get('check_ref')
-    if task['mode'] == 'repair' and not check_ref:
+    if task['mode'] == 'repair' and not result.get('check_ref'):
         raise ValueError('Reaudit de repair requiere check_ref')
-    if check_ref:
-        check = read_json(check_ref)
-        if (check.get('after') != current or check.get('exit_code') != 0
-                or check.get('timed_out') is not False
-                or check.get('argv') not in task.get('commands', [])):
-            raise ValueError('Prueba no corresponde al candidato vigente')
-        for name in ('stdout', 'stderr'):
-            output = checked(Path(check_ref).parent / (name + '.txt')).read_bytes()
-            if digest(output) != check.get(name + '_sha256'):
-                raise ValueError('Salida de prueba ausente o alterada')
+    if not verify(task_path, result_path).startswith('ACCEPTED:'):
+        raise ValueError('Resultado no aceptado')
     receipt = dict(version=1, task_sha256=result['task_sha256'], files=current,
                    result_sha256=digest(checked(result_path).read_bytes()),
                    verdict='PENDING_SEMANTIC_REVIEW',
@@ -159,6 +153,7 @@ def verify(task_path, result_path):
                         if current[name] != base[name] and name not in task['change_scope']]
         if unauthorized:
             raise ValueError('Cambio fuera de change_scope: ' + ', '.join(unauthorized))
+    if task['mode'] == 'repair' or 'check_ref' in result:
         check_path = checked(result['check_ref'])
         check = read_json(check_path)
         if (check.get('task_sha256') != result['task_sha256'] or check.get('root') != task['root']
@@ -170,6 +165,7 @@ def verify(task_path, result_path):
             data = checked(check_path.parent / (name + '.txt')).read_bytes()
             if digest(data) != check.get(name + '_sha256'):
                 raise ValueError('Salida ausente o alterada')
+    if task['mode'] == 'repair':
         qa_path = checked(result['qa_ref'])
         if digest(qa_path.read_bytes()) != result.get('qa_sha256'):
             raise ValueError('QA alterada')

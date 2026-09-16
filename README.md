@@ -1,48 +1,82 @@
 # agent-workflow
 
-Método reusable de auditoría y reparación con agentes. Clona este repositorio **junto a cualquier proyecto**, no dentro. Versión operativa v0.1: incorporación, Auditor y Reparación continua acotada en Standard; no es todavía un motor autónomo DSH.
+Framework para construir y operar flujos de auditoría y reparación con DSH, evidencia verificable y comportamiento fail-closed.
 
-## Inicio con DSH Standard
+## Estado
 
-Con este clon junto al proyecto, pide al agente: **«Lee START.md de este framework e incorpora el proyecto vecino que te indico, sin modificar su producto.»** Identifica el archivo por su ruta relativa si la sesión está abierta en el producto. [START.md](START.md) contiene el procedimiento, límites y devolución: el usuario no necesita copiarlos en cada turno.
+- **MVP del núcleo comprobado:** onboarding, skills, Host aislado, Auditor/Reparación, QA, reauditoría, controlador, presupuesto, archivo y recuperación acotada probados en Syncify y RehabWeb. Ver [estado](docs/status.md).
+- **Arquitectura 3.0 aprobada, pendiente de C0–C7:** el flujo final será de un comando y generará modos/skills específicos de cada proyecto mediante DSH Creator. Ver [arquitectura](ARQUITECTURA_FLUJO_AGENTES.md) e [índice](PLAN_IMPLEMENTACION.md).
+- Los presets usados en Syncify/RehabWeb son **fixtures de referencia**, no defaults que deba recibir otro proyecto.
 
-El clon de consumo se actualiza mediante pull; no se utiliza para editar el framework ni guardar resultados de ensayos. Las correcciones del flujo se realizan en el repositorio del mantenedor, se verifican, se comitean y se publican al remoto autorizado antes del siguiente ensayo. Cada devolución identifica la revisión probada. No es una sincronización automática de sesiones.
+## Experiencia final objetivo (aún no implementada)
 
-Con skills preparadas y enlaces gestionados mediante `--session-root`, conserva la misma raíz padre de Standard. No requiere overlay, perfil dedicado ni cambiar cwd. [Aceptación nativa y prueba sin modelos](docs/setup-dsh.md).
+Prerrequisito: DSH instalado, Creator disponible y al menos un proveedor/modelo configurado por el usuario en DSH.
 
-## Inicio por CLI
-
-Requisito: Python 3.9+; Git solo para versionar el framework. Desde el clon:
-
-```sh
-python3 -B scripts/onboard.py --project /ruta/proyecto --workspace /ruta/proyecto-workspace --name mi-proyecto
-python3 -B scripts/onboard.py --project /ruta/proyecto --workspace /ruta/proyecto-workspace --name mi-proyecto --init
-python3 -B -m unittest discover -s tests -v
+```bash
+python3 -B scripts/bootstrap.py install --project /ruta/proyecto
 ```
 
-Sustituye las rutas por destinos absolutos reales. Proyecto y padre del workspace deben existir. La primera orden no escribe; `--init` crea únicamente `PROJECT.md` y `project.json`, con directorio privado. Una repetición compatible conserva las decisiones; conflictos o inicializaciones incompletas se rechazan sin borrar. No usar padres mutables por terceros: validación de rutas no es sandbox ni protección contra carreras hostiles.
+El bootstrap deberá:
+
+1. descubrir el proyecto y preparar un workspace externo;
+2. llamar automáticamente a DSH Creator mediante la API local autenticada;
+3. generar `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas justificadas;
+4. hacer que Creator invoque `bootstrap accept`;
+5. validar mediante Host, crear backups, instalar en staging y ejecutar aceptación automática;
+6. activar el conjunto o hacer rollback/RETAINED.
+
+El usuario no copiará prompts, JSON, rutas, recibos ni escenarios de aceptación.
+
+Esta interfaz pertenece a C0–C7 y **todavía no está disponible**.
+
+## Uso comprobado actual
+
+Para mantenimiento o pilotos controlados, clona el framework junto al proyecto, nunca dentro:
 
 ```text
-carpeta/
-├── agent-workflow/         # framework versionable
-├── proyecto/               # producto, nunca inicializado por este script
-└── proyecto-workspace/     # perfil y evidencia privados
+padre/
+├── agent-workflow/
+├── proyecto/
+└── proyecto-workspace/
 ```
 
-Revisa instrucciones y canónicos del proyecto, completa el primer encargo y sus límites en el perfil. No se crean dashboards, no se ejecuta código del producto ni se instalan dependencias o skills automáticamente. El workspace privado no sustituye un entorno aislado de pruebas; revisa permisos, backups y sincronización.
+Preparación actual:
 
-## Uso con agentes
+```bash
+python3 -B scripts/onboard.py \
+  --project /ruta/proyecto \
+  --workspace /ruta/proyecto-workspace \
+  --name mi-proyecto \
+  --prepare-skills \
+  --session-root /ruta/padre
 
-Los dos modos finales son **Auditor** y **Reparación continua**, con incorporación compartida y Ejecutor/QA internos. Disponibles como skills conductuales de una unidad en Standard, no presets ni autonomía Host. Protocolo ejecutable y prompt breve en [docs/usage.md](docs/usage.md).
+# repetir con --init después de revisar el dry-run
+```
 
-- [Arquitectura completa](ARQUITECTURA_FLUJO_AGENTES.md).
-- [Preparación DSH y límites del loader](docs/setup-dsh.md).
-- [Estado y evidencia](docs/status.md).
-- [Cambios de distribución](CHANGELOG.md).
-- `skills/`: incorporación, evidencia, validación segura, aceptación acotada y entrega proporcional.
+Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía la generación Creator 3.0 ni instala modos finales específicos automáticamente. Consulta [uso operativo actual](docs/usage.md) y [preparación DSH](docs/setup-dsh.md).
 
-Search y otros asesores son opcionales para mantenedores; no son una dependencia del usuario. No hay CI, instalador global, modelos configurados ni llamadas a proveedores.
+## Qué distribuye la arquitectura 3.0
 
-## Publicación
+- skills generales;
+- capacidades internas de Creator adaptadas de scope/audit/architect/document/test/develop/check/debug/sync;
+- plantillas y schemas;
+- validadores Host;
+- bootstrap install/accept/update/uninstall/purge-data;
+- backups y activación transaccional;
+- plugin `workflow-write`;
+- fixtures saneados, no presets universales.
 
-Versionar solo el framework revisado. Nunca agregar perfiles reales, logs, auditorías privadas, candidatos, archivos históricos ni credenciales. `.gitignore` es una ayuda, no una revisión de seguridad. No se incluye remoto. **Licencia pendiente de decisión del titular**: esta distribución no concede una licencia abierta por estar preparada para GitHub.
+## Documentación
+
+- [Arquitectura normativa 3.0](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Plan C0–C7](PLAN_IMPLEMENTACION.md)
+- [Contrato generacional de Creator](docs/creator-preset-spec.md)
+- [Estado comprobado](docs/status.md)
+- [Uso operativo actual](docs/usage.md)
+- [Preparación DSH](docs/setup-dsh.md)
+- [Diagramas](docs/diagrams/README.md)
+- [Cambios](CHANGELOG.md)
+
+## Seguridad y publicación
+
+Nunca versionar perfiles reales, logs, auditorías privadas, candidatos, credenciales o rutas personales. Configurar un proveedor en DSH no autoriza al framework a leer su API key. La publicación pública y la licencia del framework siguen siendo decisiones del titular; un repositorio accesible no concede por sí solo una licencia abierta.
