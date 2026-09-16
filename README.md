@@ -59,6 +59,7 @@ Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía 
 
 - skills generales para bootstrap, aceptación, evidencia, validación segura y entrega;
 - capacidades internas de Creator adaptadas de scope/audit/architect/document/test/develop/check/debug/sync;
+- selección obligatoria: biblioteca base inmutable → catálogo especializado → composición → override limitado → extensión Creator solo como último recurso;
 - plantillas y schemas;
 - validadores Host;
 - bootstrap install/accept/update/uninstall/purge-data;

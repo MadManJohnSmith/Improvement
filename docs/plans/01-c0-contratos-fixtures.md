@@ -6,6 +6,8 @@
 ## Artefactos
 
 - schemas de `run`, `project-manifest`, `instructions-index`, `capabilities`, `generation-manifest`, `modes`, `skills`, `scenario`, `handoff`, `drift`, `backup`, `promotion`, `rollback`;
+- schema de biblioteca base inmutable, catálogo de patrones, composición, override limitado, transferencia y extensión;
+- aplicabilidad, invariantes, límites, procedencia y escenarios por skill del catálogo;
 - fixtures de proyecto Python/backend y multiparte;
 - golden manifests;
 - corpus positivo/negativo de paths, hashes, symlinks, colisiones, capabilities, routing y licencias;
@@ -19,7 +21,7 @@
 3. Definir ownership de cada artefacto y estados Host.
 4. Crear fixtures externos primero; no incluir resultados reales en repo.
 5. Implementar parse/validate sin mutación parcial.
-6. Crear negativos: path traversal, symlink, hash stale, manifest incompleto, routing nuevo, provider nuevo, skill huérfana, ciclo de carga, unresolved decision.
+6. Crear negativos: path traversal, symlink, hash stale, manifest incompleto, routing nuevo, provider nuevo, skill huérfana, ciclo de carga, unresolved decision, extensión libre cuando aplica una base, override fuera de slots, transferencia sin aceptación destino y skill duplicada sin diferencia material.
 7. Ejecutar corpus y revisar falsos positivos.
 8. Actualizar `PLAN_IMPLEMENTACION.md` solo si el gate pasa.
 

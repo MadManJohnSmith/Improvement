@@ -8,11 +8,13 @@
 1. Implementar cliente Host-side sin persistir token/cookie.
 2. Crear sesión Creator con cwd/roots/inputs correctos.
 3. Enviar prompt versionado que invoque capacidades internas scope/audit/architect/document/test/develop.
-4. Supervisar requests, tokens, timeout, descendientes y checkpoint.
-5. Exigir `generation-manifest.json`, `finish.json`, contracts, modes, skills y acceptance-plan.
-6. Verificar que Creator solo escribe staging.
-7. Hacer que Creator emita `bootstrap.accept.request` con digest exacto.
-8. Retener ante unresolved decisions, outputs faltantes o self-acceptance.
+4. Resolver cada necesidad en orden obligatorio: base inmutable → catálogo especializado → composición → override limitado → extensión.
+5. Si se genera extensión, incluir justificación de por qué no aplican capas anteriores y su contrato/escenarios propios.
+6. Supervisar requests, tokens, timeout, descendientes y checkpoint.
+7. Exigir `generation-manifest.json`, `finish.json`, contracts, modes, skills y acceptance-plan.
+8. Verificar que Creator solo escribe staging.
+9. Hacer que Creator emita `bootstrap.accept.request` con digest exacto.
+10. Retener ante unresolved decisions, outputs faltantes o self-acceptance.
 
 ## Gates
 

@@ -21,6 +21,21 @@ Creator recibe referencias a:
 
 Producto/framework se montan read-only; escritura solo dentro del run. La configuración/proveedor ya existe en DSH. El framework no recibe API keys.
 
+## Estrategia de selección de skills
+
+Creator debe resolver cada necesidad en este orden:
+
+```text
+biblioteca base inmutable
+→ catálogo de patrones especializados
+→ composición de varias skills
+→ override declarativo limitado
+→ extensión específica generada
+→ RETAINED si ninguna opción es aceptable
+```
+
+Una extensión nueva exige demostrar que las capas anteriores no aplican. Una skill transferida de otro proyecto debe pasar aceptación completa en el proyecto destino. Creator no puede modificar controles, holdouts, thresholds, capabilities, evaluador, Host ni acceptance.
+
 ## Capacidades internas
 
 Creator compone internamente:
@@ -52,7 +67,8 @@ generated/
 ├── skills/
 │   ├── <Proyecto>-auditor/
 │   ├── <Proyecto>-continuous-repair/
-│   └── <skills-específicas>/
+│   ├── <skills-compuestas-o-overrides>/
+│   └── <extensiones-específicas-solo-si-no-aplica-catálogo>/
 ├── contracts/
 ├── references/
 ├── templates/

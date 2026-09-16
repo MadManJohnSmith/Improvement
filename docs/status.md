@@ -46,6 +46,10 @@ El historial eliminado sigue disponible en Git y no debe reconstruirse como inst
 | C6 | PENDIENTE | pilotos clean-room en proyectos nuevos |
 | C7 | PENDIENTE | licencia/avisos, tag, guía y distribución de piloto |
 
+## Estrategia de skills aprobada
+
+Creator selecciona primero la biblioteca base inmutable y el catálogo de patrones especializados; después compone o aplica overrides declarativos. Solo genera una extensión cuando demuestra que esas capas no aplican, con contrato, escenarios y aceptación específica. Una skill transferida no es válida automáticamente para otro proyecto. La regeneración no sustituye bases por conveniencia.
+
 ## Experiencia final objetivo
 
 ```text
