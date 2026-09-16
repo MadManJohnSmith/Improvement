@@ -1,5 +1,12 @@
 # Cambios
 
+## Limpieza canónica: eliminar artefactos legacy del árbol — 2026-09-16
+
+- Eliminar del árbol versionado 21 archivos legacy que ya no forman parte de la arquitectura 3.0: tres planes históricos (P0–P9, M1–M8, evaluación F1–F5), diez diagramas v2.4 y su índice, tres skills operativas universales del MVP (`workflow-auditor`, `workflow-complete-auditor`, `workflow-continuous-repair`), checklist de trial-readiness, contrato de ciclo-artefactos, test de launchers personales y test de preset mapping externo. Git conserva todo el historial.
+- Reescribir START para no despachar modos genéricos eliminados; solo prepara workspace y remite a C0–C7. Reescribir status como estado vigente conciso sin narrativa v0.1/v2.4. Corregir arquitectura 3.0 donde todavía describía creator-preset-spec como experimento anterior.
+- Regresión documental reescrita: exige ausencia física de archivos legacy, ausencia de referencias a planes/diagramas/modos eliminados en documentos operativos, y ausencia de rutas del mantenedor.
+- Conjunto canónico actual: arquitectura 3.0, C0–C7, contrato generacional, 5 skills generales, servicios Host, plugin workflow-write, contratos de auditoría y evidencia, y regresiones técnicas/documentales.
+
 ## Auditoría de vigencia documental 3.0 — 2026-09-16
 
 - Auditar archivos versionados para impedir que instrucciones v2.4/v0.1 se interpreten como vigentes. Corregir AGENTS/START/skills del MVP, runbook, status, evaluación externa, planes históricos y guía de diagramas.

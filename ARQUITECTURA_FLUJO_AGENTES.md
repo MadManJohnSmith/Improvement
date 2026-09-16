@@ -753,11 +753,9 @@ Proyectos nuevos no usados durante implementación:
 ### C7 — promoción
 
 - reconciliar resultados;
-- corregir arquitectura vigente en su mismo archivo;
-- reemplazar `creator-preset-spec.md` por contrato generacional;
-- actualizar START/README/usage/setup/status/plan/changelog;
+- actualizar docs finales y CI;
 - tag de piloto;
-- conservar esta candidata como antecedente o eliminarla tras promoción (historial queda en Git).
+- licencia y `THIRD_PARTY_NOTICES` si aplica.
 
 ---
 
@@ -787,16 +785,15 @@ Proyectos nuevos no usados durante implementación:
 Durante la implementación C0–C7:
 
 - Este archivo es la referencia normativa única.
-- `docs/creator-preset-spec.md` sigue describiendo el experimento anterior de un preset neutral, no el contrato final propuesto.
-- `START.md`/`usage.md` siguen operando el MVP actual mediante skills y modos ya preparados.
+- `docs/creator-preset-spec.md` define el contrato generacional 3.0 (paquete completo, no un preset de dos archivos).
+- `START.md`/`usage.md` conservan el procedimiento MVP de preparación mientras C0–C7 lo reemplazan.
 - El diseño no acredita que bootstrap, Creator o instalación ya estén implementados.
-- Las discrepancias son deliberadas y forman parte de la prueba de la candidata.
+- Los planes y skills del MVP anterior fueron eliminados del árbol; permanecen en Git.
 
 Al completar C0–C7:
 
-1. actualizar la arquitectura vigente, no mantener dos normas;
-2. convertir este plan en antecedente histórico;
-3. actualizar el índice de implementación con etapas C0–C7;
+1. actualizar este documento con los contratos finales validados;
+2. actualizar el índice de implementación;
 4. retirar la noción de presets genéricos operativos del flujo final;
 5. conservar los presets actuales solo como fixtures de regresión.
 

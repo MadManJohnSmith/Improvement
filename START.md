@@ -1,25 +1,23 @@
-# Entrada del framework
+# Entrada de preparación del framework
 
-## Estado de esta entrada
+## Estado
 
-El flujo final 3.0 (`bootstrap install` que llama Creator y activa modos específicos por proyecto) todavía no está implementado. Este archivo conserva la entrada operativa comprobada del MVP para mantenedores y pilotos controlados.
+La arquitectura vigente es 3.0. El flujo final de usuario (`bootstrap install` → Creator automático → modos/skills específicos → Host accept/backup/activación) está pendiente de C0–C7.
 
-No uses START como evidencia de C0–C7. El progreso está en `PLAN_IMPLEMENTACION.md`.
+Este archivo no despacha modos genéricos ni procedimientos del MVP anterior. Esos artefactos fueron eliminados del árbol actual y permanecen en Git.
 
-## Incorporación actual
+## Preparación disponible hoy
 
 Ante «incorpora/prepara»:
 
-1. Lee `AGENTS.md`, `docs/usage.md`, `docs/setup-dsh.md` y `skills/project-onboarding/SKILL.md`.
-2. Identifica framework, producto y workspace externo; nunca pongas workspace dentro de producto/framework.
-3. Registra revisiones/estado Git sin limpiar trabajo ajeno.
+1. Lee `AGENTS.md`, `ARQUITECTURA_FLUJO_AGENTES.md`, `PLAN_IMPLEMENTACION.md`, `docs/usage.md`, `docs/setup-dsh.md` y `skills/project-onboarding/SKILL.md`.
+2. Identifica framework, producto y workspace externo; no los solapes.
+3. Registra revisión/estado Git sin limpiar trabajo ajeno.
 4. Descubre instrucciones/canónicos existentes y evita un segundo backlog.
 5. Ejecuta `scripts/onboard.py` primero dry-run y luego `--init` si no hay conflicto.
-6. Si se autoriza preparar skills, usa `--prepare-skills --session-root <padre>`; no modifica configuración global ni concede permisos.
+6. Si se autoriza preparar las skills generales actuales, usa `--prepare-skills --session-root <padre>`; no modifica configuración global ni concede permisos.
 7. Verifica catálogo/carga nativa según `docs/setup-dsh.md`.
-8. Devuelve incorporación mínima preparada o `RETAINED` con bloqueo exacto.
-
-Ejemplo actual:
+8. Devuelve `incorporación mínima preparada` o `RETAINED` con bloqueo exacto.
 
 ```bash
 python3 -B /ruta/framework/scripts/onboard.py \
@@ -29,51 +27,31 @@ python3 -B /ruta/framework/scripts/onboard.py \
   --prepare-skills \
   --session-root /ruta/padre
 
-# repetir con --init después de revisar
+# revisar y repetir con --init
 ```
 
-## Despacho legado del MVP (solo mantenimiento/pilotos controlados)
+Esto prepara perfil y skills generales. **No crea todavía modos Auditor/Reparación específicos ni autoriza una misión de producto.**
 
-Estos procedimientos no deben instalarse, copiarse ni presentarse como modos finales de un proyecto nuevo:
+## Qué no hacer
 
-- Auditoría completa fixture: carga `workflow-complete-auditor`.
-- Auditoría unitaria fixture: carga `workflow-auditor`.
-- Reparación acotada fixture: carga `workflow-continuous-repair`.
-- Ejecutor/QA son funciones internas cuando la composición comprobada los ofrece.
-
-El despacho final se implementará en C0–C7 mediante modos `<Proyecto>-auditor` y `<Proyecto>-continuous-repair`.
-
-Mensajes breves:
-
-> Audita completamente este proyecto; no modifiques ni publiques.
-
-> Audita este flujo o componente.
-
-> Repara la cola autorizada en la rama o copia de prueba.
-
-> Repara solo este hallazgo.
-
-## Límites actuales
-
-- No instalar presets genéricos como resultado final para terceros.
-- Presets Syncify/RehabWeb son fixtures de regresión.
-- No inventar que Creator/accept automático existen.
+- No cargar ni recrear presets/modos genéricos eliminados.
+- No copiar procedimientos del MVP desde Git histórico.
+- No presentar Standard como experiencia final.
+- No inventar `bootstrap.py`/Creator/accept antes de C0–C7.
 - No usar shell/cwd/enlaces para eludir permisos.
-- No modificar framework durante misión operativa.
+- No modificar el framework durante misión operativa.
 - No publicar/integrar sin mandato.
-- `RETAINED` es correcto cuando falta capacidad/evidencia.
 
-## Destino 3.0
-
-C0–C7 reemplazarán esta preparación por:
+## Destino C0–C7
 
 ```text
 bootstrap install
 → DSH Creator automático
-→ modos/skills específicos
+→ discovery/design/scenarios/generation específicos
 → Creator invoca accept
 → Host valida/backup/staging/aceptación
-→ ACTIVE o rollback
+→ <Proyecto>-auditor + <Proyecto>-continuous-repair ACTIVE
+→ rollback/RETAINED si falla
 ```
 
-Cuando C0–C7 pasen clean-room, START cambiará a la interfaz de un comando.
+Hasta completar C7, este repositorio es para desarrollo/mantenimiento de la arquitectura 3.0, no para entregar una experiencia final de auditoría genérica.
