@@ -31,6 +31,8 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             'skills/workflow-auditor/SKILL.md',
             'skills/workflow-complete-auditor/SKILL.md',
             'skills/workflow-continuous-repair/SKILL.md',
+            'tests/test_dsh_launchers.py',
+            'tests/test_dsh_preset_mapping.py',
         ]
         for relative in must_not_exist:
             with self.subTest(relative=relative):
@@ -64,7 +66,7 @@ class ArchitectureConsistencyTest(unittest.TestCase):
 
     def test_creator_contract_is_generational(self):
         contract = self.read('docs/creator-preset-spec.md')
-        self.assertIn('no es el flujo final', contract)
+        self.assertIn('fuera del árbol canónico', contract)
         self.assertIn('generation-manifest.json', contract)
         self.assertIn('<Proyecto>-auditor', contract)
         self.assertIn('<Proyecto>-continuous-repair', contract)

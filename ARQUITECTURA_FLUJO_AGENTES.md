@@ -759,7 +759,7 @@ Proyectos nuevos no usados durante implementación:
 
 ---
 
-## 17. Matriz de aceptación de la candidata
+## 17. Matriz de aceptación de la arquitectura 3.0
 
 | Gate | Evidencia necesaria |
 |---|---|
@@ -780,7 +780,7 @@ Proyectos nuevos no usados durante implementación:
 
 ---
 
-## 18. Transición desde el MVP anterior
+## 18. Implementación gradual desde el MVP comprobado
 
 Durante la implementación C0–C7:
 
@@ -794,8 +794,8 @@ Al completar C0–C7:
 
 1. actualizar este documento con los contratos finales validados;
 2. actualizar el índice de implementación;
-4. retirar la noción de presets genéricos operativos del flujo final;
-5. conservar los presets actuales solo como fixtures de regresión.
+3. retirar cualquier compatibilidad transitoria del flujo operativo;
+4. conservar únicamente fixtures sanitizados en el corpus de regresión; no instalarlos como defaults.
 
 ---
 
