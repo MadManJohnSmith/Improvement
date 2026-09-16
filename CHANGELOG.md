@@ -1,5 +1,17 @@
 # Cambios
 
+## Planes de implementación C0–C7 — 2026-09-16
+
+- Añadir `docs/plans/`: mapa/gobierno, un plan detallado por C0–C7 y protocolo transversal de adaptación. Los planes descomponen la arquitectura aprobada sin crear un backlog paralelo; `PLAN_IMPLEMENTACION.md` sigue siendo el único índice de estado.
+- Cada plan define artefactos, schemas, dependencias, gates positivos/negativos, adaptación autorizada, checkpoints y límites. Los planes dejan espacio para cambiar pasos por evidencia, pero un cambio contractual requiere actualizar primero la arquitectura.
+
+## Limpieza canónica completa — 2026-09-16
+
+- Eliminar físicamente del árbol canónico todos los documentos, diagramas, modos genéricos y tests legacy sustituidos por arquitectura 3.0/C0–C7. Git conserva el historial; el árbol actual ya no contiene una segunda norma operativa.
+- Conservar solo cinco skills generales, servicios Host, contratos de auditoría/evidencia, plugin `workflow-write` y regresiones permanentes. Presets de proyectos y procedimientos MVP no forman parte del conjunto distribuible actual.
+- Eliminar `cycle-artifacts.md` después de conservar sus invariantes en arquitectura/servicios C0–C7; retirar tests de launchers/preset mapping ligados a layouts externos.
+- Ampliar `test_architecture_consistency.py` para exigir ausencia física de assets legacy, referencias operativas obsoletas y rutas del mantenedor.
+
 ## Limpieza canónica: eliminar artefactos legacy del árbol — 2026-09-16
 
 - Eliminar del árbol versionado 21 archivos legacy que ya no forman parte de la arquitectura 3.0: tres planes históricos (P0–P9, M1–M8, evaluación F1–F5), diez diagramas v2.4 y su índice, tres skills operativas universales del MVP (`workflow-auditor`, `workflow-complete-auditor`, `workflow-continuous-repair`), checklist de trial-readiness, contrato de ciclo-artefactos, test de launchers personales y test de preset mapping externo. Git conserva todo el historial.

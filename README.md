@@ -57,7 +57,7 @@ Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía 
 
 ## Qué distribuye la arquitectura 3.0
 
-- skills generales;
+- skills generales para bootstrap, aceptación, evidencia, validación segura y entrega;
 - capacidades internas de Creator adaptadas de scope/audit/architect/document/test/develop/check/debug/sync;
 - plantillas y schemas;
 - validadores Host;
@@ -74,6 +74,7 @@ Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía 
 - [Estado comprobado](docs/status.md)
 - [Uso operativo actual](docs/usage.md)
 - [Preparación DSH](docs/setup-dsh.md)
+- [Planes detallados C0–C7](docs/plans/README.md)
 - [Cambios](CHANGELOG.md)
 
 ## Seguridad y publicación

@@ -3,7 +3,7 @@
 **Versión:** 1 (destino C0–C5; aún no implementado)
 **Arquitectura:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
-El contrato anterior limitaba Creator a producir `preset.yml` y `agent.cordis.yml`. Esa composición fue útil como fixture de desarrollo, pero no es el flujo final. Creator debe generar un paquete completo y específico del proyecto bajo `creator-runs/<generation-id>/generated/`; nunca instala ni se autoaprueba.
+El contrato vigente define una generación completa; cualquier composición anterior de dos archivos queda fuera del árbol canónico y solo existe en el historial Git. Creator debe generar un paquete completo y específico del proyecto bajo `creator-runs/<generation-id>/generated/`; nunca instala ni se autoaprueba.
 
 ## Entrada Host
 
