@@ -102,7 +102,7 @@ Los modos no serán presets universales. Creator producirá:
 + skills específicas justificadas
 ```
 
-Capacidades internas de Creator:
+Capacidades internas de Creator y orden de reutilización aprobado:
 
 ```text
 audit → discovery

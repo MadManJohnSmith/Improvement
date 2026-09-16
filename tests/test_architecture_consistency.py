@@ -64,12 +64,23 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.assertNotIn('/home/alan', self.read(relative))
 
-    def test_creator_contract_is_generational(self):
+    def test_creator_contract_is_generational_and_prefers_reuse(self):
         contract = self.read('docs/creator-preset-spec.md')
         self.assertIn('fuera del árbol canónico', contract)
         self.assertIn('generation-manifest.json', contract)
         self.assertIn('<Proyecto>-auditor', contract)
         self.assertIn('<Proyecto>-continuous-repair', contract)
+        self.assertIn('biblioteca base inmutable', contract)
+        self.assertIn('extensión específica generada', contract)
+
+    def test_plans_define_adaptation_and_reuse_order(self):
+        index = self.read('docs/plans/README.md')
+        creator = self.read('docs/plans/03-c2-creator.md')
+        adaptation = self.read('docs/plans/09-adaptacion.md')
+        self.assertIn('adaptables', index.lower())
+        self.assertIn('base inmutable', creator)
+        self.assertIn('catálogo especializado', creator)
+        self.assertIn('No se sustituye una base por una extensión', adaptation)
 
     def test_no_legacy_references_in_operational_docs(self):
         forbidden = [

@@ -53,6 +53,8 @@ La ausencia de cambios semánticos produce `NO_OP`, no reescritura.
 
 ## Cierre adaptable
 
+La selección de skills se reconsidera solo si cambia contrato/base o aparece una evidencia nueva. No se sustituye una base por una extensión por conveniencia.
+
 El plan se considera vigente solo si:
 
 - sus referencias existen;

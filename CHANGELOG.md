@@ -1,5 +1,10 @@
 # Cambios
 
+## Estrategia híbrida de skills aprobada — 2026-09-16
+
+- Registrar la decisión: Creator reutiliza primero una biblioteca base inmutable y un catálogo de patrones especializados, luego compone y aplica overrides declarativos; solo genera extensiones como último recurso con contrato, escenarios y aceptación específica. Una skill transferida debe aceptarse en cada proyecto destino.
+- Reflejar el orden obligatorio en arquitectura, contrato generacional, README/status/usage, planes C0/C2 y protocolo de adaptación. La regresión exige declarar reutilización antes de generar o aceptar una extensión.
+
 ## Planes de implementación C0–C7 — 2026-09-16
 
 - Añadir `docs/plans/`: mapa/gobierno, un plan detallado por C0–C7 y protocolo transversal de adaptación. Los planes descomponen la arquitectura aprobada sin crear un backlog paralelo; `PLAN_IMPLEMENTACION.md` sigue siendo el único índice de estado.

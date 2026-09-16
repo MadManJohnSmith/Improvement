@@ -17,9 +17,23 @@ El framework no debe distribuir presets finales universales de Auditoría y Repa
 El producto distribuible será:
 
 ```text
-método + skills generales + plantillas normativas + schemas + validadores
-+ controles Host + bootstrap + prompts de Creator + fixtures saneados
+método + biblioteca base inmutable + catálogo de patrones especializados
++ plantillas normativas + schemas + validadores + controles Host
++ bootstrap + prompts de Creator + fixtures saneados
 ```
+
+La selección de skills de Creator sigue un orden obligatorio:
+
+```text
+1. skill base inmutable
+2. skill especializada del catálogo
+3. composición de varias skills
+4. override declarativo permitido
+5. extensión específica generada por Creator
+6. RETAINED si ninguna opción puede aceptarse
+```
+
+Creator **no genera libremente desde cero como primera opción**. Una extensión nueva exige demostrar que las capas anteriores no aplican, declarar un contrato propio y pasar aceptación específica. Una skill de producción transferida a otro proyecto no se considera válida automáticamente: debe pasar aceptación en el nuevo proyecto.
 
 El resultado de la incorporación será:
 
@@ -1001,6 +1015,8 @@ design/decision-ledger.json
 
 Cada capacidad define:
 
+- fuente de reutilización: biblioteca base, catálogo especializado, composición, override o extensión;
+- motivo explícito para no usar capas anteriores cuando se genera una extensión;
 - propósito y triggers positivos/negativos;
 - inputs y fuentes;
 - reads/writes;
