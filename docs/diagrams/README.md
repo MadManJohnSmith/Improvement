@@ -2,6 +2,8 @@
 
 Diagramas generados y validados con la skill `archify` (perfil `showcase`, validados en resoluciones de 1440×900 a 2048×1320 con Google Chrome headless).
 
+**Estado:** estos diagramas representan el MVP/arquitectura v2.4 comprobada. La arquitectura normativa v3.0 añade `bootstrap → Creator → generación específica → accept Host → backup/transacción/rollback`; su actualización visual forma parte de C0/C7. Hasta entonces no interpretar los HTML como descripción completa de 3.0.
+
 Cada archivo HTML es autónomo e interactivo: soporta temas claro/oscuro, zoom/pan, búsqueda de nodos, capítulos/vistas guiadas y exportación SVG/PNG/WebM.
 
 ## Índice de diagramas

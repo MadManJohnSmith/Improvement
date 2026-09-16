@@ -1,35 +1,86 @@
 # Plan de implementación y progreso
 
-**Estado:** MVP del núcleo aceptado el 2026-09-13; extensiones y límites restantes se respaldan por separado.
-**Actualización:** 2026-09-13
-**Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md)
+**Estado:** arquitectura 3.0 aprobada; MVP operativo anterior aceptado; nueva capa de distribución/generación por proyecto pendiente de C0–C7.
+**Actualización:** 2026-09-16
+**Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
-Guías de ejecución para el agente implementador: [Plan de cierre integral](docs/PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md) (ejecutado en su fase P0–P9 el 2026-09-13) y [Plan de pendientes del núcleo](docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md) (organiza lo restante: cola completa, reauditoría semántica, controlador Host, instrumentación, durabilidad y decisiones del titular). Ninguna de las dos acredita implementación ni sustituye los estados de esta matriz.
+Este archivo es el único índice de progreso. Conserva dos niveles:
 
-Este archivo es un índice compacto, no un diario. Cada etapa conserva solo estado, evidencia principal, bloqueo y siguiente salida. Los detalles históricos van en `CHANGELOG.md`; los artefactos de ejecución permanecen fuera del repositorio. La auditoría completa usa ciclos externos versionados, cola activa compacta y archivo indexado; no importa historiales completos en el estado vigente.
+1. **Base MVP comprobada:** capacidades ya demostradas con DSH real, Syncify y RehabWeb.
+2. **C0–C7:** implementación pendiente del flujo final de un comando: bootstrap → Creator automático → modos/skills específicos → validación/backup/aceptación Host → activación/rollback.
+
+Los detalles históricos están en `CHANGELOG.md`; la evidencia privada, candidatos, sesiones y logs permanecen fuera del repositorio. Ningún documento o estado generado acredita por sí mismo ejecución.
 
 ## Estados
 
-- `HECHO`: salida y criterio comprobados.
-- `PARCIAL`: mecanismo o ensayo limitado; falta parte del criterio.
-- `PENDIENTE`: aún no implementado o sin evidencia suficiente.
+- `HECHO`: salida y gate comprobados con evidencia recuperable.
+- `PARCIAL`: mecanismo o ensayo limitado; falta parte del gate.
+- `PENDIENTE`: no implementado o sin evidencia suficiente.
 - `BLOQUEADO`: requiere decisión, permiso o capacidad externa.
 - `RETENIDO`: candidato preservado, pero no aceptado.
 
-## Etapas
+## Base MVP comprobada
 
-| ID | Resultado de salida | Estado | Evidencia principal | Bloqueo / siguiente salida |
+| ID | Resultado | Estado | Evidencia principal | Límite conservado |
 |---|---|---|---|---|
-| 0 | Herramientas y capacidades observadas sin bucles inválidos | PARCIAL | `docs/status.md`; `scripts/host_launcher.py` fail-closed con servicios reales y `scripts/inference_channel.py` acotado (`tests/test_host_launcher.py`, `tests/test_inference_channel.py`); presets externos con mapeo de modelos y denegación fail-closed (`tests/test_dsh_preset_mapping.py`) | Enforcement equivalente en el Host de producción (el launcher aislado es el rig); escenario conductual de escalada confirmado con LLM, corrección documentada |
-| 1 | Inventario dirigido, base y límites de pruebas | PARCIAL | `scripts/audit.py inventory`, snapshot SHA-256 y partición revalidada; `tests/test_audit_coverage.py`; perfiles/recibos externos | Demostrar revisión por perspectivas y cobertura semántica; la partición exhaustiva no la acredita |
-| 2 | Publicador restringido con identidad, autorización, idempotencia y recuperación | PARCIAL | `scripts/publisher.py`, `tests/test_publisher.py`; primitive local con resolución en proceso nuevo; cortes en puntos de transición con reanudación idempotente en `tests/test_recovery_durable.py` | Adaptador Host, autenticidad fuerte y durabilidad ante pérdida de energía |
-| 3 | Fixture contractual roja→verde con aceptación acotada | PARCIAL | `tests/test_operational_cycle.py`, `tests/test_two_mode_cycle.py`; seis candidatos RehabWeb con respuestas originales de QA en sesiones distintas | QA de alcance limitado: principalmente pruebas estáticas/configuración; no QA funcional general ni separación por rol impuesta por runtime |
-| 4 | Handoff determinista Auditor→Reparación | PARCIAL | Lotes locales + estados `executor/qa/auditor` con `actor_id` distinto por rol; `bind_role()` declara roles técnicos y aceptación bloqueada sin QA `VERIFIED` y artefactos vigentes vía `missions.verify`; handoff solo `COMPLETE` | Autorización Host multi-actor, independencia real y autenticidad |
-| 5 | Piloto real de una unidad de producto | HECHO | `docs/status.md` (hito 2026-09-13 misión de cierre): dos vueltas reales Syncify y una RehabWeb en copias aisladas con rig (launcher+canal+presets), rojo→verde real, QA subagente, verify/reaudit y lotes `syncify-u1b`/`syncify-u2b`/`rehabweb-u1b` COMPLETE con etapas | Consumo de cola completa por proyecto y reauditoría semántica posterior como turno propio de Auditor |
-| 6 | Flujo habitual con coste y calidad comparables | HECHO | `scripts/metrics.py` implementado y cargado con datos reales (24 turnos, 684 requests, ~6,8 M tokens de entrada; digests verificados); `scripts/decisions.py` con 2 decisiones vigentes recuperables por unidad | Comparación contra baseline de igual alcance y controlador Host en misión real |
-| 7 | Controlador Host y recuperación ante fallos | HECHO | `scripts/host_controller.py` (8 tests con fake) + suite de recuperación + **primera unidad real conducida por el controlador de punta a punta** (syncify-archive-security, lote syncify-u4) + caída real del rig | Misión multi-unidad completa conducida por el controlador; descendientes remotos y pérdida de energía |
-| 8 | Transferencia a un segundo proyecto | HECHO | RehabWeb: dos vueltas completas (alertas: 403 a paciente; adaptaciones: autoriza el terapeuta responsable) con QA subagente, lotes `rehabweb-u1b`/`u2` COMPLETE y suite integrada 74 tests OK en copia del padre; archivo restaurable | Consumir la cola completa por proyecto y reauditoría semántica como turno propio |
+| B0 | Onboarding, skills, Host aislado y canal DSH | HECHO | `scripts/onboard.py`, `host_launcher.py`, `inference_channel.py`, presets fixture, tests; `docs/status.md` | No equivale al bootstrap Creator 3.0 |
+| B1 | Auditoría, reparación, QA y reauditoría reales | HECHO | ciclos Syncify/RehabWeb; `missions.py`, `publisher.py`; ramas `workflow-repairs` | Unidades de producto RETAINED no se presentan como reparadas |
+| B2 | Controlador, presupuesto, memoria y métricas | HECHO | `host_controller.py`, `budget.py`, `decisions.py`, `metrics.py` y regresiones | Descendientes remotos/pérdida física de energía limitados |
+| B3 | Plugin de escritura y distribución privada por red | HECHO | `workflow-write`, clean-room remoto, regresiones | Plugin necesita empaquetado portable en C4 |
+| B4 | MVP del núcleo fail-closed en dos proyectos | HECHO | 17/17 unidades con estado, archivos restaurables, `docs/status.md` | Acepta el framework, no declara productos libres de defectos |
 
-## Regla de actualización
+## Etapas vigentes C0–C7
 
-Una misión actualiza únicamente la fila afectada: estado, enlace a evidencia externa, bloqueo y siguiente salida. No añadir narración de sesión, logs, candidatos ni datos privados. Un cambio material de alcance o contrato actualiza primero la arquitectura y después esta tabla.
+| ID | Resultado de salida | Estado | Trabajo principal | Gate de salida |
+|---|---|---|---|---|
+| C0 | Contratos generacionales y fixtures | PENDIENTE | Schemas de run/manifest/project/capabilities/modes/skills/tests/handoffs/drift; fixtures válidos/inválidos; ejemplos Syncify/RehabWeb saneados; procedencia MIT | Validador procesa corpus positivo/negativo sin tocar DSH ni destinos activos |
+| C1 | `bootstrap install` determinista | PENDIENTE | Preflight DSH/proveedor/Creator; workspace; generation-id; snapshot/authority; skills generales; prompt/paquete Creator; checkpoint/reanudación | Clone limpio prepara run completo sin modificar producto/config global |
+| C2 | Automatización DSH Creator | PENDIENTE | Cliente local autenticado; sesión Creator; pipeline interno scope/audit/architect/document/test/develop; presupuesto/timeout; manifest/finish obligatorios | Un comando genera paquete específico válido sin copiar prompts ni secretos |
+| C3 | Validador Host de generación | PENDIENTE | Schema, manifest exhaustivo, paths/hashes, capabilities/routing, contratos, grafo, portabilidad, hot paths, scripts, licencias, anti-autoaprobación | Corpus negativo falla cerrado antes de cualquier backup/escritura activa |
+| C4 | Backups, instalación transaccional y desinstalación | PENDIENTE | Ownership manifest; backup completo/verificado; staging generacional; swap; rollback; update; uninstall/purge separados; plugin portable | Fallos inyectados nunca dejan conjunto mixto; estado anterior restaurable |
+| C5 | Aceptación automática DSH | PENDIENTE | Escenarios públicos + holdouts Host; verify/review; repair RETAINED con debug; load/read/evidence/repair/QA/reaudit/reopen/rollback | Creator invoca `accept`; solo Host emite ACTIVE o RETAINED/rollback |
+| C6 | Piloto clean-room en proyectos nuevos | PENDIENTE | Proyecto Python/backend y proyecto multiparte; usuario sin contexto privado; install/update/uninstall; medir intervenciones/feedback | Usuario con DSH/proveedor configurado obtiene modos específicos con un comando |
+| C7 | Promoción y distribución de piloto | PENDIENTE | Reconciliar resultados; docs/CI; licencia/THIRD_PARTY_NOTICES; tag; guía/feedback | Repo enlazable para testers, versión fijada y clean-room repetible |
+
+## Dependencias
+
+```text
+C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7
+          └──── discovery/design/test/generation internos ────┘
+```
+
+C0 puede preparar fixtures, schema y validadores en paralelo. C4 puede diseñarse mientras C2 avanza, pero no se acepta hasta que C3 valide un paquete real. C6 debe arrancar desde clon y DSH con proveedor ya configurado, no desde imagen preconfigurada.
+
+## Capacidades internas de Creator
+
+No son modos finales del usuario:
+
+```text
+creator-project-discovery          (audit)
+creator-project-documenter         (document)
+creator-contract-and-risk-mapper   (audit + architect)
+creator-capability-partitioner     (scope)
+creator-capability-designer        (architect)
+creator-scenario-author            (test)
+creator-skill-generator            (develop)
+creator-generation-repair          (debug)
+creator-drift-analyzer             (sync)
+```
+
+El resultado final por proyecto sigue siendo:
+
+```text
+<Proyecto>-auditor
+<Proyecto>-continuous-repair
++ skills específicas justificadas
+```
+
+## Reglas de actualización
+
+1. Solo se marca `HECHO` con evidencia recuperable y negativos pertinentes.
+2. Un cambio material de diseño actualiza primero `ARQUITECTURA_FLUJO_AGENTES.md`.
+3. No importar perfiles, candidatos, rutas privadas, sesiones o logs al repo.
+4. Creator nunca puede cerrar su propia etapa como aceptada.
+5. Backup presente no equivale a rollback comprobado.
+6. Schema válido no equivale a skill útil ni segura.
+7. El historial de C0–C7 va en Git/CHANGELOG, no como diario en la arquitectura.

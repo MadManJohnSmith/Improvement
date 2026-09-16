@@ -1,5 +1,13 @@
 # Cambios
 
+## Arquitectura 3.0 promovida — 2026-09-16
+
+- Promover el diseño aprobado como `ARQUITECTURA_FLUJO_AGENTES.md` v3.0 y retirar el documento candidato para mantener una sola norma. El MVP anterior permanece como base comprobada; la experiencia final de un comando queda pendiente en C0–C7.
+- Corregir el flujo de incorporación: usuario configura DSH/proveedor una vez; `bootstrap install` prepara workspace y llama automáticamente a Creator; Creator usa capacidades internas de discovery/design/test/generation y genera `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas; Creator invoca `accept`; solo Host valida, respalda, instala, acepta/retiene y promueve/rollback.
+- Reemplazar la especificación de «preset neutral de dos archivos» por el contrato generacional completo (`creator-runs`, manifests, contracts, scenarios/holdouts, validation, backup, promotion y drift). Presets Syncify/RehabWeb quedan como fixtures históricos, no defaults.
+- Adaptar integralmente patrones de las nueve skills de `jsmastery-pro/skills` (MIT, commit observado `43b69e4`): scope particiona; audit descubre; architect diseña contratos; document normaliza; test deriva escenarios; develop genera; check verifica/revisa; debug repara RETAINED; sync detecta drift. No se adoptan sus modos finales, slash workflow, npx/MCP auto-install ni dependencias Claude/web/Git.
+- Abrir C0–C7 como único backlog vigente: schemas/fixtures, install, automatización Creator, validador Host, transacción/backups, aceptación automática, pilotos clean-room y distribución de piloto.
+
 ## MVP del framework aceptado — 2026-09-13
 
 - Cerrar el MVP tras consumir la cola finita de 17 unidades en dos proyectos: 17 auditadas, 3 aceptadas con `missions.verify` vigente y reauditoría semántica CONFIRMED, 14 retenidas con causa/evidencia, cero estados silenciosos. La aceptación corresponde al framework y su comportamiento fail-closed, no a declarar los productos libres de defectos.

@@ -1,6 +1,6 @@
 # Plan de pendientes para el cierre del núcleo
 
-**Estado:** planificación descriptiva; no implementación ni acreditación de resultados. Ningún hito de este documento está ejecutado ni aceptado hasta que el estado comprobado lo registre.
+**Estado:** antecedente histórico del cierre del MVP v2.4. Sus hitos fueron reconciliados en `docs/status.md`; el backlog vigente de arquitectura 3.0 es C0–C7 en `PLAN_IMPLEMENTACION.md`.
 **Fecha de referencia:** 2026-09-13.
 **Destinatario:** agente de mantenimiento autorizado para ejecutar misiones de cierre.
 **Jerarquía:** subordinado a [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) (diseño vigente), [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md) (único índice de progreso), [docs/status.md](status.md) (estado comprobado) y [AGENTS.md](../AGENTS.md) (reglas del repositorio).

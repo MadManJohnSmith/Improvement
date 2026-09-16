@@ -1,52 +1,171 @@
-# Especificación neutral para Creator/Cordis
+# Contrato generacional para DSH Creator
 
-Esta especificación se entrega a Creator para componer un preset externo. No es un preset activo ni concede permisos.
+**Versión:** 1 (destino C0–C5; aún no implementado)
+**Arquitectura:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
-## Entrada requerida
+El contrato anterior limitaba Creator a producir `preset.yml` y `agent.cordis.yml`. Esa composición fue útil como fixture de desarrollo, pero no es el flujo final. Creator debe generar un paquete completo y específico del proyecto bajo `creator-runs/<generation-id>/generated/`; nunca instala ni se autoaprueba.
 
-- Framework externo con `skills/workflow-complete-auditor/SKILL.md`.
-- DSH/Cordis y esquema efectivos identificados por el Host.
-- Workspace externo escribible.
-- Routing, proveedores, modelos, aliases y credenciales ya existentes que deben conservarse.
+## Entrada Host
 
-## Salida única
+Creator recibe referencias a:
 
-Creator debe escribir únicamente en el workspace externo:
+- `run.json`, snapshot e inventario;
+- project manifest e instructions index;
+- authority y runtime capabilities;
+- routing efectivo (sin credenciales);
+- plantillas normativas;
+- skills generales;
+- contratos/schemas;
+- presupuesto y stop conditions;
+- directorio de staging único.
+
+Producto/framework se montan read-only; escritura solo dentro del run. La configuración/proveedor ya existe en DSH. El framework no recibe API keys.
+
+## Capacidades internas
+
+Creator compone internamente:
 
 ```text
-preset.yml
-agent.cordis.yml
+project discovery          (audit)
+project documenter         (document)
+contract/risk mapper       (audit + architect)
+capability partitioner     (scope)
+capability designer        (architect)
+scenario author            (test)
+skill generator            (develop)
+generation repair          (debug)
+drift analyzer             (sync)
 ```
 
-No escribir en `~/.dsh`, `~/.agents`, repositorios, credenciales, configuración global ni producto.
+No son modos finales ni se instalan como presets.
 
-## Composición mínima
+## Salida obligatoria
 
-El preset debe:
+```text
+generated/
+├── generation-manifest.json
+├── project-manifest.json
+├── capabilities.json
+├── modes/
+│   ├── <Proyecto>-auditor/
+│   └── <Proyecto>-continuous-repair/
+├── skills/
+│   ├── <Proyecto>-auditor/
+│   ├── <Proyecto>-continuous-repair/
+│   └── <skills-específicas>/
+├── contracts/
+├── references/
+├── templates/
+├── adapters/
+├── acceptance-plan.json
+└── generation-report.md
+```
 
-1. cargar la skill `workflow-complete-auditor` mediante la herramienta nativa `skill`;
-2. exponer filesystem/search para lectura del producto;
-3. exponer escritura solo en el workspace/ciclo externo autorizado;
-4. exponer subagent/workflow solo si ya existen en el runtime;
-5. conservar el routing efectivo y no declarar proveedores o modelos nuevos;
-6. permitir validadores stdlib enumerados por la misión;
-7. bloquear escritura del producto durante Auditoría;
-8. registrar capacidades no observables como `UNVERIFIED`.
+Fuera de `generated/`, el run conserva discovery/design/tests/validation/checkpoint/report/finish según la arquitectura.
 
-No añadir red, instalación, publicación, integración, goals ilimitados ni plugins no justificados.
+## Invariantes
 
-## Prueba mínima de aceptación
+1. Creator solo emite `GENERATED` o un bloqueo propio; nunca `ACCEPTED`/`ACTIVE`.
+2. Exactamente dos modos finales, específicos del proyecto.
+3. Skills específicas solo con procedimiento recurrente, evidencia, fronteras y prueba.
+4. Perfil guarda datos variables; skills guardan procedimientos.
+5. Auditor sin escritura del producto.
+6. Reparación solo en candidato/rama autorizada.
+7. QA y Auditor posterior observables.
+8. Máximo dos intentos por unidad.
+9. Sin publicación/red/instalación implícitas.
+10. Sin proveedores/modelos/routing nuevos.
+11. Todo valor/decisión operativo tiene fuente (`value sourcing`).
+12. Unknowns load-bearing bloquean la generación afectada.
+13. No se modifican Host, validadores, tests, holdouts, capabilities ni acceptance.
+14. No rutas/identidades/secretos del mantenedor.
 
-La prueba debe limitarse a:
+## Progressive disclosure
 
-- cargar el preset;
-- comprobar la skill, origen y cuerpo;
-- enumerar herramientas efectivas;
-- confirmar que no cambió routing;
-- confirmar que el destino de escritura es externo.
+Las skills usan `SKILL.md` pequeño como router y cargan bajo condición explícita:
 
-No ejecutar una auditoría, reparación, build o prueba de producto durante la aceptación del preset.
+```text
+modes/
+internal/
+references/
+templates/
+adapters/
+```
 
-## Prompt para Creator
+El manifest declara grafo y hot paths. El Host valida referencias, ciclos, huérfanos, presupuestos por archivo/ruta y blocks contractuales.
 
-> Crea un preset Cordis neutral de Auditoría completa para este framework. Carga `workflow-complete-auditor`, permite lectura del producto, escritura únicamente en el workspace externo y delegación a subagentes solo si el runtime ya la ofrece. Conserva la versión y routing efectivos; no modifiques `~/.dsh`, credenciales, proveedores, modelos, aliases, presets distribuidos, producto ni framework. No añadas red, instalación, publicación o integración. Escribe únicamente `preset.yml` y `agent.cordis.yml` en el workspace externo e incluye una prueba mínima de carga sin ejecutar auditorías ni cambios.
+## Contrato por skill
+
+Cada skill/mode declara:
+
+- purpose/triggers/anti-triggers;
+- inputs y fuentes;
+- reads/writes;
+- capabilities requeridas/prohibidas;
+- invariantes/anti-goals;
+- state machine;
+- handoffs;
+- failure modes/retries/timeouts;
+- rollback/migración;
+- requisitos `SR-N`;
+- escenarios/stop conditions/evidencia;
+- procedencia/licencia.
+
+## Escenarios y holdouts
+
+Creator genera escenarios públicos y familias de holdout. El Host materializa/oculta casos concretos. Tests/rúbricas/thresholds/allowlists son read-only para generador y reparador.
+
+## Self review y handoff
+
+Creator produce self-review informativa y luego invoca:
+
+```bash
+python3 -B scripts/bootstrap.py accept \
+  --workspace <workspace> \
+  --generated <creator-runs/generation-id/generated>
+```
+
+Este comando solo solicita validación. Creator no instala. El Host verifica schema, manifest/hashes, capabilities/routing, graph/hot paths, seguridad, procedencia, backup y aceptación funcional.
+
+## Backup y reemplazo
+
+- idéntico: no escribir;
+- nuevo: creación exclusiva;
+- gestionado/modificado: backup completo verificado antes de tocar destino;
+- ajeno/local edit: conflicto `RETAINED`;
+- activación del conjunto modos+skills como unidad;
+- fallo: rollback verificado;
+- rollback no verificable: `RECOVERY_REQUIRED`.
+
+## Aceptación Host
+
+El Host ejecuta:
+
+1. static/schema/graph/portability;
+2. carga/origen/body exactos;
+3. escenarios públicos;
+4. holdouts;
+5. review independiente/degradada explícita;
+6. read/evidence/write denial;
+7. repair rojo→verde en candidato;
+8. QA;
+9. reauditoría semántica;
+10. persistencia/reapertura;
+11. rollback/uninstall;
+12. post-promotion smoke.
+
+Estados:
+
+```text
+GENERATED → VALIDATING → BACKED_UP → STAGED → ACCEPTING → ACTIVE
+                                       └→ RETAINED → ROLLED_BACK
+                                                      └→ RECOVERY_REQUIRED
+```
+
+## Restricciones de procedencia externa
+
+Se adaptan patrones de `jsmastery-pro/skills` commit `43b69e4` (MIT): scope/audit/architect/develop/check/test/debug/document/sync, progressive disclosure y hot-path budgets. No se copian sus modos finales, slash workflow, npx/MCP auto-install, dependencias Claude/web/Git ni reglas editoriales no funcionales. Copia sustancial exige aviso MIT y `THIRD_PARTY_NOTICES.md`.
+
+## Aceptación de este contrato
+
+Este documento es destino de C0–C5. No afirma que `bootstrap.py`, schemas, generación, accept o instalación transaccional ya existan. Sus gates están en `PLAN_IMPLEMENTACION.md`.

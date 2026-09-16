@@ -1,290 +1,1565 @@
 # Arquitectura del flujo de trabajo con agentes
 
-**Versión:** 2.4
-**Actualización:** 2026-09-13
-**Estado:** arquitectura objetivo completa; MVP del núcleo aceptado el 2026-09-13 con DSH real, controlador Host, QA, reauditoría semántica, integración en ramas de copia, archivo y recuperación acotada. Extensiones y límites hostiles permanecen explícitos. Consultar [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md) para el progreso por etapas.
-**Responsable de las decisiones de alcance y autorización:** usuario.
-**Propósito de este archivo:** ser la referencia vigente del diseño, sin depender de la memoria de una conversación.
+**Versión:** 3.0
+**Actualización:** 2026-09-16
+**Estado:** arquitectura normativa objetivo para la siguiente etapa del framework. El MVP operativo anterior permanece comprobado según `docs/status.md`; la capa nueva de bootstrap, generación Creator específica por proyecto y activación transaccional sigue pendiente de implementación por etapas C0–C7.
+**Responsable de alcance y autorización:** usuario/titular.
+**Propósito:** definir el flujo final distribuible en el que un usuario configura DSH una vez, clona el framework y ejecuta un bootstrap único que coordina Creator, validación Host, backups, aceptación automática, activación y rollback de modos y skills específicos del proyecto.
+**Jerarquía:** subordinada a `AGENTS.md`; `PLAN_IMPLEMENTACION.md` registra el progreso comprobado y `docs/status.md` separa hechos de destino.
+**Antecedentes:** la arquitectura v2.4 y los planes de cierre permanecen en Git; los presets operativos de Syncify/RehabWeb son fixtures de referencia, no defaults distribuibles. Se adaptan patrones del repositorio público `jsmastery-pro/skills` en el commit observado `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (MIT, 2026-08-07).
 
-## 1. Cómo consultar y mantener este documento
+---
 
-Leer este archivo al retomar el trabajo y antes de proponer cambios arquitectónicos. Consultar después solo los artefactos relevantes enlazados. Este documento describe la arquitectura; no acredita por sí mismo ejecución, permisos ni resultados actuales del entorno.
+## 1. Corrección fundamental del diseño
 
-Cuando se acuerde una modificación:
-1. Leer la sección vigente y actualizarla en este mismo archivo, sin crear otro plan competidor.
-2. Registrar decisiones y cambios en CHANGELOG.md y Git; mantener esta arquitectura libre de historial.
-3. Distinguir propuesta, decisión aceptada, implementación y verificación. No convertir una conversación favorable ni un estado JSON en una prueba de ejecución.
-4. Mantener los pendientes y criterios de salida coherentes con el cambio. Preservar antecedentes fuera de la distribución y cambios futuros en Git.
-5. Cambios de alcance, permisos, presupuesto o contrato material requieren autorización pertinente; no inferirla de este documento.
+El framework no debe distribuir presets finales universales de Auditoría y Reparación continua. Los presets externos usados durante el desarrollo demostraron routing, skills, subagentes, QA, reauditoría y el plugin `workflow-write`, pero son **rigs de referencia**, no la experiencia final del usuario.
 
-Si aparece un conflicto entre este archivo y una instrucción posterior explícita del usuario, aplicar la instrucción autorizada y actualizar el documento. Si solo cambia un hecho del entorno, registrar su procedencia y verificar lo necesario sin rediseñar el flujo.
+El producto distribuible será:
 
+```text
+método + skills generales + plantillas normativas + schemas + validadores
++ controles Host + bootstrap + prompts de Creator + fixtures saneados
+```
 
-## 2. Objetivo y límites
+El resultado de la incorporación será:
 
-Permitir que el usuario autorice una misión acotada y deje a los agentes investigar, implementar, verificar, corregir y continuar con intervención mínima. El usuario no debe redactar una nueva orden al terminar cada turno.
+```text
+<Proyecto>-auditor
+<Proyecto>-continuous-repair
++ skills específicas justificadas por el proyecto
+```
 
-El flujo es multiproyecto. Cada proyecto aporta sus especializaciones; ninguno define las tecnologías, rutas o artefactos obligatorios para los demás. Se admiten trabajos de software, investigación, documentación y operaciones, incluso sin Git.
+La especialización sucede una vez durante la incorporación o regeneración. En el uso normal el usuario elige uno de los dos modos y escribe objetivos breves; no vuelve a Creator por cada auditoría o reparación.
 
-El éxito se mide por resultados aceptados con evidencia, calidad, seguridad y coste, no por cantidad de agentes, documentos o actividad. Una tarea pequeña puede resolverse directamente. Los controles necesarios de seguridad y protección de datos no se omiten por simplicidad.
+### 1.1 Qué se conserva de la arquitectura vigente
 
-**No objetivos iniciales:** construir una plataforma universal nueva, producir dashboards/backlogs vacíos, rediseñar todo proyecto al incorporarlo, ni prometer recuperación ante cualquier caída antes de probarla.
+- dos modos finales: Auditoría y Reparación continua;
+- incorporación compartida;
+- Host como dueño de autoridad, persistencia, presupuesto, locks y transiciones;
+- Auditor sin escritura de producto;
+- candidato externo o rama autorizada para Reparación;
+- un escritor por entorno;
+- QA independiente y reauditoría semántica posterior;
+- evidencia ligada a base/candidato/hash;
+- máximo dos intentos de corrección por unidad;
+- publicación remota deshabilitada salvo autorización;
+- estados fail-closed (`RETAINED`, `UNVERIFIED`);
+- separación producto/framework/workspace;
+- skills no equivalen a enforcement;
+- Creator propone, pero no concede autoridad ni se autoaprueba.
 
-## 3. Distribución de responsabilidades
+### 1.2 Qué se corrige
 
-### Usuario
+- Los modos no son presets genéricos preparados por el mantenedor; son composiciones generadas por proyecto.
+- Creator no produce únicamente `preset.yml` y `agent.cordis.yml`; produce un paquete generacional completo.
+- El usuario no debe copiar el prompt a Creator ni ejecutar manualmente `bootstrap accept` en el caso normal.
+- El bootstrap debe autenticarse contra DSH local y enviar automáticamente la petición a Creator.
+- Creator ejecuta `bootstrap.py accept`; el Host valida y decide la aceptación mecánica.
+- Las skills específicas pueden generarse o mejorarse, pero siempre con backup íntegro antes de sustitución.
+- La instalación/actualización es transaccional como conjunto de modos y skills, no archivo por archivo.
+- La aceptación funcional pequeña se ejecuta automáticamente mediante sesiones DSH; el usuario no diseña el escenario.
+- Los patrones de progressive disclosure y presupuestos de hot paths se incorporan a las skills generadas.
 
-Define objetivo y decisiones propias: alcance material, recursos permitidos, presupuesto cuando corresponda, datos compartibles y autorización de publicación/integración. Autoriza una misión completa con límites, no cada subpaso mecánico. Recibe cierre o excepción concreta.
+---
 
-### Arquitectura y mejora del sistema — fuera del flujo de usuario
+## 2. Experiencia objetivo del usuario
 
-El diseño, mantenimiento y mejora del propio flujo se realizan aparte de su operación. ZCode puede asumir actualmente ese trabajo, consultando y actualizando este documento. Perplexity Search queda como herramienta externa opcional de investigación o segunda opinión, **no como componente, requisito ni paso inicial/final del flujo**. No es necesario mantenerlo activo para desarrollar u operar el sistema; sus paquetes se conservan como antecedentes. Tampoco ZCode será una dependencia del usuario final.
+### 2.1 Prerrequisitos
 
-La función original de Search era ayudar a mejorar la arquitectura, no redactar las misiones rutinarias del usuario ni aprobar cada resultado. Ningún asesor externo obtiene autoridad de ejecución por sus recomendaciones. Mantener separados el plano de mantenimiento del sistema y las misiones de los proyectos.
+El usuario debe configurar una sola vez:
 
-### DSH — dos modos de entrada para el usuario final
+1. DSH instalado en una versión compatible.
+2. Al menos un proveedor/modelo utilizable dentro de DSH.
+3. Credenciales gestionadas por DSH, no por el framework.
+4. Creator disponible en la instancia.
+5. Permisos nativos mínimos para leer proyecto/framework y escribir el workspace externo.
 
-El usuario interactúa directamente con **Auditor** y **Reparación continua**. El plan original archivado usaba «Auditor de Completitud y Calidad» y «Syncify Lead Architect & Orquestador»; esos nombres quedan como antecedentes del diseño, no como modos adicionales ni presets actuales. Esta decisión no acredita que los modos objetivo ya estén implementados completamente.
+El bootstrap no lee ni copia la API key del proveedor. Reutiliza el Host DSH y obtiene únicamente el token/cookie local de consola necesario para la API local. Ese secreto se mantiene en memoria y nunca entra en prompts, argv, entorno del agente ni artefactos.
 
-- **Auditoría completa:** incorpora o reconoce el proyecto mediante skills compartidas, descubre superficies, particiona el alcance en unidades funcionales, delega revisiones reales cuando DSH lo permita, consolida hallazgos y publica una cola externa. No modifica producto; la reauditoría incremental reutiliza este rol.
-- **Auditor unitario:** inspecciona una unidad autorizada y publica una entrega recuperable. Sigue siendo el worker interno de Auditoría completa y una entrada válida para encargos pequeños.
-- **Reparación continua:** evolución del Orquestador. Recibe una misión o lote suficiente, comprueba base, alcance y autorización, coordina un ejecutor y QA independiente, gestiona correcciones, solicita reauditoría y continúa con las unidades autorizadas. Conserva candidatos y evidencia, integra solo si está autorizado y devuelve cierre o excepción. «Continua» significa continuidad dentro de límites, no ejecución infinita ni ampliación automática de alcance.
-- **Ejecutor y QA:** funciones internas; un escritor por entorno y revisión independiente cuando la aceptación o el impacto lo requieran. El usuario no tiene que abrir sus sesiones ni redactar sus encargos rutinariamente.
-- **Host/coordinador:** mantiene misión, autorización, entrega, estado, exclusión de escritores y límites. Realiza las transiciones internas cuando estén autorizadas; un hallazgo del Auditor no autoriza por sí solo repararlo.
+Si falta proveedor, Creator o capacidad:
 
-La autorización de una misión debe poder reutilizarse como capability nativa durante sus unidades compatibles: lectura de producto, ejecución limitada del framework y escritura externa. Si el Host no demuestra esa persistencia y granularidad, el modo retiene la unidad en vez de repetir escalaciones o pedir acceso total.
+```text
+RETAINED: <capacidad ausente>
+Siguiente acción: <una única decisión o preparación del titular>
+```
 
+### 2.2 Un único comando normal
 
-La incorporación es una capacidad compartida disponible desde ambos modos, no un tercer modo obligatorio. Reparación continua puede reutilizar una auditoría válida; si falta diagnóstico suficiente, lo solicita internamente o pide únicamente la decisión humana indispensable. El objetivo es que el usuario elija modo y alcance, no transporte manualmente recibos entre sesiones.
+```bash
+python3 -B scripts/bootstrap.py install \
+  --project /ruta/proyecto
+```
 
-**Standard y Creator/Cordis son herramientas de desarrollo/transición**, no modos adicionales exigidos al usuario final. Standard puede alojar ensayos de skills y ejecución; Creator se usa solo para necesidades reales de composición. No cambian presets, permisos ni instalaciones automáticamente por esta actualización documental.
+Opcional avanzado:
 
-Una sesión separada con el mismo modelo puede proporcionar separación autor/revisor, pero no independencia estadística garantizada. Cambiar de proveedor o renombrar el mismo autor no acredita una revisión independiente. QA debe inspeccionar el candidato real y tener acceso suficiente a la evidencia.
+```bash
+  --workspace /ruta/workspace
+```
 
-### Alcance operativo v0.1
+El comando realiza:
 
-Standard aloja `workflow-auditor` y `workflow-continuous-repair` como entradas conductuales nativas de una unidad supervisada, no presets ni enforcement Host. START despacha el pedido ordinario; docs/usage.md define bootstrap, permisos efectivos y protocolo. Auditor termina en informe/propuesta sin modificar producto. Reparación requiere encargo separado, candidato externo, un escritor, autoprueba registrada y QA de subagente nativo disponible o revisor humano; sin QA se retiene, no se simula. Máximo dos intentos de corrección, sin goals ni siguiente objetivo automático. No integra producto por defecto.
+```text
+descubrimiento inicial
+→ workspace externo
+→ skills generales
+→ creator-run
+→ petición automática a Creator por DSH local
+→ generación específica
+→ Creator invoca accept
+→ Host valida, respalda e instala en staging
+→ aceptación funcional automática
+→ activación o rollback
+→ cierre compacto
+```
 
-Dos archivos centrales task/result referencian evidencia externa. `scripts/missions.py` ejecuta argv explícito autorizado con shell=false, timeout POSIX y stdout/stderr con hashes; verify rechaza aceptación documental sin prueba vigente o referencia QA correspondiente en reparación. `reaudit` liga una reauditoría mecánica incremental al resultado y candidato vigentes, dejando la revisión semántica explícitamente pendiente para Auditor/QA. No autentica autorización, independencia ni semántica y no es sandbox. El publicador histórico no se adapta mientras este alcance local no lo necesite. Permisos del producto hermano se comprueban por lectura mínima; si faltan, se detiene para decisión nativa del usuario sin eludir límites.
+El usuario no copia prompts, rutas, JSON, IDs, receipts, plugins o modelos; tampoco ejecuta `accept` manualmente en el caso normal.
 
-Las skills se copian recursivamente al workspace, idénticas son idempotentes; actualización conflictiva exige autorización explícita y respaldo externo completo. No hay actualización operativa del framework ni cambios globales. La carga con servicios DSH y el ciclo sintético prueban mecanismos locales; operación LLM, QA nativa real y recuperación se acreditan por separado.
+### 2.3 Uso posterior
 
-## 4. Capas de la solución
+Auditoría completa:
 
-| Capa | Contenido | No debe confundirse con |
+> Audita completamente este proyecto.
+
+Auditoría dirigida:
+
+> Audita el flujo de pagos.
+
+> Audita este componente.
+
+Reparación completa:
+
+> Repara la cola autorizada en la rama de prueba.
+
+Reparación dirigida:
+
+> Repara este hallazgo.
+
+> Repara solo el flujo de pagos.
+
+El Host gestiona internamente unidades, escritor, candidatos, QA, reauditoría, commits, archivo y continuidad.
+
+---
+
+## 3. Responsabilidades y fronteras de confianza
+
+| Actor/componente | Puede | No puede |
 |---|---|---|
-| Método general | Alcance, aceptación, roles, evidencia, paradas y medición | Un procedimiento pesado obligatorio para toda tarea |
-| Perfil del proyecto | Fuentes, repositorios, rutas, comandos, restricciones, canónicos y datos sensibles | Una skill ni permisos efectivos |
-| Skills generales de DSH | Incorporación, ejecución, pruebas seguras, evidencia, revisión y reauditoría | Código que hace cumplir restricciones |
-| Skills específicas | Procedimientos particulares recurrentes y comprobados | Una copia de rutas o instrucciones generadas por tecnología |
-| Adaptador del entorno | Versión, loader, herramientas, API y capacidades comprobadas | Suposiciones transferidas desde otro runtime |
-| Servicios y controles Host | Persistencia, autorización, límites, publicación y coordinación | Un modelo que decide por sí solo la corrección semántica |
+| Usuario | Configurar DSH/proveedor; iniciar install/update/uninstall; conceder permisos materiales; definir rama/publicación | Transportar recibos rutinariamente; diseñar la aceptación técnica |
+| Bootstrap | Descubrir; preparar workspace; llamar DSH/Creator; validar; respaldar; staging; instalar; activar/rollback | Inventar autorización; leer credenciales de proveedor; modificar producto |
+| Creator | Analizar proyecto; generar paquete candidato; crear skills específicas; invocar `bootstrap accept`; corregir errores mecánicos dentro de límites | Instalar directamente; modificar validadores; rebajar controles; declararse ACCEPTED |
+| Host | Validar schema/capabilities/hashes; presupuesto; backup; instalación transaccional; aceptación; activación/rollback | Delegar autoridad al modelo; aceptar manifiestos declarativos como permiso |
+| Auditor generado | Leer alcance; inventariar; delegar revisión; emitir cola/evidencia | Modificar producto; publicar; ampliar roots |
+| Reparación generada | Trabajar en candidato/rama autorizada; ejecutar pruebas permitidas; coordinar QA | Escribir fuera del cambio autorizado; publicar sin mandato |
+| QA | Revisar candidato exacto; ejecutar criterios; aceptar/rechazar | Ser el mismo autor presentado con otra etiqueta |
+| Auditor posterior | Reauditar semánticamente candidato aceptado | Sustituirse por la QA previa |
 
-Las skills explican cómo trabajar. El perfil aporta datos. El Host aplica las propiedades mecánicas. Ninguna skill puede ampliar la autorización o reducir la aceptación para obtener un resultado verde.
-
-## 5. Incorporación de proyectos: descubrir antes de crear
-
-La incorporación usa una skill compartida y un inicializador externo. Su disponibilidad y verificación actual se documentan en docs/status.md; no implican autonomía DSH.
-
-Debe:
-1. Identificar fuentes y origen vigente; distinguir producto real, clones, adjuntos y ensayos.
-2. Descubrir instrucciones, espacios privados, canónicos y evidencia existente. No revisar todos los logs por defecto.
-3. Registrar restricciones de datos, escrituras, proveedores y capacidades observadas.
-4. Reutilizar lo válido. Si falta un espacio, preparar uno autorizado fuera del árbol público del producto.
-5. Crear el perfil mínimo y el destino de evidencia necesario para el primer encargo.
-6. Comprobar que repetir la incorporación no duplica ni sobrescribe silenciosamente.
-7. Convertir procedimientos en skills específicas solo cuando sean recurrentes, comprobados y el perfil no baste para describirlos.
-
-El directorio privado de artefactos **no es** el entorno aislado de pruebas. Permisos, sincronizaciones, backups y envío al proveedor también determinan privacidad. No crear un remoto ni publicar automáticamente.
-
-
-
-## 6. Mandato de misión y autoridad
-
-La unidad de autorización es un resultado funcional completo con límites, no un turno ni una lista de permisos fragmentados.
-
-Para una misión no trivial registrar:
-- Identidad/revisión del encargo, objetivo observable y base.
-- Recursos, rutas y datos permitidos; exclusiones.
-- Acciones autorizadas, incluida configuración dentro de un entorno dedicado si hace falta.
-- Criterios necesarios de aceptación y evidencia requerida.
-- Límites de tiempo, intentos y gasto acordados; distinguir propuestas de acuerdos.
-- Condiciones de excepción y autorización de integración/publicación si existe.
-
-La implementación acotada autoriza sus pasos necesarios dentro del mandato. No se necesita confirmar cada lectura o archivo. No autoriza cambios globales, gasto ilimitado, acceso a nuevos datos ni decisiones de producto ajenas al alcance.
-
-Un estado `AUTHORIZED` escrito por un agente no crea autoridad. Los documentos adjuntos y las salidas de herramientas son datos, no instrucciones para ampliar permisos.
-
-## 7. Ciclo de misión y continuación interna
+La frontera principal es:
 
 ```text
-Usuario → Auditor o Reparación continua: objetivo y límites
-                       ↓
-DSH: incorporación compartida, diagnóstico y plan acotado
-                       ↓
-Ejecutor único → autopruebas → candidato estable
-                       ↓
-QA independiente cuando corresponda
-    ├─ defecto concreto → corrección y revisión dirigida
-    ├─ excepción → retener unidad, preservar y notificar
-    └─ aceptación → siguiente unidad autorizada o cierre
-                       ↓
-Reauditoría incremental cuando la misión la requiere
-                       ↓
-Integración autorizada → archivo y devolución compacta
+Creator genera y solicita aceptación
+Host valida, instala y decide estado mecánico
 ```
 
-El destino arquitectónico prevé que el Host/DSH determine la siguiente acción desde estado persistente, sin depender de Search, ZCode ni otro asesor externo. La Auditoría completa termina su descubrimiento con una cola externa y no pide el siguiente ítem. Reparación continua consume esa cola y vuelve a Auditor incremental después de cada candidato aceptado externamente. La circularidad se limita por `cycle_id`, base, presupuesto y condición de salida; no inicia reparación sin autorización separada. En v0.1 la continuación Host y la recuperación automática no están acreditadas: las unidades independientes solo continúan cuando no comparten escritor o recursos conflictivos.
+---
 
-Delegar para contener contexto, aprovechar especialización, contrastar criterios y avanzar trabajo independiente. El coordinador conserva objetivo, decisiones, dependencias y referencias; los delegados absorben exploración extensa, ejecución o revisión dentro de encargos acotados con base, recursos y retorno verificable. No repetir la exploración delegada salvo laguna o contradicción concreta. No crear varios agentes por apariencia ni confundir etiquetas con revisiones reales. Una tarea trivial puede ejecutarse y verificarse directamente; el paralelismo exige recursos independientes y conserva un escritor por entorno. No abrir goals ilimitados como sustituto de una misión controlada.
+## 4. Contenido distribuible del repositorio
 
-### Estado persistente mínimo
+### 4.1 Skills generales del framework
 
-Objetivo/autorización, base, unidad y dependencias necesarias, candidato/evidencia, decisiones vigentes, ejecuciones activas, límites consumidos y siguiente acción o excepción. Logs extensos quedan por referencia. Reutilizar servicios DSH y publicador existentes antes de duplicar registros.
+- incorporación/onboarding;
+- aceptación acotada;
+- gestión de evidencia;
+- validación segura;
+- creación controlada de skills;
+- entrega proporcional y recuperación;
+- utilidades generales que no codifiquen un proyecto.
 
-Las decisiones técnicas que trascienden una unidad conservan identidad estable, motivo, contrato protegido, alternativas descartadas, pruebas asociadas, unidades afectadas y estado vigente o sustituido con referencia al reemplazo. El encargo recupera solo las decisiones pertinentes; el ejecutor declara cuáles preserva o propone sustituir, QA evalúa esa declaración y el cierre actualiza referencias sin borrar antecedentes. Una sustitución material requiere la autorización correspondiente. Rutas y símbolos son localizadores, no prueba de equivalencia semántica tras una refactorización. Este contrato de memoria de decisiones es destino del flujo habitual, no un servicio persistente ya implementado.
+Las skills operativas actuales de Auditor/Reparación pueden servir como fuentes normativas y fixtures, pero no se instalan como modos finales universales.
 
-Los límites consumidos (intentos/coste/tiempo) disponen de un contrato local mínimo (`scripts/budget.py`): ledger de eventos inmutables en estado externo, con creación exclusiva por enlace temporal, reserva conservadora declarada antes del trabajo y consumo recalculado desde los eventos persistidos; un corte puede sobrecontar, nunca subcontar. Los límites se fijan una sola vez y una reapertura con límites distintos o alterados falla cerrada: el gasto no se reinicia ni se rebaja al reanudar. Es almacén local confiable de un solo escritor; no mide procesos reales ni concede autoridad, y la concurrencia hostil exige el Host.
+### 4.2 Plantillas de composición
 
-Un checkpoint debe permitir continuar sin importar toda la conversación. Al reiniciar, una ejecución incierta se reconcilia antes de lanzar otro escritor. Persistencia de una sesión no significa que su tarea terminó.
+- contrato obligatorio de `<Proyecto>-auditor`;
+- contrato obligatorio de `<Proyecto>-continuous-repair`;
+- campos variables que Creator debe completar;
+- restricciones inmutables;
+- contratos de plugins, herramientas, routing y modelos;
+- escenarios de aceptación mínimos.
 
-Para tareas programadas del framework, la persistencia externa comienza antes de cualquier trabajo: crear un directorio de sesión nuevo (sin sobrescribir uno existente) y escribir `started.json` de inmediato con identidad, hora, raíces, alcance y estado. La tarea debe crear explícitamente sus fixtures y prerequisitos, registrar sus rutas absolutas y no depender de cwd, scheduler o contexto de otra sesión. Cada salida termina con `checkpoint.json`, `report.md` y `finish.json`; si falta un prerequisito o la ejecución queda bloqueada, checkpoint e informe deben conservar `RETAINED` con causa, evidencia, límites y siguiente acción. `finish.json` referencia los tres artefactos y el estado final. Esta garantía de protocolo no acredita durabilidad ante crash o pérdida de energía ni sustituye controles Host.
+### 4.3 Schemas y validadores
 
-## 8. Publicador, entrega y evidencia
+- perfil/manifiesto de proyecto;
+- `generation-manifest.json`;
+- modos generados;
+- capabilities;
+- roots/exclusiones;
+- comandos autorizables;
+- modelos y proveedores permitidos;
+- presupuesto/timeout/intentos;
+- identidad de roles;
+- skills generadas;
+- grafo de progressive disclosure;
+- backup/install/rollback receipts.
 
-Reutilizar el publicador de referencia al preparar el adaptador; generalizar bindings y alcance antes de distribuirlo como operativo. El archivo histórico no es una dependencia de instalación.
+### 4.4 Bootstrap y desinstalador
 
-Propiedades necesarias: identidad real del llamante más autorización; entradas y tamaño limitados; destinos determinados por Host; registros incrementales; reintentos idempotentes; conflictos rechazados; evidencia ligada a la base; entrega parcial distinta de completa; recuperación verificable de contenido.
+Comandos objetivo:
 
-El ID es opaco y realmente emitido. No imponer convenciones ficticias como `receipt_TASK_timestamp.json`.
+```bash
+bootstrap.py install
+bootstrap.py accept          # lo invoca Creator en operación normal
+bootstrap.py verify-acceptance
+bootstrap.py update
+bootstrap.py uninstall
+bootstrap.py purge-data      # destructivo, separado y con confirmación
+```
 
-`INICIO_LOTE: {"receipt_id":"..."}` es suficiente **solo entre consumidores con resolución real y acceso autorizado al contenido**. En el flujo final, entrega y resolución pertenecen a DSH/Host; copiar ese mensaje manualmente es un recurso de ensayo o recuperación, no un requisito rutinario del usuario. El paso Auditor→Reparación requiere autorización de reparación vigente. Exportar evidencia a un asesor externo es opcional, previa revisión de sensibilidad; no forma parte del protocolo obligatorio.
+### 4.5 Prompts versionados para Creator
 
-`ACCEPTED`/`VERIFIED` son estados con alcance definido, no prueba automática de QA ni integración. Registrar quién evaluó qué candidato, evidencia y limitaciones. Los hashes detectan identidad/corrupción; no acreditan por sí solos autenticidad contra quien controla todo el almacén.
+- incorporación inicial;
+- regeneración por cambio material;
+- actualización de framework/DSH;
+- corrección de generación `RETAINED`;
+- creación/mejora de skills específicas.
 
-Distinguir visibilidad atómica, no sobrescritura, persistencia tras proceso, crash y pérdida de energía. Un rename o un reinicio normal no prueba todas esas propiedades. Multiarchivo necesita mecanismo propio; edición manual no aporta atomicidad por sí misma.
+### 4.6 Ejemplos/fixtures
 
-El publicador local entrega únicamente cierres `COMPLETE`; Auditoría completa añade un ciclo externo versionado con manifiesto, matriz de cobertura, cola de reparación y resumen compacto. Los logs y cierres extensos pasan a un archivo indexado y no se cargan automáticamente en el estado activo. El consumidor valida apertura, propietario, hashes, ausencia de gaps y tareas enlazadas a evidencia del mismo lote. Rechaza JSON no objeto, `OPEN` y escrituras de lote tras cierre; reserva sufijos de ciclo y limita IDs de lote a 53 caracteres para admitir registros generados y etapas. Las etapas positivas reciben como `evidence` el ID de evidencia incluida y enlazada por una tarea del lote: su payload contiene `task_ref`, `task_sha256`, `result_ref` y `result_sha256`. Revalida recibos, hashes y `missions.verify` en cada transición; executor/QA/auditor comparten esa referencia y declaran actores distintos. `CANDIDATE` significa aquí una misión ya aceptada documentalmente, no un candidato previo a QA. `reaudit` reutiliza todos los prerrequisitos de `verify`; audit no requiere prueba, pero valida cualquier `check_ref` aportado. Esto no autentica actores ni revisión semántica; almacén local confiable, sin garantía de concurrencia hostil.
+- Syncify y RehabWeb saneados;
+- sin rutas locales, credenciales, sesiones, candidatos ni datos privados;
+- marcados explícitamente como fixtures;
+- nunca se instalan como defaults;
+- golden manifests para pruebas del generador/validador.
 
-El namespace local conserva IDs con guiones: los registros ordinarios no pueden terminar en el componente `open`, `close`, `executor`, `qa` o `auditor`, tampoco con prefijos como `x-close`. Así no ocupan IDs de ciclo de otros lotes; cualquier colisión ordinaria se rechaza sin sobrescribir. La cuota sigue siendo de 16 archivos JSON por almacén: toda publicación, incluida la genérica, computa registros existentes más reservas reconstruidas desde aperturas/cierres. Abrir reserva un cierre y tres etapas; un lote `COMPLETE` conserva las etapas pendientes, y `PARTIAL` libera esas tres plazas. Cada escritura terminal consume su propia reserva; reintentos idénticos no consumen cuota. Política conservadora acotada: un lote abierto aislado admite como máximo 11 registros ordinarios, y no se liberan etapas por estados fallidos; otro almacén externo es necesario cuando se agota la capacidad. La reserva garantiza espacio, no la validez semántica de una transición, ni concurrencia o reparación de almacenes previos ya saturados. IDs anidados y enlaces `evidence_id` malformados se rechazan con `ValueError` antes de operaciones de conjuntos/mapas. Antes de persistir `COMPLETE`, el productor exige payloads objeto tanto en evidencia como en tareas, incluidas publicaciones genéricas, igual que el consumidor; el rechazo no escribe cierre ni impide publicar registros corregidos o cerrar `PARTIAL` con gaps.
+### 4.7 Plantillas de skills específicas
 
-## 9. Aceptación sin bucles
+- frontmatter permitido;
+- router de entrada;
+- `modes/`, `internal/`, `references/`, `templates/`;
+- criterios de activación;
+- capacidades requeridas/prohibidas;
+- pruebas mínimas;
+- reglas para scripts/helpers;
+- límites de contexto y hot paths;
+- procedencia/licencias.
 
-- Fijar alcance y criterios antes de implementar. Un cambio material versiona el contrato con autorización pertinente.
-- Consolidar una revisión inicial y revisar después correcciones, efectos relacionados y evidencia material nueva.
-- Bloquear por incumplimiento de un criterio necesario o un problema concreto de seguridad/datos. Evidencia necesaria ausente permanece `UNVERIFIED`.
-- Preferencias y mejoras futuras no son nuevos requisitos de aceptación.
-- Deduplicar por causa, criterio y evidencia. No repetir una objeción resuelta sin evidencia nueva.
-- Si la causa se repite sin progreso o se consume el presupuesto, retener y preservar esa unidad. No forzar aprobación ni continuar rondas indefinidas.
-- Una nueva amenaza material no se ignora para satisfacer un contador de revisiones; se atiende dentro de alcance o se escala.
+### 4.8 Controles Host
 
-Una revisión documental externa no sustituye QA que necesita inspeccionar/ejecutar el candidato en el entorno adecuado. La aceptación operativa no depende de un veredicto de Search.
+- onboarding/manifest;
+- budget y métricas;
+- memoria de decisiones;
+- publisher y missions verify;
+- controller;
+- launcher/canal de inferencia;
+- plugin `workflow-write`;
+- validador de generación;
+- instalador transaccional.
 
-Cuando un criterio necesario dependa de percepción humana o de una observación que las herramientas autorizadas no puedan realizar, la verificación humana es evidencia de aceptación, no solo manejo de excepciones. Registrar solicitud con ID estable, criterio, candidato/hash, entorno, procedimiento y estado; el resultado identifica al evaluador y la evidencia observada. Mientras falte, sea inconcluso o corresponda a otro candidato, conservar `UNVERIFIED`/`RETAINED` y no integrar. El comportamiento de terceros que pueda comprobarse con herramientas autorizadas no exige intervención humana por defecto. Aceptar riesgo residual no equivale a verificar. El registro se mantiene externo cuando una misión lo necesita; su validación mecánica sigue pendiente.
+---
 
-## 10. Convertir incidentes en regresiones del flujo
+## 5. Layout de una generación
 
-Por cada fallo relevante: identificar causa → corregir la pieza responsable → añadir comprobación pequeña → verificar casos relevantes sin degradar garantías.
+Cada incorporación/regeneración crea un ID opaco y un directorio exclusivo:
 
-También los hallazgos de producto declaran una estrategia de prevención de recurrencia antes de entrar en `READY_FOR_REPAIR`: regresión, validación en el productor, migración correctiva, comprobación humana pertinente u otra medida concreta; `N/A` requiere motivo. Una propuesta no demuestra prevención: al aceptar la reparación se comprueba la medida acordada sobre el candidato. No imponer tests artificiales donde no hay productor controlable ni ampliar el alcance sin autorización. Es requisito de revisión; el consolidador no valida por sí solo su pertinencia.
+```text
+workspace/
+└── creator-runs/
+    └── <generation-id>/
+        ├── started.json
+        ├── generation-request.json
+        ├── creator-prompt.md
+        ├── discovery/
+        │   ├── project-inventory.json
+        │   ├── instructions-index.json
+        │   ├── effective-capabilities.json
+        │   ├── effective-routing.json
+        │   └── evidence-index.json
+        ├── design/
+        │   ├── mode-map.json
+        │   ├── skill-plan.json
+        │   ├── policy-decisions.json
+        │   └── provenance.json
+        ├── generated/
+        │   ├── generation-manifest.json
+        │   ├── project-manifest.json
+        │   ├── capabilities.json
+        │   ├── modes/
+        │   │   ├── <Proyecto>-auditor/
+        │   │   └── <Proyecto>-continuous-repair/
+        │   ├── skills/
+        │   │   ├── <Proyecto>-auditor/
+        │   │   ├── <Proyecto>-continuous-repair/
+        │   │   └── <skills-específicas>/
+        │   ├── templates/
+        │   ├── adapters/
+        │   ├── acceptance-plan.json
+        │   └── generation-report.md
+        ├── validation/
+        │   ├── schema-report.json
+        │   ├── portability-report.json
+        │   ├── context-budget-report.json
+        │   ├── security-report.json
+        │   ├── graph-report.json
+        │   └── collision-report.json
+        ├── accept/
+        │   ├── host-preflight.json
+        │   ├── backup-manifest.json
+        │   ├── backup-verification.json
+        │   ├── staging-manifest.json
+        │   ├── install-receipt.json
+        │   ├── acceptance-report.json
+        │   └── rollback-receipt.json
+        ├── checkpoint.json
+        ├── report.md
+        └── finish.json
+```
 
-| Incidente observado | Tratamiento correcto |
+Reglas:
+
+- directorio nuevo, nunca sobrescrito;
+- Creator escribe solo dentro de su generación;
+- `generated/` queda inmutable durante `accept`;
+- Host revalida todos los hashes justo antes de instalar;
+- logs extensos por referencia;
+- secretos nunca se escriben.
+
+---
+
+## 6. Contrato de `generation-manifest.json`
+
+Campos mínimos:
+
+```json
+{
+  "schema_version": 1,
+  "generation_id": "opaque-id",
+  "status": "GENERATED",
+  "project": {
+    "name": "MiProyecto",
+    "root_identity": "sha256",
+    "base_revision": "git-or-content-id"
+  },
+  "creator": {
+    "session_ref": "observed-session",
+    "runtime_version": "observed-version"
+  },
+  "framework": {
+    "revision": "commit",
+    "templates_revision": "commit"
+  },
+  "artifacts": [
+    {
+      "path": "skills/MiProyecto-auditor/SKILL.md",
+      "type": "skill-entrypoint",
+      "sha256": "digest"
+    }
+  ],
+  "required_capabilities": [],
+  "forbidden_capabilities": [],
+  "effective_routing_digest": "digest",
+  "context_policy": {
+    "skill_entrypoint_max_bytes": 32768,
+    "support_file_max_bytes": 24576,
+    "warning_ratio": 0.9,
+    "hot_paths": {}
+  },
+  "license_provenance": []
+}
+```
+
+Creator solo puede emitir `GENERATED`. `ACCEPTED`, `RETAINED`, `ACTIVE` y `ROLLED_BACK` los emite el Host.
+
+El manifest cubre todos los archivos. Archivo no manifestado, hash incorrecto, symlink, path traversal o tipo especial causan rechazo antes de cualquier backup/instalación.
+
+---
+
+## 7. Flujo detallado del bootstrap
+
+### B0 — preflight local
+
+- validar argumentos/rutas;
+- comprobar que proyecto/framework/workspace no se solapan;
+- comprobar DSH y Creator;
+- obtener versión/capabilities/routing efectivos;
+- comprobar proveedor/modelo utilizable sin abrir credenciales;
+- verificar canal local de autenticación DSH;
+- fijar presupuesto, timeout y datos permitidos;
+- crear `started.json` y reservar presupuesto.
+
+### B1 — descubrimiento mecánico
+
+- Git/identidad/revisión;
+- instrucciones y manifiestos;
+- lenguajes/toolchains;
+- roots/exclusiones preliminares;
+- tests/builds detectables, no ejecutados;
+- configuración/skills/modes existentes;
+- conflicts y precedencia del loader;
+- perfil mínimo.
+
+### B2 — skills generales
+
+- copiar/enlazar skills generales al workspace con manifest gestionado;
+- idénticas: idempotentes;
+- conflicto ajeno: `RETAINED`;
+- no instalar modos finales;
+- verificar carga nativa de las skills generales necesarias para Creator.
+
+### B3 — paquete y llamada a Creator
+
+- crear `generation-request.json` y prompt versionado;
+- abrir/reutilizar Host DSH autorizado;
+- derivar cookie/token local en memoria;
+- crear sesión Creator con cwd correcto;
+- enviar prompt automáticamente;
+- supervisar turno, presupuesto y timeout;
+- exigir `generation-manifest.json` y `finish.json`;
+- Creator ejecuta `bootstrap.py accept` al terminar.
+
+### B4 — `accept` invocado por Creator
+
+El comando recibe workspace + generated o generation-id. No recibe autoridad desde el manifest.
+
+Creator puede corregir errores mecánicos dentro del límite de intentos, pero no puede:
+
+- modificar `bootstrap.py`/validadores;
+- instalar directamente;
+- cambiar capabilities/routing;
+- escribir en destinos activos;
+- marcarse aceptado.
+
+### B5 — validación Host
+
+1. Schema/versiones.
+2. Identidad proyecto/base/framework.
+3. Manifest exhaustivo, hashes y archivos regulares.
+4. Rutas contenidas en `generated/`.
+5. Plugins/tools/modelos dentro de allowlist efectiva.
+6. Routing idéntico al snapshot permitido.
+7. Roots mínimos; Auditor sin escritura de producto.
+8. Reparación solo en candidato/rama.
+9. Roles/sesiones observables.
+10. Presupuesto, timeout, dos intentos.
+11. Skills/frontmatter/referencias/grafo/hot paths.
+12. Portabilidad y ausencia de rutas del mantenedor.
+13. Scripts/helpers: imports, red, subprocess, writes, instalación.
+14. Colisiones/precedencia y ownership.
+15. Licencias/procedencia.
+
+Todo rechazo ocurre antes de tocar destinos activos.
+
+---
+
+## 8. Progressive disclosure y estructura de skills
+
+Se adopta de `jsmastery-pro/skills` el patrón, no su flujo ni sus nueve skills:
+
+```text
+<Project>-auditor/
+├── SKILL.md
+├── modes/
+│   ├── full.md
+│   ├── area.md
+│   └── follow-up.md
+├── internal/
+│   ├── evidence-policy.md
+│   ├── completion.md
+│   └── recovery.md
+├── references/
+│   ├── project-context.md
+│   ├── acceptance-contract.md
+│   └── domain-contracts.md
+├── templates/
+└── adapters/
+```
+
+`SKILL.md` es un router pequeño. Carga únicamente la rama pertinente. El manifest declara el grafo y hot paths. El Host valida:
+
+- referencias existentes;
+- cero archivos huérfanos salvo declarados `asset`;
+- no ciclos de carga;
+- presupuesto por archivo;
+- presupuesto agregado por hot path;
+- contratos duplicados idénticos o generados desde fuente canónica;
+- adapters opcionales y no autoritativos.
+
+Valores iniciales propuestos (configurables): 32 KiB entrypoint, 24 KiB soporte, warning 90%. Deben medirse y ajustarse; no son garantía de calidad.
+
+No se adopta:
+
+- `/scope→/audit→/architect→...`;
+- `npx skills@latest`;
+- obligación universal de `agents/openai.yaml`;
+- reglas editoriales ajenas sin relación funcional;
+- herramientas/nombres de proveedor como contrato universal;
+- score único basado en tokens.
+
+---
+
+## 9. Creación y mejora de skills específicas
+
+Creator solo crea/mejora una skill si el perfil no basta y existe necesidad recurrente observada.
+
+Cada propuesta declara:
+
+- motivo y evidencia;
+- dominio/unidades donde aplica;
+- entradas/salidas;
+- capabilities mínimas;
+- herramientas prohibidas;
+- archivos y hot paths;
+- prueba de carga;
+- prueba de conducta;
+- procedencia/licencia;
+- relación con skill previa si es reemplazo.
+
+### 9.1 Backup obligatorio
+
+Antes de sustituir una skill gestionada:
+
+```text
+detectar cambio
+→ backup completo externo
+→ hashes del backup
+→ backup-verification.json
+→ staging del conjunto nuevo
+→ smoke + aceptación
+→ activar o rollback
+```
+
+Reglas:
+
+- idéntica: no escribir ni backup innecesario;
+- nueva: creación exclusiva;
+- gestionada y modificada: backup obligatorio antes de tocar destino;
+- ajena/no gestionada: conflicto `RETAINED`;
+- fallo de backup: no instalar;
+- fallo posterior: restaurar backup y verificar;
+- rollback no verificable: `RECOVERY_REQUIRED`;
+- nunca borrar backup durante el mismo paso de instalación;
+- política de retención/limpieza separada.
+
+El backup cubre la carpeta completa y archivos auxiliares, no solo `SKILL.md`.
+
+---
+
+## 10. Instalación transaccional
+
+La unidad de activación es el conjunto de dos modos + skills específicas + adapters + manifest. No se activan componentes por separado.
+
+Secuencia:
+
+1. Validación completa en staging inmutable.
+2. Plan de cambios y collisions.
+3. Backup y verificación.
+4. Construcción de árbol candidato hermano.
+5. Descubrimiento/carga contra el árbol candidato.
+6. Smoke mecánico.
+7. Aceptación funcional.
+8. Swap atómico del puntero/directorio gestionado.
+9. Revalidación desde sesión nueva.
+10. Manifest activo + install receipt.
+11. Si falla: rollback conjunto y verificación.
+
+Nunca debe quedar Auditor nuevo con Reparación anterior o skills mezcladas.
+
+---
+
+## 11. Aceptación automática generada, no diseñada por el usuario
+
+Creator produce `acceptance-plan.json`, pero el framework impone criterios mínimos congelados. `accept` valida que existan y ejecuta automáticamente vía DSH local:
+
+1. Descubrimiento de ambos modos.
+2. Carga exacta de skills y origen esperado.
+3. Lectura dirigida de unidad fixture.
+4. Evidencia fuera del producto.
+5. Auditor bloqueado para modificar producto.
+6. Reparación en candidato controlado.
+7. Rojo→verde real.
+8. QA por sesión/actor observable.
+9. Reauditoría semántica posterior.
+10. Presupuesto/checkpoint/reapertura.
+11. Instalación/rollback/desinstalación controlada.
+12. Ausencia de cambios en producto/routing/config global.
+
+Creator invoca `accept`, pero el Host ejecuta/verifica el plan. Creator no escribe los resultados. Si falta aprobación nativa que solo puede dar el titular, el bootstrap pausa con una instrucción compacta, preserva checkpoint y reanuda tras la decisión; no elude la UI.
+
+Estados:
+
+```text
+GENERATED → VALIDATING → BACKED_UP → STAGED
+→ ACCEPTING → ACTIVE
+                  └→ RETAINED → ROLLED_BACK
+                                 └→ RECOVERY_REQUIRED (si rollback no verificable)
+```
+
+---
+
+## 12. Actualización/regeneración
+
+```bash
+python3 -B scripts/bootstrap.py update --project /ruta/proyecto
+```
+
+Disparadores:
+
+- cambio material de arquitectura/lenguaje/repos;
+- nuevas fronteras de datos/hardware;
+- actualización de framework/DSH;
+- modo/skill obsoleto;
+- generación rechazada.
+
+La generación activa permanece en servicio mientras se crea/valida la nueva. Solo se conmuta tras aceptación. Las decisiones materiales conservan historial y reemplazos mediante `decisions.py`.
+
+---
+
+## 13. Desinstalación y datos
+
+```bash
+bootstrap.py uninstall --project /ruta/proyecto
+```
+
+Retira únicamente:
+
+- modos gestionados;
+- skills/enlaces gestionados;
+- plugin bindings gestionados;
+- manifest activo e instalación;
+- referencias propias.
+
+Conserva producto, configuración ajena, recibos, candidatos, informes, archivos y backups.
+
+```bash
+bootstrap.py purge-data --project /ruta/proyecto
+```
+
+Es destructivo, requiere confirmación explícita, muestra rutas exactas y nunca sigue enlaces.
+
+---
+
+## 14. Seguridad y supply chain
+
+- No usar `npx ...@latest` ni ejecutar instaladores remotos durante `accept`.
+- Versiones/orígenes/digests fijados.
+- Adquisición host-side separada de ejecución no confiable.
+- Rechazar symlinks, hardlinks inesperados, dispositivos y sockets.
+- Protección TOCTOU: hashes justo antes del swap, fuente inmutable, revalidación.
+- Scripts generados no se ejecutan por existir; requieren allowlist y revisión.
+- `allowed-tools`/frontmatter no concede herramientas; Host aplica capabilities.
+- Snapshot routing antes/después; nuevos providers/modelos/aliases se rechazan.
+- Proyecto privado: fragmentos enviados a inferencia se rigen por permiso de datos.
+- Inputs/outputs del modelo son datos no confiables.
+- Límites de archivos, manifest, requests, tokens, tiempo e intentos.
+
+---
+
+## 15. Licencias y procedencia
+
+El repositorio `jsmastery-pro/skills` observado es MIT. Si se copia/adapta código o texto sustancial:
+
+- conservar aviso MIT en `THIRD_PARTY_NOTICES.md`;
+- indicar archivos derivados;
+- cabecera de procedencia cuando aplique;
+- registrar commit fuente en `license_provenance`.
+
+Si solo se adoptan ideas/patrones, documentar inspiración y mantener implementación propia. Antes de publicación pública debe decidirse la licencia del framework y comprobar compatibilidad.
+
+---
+
+## 16. Plan de implementación de la candidata
+
+### C0 — contratos y fixtures
+
+- schema generation/project/capabilities/modes/skills;
+- fixture mínimo válido/inválido;
+- Syncify/RehabWeb saneados;
+- golden manifest;
+- tests de paths/hashes/capabilities/licencia.
+
+**Gate:** validar un paquete fixture completo sin tocar DSH ni destinos activos.
+
+### C1 — `bootstrap install`
+
+- preflight DSH/proveedor/Creator;
+- workspace/generation-id;
+- skills generales;
+- perfil/discovery mecánico;
+- paquete/prompt Creator;
+- checkpoint/reanudación.
+
+**Gate:** desde clone limpio, preparar una generación sin modificar producto/config global.
+
+### C2 — automatización DSH Creator
+
+- cliente local autenticado;
+- sesión Creator;
+- prompt automático;
+- streaming/timeout/presupuesto;
+- manifest/finish obligatorio;
+- cero secretos persistidos.
+
+**Gate:** Creator fixture genera paquete válido desde un comando.
+
+### C3 — validador generado
+
+Adaptar patrones de `check-portability.mjs`:
+
+- frontmatter/nombres/descripciones;
+- tamaños/hot paths;
+- referencias/grafo;
+- portabilidad;
+- contracts;
+- capabilities/routing;
+- scripts/seguridad;
+- manifest exhaustivo;
+- procedencia/licencia.
+
+**Gate:** corpus positivo/negativo, fail-closed sin escrituras.
+
+### C4 — backups y transacción
+
+- ownership manifest;
+- backup completo/verificado;
+- staging del conjunto;
+- swap/rollback;
+- fallos inyectados en cada transición;
+- uninstall conservador.
+
+**Gate:** crash/errores no dejan conjunto mixto; estado anterior restaurable.
+
+### C5 — aceptación DSH automática
+
+- acceptance plan schema;
+- dos modos específicos fixture;
+- carga/lectura/escritura externa;
+- repair/QA/reaudit;
+- plugin/capabilities/routing;
+- reanudación;
+- rollback.
+
+**Gate:** `install` de un comando produce modos ACTIVE o RETAINED con rollback íntegro.
+
+### C6 — piloto clean-room
+
+Proyectos nuevos no usados durante implementación:
+
+- uno Python/backend;
+- uno JS/Rust/UI o equivalente multiparte;
+- usuario sin contexto privado;
+- proveedor DSH ya configurado;
+- contar intervenciones y troubleshooting;
+- update y uninstall completos.
+
+**Gate:** usuario ejecuta un comando, recibe modos específicos útiles y opera con mensajes cortos.
+
+### C7 — promoción
+
+- reconciliar resultados;
+- corregir arquitectura vigente en su mismo archivo;
+- reemplazar `creator-preset-spec.md` por contrato generacional;
+- actualizar START/README/usage/setup/status/plan/changelog;
+- tag de piloto;
+- conservar esta candidata como antecedente o eliminarla tras promoción (historial queda en Git).
+
+---
+
+## 17. Matriz de aceptación de la candidata
+
+| Gate | Evidencia necesaria |
 |---|---|
-| Preguntar otra vez dónde van artefactos | Guardar y reutilizar decisión del perfil |
-| Confundir persona.prefix con loader de skills | Separar esquema de preset, descubrimiento y carga de skill |
-| Repetir argumentos inválidos | Control Host con diagnóstico y suspensión comprobable |
-| Terminar con una skill no utilizable | Aceptación funcional de descubrimiento, carga y prueba |
-| Quitar symlink y declarar aislamiento | Comprobar destinos de escritura y límites efectivos |
-| Hallazgo antiguo con hashes del candidato corregido | Vincular diagnóstico a su base y distinguir reproducción histórica |
-| Pedir al usuario el siguiente prompt | Estado y continuación internos dentro de la misión |
-| Autorizar cada subpaso documental | Mandato de resultado con límites suficientes |
+| Un comando | clone + provider preconfigurado + `bootstrap install` |
+| Creator automático | sesión/turno observado sin prompt manual |
+| Específico del proyecto | modos/nombres/skills/criterios derivados del proyecto |
+| No autoaprobación | Creator solo GENERATED; Host emite estados |
+| Backup | cada reemplazo tiene backup completo verificado previo |
+| Transacción | conjunto viejo o nuevo, nunca mezcla |
+| Progressive disclosure | grafo/hot paths válidos y presupuestados |
+| Seguridad | capabilities/routing/roots fail-closed |
+| Aceptación | read/evidence/repair/QA/reaudit/reopen reales |
+| Rollback | fallo inyectado restaura estado anterior |
+| Idempotencia | reinstall/update/uninstall repetibles |
+| Portabilidad | cero rutas/identidades del mantenedor |
+| Datos | permisos/proveedor/sensibilidad registrados |
+| UX | usuario no copia prompts, JSON, recibos ni diseña pruebas |
 
-No crear una skill ni añadir otra prohibición global por cada incidente. Las regresiones de conducta pueden ser escenarios; las garantías mecánicas necesitan pruebas y controles ejecutables. El flujo no puede automejorarse rebajando sus propios criterios o permisos.
+---
 
-## 11. Seguridad de pruebas y protección del producto
+## 18. Transición desde el MVP anterior
 
-Inspeccionar manifiestos, scripts, build.rs, proc-macros, helpers y rutas antes de ejecutar. Clasificar pruebas según dependencias: unitarias aislables, integración local, GUI/servicios, audio/hardware, red y datos personales. No instalar DBus/Xvfb/audio simulado de forma preventiva.
+Durante la implementación C0–C7:
 
-El launcher externo `scripts/host_launcher.py` aplica una envolvente Linux/bubblewrap fail-closed a un argv explícito. Monta plataforma `/usr` y compatibilidad bin/lib en lectura, entradas autorizadas con nombres bajo `/inputs` y solo un estado externo recién creado 0700 bajo `/state`; proc/dev y namespaces de red/PID/IPC son privados, el entorno se reconstruye sin configuración ni credenciales heredadas. No monta la raíz del Host ni su home/run/tmp. Rechaza sockets en las entradas y raíces ambiguas/solapadas; el caller debe suministrar árboles estables sin secretos: lectura explícita no equivale a sanitización de su contenido, ni se acreditan carreras hostiles. No instala runtime ni configura modelos, no reutiliza estado y no ofrece fallback sin aislamiento. El estado externo preserva logs incluso ante fallo/timeout. El cwd debe ser la ruta original de una entrada autorizada: se monta adicionalmente en lectura en esa ruta, creando solo padres vacíos y rechazando colisiones con raíces reservadas. `/tmp` usa un bind privado para no cambiar el cwd mediante resolución de symlinks. Esta primitive no integra el Host activo ni acredita subagentes, continuación o QA; el alcance comprobado de servicios, arranque autenticado y carga nativa de ambos modos en sesión Host sin modelos se registra en docs/status.md.
+- Este archivo es la referencia normativa única.
+- `docs/creator-preset-spec.md` sigue describiendo el experimento anterior de un preset neutral, no el contrato final propuesto.
+- `START.md`/`usage.md` siguen operando el MVP actual mediante skills y modos ya preparados.
+- El diseño no acredita que bootstrap, Creator o instalación ya estén implementados.
+- Las discrepancias son deliberadas y forman parte de la prueba de la candidata.
 
-El launcher admite opcionalmente `launch(..., inference=Inference(endpoint=..., model=..., authorization=...))`: capability de una **sesión acotada de inferencia por lanzamiento**, no RPC ni proxy general. El caller host verifica configuración efectiva y obtiene solo la referencia de credencial necesaria en memoria; no pasa configuración privada ni secretos al argv, entorno o entradas del agente. `scripts/inference_channel.py` acepta exclusivamente HTTP loopback con puerto explícito y `/v1/chat/completions`, POST fijo, modelo fijado, 64 mensajes por request por defecto, elevables por lanzamiento hasta 256 (más las claves estructurales de turno `tools`, `tool_choice` y las formas `tool_calls`/`tool_call_id`, y los campos textuales de razonamiento `reasoning`/`reasoning_content`/`reasoning_text` y las partes `text` de assistant que emite el runtime, cada una con su forma validada), payload por request configurable por lanzamiento y hasta 32768 tokens solicitados por request. El presupuesto de requests se fija por lanzamiento al construir el canal: 12 por defecto, con tope duro de 256; el payload por request es de 1 MiB por defecto con tope duro de 8 MiB, y `max_tokens`, `messages` y `payload_limit` solo pueden bajar los topes absolutos de 32768, 256 y 8 MiB. El tope de payload se impone en las tres capas del lanzamiento (frame del pipe, predicate del broker y Content-Length del receptor interno); el launcher comunica el valor al receptor en argv como entero no secreto. El broker vive mientras viva el proceso de la misión y el gasto no sobrevive al lanzamiento. Descarta todos los headers entrantes y construye autenticación host-side; no sigue redirects ni reenvía headers upstream. Dos pipes anónimos stdin/stdout comunican el broker externo con un receptor HTTP ligado a 127.0.0.1 **dentro** del namespace privado. El proceso DSH no hereda los pipes; recibe `INFERENCE_BASE_URL` y un valor de autenticación desechable si el adaptador nativo lo exige. Solo la instancia desechable cambia su baseURL al receptor, conservando proveedor/alias efectivos hacia upstream. No se montan sockets del host ni se comparte red.
+Al completar C0–C7:
 
-La respuesta se almacena temporalmente en memoria, limitada a 1 MiB; corte de conexión/lectura por fases y deadline de respuesta por defecto de 20 s, configurable por lanzamiento hasta un tope duro de 300 s (`deadline`; los turnos reales de misión con contextos amplios superan el corte histórico de 20 s), además del timeout del launcher. Se rechazan respuestas incompletas, expiradas y eco literal de la credencial; no se promete detectar secretos transformados por un upstream malicioso. Errores no exponen body/headers upstream. Sin streaming incremental, ejecución o transporte de herramientas upstream (solo claves estructurales de turno), imágenes, otras APIs, concurrencia o reintentos upstream; extender solo con necesidad y regresiones específicas. Agotado el presupuesto, la única respuesta es un error explícito fail-closed y el canal queda cortado para el resto del lanzamiento. La cuota limita solicitudes y tokens pedidos, no garantiza el gasto ni la resolución interna del alias por el proveedor. La autenticación queda fuera del aislamiento, no fuera de la memoria del proceso host confiable. La capacidad autoriza inferencia a cualquier código de esa instancia, no identifica agentes dentro de ella. No equivale a endurecimiento ante agotamiento hostil del host ni a revisión independiente de seguridad.
+1. actualizar la arquitectura vigente, no mantener dos normas;
+2. convertir este plan en antecedente histórico;
+3. actualizar el índice de implementación con etapas C0–C7;
+4. retirar la noción de presets genéricos operativos del flujo final;
+5. conservar los presets actuales solo como fixtures de regresión.
 
-Clones, worktrees y HOME/XDG/TMPDIR no son sandbox OS. Enlaces de node_modules pueden escribir caché fuera del ensayo. No copiar datos personales ni credenciales para lograr tests verdes. Toolchains y cachés requieren rutas explícitas si cambia el entorno.
+---
 
-Un escritor por entorno. Preservar diff, archivos nuevos, hashes y diagnóstico antes de descartar un candidato. No usar stash/pop como mecanismo rutinario para demostrar rojo sobre trabajo activo; reproducir base en copia desechable. Verificar terminación antes de recuperar.
+## 19. Preguntas que la implementación debe resolver antes del piloto
 
-Una suite con fallos preexistentes puede demostrar ausencia de regresiones dentro de una comparación pertinente, no una suite limpia. Informar fallos exactos y pruebas omitidas.
+1. ¿Creator puede invocar `accept` y recibir errores estructurados sin necesitar shell libre?
+2. ¿La API local DSH permite todo el ciclo sin token manual y sin filtrar secretos?
+3. ¿Cuál es la unidad de swap más portable para modos+skills (directorio, manifest/puntero o user preset root)?
+4. ¿Cómo se representa un fork QA recuperable cuando el runtime no expone session ID?
+5. ¿Los límites iniciales 32/24 KiB y hot paths predicen realmente el coste en DSH?
+6. ¿Qué adapters requiere DSH y cuáles son opcionales para otros hosts?
+7. ¿Qué campos de proyecto deben ser decisiones humanas, no inferidas?
+8. ¿Qué aprobación nativa mínima puede quedar en un flujo de «un comando»?
+9. ¿Cómo se distribuye el plugin `workflow-write` de forma portable sin rutas absolutas?
+10. ¿Qué licencia tendrá el framework antes del piloto público?
 
+---
 
-## 12. Intervención humana y recuperación
-
-Intervenir por: cambio material de alcance/contrato, acceso a recursos o credenciales no autorizados, gasto fuera de límites, integración/publicación no autorizada o ejecución incierta no reconciliable.
-
-Formato breve de excepción: bloqueo concreto; evidencia; recomendación y decisión necesaria; candidato preservado; trabajo independiente que puede continuar. No pedir al usuario nombres/rutas ya acordados ni que diagnostique errores mecánicos por el agente.
-
-Primero demostrar autonomía durante operación normal. Después probar timeout, cancelación, caída del Host y recuperación. Ante estado incierto, no reenviar escrituras ni crear escritores duplicados a ciegas. La suspensión durable y la reconciliación requieren pruebas específicas antes de declararse disponibles.
-
-
-## 13. Cobertura y contratos
-
-Inventariar unidades y dependencias relevantes sin equiparar leído con revisado. Separar hallazgos, hipótesis, exclusiones y cobertura desconocida. Revisar conjuntamente dos o más problemas relacionados, y también un único problema de alto impacto. No certificar completitud con conteos.
-
-### Inventario y cierre de cobertura
-
-Una auditoría completa declara raíces y base autorizadas, inventario determinista y exclusiones justificadas antes de repartir unidades. La unión de archivos asignados y exclusiones debe coincidir con el inventario; un archivo omitido es `coverage_gap`, no silencio. Las exclusiones no reducen unilateralmente el alcance autorizado. Una fuente inaccesible, un inventario obsoleto o una unidad sin revisión suficiente impiden presentar el ciclo como completo. Los conteos proceden del inventario/validador vigente, indicando base y qué se cuenta (archivos, unidades o hallazgos); nunca se reconstruyen de memoria. Los IDs los emite el mecanismo responsable al crear el registro, no un contador recordado por el modelo.
-
-`scripts/audit.py` comprueba la partición contra un snapshot de archivos regulares con SHA-256 y exclusiones explícitas, reenumerado al consolidar. No sigue symlinks ni omite directorios por convención; las exclusiones de directorio son fronteras declaradas cuyo contenido no se lee. El estado `PARTITION_VERIFIED` acredita solo asignación exhaustiva respecto de ese alcance. Sin snapshot conserva `UNVERIFIED`; con gaps o unidades no aceptadas no emite cierre completo. No prueba lectura, dual-perspectiva, calidad, autorización de exclusiones ni inventario estable ante mutación hostil concurrente. El contrato local y su compatibilidad se describen en [docs/audit-contract.md](docs/audit-contract.md).
-
-### Profundidad y perspectivas
-
-El primer barrido de una auditoría completa formula observaciones independientes antes de reconciliar conclusiones de informes anteriores, para reducir anclaje. Esto no es prueba de caja negra funcional ni permite ignorar instrucciones, permisos, criterios, decisiones vigentes o alertas de seguridad: esos límites se consultan desde el inicio. Una reauditoría incremental parte del hallazgo y candidato previos deliberadamente; no repite el barrido completo sin causa.
-
-Cada unidad de auditoría completa recibe por defecto dos perspectivas complementarias, por ejemplo implementación estática y recorrido de productor/consumidor. Cada una registra método, archivos/hash, ubicación, resultado y actor/sesión observados; dos etiquetas no acreditan dos revisiones. Pueden aplicarse secuencialmente por un mismo auditor sin alegar independencia. La reducción de profundidad exige justificación compatible con el alcance y presupuesto autorizado; si no permite satisfacer la aceptación, queda un gap. Un desacuerdo material exige contraste independiente o retención si no hay capacidad. No exige ejecutar código de producto ni duplicar agentes automáticamente.
-
-El mapa de revisión cubre, donde apliquen, funcionalidad real frente a stubs/mocks/placeholders, conexión UI/estado/servicios, renderizado y rutas inaccesibles, duplicación, errores/carga/vacíos, dependencias/APIs y tipos, persistencia, concurrencia, seguridad y pruebas tautológicas. El perfil añade especialidades de dominio y sus fronteras; lo no aplicable se justifica y lo que exige especialista o verificación humana no se simula. Se conservan así las dimensiones de los modos históricos sin imponer tecnologías ni ocho modos al usuario de cada proyecto.
-
-Seguir contratos desde productor real hasta consumidor, incluidos serialización, null, opcionales, números y persistencia. Compilar no demuestra equivalencia funcional. Los mocks deben corresponder al productor y las regresiones quedar ejecutables. QA revisa también cambios en expectativas y configuración. Una excepción aceptada no se renombra VERIFIED.
-
-## 14. Distribución y perfil privado
-
-Clonar agent-workflow junto al proyecto, nunca dentro de su árbol. El repositorio contiene método, skills, inicializador y pruebas sintéticas. El workspace externo contiene PROJECT.md, identidad mínima y evidencia necesaria; no se versiona aquí. Producto, framework y workspace son ámbitos distintos. El inicializador no instala runtime, no autoriza ejecución y no descubre automáticamente todos los canónicos. La sesión Standard conserva el padre de framework/producto/workspace como raíz. La preparación autorizada copia skills completas al workspace y expone enlaces individuales en `.agents/skills` del padre, gestionados por manifiesto externo; no modifica destinos a través de enlaces. Sin ancestro Git, el loader nativo usa ese cwd y sigue esos enlaces, sin buscar hijos arbitrarios. Un workspace gestionado por padre; conflictos, overrides locales y cambios de conjunto de nombres bloquean hasta reconciliación explícita. Repetición idempotente, actualización de copias con respaldo y retirada solo de enlaces propios. No requiere overlay ni cambios globales. Descubrimiento por proyecto no es aislamiento de archivos: lectura de producto/framework y escritura de workspace requieren autoridad efectiva separada. Framework de solo lectura es procedimental salvo enforcement externo demostrado; sin granularidad necesaria Auditor retiene, no solicita acceso total.
-
-La incorporación exige rutas explícitas, evita enlaces y sobrescrituras, conserva el perfil existente y falla ante conflictos. No crear dashboards ni backlogs vacíos. Configuración, credenciales, fuentes privadas, logs, clones y candidatos quedan fuera de la distribución. La publicación requiere revisión explícita y licencia decidida por el titular.
-
-## 15. Adaptador, controles y evolución incremental
-
-DSH/Cordis reutiliza sus registros de sesiones, persistencia y herramientas; un preset no duplica servicios globales. Los plugins dinámicos son ensayos, deben liberar efectos al detenerse y no acreditan instalación persistente. No modificar presets distribuidos ni routing, modelos, alias, fallback o proveedores sin autorización.
-
-Los presets externos del flujo habilitan la selección de modelo de subagentes con `modelSelectionSettings: true` y no declaran proveedores ni modelos: las rutas exactas autorizadas viven en el ajuste global `subagent-model-selection` del Host (namespace de registro único; un preset que intente el suyo propio falla el montaje, sin fallback silencioso), de modo que la separación por rol es procedimental, no de composición. El mapeo autorizado del flujo es orquestador `nrouter-raw/Orquestrador` (canal RAW), QA `nrouter-raw/Subagents-Audits` y ejecución `nrouter/Subagents-Coding` (proveedor NORMAL); el bloqueo de escritura del producto lo aplica el launcher, no el preset.
-
-Comprobar el DSL y validar dentro del handler, además del esquema. El Host detecta argumentos inválidos repetidos, limita intentos y conserva un diagnóstico antes de suspender. Suspensión, timeout, cancelación, reinicio y recuperación se verifican por separado. RTK o compresión no prueban ahorro global; separar salida íntegra y truncada.
-
-Avanzar por incorporación local, carga real de skills, misión normal completa, coordinación de los dos modos, excepciones/recuperación y transferencia a un segundo proyecto. Reutilizar el código existente cuando sus límites encajen, sin desarrollar un motor universal por adelantado. Medir base fija, resultados aceptados, intervenciones, coste disponible y regresiones; no actividad ni número de agentes.
-
-Para comparar misiones registrar tiempo transcurrido, tokens por agente y categoría (entrada, caché y salida según semántica del proveedor), llamadas inválidas, reintentos, rondas de corrección y tamaños de encargos/retornos. Citar fuente, unidad y límites de cada medición; lo no observable permanece no disponible, nunca cero. Separar requests, tokens, coste y reservas del ledger; caracteres de prompt son un proxy, no ahorro medido. Comparar el mismo alcance y aceptación, incluidos fallos y trabajo retenido; no afirmar ahorro ni superioridad de delegación sin un piloto comparable. La instrumentación completa de estas métricas sigue pendiente.
-
-## 16. Hoja de ruta y estado de implementación
-
-El plan original se conserva íntegro en archivo externo privado con mapeo registrado; es un antecedente, no una dependencia ni un enlace resoluble dentro de la distribución. No se reescribe ni se restaura al árbol publicable. Este documento conserva su destino generalizado: publicador Host, handoff determinista, coordinación persistente, QA independiente, memoria de decisiones recuperable, reauditoría, integración autorizada, archivo y recuperación. No se considera que esas capacidades existan por estar descritas aquí.
-
-La implementación actual es una reordenación acotada y comprobada parcialmente: onboarding, distribución/carga nativa de skills, recibos locales, ejecución argv controlada, snapshots/hash, límites de `change_scope`, ciclo sintético rojo→verde, retención por evidencia ausente y reauditoría mecánica. Los ensayos históricos de publicador, lector, handoff y piloto Syncify permanecen como evidencia externa supervisada; no equivalen a un Host operativo, autonomía LLM, IPC Tauri nativo, integración del producto ni recuperación ante crash.
-
-La matriz breve y vigente de etapas está en [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md). Los diagramas interactivos del sistema están en [docs/diagrams/README.md](docs/diagrams/README.md). `docs/status.md` conserva el estado comprobado; `CHANGELOG.md` conserva decisiones históricas. No se importan logs, candidatos, rutas privadas ni resultados de ejecución al repositorio.
-
-El criterio final de éxito sigue siendo el flujo de destino:
+## 20. Resultado esperado de la arquitectura
 
 ```text
-diagnóstico sustentado → solución revisada → encargo suficiente
-→ implementación acotada → QA independiente → reauditoría incremental
-→ integración autorizada → archivo recuperable
+usuario configura DSH/proveedor una vez
+→ clona framework
+→ ejecuta bootstrap install
+→ bootstrap prepara workspace y llama Creator
+→ Creator analiza proyecto y genera candidato específico
+→ Creator invoca accept
+→ Host valida schema/capabilities/routing/skills
+→ backup obligatorio de lo reemplazado
+→ instalación transaccional en staging
+→ aceptación automática DSH (repair+QA+reaudit)
+→ ACTIVE o rollback/RETAINED
+→ usuario opera con mensajes cortos
 ```
 
-La matriz y la evidencia del 2026-09-13 permiten describir el framework como MVP del núcleo aceptado: misión finita, estados fail-closed y recuperación acotada. No implica autonomía ilimitada, productos libres de defectos, descendientes remotos controlados ni durabilidad ante pérdida física de energía.
+Este es el flujo que C0–C7 debe implementar y validar antes del piloto con usuarios reales.
 
-## 17. Aceptación de la distribución y fuentes vigentes
+---
 
-El inicializador debe funcionar en directorios desechables, no modificar producto ni framework, rechazar conflictos y permitir repetición sin pérdida. La carga DSH exige comprobar descubrimiento, cuerpo y ejecución real con presupuesto autorizado. Una prueba Python no acredita estas propiedades del runtime.
+## 21. Sistema interno de construcción de Creator inspirado en `jsmastery-pro/skills`
 
-Guía de entrada: [README.md](README.md). Instalación acotada: [docs/setup-dsh.md](docs/setup-dsh.md). Evidencia y pendientes: [docs/status.md](docs/status.md). Historial: [CHANGELOG.md](CHANGELOG.md) y Git. Este documento es el diseño normativo completo; el estado implementado se consulta por separado.
+La evaluación profunda del repositorio externo corrige una lectura insuficiente: su valor no se limita a carpetas, progressive disclosure y validación de portabilidad. Las nueve skills forman una cadena de producción de artefactos y gates que puede adaptarse como **sistema interno de construcción de Creator**.
+
+No se instalarán como modos finales ni se expondrán al usuario. Se transformarán en capacidades privadas de la sesión Creator:
+
+```text
+scope      → particionar capacidades y decidir qué debe existir
+audit      → descubrir la realidad del proyecto
+architect  → convertir evidencia en contratos de modos/skills
+test       → derivar escenarios públicos y familias de holdouts
+develop    → generar el candidato desde contratos completos
+check      → verificar conducta y revisar independientemente
+debug      → reparar una generación RETAINED sin tocar controles
+document   → producir contexto durable y contratos trazables
+sync       → detectar drift y proponer regeneración conservadora
+```
+
+Capacidades internas propuestas:
+
+```text
+creator-project-discovery
+creator-project-documenter
+creator-contract-and-risk-mapper
+creator-capability-partitioner
+creator-capability-designer
+creator-scenario-author
+creator-skill-generator
+creator-generation-repair
+creator-drift-analyzer
+```
+
+Estas capacidades componen una sola ejecución Creator. El usuario no las invoca ni las ve como presets.
+
+### 21.1 Procedencia y límites de reutilización
+
+Fuente observada:
+
+```text
+https://github.com/jsmastery-pro/skills
+commit 43b69e44c9ca905fe3a3418ccdf4102255e20d40
+licencia MIT
+```
+
+Se adoptan mecanismos y se reimplementan de forma neutral. Si se copia o traduce texto/código sustancial, se añade `THIRD_PARTY_NOTICES.md`, aviso MIT, archivos derivados y commit fuente. No se importan supuestos Claude/web/Node como contratos universales.
+
+---
+
+## 22. `scope` como particionador de capacidades
+
+`scope` se adapta para responder qué debe generar Creator, no qué features debe construir el producto.
+
+### 22.1 Mecanismos adoptados
+
+- clasificación greenfield/brownfield/monorepo;
+- separación entre inventario, unidad coherente, decisión y tarea;
+- **invent test**: si una capacidad obligaría a inventar una decisión, se bloquea hasta diseño/decisión;
+- mapa compacto con detalle por referencia;
+- deduplicación y replanificación incremental;
+- orden/dependencias;
+- enfoques de corte:
+  - Tracer Bullet como camino completo inicial;
+  - Skateboard como conjunto mínimo utilizable;
+  - Journey como experiencia Auditor→Repair completa;
+  - Facade solo `PREVIEW_ONLY`, nunca activable.
+
+### 22.2 Salida
+
+```text
+design/capability-plan.json
+design/generation-strategy.json
+design/rejected-candidates.json
+```
+
+`capability-plan.json` contiene dos modos obligatorios, skills compartidas/específicas, dependencias, orden de generación, nivel de riesgo y decisiones bloqueantes.
+
+No se adoptan literalmente features, go-to-market, SEO ni tiers Prototype/Alpha/Beta/GA. Se sustituyen por impacto, profundidad, QA, evidencia, datos, escritura y publicación.
+
+---
+
+## 23. `audit` como motor de discovery de Creator
+
+Se adaptan casi directamente `audit/modes/whole-repo.md`, `area.md`, `gapfill.md` y su disciplina de preflight/scouts compactos.
+
+### 23.1 Principios
+
+- primer barrido independiente antes de reconciliar documentación;
+- separar global de área/workspace;
+- no sobrescribir conocimiento humano;
+- distinguir:
+  - `OBSERVED`;
+  - `DECLARED`;
+  - `INFERRED`;
+  - `PROPOSED`;
+  - `UNVERIFIED`;
+- taxonomía `GAPS`, `PROPOSED_ADDITIONS`, `CONTRADICTIONS`, `UNKNOWNS`, `EXCLUSIONS`;
+- subagentes read-only por área, devolución estructurada y compacta;
+- rutas/símbolos como localizadores, no prueba semántica.
+
+### 23.2 Salidas
+
+```text
+discovery/project-classification.json
+discovery/repository-map.json
+discovery/workspaces.json
+discovery/instructions-index.json
+discovery/commands.json
+discovery/data-boundaries.json
+discovery/observed-capabilities.json
+discovery/contract-map.json
+discovery/authority-map.json
+discovery/risk-map.json
+discovery/coverage-plan.json
+discovery/contradictions.json
+discovery/unknowns.json
+discovery/exclusions.json
+discovery/evidence-index.json
+discovery/areas/<area>.json
+```
+
+Cada claim conserva fuente, hash, ubicación, estado, confianza y limitaciones.
+
+### 23.3 Tool/skill discovery
+
+`audit/modes/tool-skills.md` se usa solo como patrón para inventariar:
+
+- skills instaladas;
+- procedimientos cubiertos;
+- procedimientos recurrentes faltantes;
+- candidatos a skill específica;
+- candidatos rechazados;
+- sugerencias externas opcionales.
+
+Quedan prohibidos en bootstrap base: `npx skills find/add`, instalación automática, búsqueda web/MCP y conexión de servicios. Cualquier adquisición externa necesita misión y autorización separadas.
+
+Los presets Clean/DDD/Functional/SOLID solo sirven como clasificadores si el proyecto los evidencia; nunca como opciones impuestas.
+
+---
+
+## 24. `architect` como diseñador de contratos
+
+Se adaptan `internal/design-conversation.md`, `spec-template.md` y los modos architecture/feature/enhancement/cross-cutting.
+
+### 24.1 Ledger de decisiones
+
+Toda dimensión se clasifica:
+
+```text
+INFER      — fuente observada suficiente
+ASK        — decisión exclusiva del titular
+RECOMMEND  — Creator recomienda, titular/contrato decide
+NOT_APPLICABLE — con motivo
+UNRESOLVED — bloquea la generación afectada
+```
+
+Salida:
+
+```text
+discovery/question-ledger.json
+design/decision-ledger.json
+```
+
+### 24.2 Contrato por modo/skill
+
+Cada capacidad define:
+
+- propósito y triggers positivos/negativos;
+- inputs y fuentes;
+- reads/writes;
+- capabilities mínimas/prohibidas;
+- invariantes y anti-goals;
+- estados/transiciones;
+- handoffs;
+- fallos/concurrencia/retries/timeouts;
+- migración/rollback;
+- criterios `SR-N`;
+- escenarios y stop conditions;
+- evidencia;
+- procedencia/licencia.
+
+### 24.3 Value sourcing
+
+Toda decisión/valor operativo debe nombrar fuente válida. Si falta raíz, comando, criterio, base, autorización o actor QA: `RETAINED`/`UNVERIFIED`, nunca inferencia silenciosa.
+
+### 24.4 Modos architect adaptados
+
+- architecture: fronteras bootstrap/Creator/Host/modos;
+- feature: contrato de skill específica;
+- enhancement: regeneración, migración y rollback de skill existente;
+- cross-cutting: evidencia, errores, permisos, naming y contratos transversales.
+
+El Host, no Creator, ratifica decisiones y estados.
+
+---
+
+## 25. `document` como productor de contexto durable
+
+No se adopta como generador de changelogs. Se usa para normalizar evidencia en:
+
+```text
+project-manifest.json
+instructions-index.json
+references/
+contracts/<skill-id>.contract.json
+unknowns.json
+conflicts.json
+```
+
+Reglas adoptadas:
+
+- hechos reales/diff/código prevalecen sobre narración;
+- no inventar resultados/causas/pruebas;
+- afirmación trazable;
+- repetición idempotente;
+- no filtrar secretos;
+- respetar formatos canónicos existentes;
+- desconocido permanece desconocido.
+
+`project-manifest` fija identidad/base/inventario/hashes/capabilities/autoridad. `instructions-index` indexa ruta, scope, precedencia, secciones, hashes, facts, constraints, unknowns y conflicts; no copia todo el contenido al hot path.
+
+Templates externos inspiran forma, no prosa final. Se crean templates propios para contracts, references, acceptance y drift.
+
+---
+
+## 26. `test` como autor de escenarios y holdouts
+
+Se adapta la trazabilidad `AC-N` a requisitos `SR-N`.
+
+Creator genera escenarios públicos antes del candidato:
+
+- positivos;
+- negativos;
+- límites;
+- tool/capability denial;
+- missing capability;
+- prompt injection;
+- ciclos;
+- handoff inválido;
+- base/candidato obsoleto;
+- idempotencia;
+- scope/write violations.
+
+Salida:
+
+```text
+tests/public/scenarios.jsonl
+tests/public/coverage-matrix.json
+tests/holdout-spec.json
+tests/immutable-digests.json
+harness-profile.json
+```
+
+Creator solo diseña familias de holdout. El Host/evaluador independiente materializa casos concretos y oculta oráculos al generador/reparador. Un caso visto por Creator es fixture público, no holdout.
+
+Los tests/rúbricas/thresholds/allowlists se montan read-only. El reparador no puede editarlos ni rebajar expectations/severity/coverage.
+
+`NOT_COVERED` es estado explícito; no se fuerza automatización de criterios no observables.
+
+---
+
+## 27. `develop` como generador contractual
+
+Se adapta el input/spec coverage gate:
+
+Antes de escribir, para cada salida/decisión de la skill el contrato debe nombrar su fuente. Si falta: volver a discovery, pedir decisión o retener.
+
+### 27.1 Ownership
+
+Creator escribe solo en staging. No puede:
+
+- promover;
+- modificar aceptación/holdouts/Host/backups;
+- escribir skills activas;
+- cambiar routing/capabilities;
+- marcar `ACCEPTED`.
+
+### 27.2 Orden de generación
+
+```text
+contratos/protocolos/estados compartidos
+→ routers y modos
+→ skills específicas
+→ references/templates
+→ adapters
+→ manifest/hashes
+```
+
+Se preservan versiones activas hasta promoción. Reanudación por hashes/estado; no regenerar artefactos aceptados; no eliminar versión anterior durante el build.
+
+### 27.3 Salida staged
+
+```text
+generated/modes/
+generated/skills/
+generated/contracts/
+generated/references/
+generated/templates/
+generated/adapters/
+generated/generation-manifest.json
+```
+
+Self-check = `preflight`, nunca aceptación.
+
+---
+
+## 28. `check` como verificación y revisión independiente
+
+Se separa:
+
+```text
+verify — ejecutar/observar con evidence ledger
+review — inspección independiente read-only
+```
+
+### 28.1 Verify
+
+Sin evidencia no hay PASS. Cada `SR-N` enlaza scenario/input/expected/evidence/verdict. Estados: PASS, FAIL, BLOCKED, NOT_COVERED, UNVERIFIED, IMPLEMENTED_NOT_APPLIED.
+
+El evaluador no modifica contrato ni expectativas. Resultados append-only.
+
+### 28.2 Review
+
+Revisor distinto, read-only, prompt/corpus separados, sin self-assessment de Creator, sin outputs de holdout. Idealmente modelo/proveedor distinto cuando está autorizado. Si no hay aislamiento real: `DEGRADED_REVIEW`, no “independiente”.
+
+Rúbrica adaptada:
+
+- fidelidad contrato;
+- trigger/routing;
+- confinamiento;
+- terminación;
+- handoff;
+- prompt injection;
+- capability missing;
+- aislamiento;
+- evidencia;
+- portabilidad;
+- escritura;
+- anti-autoaprobación.
+
+El Host calcula veredicto; el revisor no acepta/promueve.
+
+---
+
+## 29. `debug` como reparador de una generación RETAINED
+
+Ciclo adoptado:
+
+```text
+síntoma → reproducción → localización → hipótesis falsable
+→ experimento mínimo → fix mínimo → revalidación → siblings
+```
+
+Input: `retention-bundle` inmutable con candidate digest, failing scenario IDs, observations, violated policies, evidence refs, allowed edit paths, immutable controls, attempt y budget.
+
+El reparador solo modifica candidato staged/instrumentación scratch. No modifica tests/holdouts/rúbrica/thresholds/capabilities/allowlists/Host/acceptance. Máximo de intentos, archivos y diff; repetición sin progreso retiene. Holdout expuesto deja de ser secreto y Host genera otro.
+
+Transición prohibida:
+
+```text
+REPAIRING → ACCEPTED
+```
+
+Debe volver siempre a evaluación Host.
+
+---
+
+## 30. `sync` como detector de drift/regeneración conservadora
+
+Compara:
+
+1. base del proyecto usada;
+2. contrato normalizado;
+3. generación aceptada;
+4. skill/modo instalado actual;
+5. proyecto actual.
+
+Estados:
+
+```text
+CURRENT
+SOURCE_DRIFT
+NON_GOVERNING_CHANGE
+LOCAL_SKILL_EDIT
+CONTRACT_DRIFT
+ORPHANED
+AMBIGUOUS_SCOPE
+STALE_REFERENCE
+UNVERIFIED
+```
+
+Default: no hacer nada. Solo cambios en procedimiento durable, comando, restricción, interfaz o contrato justifican regeneración.
+
+Reglas:
+
+- fuentes declaradas por skill;
+- candidato nuevo, nunca overwrite activo;
+- local edit bloquea reemplazo automático;
+- sin merge heurístico de instrucciones;
+- removals más estrictos;
+- conflictos como artefactos;
+- segunda ejecución misma base = no-op;
+- cambio de base invalida aceptación salvo irrelevancia demostrada.
+
+Salida:
+
+```text
+drift/source-drift.json
+drift/installed-drift.json
+drift/update-plan.json
+```
+
+`sync` propone; `accept` evalúa; instalación autorizada reemplaza.
+
+---
+
+## 31. Pipeline Creator definitivo ampliado
+
+```text
+Host bootstrap/snapshot/authority
+→ creator-project-discovery (audit)
+→ creator-project-documenter (document)
+→ creator-contract-and-risk-mapper (audit+architect)
+→ creator-capability-partitioner (scope)
+→ creator-capability-designer (architect)
+→ creator-scenario-author (test)
+→ Host materializa/sella holdouts
+→ creator-skill-generator (develop)
+→ Creator preflight/self-review
+→ Creator invoca bootstrap accept
+→ Host static/schema/graph/portability checks
+→ Host check verify (public + holdouts)
+→ Host check review (independiente)
+→ ACCEPTED o RETAINED
+→ creator-generation-repair (debug) si RETAINED
+→ backup verificado
+→ promoción transaccional
+→ post-promotion smoke
+→ creator-drift-analyzer (sync) en updates
+```
+
+Creator genera y solicita aceptación; Host decide/promueve.
+
+---
+
+## 32. `creator-runs` ampliado
+
+```text
+creator-runs/<generation-id>/
+├── run.json
+├── inputs/
+│   ├── bootstrap-request.json
+│   ├── snapshot.json
+│   ├── inventory.json
+│   ├── authority.json
+│   ├── host-policy.json
+│   ├── runtime-capabilities.json
+│   └── effective-routing.json
+├── discovery/
+│   ├── project-manifest.json
+│   ├── instructions-index.json
+│   ├── repository-map.json
+│   ├── workspaces.json
+│   ├── contract-map.json
+│   ├── authority-map.json
+│   ├── risk-map.json
+│   ├── coverage-plan.json
+│   ├── contradictions.json
+│   ├── unknowns.json
+│   ├── exclusions.json
+│   ├── decision-gaps.json
+│   └── areas/
+├── design/
+│   ├── generation-strategy.json
+│   ├── capability-plan.json
+│   ├── decision-ledger.json
+│   ├── skill-contracts/
+│   ├── mode-contracts/
+│   ├── handoff-schemas/
+│   ├── reuse-map.json
+│   └── rejected-candidates.json
+├── tests/
+│   ├── public/scenarios.jsonl
+│   ├── public/coverage-matrix.json
+│   ├── holdout-spec.json
+│   ├── immutable-digests.json
+│   └── harness-profile.json
+├── generated/
+│   ├── generation-manifest.json
+│   ├── candidate-manifest.json
+│   ├── modes/
+│   ├── skills/
+│   ├── contracts/
+│   ├── references/
+│   ├── templates/
+│   └── adapters/
+├── validation/
+│   ├── schema.json
+│   ├── graph.json
+│   ├── portability.json
+│   ├── context-budget.json
+│   └── creator-self-review.json
+├── acceptance/
+│   ├── request.json
+│   ├── host-static-results.json
+│   ├── public-results.json
+│   ├── holdout-results.json
+│   ├── independent-review.json
+│   ├── evidence-ledger.jsonl
+│   └── host-verdict.json
+├── retained/attempt-N/
+│   ├── retention-bundle.json
+│   ├── root-cause.json
+│   ├── repair-diff.patch
+│   └── rerun-results.json
+├── backup/
+│   ├── previous-manifest.json
+│   ├── previous-skills/
+│   ├── hashes.json
+│   └── restore-plan.json
+├── promotion/
+│   ├── promotion-plan.json
+│   ├── acceptance-record.json
+│   ├── post-promotion-smoke.json
+│   └── rollback-record.json
+├── checkpoint.json
+├── report.md
+└── finish.json
+```
+
+---
+
+## 33. Handoffs y prevención de ciclos
+
+Cada handoff contiene type, schemaVersion, runId, candidateDigest, sourceActor, targetActor, reason, evidenceRefs, allowedNextActions, attempt y parentEventId.
+
+Tipos:
+
+```text
+creator.generation.complete
+bootstrap.accept.request
+host.accepted
+host.retained
+repair.complete
+repair.blocked
+host.rejected
+```
+
+Controles:
+
+- máquina de estados Host;
+- transiciones allowlisted;
+- actor no se invoca a sí mismo;
+- accept una vez por digest;
+- reparación exige digest nuevo;
+- límites de intentos/tiempo/tokens/diff;
+- findings repetidos sin progreso → retained;
+- idempotency key;
+- terminal no reabre sin run nuevo;
+- repair nunca acepta;
+- pruebas de no ciclo y privilegios.
+
+---
+
+## 34. Contexto, hot paths y métricas
+
+Principios adoptados de conventions/check-portability/analyze-token-usage:
+
+- cada línea cargada debe cambiar conducta;
+- contenido largo/raro fuera de entrypoint;
+- referencia lazy con trigger explícito;
+- instrucciones comunes, seguridad y acceptance inline;
+- grafo de carga validado;
+- presupuestos por archivo y hot path;
+- warnings 90%; presupuestos ratchet, no subir automáticamente;
+- medir fresh input, cache write/read y output por hilo/subagente;
+- optimizar primero output/input fresco, no cache barata;
+- retornos de scouts compactos, no dumps.
+
+`context-budget-report.json` registra always-loaded, hot paths, bytes/tokens, observed runs y recomendaciones. Métricas no equivalen a calidad.
+
+---
+
+## 35. Controles Host anti-autoaprobación
+
+1. Identidades separadas Creator/evaluator/reviewer/repairer/Host.
+2. Staging aislado; Creator no escribe activo.
+3. Contratos/tests sellados por hash.
+4. Holdouts ocultos y frescos tras exposición.
+5. Evaluadores read-only con salida append-only.
+6. Veredicto mecánico Host.
+7. Self-assessment solo informativo.
+8. Reparador sin acceso de escritura a controles.
+9. Comparar escenarios/expectativas/severity/permissions antes/después.
+10. Presupuesto de ciclos/diff/findings.
+11. Backup previo y promoción transaccional.
+12. Acceptance ligada a digest exacto.
+13. Capability missing → BLOCKED/DEGRADED, no PASS.
+14. Registro append-only.
+15. Pruebas no-cycle/self-invocation.
+16. Pruebas de privilegios/paths/tools.
+17. Prompt-injection fixtures del proyecto.
+18. Post-promotion smoke en ubicación real.
+19. No instalación/adquisición externa durante evaluación.
+20. Creator no puede modificar validator/Host/routing.
+
+---
+
+## 36. Qué se adopta, adapta y rechaza del repositorio externo
+
+### Adoptar casi directamente
+
+- scope invent test;
+- audit whole-repo/area scan;
+- gaps/proposed/contradictions;
+- INFER/ASK/RECOMMEND;
+- completeness gate/value sourcing;
+- state models;
+- producer/consumer tracing;
+- migration/rollback;
+- requisito→escenario→evidencia;
+- independent read-only critique;
+- progressive disclosure de un modo;
+- durable artifacts;
+- spec/input coverage gate;
+- artifact ownership;
+- no evidence/no PASS;
+- NOT_COVERED;
+- root-cause loop con una hipótesis;
+- idempotencia y update quirúrgico;
+- hot-path budgets y métricas fresh/cache/output.
+
+### Adaptar
+
+- feature specs → skill/mode contracts;
+- AC-N → SR-N;
+- verify.md → scenario manifest;
+- test-preferences → harness profile;
+- Git diff → candidate manifest;
+- workflow tiers → riesgo/gates;
+- AGENTS context → project-manifest/instructions-index;
+- other model → reviewer realmente aislado;
+- sync edits → drift plan/candidate regeneration;
+- Assumed → RETAINED_NEEDS_RATIFICATION;
+- adapters OpenAI → renderers desde modelo neutral.
+
+### Rechazar
+
+- las nueve skills como modos finales;
+- slash workflow literal;
+- npx skills/MCP auto-install;
+- CLAUDE.md/AskUserQuestion/modelos Claude;
+- web/UI dimensions universales;
+- presets Clean/DDD/SOLID sin evidencia;
+- Git obligatorio/push desde Creator;
+- self-check como aceptación;
+- evaluator que modifica criterios;
+- repair que modifica tests/holdouts;
+- auto-promoción/done por generador;
+- adapters como lógica canónica;
+- score único de tokens;
+- reglas editoriales sin función;
+- copiar material MIT sin atribución.
+
+---
+
+## 37. Riesgos adicionales de generar skills desde auditorías
+
+- autojustificación: separar OBSERVED/INFERRED/DECIDED/PROPOSED;
+- anclaje en docs: barrido independiente primero;
+- cobertura falsa: inventario/partición Host;
+- rutas frágiles: perfil para datos variables;
+- skills genéricas renombradas: prueba de especialización;
+- bugs como convenciones: frecuencia no es validez;
+- mismo modelo autor/revisor: no alegar independencia;
+- permisos por texto: solo capabilities Host;
+- supply-chain: sin búsquedas/instalación automática;
+- optimizar para validador: anti-placeholders + negativos;
+- regeneración borra edits humanos: diff/ownership/backup;
+- drift falso: default no-op, solo cambio durable;
+- acceptance base obsoleta: ligar project/candidate digest;
+- calidad ≠ autorización/instalación;
+- no determinismo: misma base con output distinto → CONTRACT_DRIFT.
+
+---
+
+## 38. Modificación de las fases C0–C7
+
+Las fases de §16 se amplían obligatoriamente:
+
+- C0: schemas también para discovery/design/tests/handoffs/drift.
+- C1: bootstrap instala capacidades internas Creator y genera run.
+- C2: Creator ejecuta pipeline §31, no un único prompt monolítico.
+- C3: validador incluye contracts, graph, hot paths, anti-autoaprobación y procedencia.
+- C4: backup/transacción preserva edición local y estado generacional completo.
+- C5: acceptance separa public fixtures, holdouts Host y review independiente; debug RETAINED.
+- C6: pilotos prueban generación inicial, RETAINED+repair, update por drift, local skill edit, rollback y uninstall.
+- C7: promoción reemplaza arquitectura/creator spec y añade THIRD_PARTY_NOTICES si aplica.
+
+Ninguna fase puede declararse completa solo por schema o archivos generados; debe demostrar conducta y fronteras Host.
+
+---
+
+## 39. Resultado de arquitectura candidata revisada
+
+La candidata completa deberá expresar:
+
+```text
+usuario configura DSH/proveedor
+→ bootstrap crea run/snapshot/authority
+→ audit descubre realidad
+→ document normaliza contexto/contratos
+→ scope particiona capacidades
+→ architect diseña modos/skills
+→ test deriva escenarios; Host sella holdouts
+→ develop genera candidato staged
+→ Creator preflight e invoca accept
+→ Host check verify + review
+→ ACCEPTED o RETAINED
+→ debug repara RETAINED dentro de límites
+→ backup y promoción transaccional
+→ sync detecta drift y prepara regeneración futura
+→ usuario opera modos específicos con mensajes cortos
+```
+
+Este sistema usa la profundidad real de las nueve skills como maquinaria interna de Creator sin convertirlas en presets genéricos, sin entregarles autoridad Host y sin adoptar sus dependencias de Claude/web/Git.

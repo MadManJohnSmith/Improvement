@@ -1,6 +1,6 @@
 # Plan de ejecución de la arquitectura completa para otro agente
 
-**Estado:** planificación descriptiva; no implementación ni acreditación de resultados.
+**Estado:** antecedente histórico ejecutado para el MVP v2.4; no es el backlog vigente de arquitectura 3.0. Consultar C0–C7 en `PLAN_IMPLEMENTACION.md`.
 **Fecha de referencia:** 2026-09-13.
 **Destinatario:** agente de mantenimiento encargado de ejecutar una misión posterior autorizada.
 **Jerarquía:** subordinado a [arquitectura vigente](../ARQUITECTURA_FLUJO_AGENTES.md), [plan por etapas](../PLAN_IMPLEMENTACION.md), [estado comprobado](status.md) y [reglas del repositorio](../AGENTS.md).
