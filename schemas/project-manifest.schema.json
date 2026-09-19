@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:project-manifest:1",
+  "title": "Project manifest",
+  "description": "Project identity, inventory, and authority at discovery/project-manifest.json or generated/project-manifest.json.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "root_identity",
+    "base_revision",
+    "inventory",
+    "authority"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name, used to derive mode/skill prefixes."
+    },
+    "root_identity": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the project root content."
+    },
+    "base_revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git commit or content-id of the project base."
+    },
+    "inventory": {
+      "type": "object",
+      "required": ["total_files", "total_bytes", "languages", "areas"],
+      "additionalProperties": false,
+      "properties": {
+        "total_files": { "type": "integer", "minimum": 0 },
+        "total_bytes": { "type": "integer", "minimum": 0 },
+        "languages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "areas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "path", "file_count"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 },
+              "file_count": { "type": "integer", "minimum": 0 },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "required": ["holder", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "holder": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who holds decision authority for this project."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How authority was determined (observed, declared, etc.)."
+        }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "description": "Map of relative paths to SHA-256 digests for tracked files."
+    },
+    "capabilities_ref": {
+      "type": "string",
+      "description": "Relative path to the capabilities document for this project."
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:discovery:1",
+  "title": "Discovery artifacts schema",
+  "description": "Schemas for discovery artifacts under discovery/ (§23.2, §32). Every claim preserves source, hash, location, state, confidence, and limitations.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": ["schema_version", "project", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "project": { "type": "string", "minLength": 1 },
+    "artifact_type": {
+      "type": "string",
+      "enum": [
+        "repository-map",
+        "workspaces",
+        "contract-map",
+        "authority-map",
+        "risk-map",
+        "coverage-plan",
+        "contradictions",
+        "unknowns",
+        "exclusions",
+        "decision-gaps"
+      ]
+    },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/claim" }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["source", "hash", "location", "state", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "state": {
+          "type": "string",
+          "enum": ["OBSERVED", "DECLARED", "INFERRED", "PROPOSED", "UNVERIFIED"]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "limitations": { "type": "string" },
+        "detail": { "type": "object" }
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:promotion:1",
+  "title": "Promotion record",
+  "description": "Promotion plan and acceptance record at promotion/. Tracks the transition from ACTIVE to distributed.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "status",
+    "acceptance_record"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PLANNED",
+        "SMOKE_PASSED",
+        "PROMOTED",
+        "ROLLED_BACK"
+      ]
+    },
+    "promotion_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target_tag": { "type": "string" },
+        "target_branch": { "type": "string" },
+        "distribution_method": { "type": "string" },
+        "prerequisites": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "acceptance_record": {
+      "type": "object",
+      "required": ["verdict", "timestamp"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["ACCEPTED", "RETAINED", "REJECTED"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "post_promotion_smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passed": { "type": "boolean" },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "details": { "type": "string" }
+      }
+    },
+    "rollback_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "type": "string" },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "restored_generation_id": { "type": "string" }
+      }
+    }
+  }
+}

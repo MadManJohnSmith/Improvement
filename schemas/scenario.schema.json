@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:scenario:1",
+  "title": "Test scenario",
+  "description": "A test scenario entry from tests/public/scenarios.jsonl. Each line is one scenario.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "type",
+    "description",
+    "input",
+    "expected",
+    "sr_links"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique scenario identifier."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "positive",
+        "negative",
+        "boundary",
+        "tool-denial",
+        "capability-denial",
+        "missing-capability",
+        "prompt-injection",
+        "cycle",
+        "invalid-handoff",
+        "base-obsolete",
+        "candidate-obsolete",
+        "idempotence",
+        "scope-violation",
+        "write-violation"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {
+      "type": "object",
+      "description": "Input conditions for this scenario."
+    },
+    "expected": {
+      "type": "object",
+      "required": ["verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "BLOCKED", "NOT_COVERED"]
+        },
+        "evidence_type": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "sr_links": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^SR-[0-9]+$"
+      },
+      "description": "Scenario requirements this test covers."
+    },
+    "target_mode": {
+      "type": "string",
+      "description": "Mode this scenario targets, if applicable."
+    },
+    "target_skill": {
+      "type": "string",
+      "description": "Skill this scenario targets, if applicable."
+    },
+    "holdout_family": {
+      "type": "string",
+      "description": "If this is a holdout scenario, which family it belongs to."
+    },
+    "verification_state": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "NOT_COVERED",
+        "UNVERIFIED",
+        "IMPLEMENTED_NOT_APPLIED"
+      ]
+    }
+  }
+}

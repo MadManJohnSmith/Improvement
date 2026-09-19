@@ -1,0 +1,723 @@
+"""Automatización DSH Creator — C2.
+
+Cliente Host-side que crea una sesión Creator, envía el prompt versionado
+y supervisa la generación sin persistir credenciales ni auto-aprobarse.
+
+    python3 -B scripts/creator_client.py --run-dir <creator-runs/gen-id>
+
+Versión: 1
+"""
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+FRAMEWORK = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(FRAMEWORK / "scripts"))
+
+from onboard import checked
+
+SCHEMA_VERSION = 1
+
+_DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
+
+PROMPT_VERSION = "1.0.0"
+
+PROMPT_TYPES = (
+    "initial_onboarding",
+    "material_change_regeneration",
+    "framework_update",
+    "repair_retained",
+    "skill_lifecycle",
+)
+
+CREATOR_INTERNAL_CAPABILITIES = [
+    "project-discovery",
+    "project-documenter",
+    "contract-risk-mapper",
+    "capability-partitioner",
+    "capability-designer",
+    "scenario-author",
+    "skill-generator",
+    "generation-repair",
+    "drift-analyzer",
+]
+
+SKILL_SELECTION_ORDER = [
+    "base-library",
+    "specialized-catalog",
+    "composition",
+    "override",
+    "extension",
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _digest_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _read_json(path):
+    p = Path(path)
+    if not p.is_file() or p.is_symlink():
+        raise ValueError(f"Archivo ausente o enlace simbólico: {path}")
+    if p.stat().st_size > 2 * 1024 * 1024:
+        raise ValueError(f"Archivo excesivo: {path}")
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _write_json(path, value):
+    p = Path(path) if not isinstance(path, Path) else path
+    p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+def _update_json(path, value):
+    """Overwrite an existing JSON file (for status updates)."""
+    p = Path(path)
+    if p.is_file():
+        p.unlink()
+    _write_json(p, value)
+
+
+# ---------------------------------------------------------------------------
+# Prompt builder
+# ---------------------------------------------------------------------------
+
+
+def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
+    """Build the versioned Creator prompt from run inputs (§4.5).
+
+    Supports the five normative scenarios:
+    - initial_onboarding (incorporación inicial)
+    - material_change_regeneration (regeneración por cambio material)
+    - framework_update (actualización de framework/DSH)
+    - repair_retained (corrección de generación RETAINED)
+    - skill_lifecycle (creación/mejora de skills específicas)
+    """
+    if prompt_type not in PROMPT_TYPES:
+        raise ValueError(f"Tipo de prompt no válido: {prompt_type}; permitidos: {PROMPT_TYPES}")
+
+    gen_id = run_doc["generation_id"]
+    project_name = run_doc["project"]["name"]
+    framework_rev = run_doc.get("framework_revision", "unknown")
+    workspace = run_dir.parent.parent if run_dir.parent.name == "creator-runs" else run_dir.parent
+    base_rev = project_manifest.get("base_revision", "unknown")
+
+    header = f"""# Creator Generation Request — {project_name}
+
+**Generation ID:** {gen_id}
+**Prompt version:** {PROMPT_VERSION}
+**Scenario:** {prompt_type}
+**Framework revision:** {framework_rev}
+**Project:** {project_name}
+**Base revision:** {base_rev}
+"""
+
+    if prompt_type == "initial_onboarding":
+        objective = f"""## Objetivo
+
+Genera un paquete completo y específico para el proyecto `{project_name}`.
+El paquete debe incluir exactamente dos modos finales:
+- `{project_name}-auditor`
+- `{project_name}-continuous-repair`
+
+Más skills específicas justificadas con procedimiento recurrente, evidencia,
+fronteras y prueba."""
+
+    elif prompt_type == "material_change_regeneration":
+        objective = f"""## Objetivo — Regeneración por cambio material
+
+El proyecto `{project_name}` ha registrado un cambio material de base.
+Compara la base previa con la actual, detecta drift con `drift-analyzer (sync)`,
+conserva las decisiones previas aprobadas y regenera únicamente los modos, contratos
+y skills afectados por el cambio."""
+
+    elif prompt_type == "framework_update":
+        objective = f"""## Objetivo — Actualización de framework/DSH
+
+El framework o runtime DSH se ha actualizado a `{framework_rev}`.
+Actualiza los adaptadores y schemas manteniendo intactos los procedimientos,
+fronteras y contratos específicos del proyecto `{project_name}`."""
+
+    elif prompt_type == "repair_retained":
+        reason = (context or {}).get("reason", "Hallazgos retenidos en validación previa")
+        objective = f"""## Objetivo — Corrección de generación RETAINED
+
+La generación previa fue marcada RETAINED por el Host.
+Causa reportada: {reason}.
+Usa `generation-repair (debug)` para corregir los artefactos afectados dentro de los límites
+autorizados. No modifiques validadores, tests ni holdouts."""
+
+    elif prompt_type == "skill_lifecycle":
+        skill_name = (context or {}).get("skill_name", "skill-especifica")
+        objective = f"""## Objetivo — Ciclo de vida de skill específica
+
+Diseña o mejora la skill `{skill_name}` para `{project_name}`.
+Requisitos obligatorios: procedimiento recurrente, evidencia observable en el proyecto,
+fronteras estrictas de lectura/escritura y prueba ejecutable."""
+
+    body = f"""
+## Estrategia de selección obligatoria
+
+Resuelve cada necesidad en este orden estricto:
+1. `base-library` — biblioteca base inmutable
+2. `specialized-catalog` — catálogo de patrones especializados
+3. `composition` — composición de varias skills
+4. `override` — override declarativo limitado
+5. `extension` — extensión específica generada (requiere justificación de por qué no aplican las capas anteriores)
+6. `RETAINED` si ninguna opción es aceptable
+
+## Pipeline interno
+
+Ejecuta las capacidades internas en orden:
+- project-discovery (audit): descubrir proyecto
+- project-documenter (document): normalizar instrucciones
+- contract-risk-mapper (audit + architect): mapear contratos y riesgos
+- capability-partitioner (scope): particionar capacidades
+- capability-designer (architect): diseñar modos y skills
+- scenario-author (test): crear escenarios
+- skill-generator (develop): generar skills
+- generation-repair (debug): reparar si necesario
+- drift-analyzer (sync): analizar drift si aplica
+
+## Salida obligatoria
+
+Escribe bajo `{run_dir}/generated/`:
+- `generation-manifest.json` (status: GENERATED, con schema_version, generation_id, status, project: {{name, root_identity, base_revision}}, creator: {{session_ref, runtime_version}}, framework: {{revision}}, artifacts: [{{path, type, sha256}}], required_capabilities, forbidden_capabilities, effective_routing_digest, context_policy: {{skill_entrypoint_max_bytes, support_file_max_bytes, warning_ratio}}, license_provenance)
+- `project-manifest.json`
+- `capabilities.json`
+- `modes/{project_name}-auditor/`
+- `modes/{project_name}-continuous-repair/`
+- `skills/` (skills justificadas)
+- `contracts/`
+- `acceptance-plan.json`
+- `generation-report.md`
+
+## Invariantes
+
+1. Solo emitir status GENERATED; nunca ACCEPTED/ACTIVE
+2. Exactamente dos modos finales específicos del proyecto
+3. No modificar Host, validadores, tests, holdouts, capabilities ni acceptance
+4. No rutas/identidades/secretos del mantenedor
+5. No proveedores/modelos/routing nuevos
+6. Todo valor/decisión tiene fuente
+7. Unknowns load-bearing bloquean la generación
+
+## Al finalizar
+
+Invoca:
+```bash
+python3 -B scripts/bootstrap.py accept \\
+  --workspace {workspace} \\
+  --generated {run_dir}/generated
+```
+
+Este comando solo solicita validación; no instala nada.
+"""
+    return header + "\n" + objective + "\n" + body
+
+
+# ---------------------------------------------------------------------------
+# DSH launch-token exchange and local RPC transport
+# ---------------------------------------------------------------------------
+
+
+class DshLocalClient:
+    """Runtime-only client for the local DSH web connection.
+
+    ``dsh web`` prints an authenticated root URL containing a one-process
+    launch token. The root exchange sets an authority-bound cookie; all later
+    requests use that cookie. Neither token nor cookie is persisted.
+    """
+
+    def __init__(self, authenticated_url):
+        match = re.fullmatch(r"(https?://[^/?#]+)(?:/[^?#]*)?\?token=([^&#]+)", authenticated_url)
+        if not match:
+            raise ValueError("DSH authenticated URL has no launch token")
+        self.base_url = match.group(1)
+        self._token_url = authenticated_url
+        self._cookie = None
+
+    @classmethod
+    def from_console_line(cls, line):
+        match = _DSH_URL_RE.search(line)
+        if not match:
+            raise ValueError("No dsh web authenticated URL in console output")
+        return cls(match.group(1))
+
+    @classmethod
+    def from_dsh_home(cls, dsh_home, port=3080):
+        """Authenticate using local .credentials.yaml HMAC-SHA256 browser secret."""
+        cred_path = Path(dsh_home) / ".credentials.yaml"
+        if not cred_path.is_file():
+            raise ValueError(f"No .credentials.yaml at {dsh_home}")
+        content = cred_path.read_text(encoding="utf-8")
+        m = re.search(r"secret:\s*([A-Za-z0-9_-]+)", content)
+        if not m:
+            raise ValueError("No browser-session secret in .credentials.yaml")
+        raw_secret = m.group(1)
+        pad = "=" * ((4 - len(raw_secret) % 4) % 4)
+        secret = base64.urlsafe_b64decode(raw_secret + pad)
+        authority = f"127.0.0.1:{port}"
+
+        def b64url(b):
+            return base64.urlsafe_b64encode(b).decode("ascii").rstrip("=")
+
+        auth_hash = hashlib.sha256(authority.encode("utf-8")).digest()
+        cookie_name = "dsh-auth-" + b64url(auth_hash)
+        now_ms = int(time.time() * 1000)
+        expires_ms = now_ms + 30 * 24 * 3600 * 1000
+        payload = json.dumps({
+            "version": 1,
+            "authority": authority,
+            "issuedAt": now_ms,
+            "expiresAt": expires_ms,
+        }, separators=(",", ":")).encode("utf-8")
+        body = b64url(payload)
+        sig = hmac.new(secret, body.encode("utf-8"), hashlib.sha256).digest()
+
+        instance = cls.__new__(cls)
+        instance.base_url = f"http://{authority}"
+        instance._token_url = None
+        instance._cookie = f"{cookie_name}=v1.{body}.{b64url(sig)}"
+        return instance
+
+    @property
+    def authenticated(self):
+        return self._cookie is not None
+
+    def exchange_token(self, timeout=10):
+        request = urllib.request.Request(self._token_url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                cookie = response.headers.get("Set-Cookie")
+                if not cookie:
+                    raise ValueError("DSH token exchange returned no session cookie")
+                self._cookie = cookie.split(";", 1)[0]
+                return response.geturl()
+        except urllib.error.HTTPError as exc:
+            raise ValueError(f"DSH token exchange failed: HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise ValueError(f"DSH connection failed: {exc.reason}") from exc
+
+    def request_json(self, path, *, method="GET", payload=None, timeout=30):
+        if not self.authenticated:
+            raise ValueError("DSH client is not authenticated")
+        url = self.base_url.rstrip("/") + "/" + path.lstrip("/")
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Cookie": self._cookie, "Accept": "application/json"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+                return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise ValueError(f"DSH request failed: HTTP {exc.code}") from exc
+
+    def rpc(self, endpoint, args=None, timeout=30):
+        """Call one generated DSH Remote unary endpoint through ``/api``."""
+        result = self.request_json(
+            "/api/" + endpoint, method="POST",
+            payload={
+                "type": "client-request",
+                "rpcId": secrets.token_hex(12),
+                "method": endpoint,
+                "payload": {"args": args or {}},
+            },
+            timeout=timeout,
+        )
+        inner = result.get("result", result) if isinstance(result, dict) else result
+        if isinstance(inner, dict) and inner.get("ok") is False:
+            raise ValueError(f"DSH RPC {endpoint} rejected: {inner}")
+        return inner
+
+    def list_sessions(self):
+        """Return the Host session list through the generated descriptor."""
+        return self.rpc("session/list", {"_request": {}})
+
+    def create_creator_session(self, *, cwd, agent_preset="cordis"):
+        """Create a session and queue the Creator prompt through DSH."""
+        req = {"cwd": str(cwd)}
+        if agent_preset:
+            req["agentPreset"] = agent_preset
+        created = self.rpc("session/create", {"request": req})
+        value = created.get("value", created) if isinstance(created, dict) else created
+        session_id = value.get("sessionId") if isinstance(value, dict) else None
+        if not session_id:
+            raise ValueError("DSH session/create returned no sessionId")
+        return session_id
+
+    def send_prompt(self, session_id, prompt):
+        """Queue a text prompt; returns the Host receipt."""
+        return self.rpc("session/prompt", {"request": {
+            "requestId": secrets.token_hex(16),
+            "sessionId": session_id,
+            "mode": "queue",
+            "content": [{"type": "text", "text": prompt}],
+        }})
+
+
+class CreatorSession:
+    """Manages a Creator generation session.
+
+    In production, this would use the DSH RPC/API. For C2 implementation,
+    this provides the structural contract and supervision framework.
+    """
+
+    def __init__(self, run_dir, *, timeout_seconds=1800, max_tokens=500000):
+        self.run_dir = Path(run_dir)
+        self.timeout_seconds = timeout_seconds
+        self.max_tokens = max_tokens
+        self.start_time = None
+        self.token_count = 0
+        self.status = "IDLE"
+        self._session_ref = None
+
+    def validate_preconditions(self):
+        """Verify run directory is properly set up for Creator."""
+        if not self.run_dir.is_dir():
+            raise ValueError(f"Run directory no existe: {self.run_dir}")
+
+        run_json = self.run_dir / "run.json"
+        if not run_json.is_file():
+            raise ValueError("run.json no encontrado")
+
+        run_doc = _read_json(run_json)
+        if run_doc.get("status") not in ("CREATED", "GENERATING"):
+            raise ValueError(
+                f"Run en estado inesperado: {run_doc.get('status')}; "
+                "debe ser CREATED o GENERATING"
+            )
+
+        # Check inputs exist
+        required_inputs = [
+            "bootstrap-request.json", "snapshot.json", "inventory.json",
+            "authority.json", "host-policy.json", "effective-routing.json",
+            "runtime-capabilities.json",
+        ]
+        for name in required_inputs:
+            if not (self.run_dir / "inputs" / name).is_file():
+                raise ValueError(f"Input faltante: {name}")
+
+        # Check discovery exists
+        for name in ("instructions-index.json", "project-manifest.json"):
+            if not (self.run_dir / "discovery" / name).is_file():
+                raise ValueError(f"Discovery faltante: {name}")
+
+        return run_doc
+
+    def prepare(self):
+        """Prepare the Creator session: build prompt and update status."""
+        run_doc = self.validate_preconditions()
+        gen_id = run_doc["generation_id"]
+
+        # Load project manifest and instructions
+        project_manifest = _read_json(
+            self.run_dir / "discovery" / "project-manifest.json"
+        )
+        instructions_index = _read_json(
+            self.run_dir / "discovery" / "instructions-index.json"
+        )
+
+        # Build prompt
+        prompt = build_creator_prompt(
+            self.run_dir, run_doc, project_manifest, instructions_index
+        )
+
+        # Save prompt
+        prompt_path = self.run_dir / "creator-prompt.md"
+        if not prompt_path.exists():
+            prompt_path.write_text(prompt, encoding="utf-8")
+
+        # Save generation request
+        request_path = self.run_dir / "generation-request.json"
+        if not request_path.exists():
+            _write_json(request_path, {
+                "schema_version": SCHEMA_VERSION,
+                "generation_id": gen_id,
+                "prompt_version": PROMPT_VERSION,
+                "prompt_digest": _digest_bytes(prompt.encode("utf-8")),
+                "project_name": run_doc["project"]["name"],
+                "skill_selection_order": SKILL_SELECTION_ORDER,
+                "internal_capabilities": CREATOR_INTERNAL_CAPABILITIES,
+                "budget": run_doc.get("budget", {}),
+                "timestamp": _now_iso(),
+            })
+
+        # Update run status to GENERATING
+        run_doc["status"] = "GENERATING"
+        run_doc["updated_at"] = _now_iso()
+        _update_json(self.run_dir / "run.json", run_doc)
+
+        # Update checkpoint
+        _update_json(self.run_dir / "checkpoint.json", {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": gen_id,
+            "phase": "GENERATING",
+            "completed_phases": [
+                "preflight", "snapshot", "inventory", "skills",
+                "prompt_build",
+            ],
+            "pending_phases": ["creator_call", "generation", "accept"],
+            "timestamp": _now_iso(),
+            "resumable": True,
+        })
+
+        self.status = "PREPARED"
+        return {
+            "generation_id": gen_id,
+            "prompt_digest": _digest_bytes(prompt.encode("utf-8")),
+            "prompt_path": str(prompt_path),
+        }
+
+    def check_budget(self):
+        """Check whether we're within budget limits."""
+        if self.start_time is None:
+            return True
+
+        elapsed = time.time() - self.start_time
+        if elapsed > self.timeout_seconds:
+            raise ValueError(
+                f"Timeout: {elapsed:.0f}s excede {self.timeout_seconds}s"
+            )
+
+        if self.token_count > self.max_tokens:
+            raise ValueError(
+                f"Token budget excedido: {self.token_count} > {self.max_tokens}"
+            )
+
+        return True
+
+    def verify_generation_output(self):
+        """Verify Creator produced required outputs.
+
+        Checks that generated/ contains the required artifacts.
+        Does NOT validate content (that's C3's job).
+        """
+        gen_dir = self.run_dir / "generated"
+        if not gen_dir.is_dir():
+            raise ValueError("generated/ no existe")
+
+        # Required files
+        manifest_path = gen_dir / "generation-manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError("generation-manifest.json faltante")
+        if manifest_path.is_symlink():
+            raise ValueError("generation-manifest.json es enlace simbólico")
+
+        manifest = _read_json(manifest_path)
+
+        # Status must be GENERATED
+        if manifest.get("status") != "GENERATED":
+            raise ValueError(
+                f"Creator emitió status {manifest.get('status')!r}; "
+                "debe ser GENERATED"
+            )
+
+        # Must have artifacts
+        if not manifest.get("artifacts"):
+            raise ValueError("Manifest sin artefactos")
+
+        # Check Creator only wrote inside staging (generated/)
+        for art in manifest["artifacts"]:
+            path = art.get("path", "")
+            if path.startswith("/") or ".." in path:
+                raise ValueError(
+                    f"Artefacto con ruta fuera de staging: {path}"
+                )
+
+        # Check no self-acceptance
+        for art in manifest["artifacts"]:
+            if art.get("path", "").endswith("host-verdict.json"):
+                raise ValueError(
+                    "Creator intentó escribir host-verdict.json (auto-aprobación)"
+                )
+
+        return manifest
+
+    def create_finish(self, manifest):
+        """Create finish.json to mark generation complete."""
+        gen_id = manifest.get("generation_id", "unknown")
+        finish_path = self.run_dir / "finish.json"
+        if not finish_path.exists():
+            _write_json(finish_path, {
+                "schema_version": SCHEMA_VERSION,
+                "generation_id": gen_id,
+                "status": "GENERATED",
+                "artifact_count": len(manifest.get("artifacts", [])),
+                "manifest_digest": _digest_bytes(
+                    json.dumps(manifest, sort_keys=True).encode("utf-8")
+                ),
+                "timestamp": _now_iso(),
+            })
+
+        # Update run status
+        run_doc = _read_json(self.run_dir / "run.json")
+        run_doc["status"] = "GENERATED"
+        run_doc["updated_at"] = _now_iso()
+        _update_json(self.run_dir / "run.json", run_doc)
+
+        # Update checkpoint
+        _update_json(self.run_dir / "checkpoint.json", {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": gen_id,
+            "phase": "GENERATED",
+            "completed_phases": [
+                "preflight", "snapshot", "inventory", "skills",
+                "prompt_build", "creator_call", "generation",
+            ],
+            "pending_phases": ["accept"],
+            "timestamp": _now_iso(),
+            "resumable": True,
+        })
+
+        return {
+            "result": "GENERATED",
+            "generation_id": gen_id,
+            "artifact_count": len(manifest.get("artifacts", [])),
+        }
+
+    def retain(self, reason):
+        """Mark the generation as RETAINED with a reason."""
+        run_doc = _read_json(self.run_dir / "run.json")
+        gen_id = run_doc.get("generation_id", "unknown")
+        run_doc["status"] = "RETAINED"
+        run_doc["updated_at"] = _now_iso()
+        _update_json(self.run_dir / "run.json", run_doc)
+
+        _update_json(self.run_dir / "checkpoint.json", {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": gen_id,
+            "phase": "RETAINED",
+            "reason": reason,
+            "completed_phases": [],
+            "pending_phases": [],
+            "timestamp": _now_iso(),
+            "resumable": False,
+        })
+
+        return {
+            "result": "RETAINED",
+            "generation_id": gen_id,
+            "reason": reason,
+        }
+
+
+def launch_dsh_web(command=("npx", "@deepseek-ai/dsh", "web"), *, env=None):
+    """Launch DSH web and return ``(process, client)`` after token capture.
+
+    The child remains attached for the caller's authenticated session. Output
+    is consumed in memory; no token-bearing line is written to disk.
+    """
+    child_env = os.environ.copy()
+    if env:
+        child_env.update(env)
+    process = subprocess.Popen(
+        list(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1, env=child_env,
+    )
+    for line in process.stdout:
+        if "dsh web:" in line and "?token=" in line:
+            return process, DshLocalClient.from_console_line(line)
+        if process.poll() is not None:
+            break
+    process.kill()
+    raise RuntimeError("DSH exited before printing an authenticated URL")
+
+
+# ---------------------------------------------------------------------------
+# Orchestration: run the full Creator pipeline
+# ---------------------------------------------------------------------------
+
+
+def run_creator(run_dir, *, client=None):
+    """Execute the Creator pipeline for a run.
+
+    Returns the result dict. Validates the structure, builds the prompt,
+    queues through the authenticated DSH client if provided, and collects/verifies
+    the generated package.
+    """
+    run_dir = Path(run_dir)
+    session = CreatorSession(
+        run_dir,
+        timeout_seconds=1800,
+        max_tokens=500000,
+    )
+
+    try:
+        # Prepare: validate, build prompt, update status
+        prep = session.prepare()
+
+        prompt_path = Path(prep["prompt_path"])
+        prompt_text = prompt_path.read_text(encoding="utf-8")
+
+        # If client provided and authenticated, dispatch to DSH
+        session_id = None
+        if client is not None and getattr(client, "authenticated", False):
+            session_id = client.create_creator_session(cwd=run_dir)
+            session._session_ref = session_id
+            client.send_prompt(session_id, prompt_text)
+
+        # Verify that if outputs exist, they're valid
+        gen_dir = run_dir / "generated"
+        if gen_dir.is_dir() and (gen_dir / "generation-manifest.json").is_file():
+            manifest = session.verify_generation_output()
+            return session.create_finish(manifest)
+
+        return {
+            "result": "PREPARED",
+            "generation_id": prep["generation_id"],
+            "prompt_path": prep["prompt_path"],
+            "dsh_session_id": session_id,
+            "message": "Run preparado y enviado a DSH Creator" if session_id else "Run preparado; Creator debe ejecutarse para generar paquete",
+        }
+
+    except ValueError as e:
+        return session.retain(str(e))
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run-dir", required=True,
+                        help="Ruta al directorio del run (creator-runs/<id>)")
+    args = parser.parse_args()
+
+    result = run_creator(args.run_dir)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get("result") == "RETAINED":
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:generation-manifest:1",
+  "title": "Generation manifest",
+  "description": "Complete manifest of a Creator generation at generated/generation-manifest.json. Lists every artifact with verified hashes. Creator can only emit status GENERATED.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "status",
+    "project",
+    "creator",
+    "framework",
+    "artifacts",
+    "required_capabilities",
+    "forbidden_capabilities",
+    "effective_routing_digest",
+    "context_policy",
+    "license_provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["GENERATED"],
+      "description": "Creator can ONLY emit GENERATED. States ACCEPTED, RETAINED, ACTIVE, ROLLED_BACK are Host-only."
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "root_identity", "base_revision"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_identity": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Content-based identity hash (sha256) of the project root."
+        },
+        "base_revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git commit or content-id of the project base used for this generation."
+        }
+      }
+    },
+    "creator": {
+      "type": "object",
+      "required": ["session_ref", "runtime_version"],
+      "additionalProperties": false,
+      "properties": {
+        "session_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Observed session reference (not invented)."
+        },
+        "runtime_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Observed DSH runtime version."
+        }
+      }
+    },
+    "framework": {
+      "type": "object",
+      "required": ["revision"],
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Framework git commit."
+        },
+        "templates_revision": {
+          "type": "string",
+          "description": "Templates git commit, if separate."
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/artifact_entry"
+      },
+      "description": "Every file under generated/. Unmanifested files cause rejection."
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capabilities the generated modes/skills require from the host."
+    },
+    "forbidden_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capabilities that must NOT be granted to the generated modes/skills."
+    },
+    "effective_routing_digest": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Digest of the effective routing configuration (no credentials)."
+    },
+    "context_policy": {
+      "$ref": "#/$defs/context_policy"
+    },
+    "license_provenance": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/provenance_entry"
+      }
+    }
+  },
+  "$defs": {
+    "artifact_entry": {
+      "type": "object",
+      "required": ["path", "type", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!.*\\.\\.)(?!/)(?!.*//)",
+          "description": "Relative path from generated/ root. No traversal, no absolute, no double-slash."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "skill-entrypoint",
+            "mode-definition",
+            "mode-internal",
+            "mode-reference",
+            "mode-template",
+            "mode-adapter",
+            "skill-internal",
+            "skill-reference",
+            "skill-template",
+            "skill-adapter",
+            "contract",
+            "reference",
+            "template",
+            "adapter",
+            "manifest",
+            "plan",
+            "report",
+            "asset"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "context_policy": {
+      "type": "object",
+      "required": [
+        "skill_entrypoint_max_bytes",
+        "support_file_max_bytes",
+        "warning_ratio"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "skill_entrypoint_max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 32768,
+          "description": "Maximum bytes for a SKILL.md entrypoint (default 32 KiB)."
+        },
+        "support_file_max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 24576,
+          "description": "Maximum bytes for a support file (default 24 KiB)."
+        },
+        "warning_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.9,
+          "description": "Ratio at which a warning is emitted (default 90%)."
+        },
+        "hot_paths": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Per-path aggregate budget overrides in bytes. Keys are relative paths."
+        }
+      }
+    },
+    "provenance_entry": {
+      "type": "object",
+      "required": ["file", "source", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path of the file with external provenance."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source repository or origin."
+        },
+        "commit": {
+          "type": "string",
+          "description": "Source commit hash."
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "description": "License type (e.g., MIT, Apache-2.0)."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "plugin": "{{PLUGIN_NAME}}",
+  "version": "{{PLUGIN_VERSION}}",
+  "permissions": {
+    "read": ["{{READ_PATH}}"],
+    "write": ["{{WRITE_PATH}}"],
+    "network": false
+  },
+  "invariants": [
+    "No escalation past declared sandbox boundaries",
+    "Fail-closed on unhandled exceptions"
+  ]
+}

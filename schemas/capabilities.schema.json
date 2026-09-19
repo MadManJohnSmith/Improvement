@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:capabilities:1",
+  "title": "Capabilities document",
+  "description": "Host-issued capability set for a generation run. Capabilities are never self-granted. Located at generated/capabilities.json or inputs/runtime-capabilities.json.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "capability_id",
+    "session_id",
+    "project",
+    "executor",
+    "roots",
+    "scope"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "capability_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identity of the executor receiving these capabilities."
+    },
+    "roots": {
+      "type": "object",
+      "required": ["product_read", "framework_execute", "workspace_write"],
+      "additionalProperties": false,
+      "properties": {
+        "product_read": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths the executor can read from the product."
+        },
+        "framework_execute": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Framework paths the executor can execute."
+        },
+        "workspace_write": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Workspace paths the executor can write to."
+        }
+      }
+    },
+    "scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Named capabilities granted to this executor."
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capabilities the generated artifacts require."
+    },
+    "forbidden_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capabilities that must not be granted."
+    }
+  }
+}

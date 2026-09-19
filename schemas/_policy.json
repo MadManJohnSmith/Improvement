@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:policy:1",
+  "title": "Schema and validation policy for DSH Flow generation contracts",
+  "description": "Cross-cutting policy applied to all schemas in this directory. Version 1.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "description": "All contract documents declare their schema version as an integer. Validators reject documents whose schema_version exceeds the highest version they support.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "unknown_field_policy": {
+      "description": "All schemas set additionalProperties: false. A document with unknown fields is rejected without partial processing. This prevents silent data loss when a newer producer emits fields an older consumer cannot handle.",
+      "const": "reject"
+    },
+    "ownership_model": {
+      "description": "Every artifact file in a generation run has exactly one owner (Creator or Host). Owner is declared in the artifact's schema via the x-owner extension. Creator-owned artifacts are immutable after generation; Host-owned artifacts are immutable after acceptance.",
+      "enum": ["creator", "host"]
+    }
+  },
+  "x-policy-rules": {
+    "versioning": "Integer schema_version starting at 1. Bump on incompatible change. Validators reject unknown versions.",
+    "unknown_fields": "additionalProperties: false everywhere. Unknown fields cause fail-closed rejection.",
+    "ownership": "x-owner on each schema root declares creator or host. Validator checks this before allowing writes.",
+    "immutability": "Creator artifacts under generated/ are immutable during accept. Host artifacts are immutable after ACTIVE.",
+    "fail_closed": "Every validation failure rejects the entire document. No partial writes, no partial acceptance.",
+    "no_secrets": "No schema allows credential, token, or secret fields. Routing digests only.",
+    "no_local_paths": "Paths are relative to run root. No absolute filesystem paths in documents.",
+    "append_only": "Event stores (decisions, metrics, budget) use append-only with digest chains.",
+    "transactional_activation": "Modes and skills activate as a unit; never individually."
+  }
+}

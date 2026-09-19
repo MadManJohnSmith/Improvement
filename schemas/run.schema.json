@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:run:1",
+  "title": "Generation run root document",
+  "description": "Root artifact of a generation run at creator-runs/<generation-id>/run.json. Tracks run state and references to all sub-artifacts.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "status",
+    "created_at",
+    "project",
+    "framework_revision"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque identifier for this run, unique across all runs."
+    },
+    "status": {
+      "$ref": "#/$defs/run_status"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "project": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_identity": {
+          "type": "string",
+          "description": "Content-based identity hash of the project root."
+        }
+      }
+    },
+    "framework_revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git commit of the framework used for this run."
+    },
+    "templates_revision": {
+      "type": "string",
+      "description": "Git commit of the templates used, if separate from framework."
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "max_tokens": { "type": "integer", "minimum": 1 },
+        "max_seconds": { "type": "integer", "minimum": 1 },
+        "max_cost_usd": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "directories": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Relative paths from run root to standard subdirectories.",
+      "properties": {
+        "inputs": { "const": "inputs" },
+        "discovery": { "const": "discovery" },
+        "design": { "const": "design" },
+        "tests": { "const": "tests" },
+        "generated": { "const": "generated" },
+        "validation": { "const": "validation" },
+        "acceptance": { "const": "acceptance" },
+        "retained": { "const": "retained" },
+        "backup": { "const": "backup" },
+        "promotion": { "const": "promotion" }
+      }
+    }
+  },
+  "$defs": {
+    "run_status": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "DISCOVERING",
+        "DESIGNING",
+        "GENERATING",
+        "GENERATED",
+        "VALIDATING",
+        "BACKED_UP",
+        "STAGED",
+        "ACCEPTING",
+        "ACTIVE",
+        "RETAINED",
+        "REPAIRING",
+        "ROLLED_BACK",
+        "RECOVERY_REQUIRED",
+        "CANCELLED"
+      ],
+      "description": "Creator may only set statuses up to GENERATED. Host controls VALIDATING onward."
+    }
+  }
+}

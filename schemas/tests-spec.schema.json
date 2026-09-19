@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:tests-spec:1",
+  "title": "Tests and holdouts specification schema",
+  "description": "Schemas for holdout specification and coverage under tests/ (§26, §32).",
+  "x-owner": "creator",
+  "type": "object",
+  "required": ["schema_version", "generation_id", "families", "coverage_matrix"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": { "type": "string", "minLength": 1 },
+    "families": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "coverage_matrix": {
+      "type": "object",
+      "required": ["total_scenarios", "covered_requirements"],
+      "additionalProperties": false,
+      "properties": {
+        "total_scenarios": { "type": "integer", "minimum": 0 },
+        "covered_requirements": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^SR-[0-9]+$" }
+        }
+      }
+    },
+    "immutable_digests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    }
+  }
+}
