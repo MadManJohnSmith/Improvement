@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-146",
+  "type": "boundary",
+  "description": "El esquema OpenAPI no puede reproducirse en las versiones fijadas observadas.",
+  "input": {
+    "skill": "fastapi-openapi-contract-check",
+    "openapi_reproducible": false
+  },
+  "expected": {
+    "verdict": "NOT_COVERED",
+    "evidence_type": "reproducibility_guard",
+    "description": "Sin esquema reproducible no hay comprobación: el resultado es NOT_COVERED, no una aproximación."
+  },
+  "sr_links": [],
+  "target_skill": "fastapi-openapi-contract-check"
+}

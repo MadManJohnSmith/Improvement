@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-144",
+  "type": "negative",
+  "description": "El patrón se selecciona para un proyecto sin evidencia FastAPI/Pydantic (solo APIs REST genéricas).",
+  "input": {
+    "skill": "fastapi-openapi-contract-check",
+    "activation_signals": []
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "activation_gate",
+    "description": "Sin señales de activación el patrón no se selecciona; vuelve a la capa base o RETAINED."
+  },
+  "sr_links": [],
+  "target_skill": "fastapi-openapi-contract-check"
+}

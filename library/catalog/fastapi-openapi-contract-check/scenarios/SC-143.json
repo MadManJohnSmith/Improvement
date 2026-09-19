@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-143",
+  "type": "positive",
+  "description": "Con señales de activación presentes y OpenAPI reproducible, la comprobación clasifica cada diferencia como compatible, breaking o ambigua con fuente citada.",
+  "input": {
+    "skill": "fastapi-openapi-contract-check",
+    "activation_signals": [
+      "fastapi in pyproject",
+      "openapi document observed"
+    ],
+    "versions_pinned": true,
+    "openapi_reproducible": true,
+    "differences_classified": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "contract_diff",
+    "description": "Inventario de diferencias clasificadas con ruta/esquema como fuente y versiones fijadas."
+  },
+  "sr_links": [],
+  "target_skill": "fastapi-openapi-contract-check"
+}
