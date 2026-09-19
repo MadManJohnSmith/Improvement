@@ -1,17 +1,37 @@
 /**
  * workflow-write: herramienta de escritura con semántica de escalada corregida.
  *
- * Defecto del runtime observado (M7, 2026-09-13): `write` de @deepseek-ai/dsh-tool-fs
- * rechaza «not strictly wider» cuando el modelo envía sandbox_permissions igual al modo
- * ya vigente, bloqueando toda escritura con enforcement completo. Este plugin registra
- * `workflow_write` con la MISMA ejecución que upstream (ctx.fs.writeText + observación)
- * y una corrección única en el resolver de política:
- *   - sin parámetros de escalada  -> política vigente;
- *   - modo solicitado == vigente  -> política vigente (no es una escalada);
- *   - modo estrictamente mayor    -> validate + aprobación real del servicio `approval`;
- *   - modo menor                  -> política vigente (más estrecho no concede nada).
- * Sin aprobación, falla cerrado; el aislamiento no se debilita: la ejecución siempre
- * pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
+ * Defecto M7 (2026-09-13): `write`/`bash` de upstream rechazan «sandbox
+ * escalation ... is not strictly wider» cuando el modelo envía
+ * sandbox_permissions igual al modo ya vigente, bloqueando escrituras y comandos.
+ *
+ * Defecto M8 (2026-09-19): este plugin pasaba a ctx.tools.register() un mapa de
+ * propiedades, pero register() NO compila parámetros (eso lo hace defineTool());
+ * el esquema publicado salía degenerado, el modelo veía la firma
+ * `workflow_write = () => any`, llamaba sin argumentos y execute fallaba en
+ * bucle con «file_path debe ser un string no vacío».
+ *
+ * Correcciones de este plugin (mantenedor, no Creator):
+ *  1. workflow_write registra un JSON Schema CRUDO ya compilado
+ *     ({type:'object', properties, required}), la forma que register() consume.
+ *  2. resolvePolicy corrige M7 para workflow_write: mismo modo -> política
+ *     vigente (no es escalada); estrictamente mayor -> aprobación fail-closed
+ *     del servicio `approval`; más estrecho -> política vigente.
+ *  3. Guard global en tools/pre-execute: si bash/pwsh llegan con
+ *     sandbox_permissions/justification defectuosas (justificación ausente o
+ *     vacía, modo igual al vigente o más estrecho), se deniegan ANTES del
+ *     dispatch con un mensaje correctivo, cortando el bucle de reintentos
+ *     observado el 2026-09-19. Una escalada estrictamente mayor con
+ *     justificación válida sigue su curso normal hacia la aprobación.
+ *  4. execute replica la tool write de upstream: ctx.fs.resolve con opciones de
+ *     sesión (cwd = raíz de la política o cwd de la sesión, señal de aborto),
+ *     waterfall fs/write-intent, writeText con la política resuelta y emisión
+ *     fs/observed. Los parámetros de escalada NO se publican en el esquema
+ *     (las misiones prohíben enviarlos); quedan cubiertos por resolvePolicy si
+ *     un modelo los fuerza.
+ *
+ * Sin aprobación, falla cerrado; el aislamiento no se debilita: la ejecución
+ * siempre pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
  */
 export const inject = ['tools', 'fs', 'systemPrompt'];
 
@@ -40,12 +60,47 @@ export function apply(ctx, config) {
     return { ...policy, mode: requested };
   }
 
+  // Guard global (monotónico: solo deniega). Corre en pre-execute, antes de
+  // validateBashArgs y de approveEscalation, así el modelo recibe el mensaje
+  // correctivo y no el error confuso de upstream.
+  ctx.tools.guard?.((exec) => {
+    if (exec?.name !== 'bash' && exec?.name !== 'pwsh') return undefined;
+    const args = exec.arguments;
+    const requested = args?.sandbox_permissions;
+    const justification = args?.justification;
+    if (requested === undefined && justification === undefined) return undefined;
+    const corrective = 'Este despliegue no admite escalada por parámetros: reenvía exactamente el mismo comando omitiendo sandbox_permissions y justification; el modo vigente ya cubre el workspace de la sesión, y una denegación real de sandbox se informa como [sandbox: ...], nunca escalando.';
+    if (requested === undefined) {
+      return `invalid escalation: justification solo es válida junto a sandbox_permissions. ${corrective}`;
+    }
+    if (justification === undefined || String(justification).trim().length === 0) {
+      return `invalid escalation: sandbox_permissions requiere justification. ${corrective}`;
+    }
+    let policy;
+    try {
+      const service = policyService();
+      policy = service?.resolve(exec?.agent?.session ? { session: exec.agent.session } : {});
+    } catch {
+      return undefined;
+    }
+    if (policy?.mode === undefined) return undefined;
+    if (requested === policy.mode) {
+      return `sandbox escalation to "${requested}" no es una escalada: ya es el modo vigente (defecto M7 de upstream). ${corrective}`;
+    }
+    if (requested === 'workspace-write' && policy.mode === 'danger-full-access') {
+      return `sandbox escalation to "${requested}" es más estrecha que el modo vigente "${policy.mode}" y no concede nada. ${corrective}`;
+    }
+    return undefined; // estrictamente mayor: prosigue hacia la aprobación de upstream
+  });
+
+  // Esquema CRUDO ya compilado: es la forma que register() consume tal cual.
   const parameters = {
-    file_path: { type: 'string', required: true, description: 'Ruta a escribir, resuelta por el backend de filesystem.' },
-    content: { type: 'string', required: true, description: 'Contenido UTF-8 completo a escribir.' },
-    sandbox_permissions: { type: 'string', required: false, enum: MODES,
-      description: 'Opcional. Solo para escalar a un modo ESTRICTAMENTE mayor del vigente; con el modo vigente ya alcanza y no debe enviarse.' },
-    justification: { type: 'string', required: false, description: 'Una frase de justificación, solo junto a sandbox_permissions.' },
+    type: 'object',
+    properties: {
+      file_path: { type: 'string', description: 'Ruta a escribir, resuelta por el backend de filesystem.' },
+      content: { type: 'string', description: 'Contenido UTF-8 completo a escribir.' },
+    },
+    required: ['file_path', 'content'],
   };
 
   ctx.tools.register({
@@ -74,14 +129,19 @@ export function apply(ctx, config) {
       }
       if (typeof args?.content !== 'string') throw new Error('content debe ser un string');
       const policy = await resolvePolicy('workflow_write', args, exec);
-      const target = await ctx.fs.resolve(args.file_path);
+      // Espejo de sessionResolveOptions de dsh-tool-fs: cwd = raíz de la
+      // política o cwd de la sesión; upstream además canónica el cwd con
+      // segmentos padre, caso límite que aquí se omite.
+      const cwd = policy?.workspaceRoot ?? exec?.agent?.session?.header?.cwd;
+      const target = await ctx.fs.resolve(args.file_path, {
+        ...(cwd !== undefined ? { cwd } : {}),
+        signal: exec.signal,
+      });
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
-      let outcome;
-      try {
-        outcome = await ctx.fs.writeText(target, args.content, intent, exec.signal, policy);
-      } catch (error) {
-        throw new Error(`[sandbox: operación denegada bajo el modo ${policy?.mode || 'desconocido'}] ${error?.message || error}`);
-      }
+      // Sin envoltura de error propia: los errores del backend ya traen el
+      // marcador [sandbox: ...] cuando son denegaciones; envolver aquí cualquier
+      // fallo los falsearía como denegaciones de política.
+      const outcome = await ctx.fs.writeText(target, args.content, intent, exec.signal, policy);
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec);
       return { path: target.displayPath, operation: outcome.operation, before: outcome.before, after: outcome.after };
     },
