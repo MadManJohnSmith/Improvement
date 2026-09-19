@@ -35,7 +35,7 @@ const ctx = {
   emit: () => {},
 };
 
-const mod = await import(pathToFileURL(PLUGIN).href);
+const mod = await import(PLUGIN);
 mod.apply(ctx, {});
 
 const wf = registered.find((d) => d.name === 'workflow_write');
