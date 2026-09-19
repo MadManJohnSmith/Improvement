@@ -411,7 +411,8 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertEqual(stopped, [68865])
         self.assertIsNotNone(client)
 
-    def test_launch_path_kills_child_when_key_missing(self):
+    def test_launch_path_warns_and_proceeds_when_key_missing(self):
+        """Env is not DSH's only key source: missing key warns, not blocks."""
         fake_client = unittest.mock.Mock()
         fake_client.authenticated = True
         fake_process = unittest.mock.Mock()
@@ -425,9 +426,30 @@ class DshLifecycleTests(unittest.TestCase):
                                                          fake_client)):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
-        self.assertIsNone(client)
+        self.assertIs(client, fake_client)
+        self.assertIn("aviso:", origin)
         self.assertIn("ningún proveedor utilizable", origin)
         self.assertIn("TEST_PROV_KEY", origin)
+        fake_process.kill.assert_not_called()
+
+    def test_launch_path_strict_mode_stops_when_key_missing(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.dict(os.environ,
+                                         {"DSH_PROVIDER_STRICT": "1"}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertIsNone(client)
+        self.assertIn("ningún proveedor utilizable", origin)
         fake_process.kill.assert_called_once()
 
 class _FakeProcess:
@@ -579,7 +601,7 @@ class LaunchDshWebTests(unittest.TestCase):
         self.assertIsNone(client)
         self.assertIn("puerto 3080 ocupado", origin)
 
-    def test_existing_session_without_key_stops_before_dispatch(self):
+    def test_existing_session_without_key_warns_and_proceeds(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
                 unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
@@ -590,7 +612,8 @@ class LaunchDshWebTests(unittest.TestCase):
                                            lambda self: None):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client()
-        self.assertIsNone(client)
+        self.assertIsNotNone(client)
+        self.assertIn("aviso:", origin)
         self.assertIn("ningún proveedor utilizable", origin)
 
 
