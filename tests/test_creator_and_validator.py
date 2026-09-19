@@ -181,6 +181,18 @@ class CreatorTests(Base):
         self.assertIn("no proveedores/modelos/routing nuevos", prompt.lower())
         self.assertIn("bootstrap.py accept", prompt)
 
+    def test_prompt_embeds_materialized_library(self):
+        """The versioned prompt lists the real base skills and catalog gates."""
+        session = cc.CreatorSession(self.run_dir)
+        session.prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn("## Biblioteca disponible", prompt)
+        self.assertIn("**Digest de biblioteca:**", prompt)
+        self.assertIn("`systematic-debugging`", prompt)
+        self.assertIn("`fastapi-openapi-contract-check`", prompt)
+        self.assertIn("activar si: fastapi o pydantic declarados", prompt)
+        self.assertIn("reuse_reference", prompt)
+
     def test_all_five_prompt_types_build_successfully(self):
         run_doc = json.loads((self.run_dir / "run.json").read_text())
         proj_manifest = {"base_revision": "rev-test"}
@@ -196,6 +208,75 @@ class CreatorTests(Base):
 
 
 class ValidatorTests(Base):
+    def _make_contract_package(self, reuse_reference="systematic-debugging"):
+        """Package with one contract artifact reusing a base skill."""
+        contract = {
+            "schema_version": 1,
+            "name": "project-debugger",
+            "motive": "Recurring debugging procedure",
+            "domain": ["python-backend"],
+            "reuse_source": "base-library",
+            "reuse_reference": reuse_reference,
+            "inputs": ["failure report"],
+            "outputs": ["diagnosis"],
+            "required_capabilities": ["product_read"],
+            "forbidden_capabilities": ["product_write"],
+            "files": [{"path": "SKILL.md", "type": "entrypoint",
+                       "max_bytes": 32768}],
+            "behavior_test": "SC-001",
+            "provenance": {"license": "proprietary"},
+        }
+        generated, manifest = self.make_package()
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        (contracts / "skill-contract.json").write_text(
+            json.dumps(contract, indent=2) + "\n")
+        manifest["artifacts"].append({
+            "path": "contracts/skill-contract.json",
+            "type": "contract",
+            "sha256": cc._digest_bytes(
+                (contracts / "skill-contract.json").read_bytes()),
+        })
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        return generated, manifest
+
+    def test_contract_reuse_reference_resolves_against_library(self):
+        generated, _ = self._make_contract_package()
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.passed)
+        self.assertEqual(report.verdict, "READY_FOR_ACCEPTANCE")
+
+    def test_unknown_reuse_reference_retained(self):
+        generated, _ = self._make_contract_package(
+            reuse_reference="nonexistent-base-skill")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.passed)
+        self.assertEqual(report.verdict, "RETAINED")
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("no existe en la biblioteca",
+                      " ".join(report.layers["contracts"]["details"]))
+
+    def test_contract_missing_reuse_reference_retained(self):
+        generated, _ = self._make_contract_package(reuse_reference=None)
+        contract = json.loads(
+            (generated / "contracts" / "skill-contract.json").read_text())
+        del contract["reuse_reference"]
+        (generated / "contracts" / "skill-contract.json").write_text(
+            json.dumps(contract, indent=2) + "\n")
+        manifest = json.loads(
+            (generated / "generation-manifest.json").read_text())
+        for art in manifest["artifacts"]:
+            if art["path"] == "contracts/skill-contract.json":
+                art["sha256"] = cc._digest_bytes(
+                    (generated / "contracts" / "skill-contract.json").read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.passed)
+        self.assertIn("reuse_reference required",
+                      " ".join(report.layers["contracts"]["details"]))
+
     def test_valid_package_ready(self):
         generated, _ = self.make_package()
         report = hv.validate_package(generated)

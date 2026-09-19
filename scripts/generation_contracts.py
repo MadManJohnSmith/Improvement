@@ -953,6 +953,24 @@ def validate_source_registry(doc):
 # ---------------------------------------------------------------------------
 
 
+def _require_reuse_reference(doc, schema):
+    """Base/catalog reuse must name the exact library entry; extension must not."""
+    source = doc["reuse_source"]
+    ref = doc.get("reuse_reference")
+    if source in ("base-library", "specialized-catalog"):
+        _require(_is_nonempty_str(ref),
+                 f"{schema}: reuse_reference required when reuse_source is "
+                 f"{source!r}: name the exact library entry reused")
+    elif source == "extension":
+        _require("reuse_reference" not in doc,
+                 f"{schema}: reuse_reference must be omitted when "
+                 "reuse_source is 'extension'")
+    else:
+        _require(ref is None or _is_nonempty_str(ref),
+                 f"{schema}.reuse_reference must be a non-empty string "
+                 "when present")
+
+
 def validate_mode_contract(doc):
     """Validate a mode contract document."""
     schema = "mode-contract"
@@ -965,9 +983,9 @@ def validate_mode_contract(doc):
         "scenarios", "provenance",
     ]
     known = required + [
-        "reuse_justification", "sources", "rollback", "migration",
-        "sr_criteria", "stop_conditions", "evidence", "entrypoint",
-        "progressive_disclosure",
+        "reuse_justification", "reuse_reference", "sources", "rollback",
+        "migration", "sr_criteria", "stop_conditions", "evidence",
+        "entrypoint", "progressive_disclosure",
     ]
     _require_fields(doc, required, schema)
     _reject_unknown(doc, known, schema)
@@ -976,6 +994,7 @@ def validate_mode_contract(doc):
     _require(_is_nonempty_str(doc["name"]), f"{schema}.name")
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
                   f"{schema}.reuse_source")
+    _require_reuse_reference(doc, schema)
 
     if doc["reuse_source"] == "extension":
         _require("reuse_justification" in doc
@@ -1015,9 +1034,9 @@ def validate_skill_contract(doc):
         "forbidden_capabilities", "files", "behavior_test", "provenance",
     ]
     known = required + [
-        "evidence", "reuse_justification", "replaces", "prohibited_tools",
-        "hot_paths", "load_test", "activation_criteria", "invariants",
-        "anti_goals",
+        "evidence", "reuse_justification", "reuse_reference", "replaces",
+        "prohibited_tools", "hot_paths", "load_test",
+        "activation_criteria", "invariants", "anti_goals",
     ]
     _require_fields(doc, required, schema)
     _reject_unknown(doc, known, schema)
@@ -1027,6 +1046,7 @@ def validate_skill_contract(doc):
     _require(_is_nonempty_str(doc["motive"]), f"{schema}.motive")
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
                   f"{schema}.reuse_source")
+    _require_reuse_reference(doc, schema)
 
     if doc["reuse_source"] == "extension":
         _require("reuse_justification" in doc

@@ -21,7 +21,9 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": {
+      "const": 1
+    },
     "name": {
       "type": "string",
       "minLength": 1,
@@ -38,7 +40,9 @@
     },
     "domain": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Domain areas or units where this skill applies."
     },
     "reuse_source": {
@@ -51,6 +55,11 @@
         "extension"
       ]
     },
+    "reuse_reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact name of the library entry reused (base skill or catalog pattern). Required when reuse_source is 'base-library' or 'specialized-catalog'; omitted when 'extension'."
+    },
     "reuse_justification": {
       "type": "string",
       "description": "Required when reuse_source is 'extension'."
@@ -59,39 +68,60 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "skill": { "type": "string", "description": "Name of prior skill being replaced." },
-        "reason": { "type": "string" }
+        "skill": {
+          "type": "string",
+          "description": "Name of prior skill being replaced."
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "inputs": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "outputs": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "required_capabilities": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "forbidden_capabilities": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "prohibited_tools": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Tools this skill must not use."
     },
     "files": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path", "type"],
+        "required": [
+          "path",
+          "type"
+        ],
         "additionalProperties": false,
         "properties": {
-          "path": { "type": "string", "minLength": 1 },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -104,7 +134,10 @@
               "asset"
             ]
           },
-          "max_bytes": { "type": "integer", "minimum": 1 }
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       },
       "minItems": 1,
@@ -112,7 +145,10 @@
     },
     "hot_paths": {
       "type": "object",
-      "additionalProperties": { "type": "integer", "minimum": 1 },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      },
       "description": "Aggregate byte budgets for named hot paths."
     },
     "load_test": {
@@ -130,21 +166,36 @@
     },
     "invariants": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "anti_goals": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "provenance": {
       "type": "object",
-      "required": ["license"],
+      "required": [
+        "license"
+      ],
       "additionalProperties": false,
       "properties": {
-        "license": { "type": "string", "minLength": 1 },
-        "source": { "type": "string" },
-        "commit": { "type": "string" },
-        "notice": { "type": "string" }
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "notice": {
+          "type": "string"
+        }
       }
     }
   }

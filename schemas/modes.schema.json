@@ -27,7 +27,9 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": {
+      "const": 1
+    },
     "name": {
       "type": "string",
       "minLength": 1,
@@ -48,85 +50,131 @@
       ],
       "description": "Which layer of the skill selection strategy this mode uses."
     },
+    "reuse_reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact name of the library entry reused (base skill or catalog pattern). Required when reuse_source is 'base-library' or 'specialized-catalog'; omitted when 'extension'."
+    },
     "reuse_justification": {
       "type": "string",
       "description": "Required when reuse_source is 'extension': why earlier layers do not apply."
     },
     "triggers": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "minItems": 1
     },
     "anti_triggers": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "inputs": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Named inputs this mode consumes."
     },
     "sources": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Value sources for operational data."
     },
     "reads": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Paths or resources this mode reads."
     },
     "writes": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Paths or resources this mode writes. Auditor must have empty writes for product."
     },
     "required_capabilities": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "forbidden_capabilities": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "invariants": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "minItems": 1,
       "description": "Invariants that must hold for this mode."
     },
     "anti_goals": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Things this mode must never do."
     },
     "state_machine": {
       "type": "object",
-      "required": ["states", "transitions", "initial", "terminal"],
+      "required": [
+        "states",
+        "transitions",
+        "initial",
+        "terminal"
+      ],
       "additionalProperties": false,
       "properties": {
         "states": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         },
         "transitions": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["from", "to", "trigger"],
+            "required": [
+              "from",
+              "to",
+              "trigger"
+            ],
             "additionalProperties": false,
             "properties": {
-              "from": { "type": "string" },
-              "to": { "type": "string" },
-              "trigger": { "type": "string" }
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "trigger": {
+                "type": "string"
+              }
             }
           }
         },
-        "initial": { "type": "string" },
+        "initial": {
+          "type": "string"
+        },
         "terminal": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         }
       }
@@ -135,12 +183,21 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["target", "condition"],
+        "required": [
+          "target",
+          "condition"
+        ],
         "additionalProperties": false,
         "properties": {
-          "target": { "type": "string" },
-          "condition": { "type": "string" },
-          "payload": { "type": "string" }
+          "target": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "string"
+          }
         }
       }
     },
@@ -148,11 +205,22 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "retries": { "type": "integer", "minimum": 0, "maximum": 2 },
-        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
         "on_failure": {
           "type": "string",
-          "enum": ["retain", "rollback", "block"]
+          "enum": [
+            "retain",
+            "rollback",
+            "block"
+          ]
         }
       }
     },
@@ -168,28 +236,42 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "description"],
+        "required": [
+          "id",
+          "description"
+        ],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^SR-[0-9]+$" },
-          "description": { "type": "string" }
+          "id": {
+            "type": "string",
+            "pattern": "^SR-[0-9]+$"
+          },
+          "description": {
+            "type": "string"
+          }
         }
       },
       "description": "Scenario requirements (SR-N) linked to this mode."
     },
     "scenarios": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "References to scenario IDs that test this mode."
     },
     "stop_conditions": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Conditions under which this mode stops execution."
     },
     "evidence": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Types of evidence this mode produces."
     },
     "provenance": {
@@ -199,32 +281,74 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "file": { "type": "string", "description": "Relative path to SKILL.md" },
-        "max_bytes": { "type": "integer", "minimum": 1 }
+        "file": {
+          "type": "string",
+          "description": "Relative path to SKILL.md"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "progressive_disclosure": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "modes": { "type": "array", "items": { "type": "string" } },
-        "internal": { "type": "array", "items": { "type": "string" } },
-        "references": { "type": "array", "items": { "type": "string" } },
-        "templates": { "type": "array", "items": { "type": "string" } },
-        "adapters": { "type": "array", "items": { "type": "string" } }
+        "modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "internal": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     }
   },
   "$defs": {
     "provenance": {
       "type": "object",
-      "required": ["license"],
+      "required": [
+        "license"
+      ],
       "additionalProperties": false,
       "properties": {
-        "license": { "type": "string", "minLength": 1 },
-        "source": { "type": "string" },
-        "commit": { "type": "string" },
-        "notice": { "type": "string" }
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "notice": {
+          "type": "string"
+        }
       }
     }
   }

@@ -417,6 +417,17 @@ def install(project, workspace, *, budget=None):
     }
     _write_json(run_dir / "run.json", run_doc)
 
+    # Library snapshot: selection inputs are frozen per run (provenance)
+    library_digest = None
+    library_path = FRAMEWORK / "library" / "library.json"
+    if library_path.is_file() and not library_path.is_symlink():
+        sys.path.insert(0, str(FRAMEWORK / "scripts"))
+        import generation_contracts as gc
+        library_doc = _read_json(library_path)
+        gc.validate("library", library_doc)
+        _write_json(run_dir / "inputs" / "library.json", library_doc)
+        library_digest = _digest_file(library_path)
+
     # Create inputs/bootstrap-request.json
     _write_json(run_dir / "inputs" / "bootstrap-request.json", {
         "schema_version": SCHEMA_VERSION,
@@ -424,6 +435,7 @@ def install(project, workspace, *, budget=None):
         "project": str(project),
         "workspace": str(workspace),
         "framework": str(FRAMEWORK),
+        "library_sha256": library_digest,
         "timestamp": _now_iso(),
         "dsh": pf["dsh"],
     })
