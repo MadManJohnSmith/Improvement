@@ -371,6 +371,26 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIn((4140, signal.SIGTERM), killed)
         self.assertIn((4140, signal.SIGKILL), killed)
 
+    def test_launch_exchanges_token_so_dispatch_can_happen(self):
+        """Without exchange_token the client stays unauthenticated and the
+        dispatch is silently skipped."""
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        fake_client.exchange_token.assert_called_once()
+        fake_process.kill.assert_not_called()
+
     def test_launch_path_stops_existing_and_gates_on_key(self):
         fake_client = unittest.mock.Mock()
         fake_client.authenticated = True
