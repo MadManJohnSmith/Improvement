@@ -239,6 +239,7 @@ class CreatorTests(Base):
         self.assertIn("base-library", prompt)
         self.assertIn("no proveedores/modelos/routing nuevos", prompt.lower())
         self.assertIn("danger-full-access", prompt)
+        self.assertIn("Nunca enviar `sandbox_permissions`", prompt)
         self.assertIn("bootstrap.py accept", prompt)
 
     def test_prompt_embeds_materialized_library(self):
