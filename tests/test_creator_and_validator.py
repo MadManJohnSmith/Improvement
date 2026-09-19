@@ -148,7 +148,9 @@ class CreatorTests(Base):
             authenticated = True
             def __init__(self):
                 self.prompts = []
-            def create_creator_session(self, *, cwd, agent_preset=None):
+                self.workspace_paths = []
+            def create_creator_session(self, *, workspace_path, agent_preset=None):
+                self.workspace_paths.append(workspace_path)
                 return "acquired-session"
             def send_prompt(self, session_id, prompt):
                 self.prompts.append((session_id, prompt))
@@ -161,13 +163,16 @@ class CreatorTests(Base):
         self.assertEqual(result["dsh_session_id"], "acquired-session")
         self.assertEqual(result["dsh_origin"], "test-home")
         self.assertEqual(len(mock.prompts), 1)
+        self.assertEqual(mock.workspace_paths, [self.workspace])
 
     def test_run_creator_with_authenticated_client_dispatches_prompt(self):
         class MockClient:
             authenticated = True
             def __init__(self):
                 self.prompts = []
-            def create_creator_session(self, *, cwd, agent_preset=None):
+                self.workspace_paths = []
+            def create_creator_session(self, *, workspace_path, agent_preset=None):
+                self.workspace_paths.append(workspace_path)
                 return "mock-session-123"
             def send_prompt(self, session_id, prompt):
                 self.prompts.append((session_id, prompt))
@@ -178,6 +183,32 @@ class CreatorTests(Base):
         self.assertEqual(result["dsh_session_id"], "mock-session-123")
         self.assertEqual(len(mock.prompts), 1)
         self.assertIn("mock-session-123", mock.prompts[0][0])
+        self.assertEqual(mock.workspace_paths, [self.workspace])
+
+    def test_session_create_binds_workspace_not_bare_cwd(self):
+        """session/create takes a workspaceId, never a bare cwd (M-pilot:
+        cwd-only sessions stay ungrouped and confine workspace-write to the
+        run directory, which drives escalation requests)."""
+        client = cc.DshLocalClient("http://127.0.0.1:3080/?token=t")
+        calls = []
+
+        def fake_rpc(endpoint, args=None, timeout=30):
+            calls.append((endpoint, args))
+            if endpoint == "workspace/create":
+                return {"value": {"workspace": {"workspaceId": "ws-1",
+                                                "path": str(self.workspace)},
+                                  "created": True}}
+            return {"value": {"sessionId": "sess-1"}}
+
+        with unittest.mock.patch.object(client, "rpc", side_effect=fake_rpc):
+            session_id = client.create_creator_session(
+                workspace_path=self.workspace)
+        self.assertEqual(session_id, "sess-1")
+        self.assertEqual([endpoint for endpoint, _ in calls],
+                         ["workspace/create", "session/create"])
+        self.assertEqual(calls[0][1]["request"]["path"], str(self.workspace))
+        self.assertEqual(calls[1][1]["request"]["workspaceId"], "ws-1")
+        self.assertNotIn("cwd", calls[1][1]["request"])
 
     def test_generation_output_requires_generated_status(self):
         generated, _ = self.make_package(status="ACTIVE")
