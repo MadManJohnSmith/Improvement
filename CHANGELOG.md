@@ -1,5 +1,9 @@
 # Cambios
 
+## Propiedad del puerto 3080 en el lanzamiento — 2026-09-19
+
+- El diagnóstico del fallo real identificó `EADDRINUSE` en 3080: un escucha que el patrón de PIDs no capturó o un puerto sin liberar. La ruta de lanzamiento ahora es dueña del puerto: tras detener las instancias detectadas, `_ensure_port_free_for_dsh` resuelve el escucha del puerto vía `ss`; si su cmdline es de DSH lo detiene y reintenta hasta el plazo, y si es un proceso ajeno se niega nombrando PID y comando — nunca mata procesos foráneos a ciegas. Regresiones: parseo de `ss`, puerto libre, escucha DSH rezagada, escucha ajena y lanzamiento con puerto bloqueado. Suite completa: 357 pruebas OK (2 skips previos).
+
 ## Lanzamiento DSH no interactivo con diagnóstico — 2026-09-19
 
 - `launch_dsh_web` ya no falla a ciegas: captura la salida de DSH y la incluye en el error con cualquier token redactado, además de exponer el código de salida. La causa más probable del fallo observado ("Ok to proceed?" de npx abortando sin TTY) se elimina con `npx -y` y `stdin` nulo; el plazo de arranque es de 120s y `DSH_MODULE_ROOT`/instalación local siguen siendo responsabilidad del titular. Regresiones con proceso falso: éxito con URL, fallo con salida capturada y redacción de tokens. Suite completa: 352 pruebas OK (2 skips previos).
