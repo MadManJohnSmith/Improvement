@@ -39,7 +39,7 @@ python3 -B -m unittest discover -s tests -v
 
 ## Presets y plugin actuales
 
-Los presets de Syncify/RehabWeb y `workflow-write` demostraron composición/routing/subagentes/escritura. Son fixtures de referencia del MVP, no distribución final ni defaults de terceros.
+Los presets de Syncify/RehabWeb y `workflow-write` demostraron composición/routing/subagentes/escritura. Son fixtures de referencia del MVP, no distribución final ni defaults de terceros. El lanzamiento automático carga `workflow-write.mjs` como overlay `--patch` (`scripts/dsh-plugins/cordis-patch.yml`) sobre el perfil del titular: sin instalación en el home DSH ni dependencias; `DSH_PLUGIN_PATCH=0` lo omite.
 
 C4 debe empaquetar plugins/modos generados sin rutas absolutas del mantenedor y activar el conjunto mediante manifest/puntero gestionado.
 
