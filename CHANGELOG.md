@@ -1,5 +1,9 @@
 # Cambios
 
+## Autenticación de lanzamiento por cookie HMAC del home — 2026-09-19
+
+- El 401 del canje tiene causa identificada: el token de consola es de un solo uso y compite con el navegador que `dsh web` auto-abre — quien llega primero lo consume. La autenticación del lanzamiento prefiere ahora la cookie HMAC duradera de `~/.dsh/.credentials.yaml` (`from_dsh_home` con el puerto del URL observado), verificada con un RPC barato (`list_sessions`) antes de usarse; el canje con reintentos queda como respaldo cuando el home no aporta credenciales. Si ninguna vía verifica, el hijo se detiene y el run queda recuperable con la causa. Suite completa: 361 pruebas OK (2 skips previos).
+
 ## Canje de token tras el lanzamiento de DSH — 2026-09-19
 
 - El despacho seguía sin ocurrir tras un lanzamiento exitoso: `launch_dsh_web` entrega el cliente con la URL de token de un solo proceso, pero `authenticated` permanece `False` hasta canjear el token por la cookie de autoridad, y `run_creator` no despacha a clientes no autenticados — dejaba el hijo DSH corriendo sin usarlo. La ruta de lanzamiento ejecuta ahora `exchange_token()` tras el arranque (con kill del hijo si falla) y el despacho procede. Regresión: el canje ocurre una vez y el hijo no se mata. Suite completa: 361 pruebas OK (2 skips previos).

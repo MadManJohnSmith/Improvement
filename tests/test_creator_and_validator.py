@@ -371,11 +371,13 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIn((4140, signal.SIGTERM), killed)
         self.assertIn((4140, signal.SIGKILL), killed)
 
-    def test_launch_exchanges_token_so_dispatch_can_happen(self):
-        """Without exchange_token the client stays unauthenticated and the
-        dispatch is silently skipped."""
+    def test_launch_falls_back_to_token_exchange(self):
+        """Without home credentials the console token is the fallback; the
+        dispatch still needs it exchanged, else the client stays
+        unauthenticated and the dispatch is silently skipped."""
         fake_client = unittest.mock.Mock()
-        fake_client.authenticated = True
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_client.authenticated = False
         fake_process = unittest.mock.Mock()
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
@@ -393,8 +395,11 @@ class DshLifecycleTests(unittest.TestCase):
 
     def test_launch_path_stops_existing_and_gates_on_key(self):
         fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
         fake_client.authenticated = True
         fake_process = unittest.mock.Mock()
+        fake_home_client = unittest.mock.Mock()
+        fake_home_client.authenticated = True
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
                 unittest.mock.patch.dict(os.environ,
@@ -404,13 +409,14 @@ class DshLifecycleTests(unittest.TestCase):
                                                          fake_client)):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
-        self.assertIs(client, fake_client)
+        self.assertIsNotNone(client)
         self.assertIn("launched:dsh-web", origin)
         self.assertIn("testprov", origin)
         fake_process.kill.assert_not_called()
 
     def test_launch_path_stops_running_instance_first(self):
         fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
         fake_client.authenticated = True
         fake_process = unittest.mock.Mock()
         stopped = []
@@ -434,8 +440,11 @@ class DshLifecycleTests(unittest.TestCase):
     def test_launch_path_warns_and_proceeds_when_key_missing(self):
         """Env is not DSH's only key source: missing key warns, not blocks."""
         fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
         fake_client.authenticated = True
         fake_process = unittest.mock.Mock()
+        fake_home_client = unittest.mock.Mock()
+        fake_home_client.authenticated = True
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
                 unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
@@ -443,10 +452,15 @@ class DshLifecycleTests(unittest.TestCase):
                                            return_value=[]), \
                 unittest.mock.patch.object(cc, "launch_dsh_web",
                                            return_value=(fake_process,
-                                                         fake_client)):
+                                                         fake_client)), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    return_value=fake_home_client):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
-        self.assertIs(client, fake_client)
+        self.assertIs(client, fake_home_client)
+        fake_home_client.list_sessions.assert_called_once()
+        fake_client.exchange_token.assert_not_called()
         self.assertIn("aviso:", origin)
         self.assertIn("ningún proveedor utilizable", origin)
         self.assertIn("TEST_PROV_KEY", origin)
@@ -454,8 +468,11 @@ class DshLifecycleTests(unittest.TestCase):
 
     def test_launch_path_strict_mode_stops_when_key_missing(self):
         fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
         fake_client.authenticated = True
         fake_process = unittest.mock.Mock()
+        fake_home_client = unittest.mock.Mock()
+        fake_home_client.authenticated = True
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
                 unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
@@ -465,7 +482,10 @@ class DshLifecycleTests(unittest.TestCase):
                                            return_value=[]), \
                 unittest.mock.patch.object(cc, "launch_dsh_web",
                                            return_value=(fake_process,
-                                                         fake_client)):
+                                                         fake_client)), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    return_value=fake_home_client):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
         self.assertIsNone(client)
