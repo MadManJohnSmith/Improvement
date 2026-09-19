@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-133",
+  "type": "positive",
+  "description": "La decisión no trivial queda registrada con contexto, alternativas descartadas y consecuencias esperadas.",
+  "input": {
+    "skill": "documentation-and-adrs",
+    "context_recorded": true,
+    "alternatives_recorded": true,
+    "consequences_recorded": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "decision_record",
+    "description": "El registro permite reconstruir el porqué sin el turno original."
+  },
+  "sr_links": [],
+  "target_skill": "documentation-and-adrs"
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-140",
+  "type": "negative",
+  "description": "Durante la simplificación se cambia el contrato público y se elimina una referencia sin comprobar usos dinámicos.",
+  "input": {
+    "skill": "code-simplification",
+    "contract_changed": true,
+    "dead_code_evidence": false
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "behavior_guard",
+    "description": "Simplificación con cambio de contrato o borrado sin evidencia se bloquea."
+  },
+  "sr_links": [],
+  "target_skill": "code-simplification"
+}

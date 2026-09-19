@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-127",
+  "type": "positive",
+  "description": "El contexto se construye con piezas trazables a origen y vigencia re-verificada antes de sustentar decisiones.",
+  "input": {
+    "skill": "context-engineering",
+    "pieces_with_origin": true,
+    "staleness_reverified": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "context_inventory",
+    "description": "Cada pieza de contexto tiene origen y momento; lo caducado se degrada a hipótesis."
+  },
+  "sr_links": [],
+  "target_skill": "context-engineering"
+}

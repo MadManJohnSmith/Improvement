@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-134",
+  "type": "negative",
+  "description": "Una decisión se registra sin alternativas ni contexto y el comportamiento documentado queda contradicho por el código.",
+  "input": {
+    "skill": "documentation-and-adrs",
+    "alternatives_recorded": false,
+    "docs_contradicted": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "record_guard",
+    "description": "Registro incompleto y doc contradicha son defectos: la unidad no cierra."
+  },
+  "sr_links": [],
+  "target_skill": "documentation-and-adrs"
+}

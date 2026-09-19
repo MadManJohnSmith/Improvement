@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-141",
+  "type": "positive",
+  "description": "La retirada del contrato declara ventana y reemplazo, migra con conservación verificada y retira con inventario de consumidores vacío.",
+  "input": {
+    "skill": "deprecation-and-migration",
+    "window_declared": true,
+    "migration_verified": true,
+    "consumer_inventory_empty_verified": true,
+    "rollback_defined": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "migration_evidence",
+    "description": "Ventana, conservación, inventario y rollback constan en la evidencia."
+  },
+  "sr_links": [],
+  "target_skill": "deprecation-and-migration"
+}

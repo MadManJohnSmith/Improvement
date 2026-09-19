@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-135",
+  "type": "positive",
+  "description": "La optimización parte de línea base medida, objetivo numérico y verificación final con la misma métrica.",
+  "input": {
+    "skill": "performance-optimization",
+    "baseline_measured": true,
+    "target_declared": true,
+    "same_metric_verification": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "measurement_pair",
+    "description": "Par de mediciones comparables y comportamiento observable intacto."
+  },
+  "sr_links": [],
+  "target_skill": "performance-optimization"
+}

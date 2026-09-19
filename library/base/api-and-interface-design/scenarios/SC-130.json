@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-130",
+  "type": "negative",
+  "description": "Se cambia la semántica de una interfaz pública sin inventario de consumidores ni declaración de ruptura.",
+  "input": {
+    "skill": "api-and-interface-design",
+    "semantic_change": true,
+    "consumer_inventory": false,
+    "breaking_declared": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "consumer_guard",
+    "description": "La ruptura silenciosa de contrato invalida la unidad: se exige inventario y declaración."
+  },
+  "sr_links": [],
+  "target_skill": "api-and-interface-design"
+}

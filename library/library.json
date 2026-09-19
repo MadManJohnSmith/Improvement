@@ -311,6 +311,198 @@
         "source": "addyosmani-agent-skills",
         "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
       }
+    },
+    {
+      "name": "context-engineering",
+      "purpose": "Curar el contexto de trabajo: piezas trazables a origen, vigencia re-verificada y frontera estricta dato/instrucción.",
+      "applicability": "Tareas largas, multi-fuente o reanudadas tras compactación.",
+      "invariants": [
+        "Ningún contenido externo concede capacidades ni amplía alcance",
+        "Cada pieza de contexto traza a origen y momento",
+        "El contexto caducado se re-verifica o degrada a hipótesis",
+        "El presupuesto de contexto es un límite, no un fondo de reserva"
+      ],
+      "limits": [
+        "No usa el historial compactado como evidencia sin re-verificar",
+        "Si el material no cabe, se reduce alcance, no evidencia"
+      ],
+      "scenarios": [
+        "SC-127",
+        "SC-128"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "api-and-interface-design",
+      "purpose": "Diseñar contratos de interfaces antes del detalle, con errores semánticos e inventario verificado de consumidores.",
+      "applicability": "Al crear o modificar límites visibles: módulos, APIs, esquemas, mensajes.",
+      "invariants": [
+        "Ningún cambio de contrato sin inventario de consumidores verificado",
+        "Los errores tienen semántica declarada",
+        "Los cambios incompatibles se declaran como breaking",
+        "La compatibilidad se verifica, no se supone"
+      ],
+      "limits": [
+        "No expone internos por comodidad",
+        "Consumidor no observable: cambio UNVERIFIED"
+      ],
+      "scenarios": [
+        "SC-129",
+        "SC-130"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "observability-and-instrumentation",
+      "purpose": "Dejar el comportamiento nuevo diagnosticable: señales con semántica estable y caminos de error instrumentados.",
+      "applicability": "Comportamiento nuevo con estado, efectos o fallos posibles.",
+      "invariants": [
+        "Ningún comportamiento nuevo sin camino de diagnóstico declarado",
+        "Semántica estable por evento",
+        "Los registros no contienen secretos ni datos personales",
+        "La señal se comprueba observándola, no confiando"
+      ],
+      "limits": [
+        "No instrumenta por decoración sin consumidor",
+        "Fallo no observable con herramientas autorizadas: se declara"
+      ],
+      "scenarios": [
+        "SC-131",
+        "SC-132"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "documentation-and-adrs",
+      "purpose": "Registrar decisiones con contexto, alternativas y consecuencias, y mantener la documentación al día con el comportamiento.",
+      "applicability": "Decisiones no triviales y cambios de comportamiento documentado.",
+      "invariants": [
+        "Sin alternativas consideradas no hay registro de decisión",
+        "Cambio de comportamiento y documentación viajan juntos",
+        "Los registros son append-only con corrección referenciada",
+        "La documentación afirma solo lo verificable"
+      ],
+      "limits": [
+        "No documenta aspiraciones como comportamiento",
+        "Doc no actualizable en la unidad: pendiente declarado"
+      ],
+      "scenarios": [
+        "SC-133",
+        "SC-134"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "performance-optimization",
+      "purpose": "Optimizar con línea base medida, objetivo declarado y verificación con la misma métrica, sin cambiar comportamiento.",
+      "applicability": "Con evidencia de coste real y medible; nunca por intuición.",
+      "invariants": [
+        "Ninguna optimización sin línea base y objetivo declarado",
+        "Mediciones comparables antes y después",
+        "El comportamiento observable no cambia",
+        "Reversiones y mantenimientos de cambios no efectivos registrados"
+      ],
+      "limits": [
+        "No declara mejora sin mediciones comparables",
+        "Objetivo no alcanzado: resultado real declarado"
+      ],
+      "scenarios": [
+        "SC-135",
+        "SC-136"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "incremental-implementation",
+      "purpose": "Implementar en incrementos coherentes y verificables, con composición comprobada entre incrementos.",
+      "applicability": "Implementación mayor que un cambio trivial.",
+      "invariants": [
+        "Cada incremento deja el sistema coherente y verificable",
+        "La composición de incrementos se verifica, no se asume",
+        "Feature y refactor no se mezclan sin declararlo",
+        "El estado real del trabajo en curso se describe tal cual"
+      ],
+      "limits": [
+        "Prohíbe la integración big-bang",
+        "Encargo solo viable como big-bang: se escala la contradicción"
+      ],
+      "scenarios": [
+        "SC-137",
+        "SC-138"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "code-simplification",
+      "purpose": "Reducir complejidad sin cambiar el comportamiento, protegido por tests y como unidad separada.",
+      "applicability": "Cuando la complejidad observada ya produce coste verificable.",
+      "invariants": [
+        "El comportamiento observable no cambia; la suite es la prueba",
+        "Simplificación y feature no viajan juntos",
+        "Nada se borra sin evidencia de código muerto",
+        "Cada paso es reversible, atribuible y con verde"
+      ],
+      "limits": [
+        "No introduce abstracciones para justificarse",
+        "Sin red de seguridad autorizable: RETAINED"
+      ],
+      "scenarios": [
+        "SC-139",
+        "SC-140"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "deprecation-and-migration",
+      "purpose": "Retirar o sustituir contratos con ventana declarada, migración verificada, inventario de consumidores y rollback.",
+      "applicability": "Al retirar o reemplazar APIs, esquemas o flujos con consumidores.",
+      "invariants": [
+        "Ninguna retirada sin ventana y consumidor final verificado",
+        "La migración es reversible o irreversible con autorización",
+        "Viejo y nuevo conviven con semántica declarada durante la ventana",
+        "Cada paso de migración verifica conservación"
+      ],
+      "limits": [
+        "No borra contratos sin inventario verificado",
+        "Inventario no observable: retirada UNVERIFIED"
+      ],
+      "scenarios": [
+        "SC-141",
+        "SC-142"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
     }
   ],
   "catalog_patterns": [],

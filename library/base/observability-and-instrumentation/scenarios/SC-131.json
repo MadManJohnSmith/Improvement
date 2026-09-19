@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-131",
+  "type": "positive",
+  "description": "El comportamiento nuevo declara cómo se detectaría su fallo y la señal se comprueba observándola en ámbito desechable.",
+  "input": {
+    "skill": "observability-and-instrumentation",
+    "failure_path_declared": true,
+    "signal_observed": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "signal_evidence",
+    "description": "La señal de diagnóstico aparece bajo fallo provocado, con semántica estable."
+  },
+  "sr_links": [],
+  "target_skill": "observability-and-instrumentation"
+}

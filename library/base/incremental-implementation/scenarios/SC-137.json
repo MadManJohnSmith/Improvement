@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-137",
+  "type": "positive",
+  "description": "La implementación avanza en incrementos coherentes, cada uno verificado y compuesto con el anterior.",
+  "input": {
+    "skill": "incremental-implementation",
+    "increments_verified": "each",
+    "composition_checked": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "increment_evidence",
+    "description": "Cada incremento cierra verde y la composición se comprueba, no se asume."
+  },
+  "sr_links": [],
+  "target_skill": "incremental-implementation"
+}

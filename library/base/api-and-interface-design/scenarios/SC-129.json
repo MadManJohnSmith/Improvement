@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-129",
+  "type": "positive",
+  "description": "El cambio de contrato declara entradas, salidas, errores y un inventario de consumidores verificado.",
+  "input": {
+    "skill": "api-and-interface-design",
+    "contract_declared": true,
+    "consumer_inventory_verified": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "contract_record",
+    "description": "El contrato y sus consumidores quedan registrados antes de implementar."
+  },
+  "sr_links": [],
+  "target_skill": "api-and-interface-design"
+}
