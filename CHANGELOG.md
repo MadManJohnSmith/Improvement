@@ -1,5 +1,11 @@
 # Cambios
 
+## Ciclo de vida DSH y puerta de llave API — 2026-09-19
+
+- Puerta de proveedor fail-closed antes de despachar: `dsh_provider_status` lee la estructura de `settings.yaml` del home de DSH (proveedor por defecto en `agent-default-model`, su `apiKeyEnv` y modelos) y verifica que la variable de llave exista en el entorno — solo el NOMBRE, jamás el valor, incluida la inspección por nombre del entorno de instancias DSH en ejecución vía `/proc`. Sin proveedor, sin modelos o sin llave, el despacho se detiene con la pieza concreta que falta; ninguna clave se lee, copia ni registra.
+- La ruta de lanzamiento (`--launch-dsh`) es dueña del ciclo de vida de DSH: detecta instancias DSH web en ejecución por comando exacto (`@deepseek-ai/dsh` con `web`/`--profile web`), las detiene (SIGTERM, espera, SIGKILL de respaldo, PIDs como evidencia) y arranca una instancia fresca con la configuración vigente. Si la puerta de llave falla tras arrancar, el hijo se detiene y el run queda recuperable con el aviso.
+- Implementado contra la configuración real observada (`~/.dsh/settings.yaml`, proveedores con `apiKeyEnv`); regresiones con fixtures de home DSH: estado del proveedor con/sin llave, detección de PIDs exacta, escalada de señales, y las cuatro rutas de adquisición (lanzamiento con llave, lanzamiento deteniendo instancia previa, lanzamiento con llave ausente que mata al hijo, sesión existente sin llave). Suite completa: 346 pruebas OK (2 skips previos).
+
 ## Despacho automático de Creator — 2026-09-19
 
 - `creator_client.run_creator` adquiere la sesión DSH local por sí misma cuando se le pide (`acquire=True`): cliente inyectado, variable `DSH_HOME` o casas estándar (`~/.dsh`, `~/.deepseek`, `~/.config/dsh`), verificando que el servidor responda al intercambio de token; con `--launch-dsh` arranca `dsh web` como hijo (nunca descarga DSH por iniciativa propia). Sin sesión autenticada devuelve `PREPARED` con la acción concreta, en estado recuperable.
