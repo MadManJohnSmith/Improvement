@@ -236,7 +236,7 @@ class CreatorTests(Base):
 
 
 def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
-                    models=2, default_provider=None):
+                    models=2, default_provider=None, extra_providers=()):
     """Fixture DSH home: credentials plus a structural settings.yaml."""
     home = Path(home)
     home.mkdir(parents=True, exist_ok=True)
@@ -255,6 +255,13 @@ def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
         if api_key_env:
             provider_block += f"      apiKeyEnv: {api_key_env}\n"
         provider_block += f"      models:\n{models_yaml}"
+    for name, env_name, count in extra_providers:
+        provider_block += f"    {name}:\n"
+        if env_name:
+            provider_block += f"      apiKeyEnv: {env_name}\n"
+        provider_block += "      models:\n" + "".join(
+            f"        - id: {name}-model-{i}\n          name: M{i}\n"
+            for i in range(count))
     (home / "settings.yaml").write_text(
         "agent-default-model:\n"
         f"  provider: {default_provider or provider or 'none'}\n"
@@ -279,7 +286,22 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertEqual(status["provider"], "testprov")
         self.assertEqual(status["api_key_env"], "TEST_PROV_KEY")
 
-    def test_provider_status_warns_and_stops_without_key(self):
+    def test_provider_status_falls_back_when_default_key_missing(self):
+        """The default provider's key is not required: any usable one wins."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.dict(os.environ, {"PROV_B_KEY": "x"}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]):
+            home = _write_dsh_home(
+                tmp, extra_providers=[("prov-b", "PROV_B_KEY", 1)])
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "prov-b")
+        self.assertEqual(status["source"], "fallback")
+        self.assertIn("llave TEST_PROV_KEY ausente", str(status["skipped"]))
+
+    def test_provider_status_stops_when_no_provider_is_usable(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
                 unittest.mock.patch.object(cc, "_find_dsh_pids",
@@ -287,15 +309,18 @@ class DshLifecycleTests(unittest.TestCase):
             home = _write_dsh_home(tmp)
             status = cc.dsh_provider_status(home)
         self.assertFalse(status["ok"])
-        self.assertIn("llave API ausente", status["reason"])
+        self.assertIn("ningún proveedor utilizable", status["reason"])
         self.assertIn("TEST_PROV_KEY", status["reason"])
 
-    def test_provider_status_fails_without_default_provider(self):
-        with tempfile.TemporaryDirectory() as tmp:
+    def test_provider_status_ignores_unknown_default_and_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
             home = _write_dsh_home(tmp, default_provider="ghost")
             status = cc.dsh_provider_status(home)
-        self.assertFalse(status["ok"])
-        self.assertIn("no está en providers", status["reason"])
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "testprov")
+        self.assertEqual(status["source"], "fallback")
 
     def test_provider_status_fails_without_models(self):
         with tempfile.TemporaryDirectory() as tmp, \
@@ -386,7 +411,8 @@ class DshLifecycleTests(unittest.TestCase):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
         self.assertIsNone(client)
-        self.assertIn("llave API ausente", origin)
+        self.assertIn("ningún proveedor utilizable", origin)
+        self.assertIn("TEST_PROV_KEY", origin)
         fake_process.kill.assert_called_once()
 
     def test_existing_session_without_key_stops_before_dispatch(self):
@@ -401,7 +427,7 @@ class DshLifecycleTests(unittest.TestCase):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client()
         self.assertIsNone(client)
-        self.assertIn("llave API ausente", origin)
+        self.assertIn("ningún proveedor utilizable", origin)
 
 
 
