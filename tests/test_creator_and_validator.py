@@ -240,6 +240,8 @@ class CreatorTests(Base):
         self.assertIn("no proveedores/modelos/routing nuevos", prompt.lower())
         self.assertIn("danger-full-access", prompt)
         self.assertIn("Nunca enviar `sandbox_permissions`", prompt)
+        self.assertIn("workflow_write", prompt)
+        self.assertIn("subagentes", prompt)
         self.assertIn("bootstrap.py accept", prompt)
 
     def test_prompt_embeds_materialized_library(self):
@@ -586,6 +588,25 @@ class LaunchDshWebTests(unittest.TestCase):
         self.assertNotIn("SECRETVALUE", message)
         self.assertIn("token=<redacted>", message)
 
+    def test_launch_command_appends_plugin_patch_overlay(self):
+        """The launch loads the workflow-write overlay beside the patch file
+        (M-pilot: upstream write rejects same-mode sandbox_permissions)."""
+        argv = cc._patched_launch_command(
+            ("npx", "-y", "@deepseek-ai/dsh", "web"))
+        self.assertEqual(argv[-2:-1], ["--patch"])
+        self.assertEqual(Path(argv[-1]), cc.DSH_PLUGIN_PATCH)
+        self.assertTrue(cc.DSH_PLUGIN_PATCH.is_file())
+        self.assertEqual(cc.DSH_PLUGIN_PATCH.parent.name, "dsh-plugins")
+
+    def test_launch_command_skips_patch_when_disabled_or_missing(self):
+        with unittest.mock.patch.dict(os.environ,
+                                      {"DSH_PLUGIN_PATCH": "0"}):
+            self.assertEqual(
+                cc._patched_launch_command(("dsh", "web")), ["dsh", "web"])
+        with unittest.mock.patch.object(
+                cc, "DSH_PLUGIN_PATCH", Path("/nonexistent/cordis-patch.yml")):
+            self.assertEqual(
+                cc._patched_launch_command(("dsh", "web")), ["dsh", "web"])
 
     def test_port_listener_pid_parses_ss(self):
         fake = unittest.mock.Mock()

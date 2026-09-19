@@ -280,6 +280,12 @@ Escribe bajo `{run_dir}/generated/`:
    denegación NO aplica a esta misión. El workspace del run es escribible en
    el modo vigente y las lecturas no necesitan permiso; una denegación indica
    un intento fuera de alcance: se reporta como hallazgo, nunca se escala
+9. Para escribir archivos usa el tool `workflow_write` (no `write`). Al
+   delegar trabajo a subagentes, cada tarea debe repetirles: usar
+   `workflow_write` para escribir y jamás enviar `sandbox_permissions` ni
+   `justification` — en sesiones delegadas las aprobaciones se rechazan
+   automáticamente, así que una denegación ahí es final: se reporta al
+   delegante, nunca se reintenta con escalada
 
 ## Al finalizar
 
@@ -709,6 +715,24 @@ class CreatorSession:
         }
 
 
+DSH_PLUGIN_PATCH = Path(__file__).resolve().parent / "dsh-plugins" / "cordis-patch.yml"
+
+
+def _patched_launch_command(command):
+    """Append ``--patch`` to the launch argv when the plugin overlay exists.
+
+    The overlay loads ``workflow-write.mjs`` (same-mode ``sandbox_permissions``
+    is not an escalation), fixing the upstream write rejection observed in the
+    pilot. DSH fails loud when a named overlay cannot apply, so the file must
+    exist; DSH_PLUGIN_PATCH=0 launches without it for escapes.
+    """
+    if os.environ.get("DSH_PLUGIN_PATCH") == "0":
+        return list(command)
+    if not DSH_PLUGIN_PATCH.is_file():
+        return list(command)
+    return [*command, "--patch", str(DSH_PLUGIN_PATCH)]
+
+
 def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
                    env=None, spawn_timeout=120):
     """Launch DSH web and return ``(process, client)`` after token capture.
@@ -724,8 +748,9 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
     if env:
         child_env.update(env)
     process = subprocess.Popen(
-        list(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL, text=True, bufsize=1, env=child_env,
+        _patched_launch_command(command), stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
+        bufsize=1, env=child_env,
     )
     captured = []
     deadline = time.time() + spawn_timeout

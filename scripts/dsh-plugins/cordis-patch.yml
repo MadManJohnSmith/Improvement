@@ -1,0 +1,8 @@
+# Overlay de arranque DSH: carga workflow-write.mjs junto a este archivo.
+# El runtime upstream rechaza write/bash con sandbox_permissions igual al
+# modo vigente («not strictly wider», defecto M7); este plugin registra
+# workflow_write con el resolver corregido. Se aplica vía
+# `dsh web --patch <este archivo>` desde launch_dsh_web; no instala nada
+# en el home DSH. Un overlay que no puede aplicarse falla loud en el boot.
+- insert:
+  - name: ./workflow-write.mjs
