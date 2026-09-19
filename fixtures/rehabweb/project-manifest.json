@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "name": "RehabWeb",
+  "root_identity": "0f649be2768810bd7e9aa4c8ce8a914608caf1507094b71ab378fa882a224173",
+  "base_revision": "rev-rehabweb-fixture-001",
+  "inventory": {
+    "total_files": 95,
+    "total_bytes": 380000,
+    "languages": [
+      "python",
+      "typescript",
+      "sql"
+    ],
+    "areas": [
+      {
+        "name": "backend",
+        "path": "backend/",
+        "file_count": 40,
+        "description": "FastAPI REST backend"
+      },
+      {
+        "name": "frontend",
+        "path": "frontend/",
+        "file_count": 50,
+        "description": "React SPA frontend"
+      },
+      {
+        "name": "migrations",
+        "path": "migrations/",
+        "file_count": 5,
+        "description": "Alembic migrations"
+      }
+    ]
+  },
+  "authority": {
+    "holder": "user",
+    "source": "fixture-declared"
+  }
+}
