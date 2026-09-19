@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-109",
+  "type": "positive",
+  "description": "El test nuevo se observa en rojo por la razón correcta antes de implementar y en verde tras la implementación mínima.",
+  "input": {
+    "skill": "test-driven-development",
+    "red_observed": true,
+    "red_reason": "assertion",
+    "green_observed": true,
+    "full_suite_run": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "test_output",
+    "description": "Salidas de rojo y verde citadas; suite completa ejecutada."
+  },
+  "sr_links": [],
+  "target_skill": "test-driven-development"
+}

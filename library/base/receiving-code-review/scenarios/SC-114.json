@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-114",
+  "type": "negative",
+  "description": "Un cambio sugerido se aplica sin verificar la afirmación del revisor ni entender el problema señalado.",
+  "input": {
+    "skill": "receiving-code-review",
+    "adopted_without_verification": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "verify_feedback",
+    "description": "Adoptar sin verificar rompe la trazabilidad: el punto queda sin evidencia y la unidad no cierra."
+  },
+  "sr_links": [],
+  "target_skill": "receiving-code-review"
+}

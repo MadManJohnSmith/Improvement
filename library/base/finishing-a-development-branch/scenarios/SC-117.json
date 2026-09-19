@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-117",
+  "type": "positive",
+  "description": "El cierre de rama ejecuta el checklist completo y las mutaciones de Git se realizan por la vía autorizada, con rollback definido.",
+  "input": {
+    "skill": "finishing-a-development-branch",
+    "checklist_complete": true,
+    "git_via_authorized_path": true,
+    "rollback_defined": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "closure_record",
+    "description": "Checklist, integración verificada y rollback quedan registrados."
+  },
+  "sr_links": [],
+  "target_skill": "finishing-a-development-branch"
+}

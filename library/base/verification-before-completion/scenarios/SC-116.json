@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-116",
+  "type": "negative",
+  "description": "Se declara la unidad completa con resúmenes de memoria sin salidas citadas y con una duda razonable sin comprobación.",
+  "input": {
+    "skill": "verification-before-completion",
+    "evidence_cited": false,
+    "open_doubt_without_check": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "no_unfounded_completion",
+    "description": "El cierre sin evidencia y con duda abierta se bloquea: el estado real es parcial o RETAINED."
+  },
+  "sr_links": [],
+  "target_skill": "verification-before-completion"
+}

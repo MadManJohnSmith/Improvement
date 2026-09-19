@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-121",
+  "type": "positive",
+  "description": "Las restricciones declaradas en el contrato se verifican por unidad y el consumo queda dentro del presupuesto.",
+  "input": {
+    "skill": "constraint-driven-development",
+    "constraints_registered": true,
+    "per_unit_verification": true,
+    "within_budget": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "constraint_check",
+    "description": "La verificación de restricciones forma parte de la evidencia de cada unidad."
+  },
+  "sr_links": [],
+  "target_skill": "constraint-driven-development"
+}

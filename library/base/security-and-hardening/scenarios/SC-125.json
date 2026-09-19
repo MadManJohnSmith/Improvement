@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-125",
+  "type": "positive",
+  "description": "Los mínimos de seguridad se aplican: secretos redactados, fronteras validadas, privilegio mínimo y dependencia nueva registrada.",
+  "input": {
+    "skill": "security-and-hardening",
+    "secrets_redacted": true,
+    "inputs_validated": true,
+    "least_privilege": true,
+    "dependency_registered": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "security_minima",
+    "description": "Los mínimos aplicados constan en la evidencia de la unidad."
+  },
+  "sr_links": [],
+  "target_skill": "security-and-hardening"
+}

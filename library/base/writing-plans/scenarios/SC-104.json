@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-104",
+  "type": "write-violation",
+  "description": "Una unidad del plan implica escrituras que el encargo no autoriza y el plan no las marca como requiriendo autorización.",
+  "input": {
+    "skill": "writing-plans",
+    "unit_declares_write_outside_scope": true,
+    "authorization_noted": false
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "scope_guard",
+    "description": "La unidad sin autorización declarada impide aceptar el plan; se exige declaración o exclusión."
+  },
+  "sr_links": [],
+  "target_skill": "writing-plans"
+}

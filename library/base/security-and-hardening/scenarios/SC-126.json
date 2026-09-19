@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-126",
+  "type": "negative",
+  "description": "Durante la unidad aparece un secreto en una salida o evidencia y se continúa sin detener ni redactar.",
+  "input": {
+    "skill": "security-and-hardening",
+    "secret_in_output": true,
+    "unit_stopped": false
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "secret_guard",
+    "description": "La salida con secreto detiene la unidad, redacta el valor y escala la rotación."
+  },
+  "sr_links": [],
+  "target_skill": "security-and-hardening"
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-110",
+  "type": "negative",
+  "description": "La implementación se escribe primero y el test se adapta después hasta pasar, sin rojo observado.",
+  "input": {
+    "skill": "test-driven-development",
+    "implementation_first": true,
+    "red_observed": false
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "tdd_guard",
+    "description": "Sin rojo observado no hay TDD: la unidad queda retenida para reordenar el trabajo."
+  },
+  "sr_links": [],
+  "target_skill": "test-driven-development"
+}

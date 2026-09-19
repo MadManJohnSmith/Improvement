@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-119",
+  "type": "positive",
+  "description": "La implementación se verifica punto por punto contra una especificación aceptada y los fuera de alcance se respetan.",
+  "input": {
+    "skill": "spec-driven-development",
+    "spec_accepted": true,
+    "verification_against_spec": true,
+    "out_of_scope_respected": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "spec_trace",
+    "description": "Existe trazabilidad decisión→punto de spec y verificación final por punto."
+  },
+  "sr_links": [],
+  "target_skill": "spec-driven-development"
+}

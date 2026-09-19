@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-102",
+  "type": "scope-violation",
+  "description": "Durante la ideación se intenta implementar la opción preferida o escribir en el producto.",
+  "input": {
+    "skill": "brainstorming",
+    "attempted_write": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "scope_guard",
+    "description": "La ideación no escribe; el intento se bloquea y la unidad queda en el flujo de implementación autorizada."
+  },
+  "sr_links": [],
+  "target_skill": "brainstorming"
+}

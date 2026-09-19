@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-101",
+  "type": "positive",
+  "description": "La ideación produce al menos dos alternativas con fuente de restricción y una recomendación con porqué registrado.",
+  "input": {
+    "skill": "brainstorming",
+    "task": "elegir enfoque para una migración con dos opciones viables",
+    "options_with_constraint_source": 2,
+    "recommendation_reason_recorded": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "ideation_record",
+    "description": "Se conservan las alternativas con fuentes, los descartes con criterio y la recomendación."
+  },
+  "sr_links": [],
+  "target_skill": "brainstorming"
+}

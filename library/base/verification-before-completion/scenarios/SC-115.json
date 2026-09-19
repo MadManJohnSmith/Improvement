@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-115",
+  "type": "positive",
+  "description": "Cada criterio de finalización cierra con evidencia externa citada y los pendientes quedan declarados.",
+  "input": {
+    "skill": "verification-before-completion",
+    "criteria_with_evidence": "all",
+    "pendings_declared": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "completion_evidence",
+    "description": "El cierre lista criterio→evidencia y estados reales por ítem."
+  },
+  "sr_links": [],
+  "target_skill": "verification-before-completion"
+}

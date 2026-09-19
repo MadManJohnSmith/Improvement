@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-111",
+  "type": "positive",
+  "description": "La solicitud de revisión fija el candidato por hash, declara el feedback buscado y proporciona camino de verificación ejecutable.",
+  "input": {
+    "skill": "requesting-code-review",
+    "candidate_hash": true,
+    "verification_path": true,
+    "independent_reviewer": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "review_request",
+    "description": "La revisión puede reproducirse sobre el candidato exacto sin reconstruir contexto."
+  },
+  "sr_links": [],
+  "target_skill": "requesting-code-review"
+}

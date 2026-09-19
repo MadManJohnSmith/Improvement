@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-113",
+  "type": "positive",
+  "description": "Cada punto del feedback queda aceptado con cambio verificado o rechazado con motivo registrado, sobre el candidato revisado.",
+  "input": {
+    "skill": "receiving-code-review",
+    "points_all_triaged": true,
+    "accepted_with_evidence": true,
+    "rejected_with_reason": true,
+    "candidate_hash_match": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "triage_record",
+    "description": "La tabla de puntos es completa y trazable al candidato exacto."
+  },
+  "sr_links": [],
+  "target_skill": "receiving-code-review"
+}

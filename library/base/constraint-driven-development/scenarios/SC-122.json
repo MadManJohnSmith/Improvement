@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-122",
+  "type": "negative",
+  "description": "Una unidad toca un archivo fuera de la lista permitida y continúa sin registrar la violación ni escalar.",
+  "input": {
+    "skill": "constraint-driven-development",
+    "file_outside_allowlist": true,
+    "violation_recorded": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "violation_escalated",
+    "description": "La violación silenciada es un fallo: la unidad se detiene y se escala la decisión."
+  },
+  "sr_links": [],
+  "target_skill": "constraint-driven-development"
+}

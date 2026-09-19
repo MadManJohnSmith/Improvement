@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-108",
+  "type": "negative",
+  "description": "Se propone una corrección sin reproducción del fallo ni causa demostrada.",
+  "input": {
+    "skill": "systematic-debugging",
+    "reproduction_saved": false,
+    "fix_proposed": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "no_blind_fix",
+    "description": "La corrección especulativa se bloquea; el estado correcto es UNVERIFIED con causa."
+  },
+  "sr_links": [],
+  "target_skill": "systematic-debugging"
+}
