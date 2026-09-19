@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:instructions-index:1",
+  "title": "Instructions index",
+  "description": "Index of all project instructions at discovery/instructions-index.json. Indexes content without copying it to hot path.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": ["schema_version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/instruction_entry"
+      }
+    }
+  },
+  "$defs": {
+    "instruction_entry": {
+      "type": "object",
+      "required": ["path", "scope", "precedence", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path to the instruction file."
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["global", "workspace", "directory", "file"],
+          "description": "Scope level of the instruction."
+        },
+        "precedence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Higher value = higher precedence."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sections": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "facts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Observed facts extracted from this instruction."
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Constraints imposed by this instruction."
+        },
+        "unknowns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Unresolved questions from this instruction."
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Conflicts with other instructions."
+        }
+      }
+    }
+  }
+}

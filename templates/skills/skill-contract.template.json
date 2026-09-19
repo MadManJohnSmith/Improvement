@@ -1,0 +1,23 @@
+{
+  "$schema": "urn:dsh-flow:skills:1",
+  "schema_version": 1,
+  "name": "{{SKILL_NAME}}",
+  "motive": "{{RECURRING_PROCEDURE_MOTIVE}}",
+  "domain": ["{{DOMAIN_AREA}}"],
+  "reuse_source": "{{REUSE_SOURCE}}",
+  "inputs": ["project source"],
+  "outputs": ["structured evidence"],
+  "required_capabilities": ["product_read"],
+  "forbidden_capabilities": ["product_write", "network"],
+  "files": [
+    {
+      "path": "SKILL.md",
+      "type": "entrypoint",
+      "max_bytes": 32768
+    }
+  ],
+  "behavior_test": "SC-001",
+  "provenance": {
+    "license": "proprietary"
+  }
+}

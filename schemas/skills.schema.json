@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:skills:1",
+  "title": "Skill contract",
+  "description": "Contract for a generated or cataloged skill. Located in generated/skills/<name>/. Skills use progressive disclosure with SKILL.md as entrypoint router.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "motive",
+    "domain",
+    "reuse_source",
+    "inputs",
+    "outputs",
+    "required_capabilities",
+    "forbidden_capabilities",
+    "files",
+    "behavior_test",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Skill name, project-prefixed for specific skills."
+    },
+    "motive": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why this skill exists — recurring procedure, evidence, boundaries."
+    },
+    "evidence": {
+      "type": "string",
+      "description": "Evidence supporting the need for this skill."
+    },
+    "domain": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Domain areas or units where this skill applies."
+    },
+    "reuse_source": {
+      "type": "string",
+      "enum": [
+        "base-library",
+        "specialized-catalog",
+        "composition",
+        "override",
+        "extension"
+      ]
+    },
+    "reuse_justification": {
+      "type": "string",
+      "description": "Required when reuse_source is 'extension'."
+    },
+    "replaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skill": { "type": "string", "description": "Name of prior skill being replaced." },
+        "reason": { "type": "string" }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "outputs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "forbidden_capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "prohibited_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tools this skill must not use."
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "type": {
+            "type": "string",
+            "enum": [
+              "entrypoint",
+              "mode",
+              "internal",
+              "reference",
+              "template",
+              "adapter",
+              "asset"
+            ]
+          },
+          "max_bytes": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "minItems": 1,
+      "description": "All files in this skill with types and optional size limits."
+    },
+    "hot_paths": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 1 },
+      "description": "Aggregate byte budgets for named hot paths."
+    },
+    "load_test": {
+      "type": "string",
+      "description": "Reference to load/context budget test."
+    },
+    "behavior_test": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to the behavior test for this skill."
+    },
+    "activation_criteria": {
+      "type": "string",
+      "description": "When this skill activates (condition or trigger)."
+    },
+    "invariants": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "anti_goals": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["license"],
+      "additionalProperties": false,
+      "properties": {
+        "license": { "type": "string", "minLength": 1 },
+        "source": { "type": "string" },
+        "commit": { "type": "string" },
+        "notice": { "type": "string" }
+      }
+    }
+  }
+}

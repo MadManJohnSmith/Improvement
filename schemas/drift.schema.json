@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:drift:1",
+  "title": "Drift analysis",
+  "description": "Drift detection results comparing project base, contracts, accepted generation, installed skills, and current project state. Located at drift/source-drift.json or drift/installed-drift.json.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "comparison_points",
+    "entries"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comparison_points": {
+      "type": "object",
+      "required": ["project_base", "accepted_generation"],
+      "additionalProperties": false,
+      "properties": {
+        "project_base": {
+          "type": "string",
+          "description": "Revision of the project base used."
+        },
+        "normalized_contract": {
+          "type": "string",
+          "description": "Digest of the normalized contract."
+        },
+        "accepted_generation": {
+          "type": "string",
+          "description": "Generation ID of the accepted generation."
+        },
+        "installed_digest": {
+          "type": "string",
+          "description": "Digest of the currently installed skills/modes."
+        },
+        "current_project": {
+          "type": "string",
+          "description": "Current project revision."
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/drift_entry"
+      }
+    },
+    "update_plan_ref": {
+      "type": "string",
+      "description": "Relative path to drift/update-plan.json if action is needed."
+    }
+  },
+  "$defs": {
+    "drift_entry": {
+      "type": "object",
+      "required": ["path", "status", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path of the drifted artifact."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "CURRENT",
+            "SOURCE_DRIFT",
+            "NON_GOVERNING_CHANGE",
+            "LOCAL_SKILL_EDIT",
+            "CONTRACT_DRIFT",
+            "ORPHANED",
+            "AMBIGUOUS_SCOPE",
+            "STALE_REFERENCE",
+            "UNVERIFIED"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where this drift was detected."
+        },
+        "detail": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "none",
+            "regenerate",
+            "update",
+            "conflict",
+            "remove"
+          ],
+          "description": "Recommended action. Default is none."
+        }
+      }
+    }
+  }
+}

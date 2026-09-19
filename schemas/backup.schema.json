@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:backup:1",
+  "title": "Backup manifest",
+  "description": "Complete backup state before installation. Located at backup/previous-manifest.json. Backup must be verified before any destination is touched.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "timestamp",
+    "previous_generation_id",
+    "entries",
+    "hashes_digest",
+    "verified"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Generation being installed (new)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "previous_generation_id": {
+      "type": "string",
+      "description": "Generation being replaced, if any."
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/backup_entry"
+      }
+    },
+    "hashes_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the sorted hashes of all backed-up files."
+    },
+    "verified": {
+      "type": "boolean",
+      "description": "Whether the backup has been verified (all hashes checked)."
+    },
+    "restore_plan_ref": {
+      "type": "string",
+      "description": "Relative path to backup/restore-plan.json."
+    }
+  },
+  "$defs": {
+    "backup_entry": {
+      "type": "object",
+      "required": ["path", "sha256", "disposition"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path of the backed-up file."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "identical",
+            "new",
+            "managed-modified",
+            "external",
+            "local-edit"
+          ],
+          "description": "How this file relates to the new generation. identical=skip, new=create, managed-modified=backup+replace, external/local-edit=conflict RETAINED."
+        },
+        "backup_path": {
+          "type": "string",
+          "description": "Path within backup/previous-skills/ where the original is stored."
+        }
+      }
+    }
+  }
+}

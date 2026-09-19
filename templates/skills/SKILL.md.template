@@ -1,0 +1,30 @@
+---
+name: {{SKILL_NAME}}
+description: {{SKILL_DESCRIPTION}}
+---
+
+# {{SKILL_NAME}}
+
+Router entrypoint for `{{SKILL_NAME}}`. Max 32 KiB entry budget.
+
+## Activation Criteria
+
+Activates when: {{ACTIVATION_CRITERIA}}
+
+## Progressive Disclosure Branches
+
+- Specific procedures: `modes/`
+- Internal policies: `internal/`
+- References and contracts: `references/`
+- Rendered templates: `templates/`
+- Adapters: `adapters/`
+
+## Required and Forbidden Capabilities
+
+- Required: `{{REQUIRED_CAPABILITIES}}`
+- Forbidden: `{{FORBIDDEN_CAPABILITIES}}`
+
+## Proof and Tests
+
+Validation scenario: `{{TEST_SCENARIO_REF}}`
+Budget limit: entrypoint <= 32768 bytes, support files <= 24576 bytes.

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:rollback:1",
+  "title": "Rollback receipt",
+  "description": "Receipt for a rollback operation at accept/rollback-receipt.json. Proves the previous state was restored and verified.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "rolled_back_to",
+    "reason",
+    "timestamp",
+    "verification"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Generation that was rolled back (the failed install)."
+    },
+    "rolled_back_to": {
+      "type": "string",
+      "description": "Generation ID of the state restored, or 'clean' if no prior generation."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verification": {
+      "type": "object",
+      "required": ["hashes_match", "files_restored"],
+      "additionalProperties": false,
+      "properties": {
+        "hashes_match": {
+          "type": "boolean",
+          "description": "Whether all restored file hashes match the backup."
+        },
+        "files_restored": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "New files from the failed generation that were removed."
+        }
+      }
+    },
+    "recovery_required": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if rollback could not be fully verified and manual recovery is needed."
+    }
+  }
+}

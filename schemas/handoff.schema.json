@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:handoff:1",
+  "title": "Handoff event",
+  "description": "An event in the handoff protocol between Creator and Host. Events form a chain tracked by run and digest.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "run_id",
+    "source_actor",
+    "target_actor",
+    "reason"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "creator.generation.complete",
+        "bootstrap.accept.request",
+        "host.accepted",
+        "host.retained",
+        "repair.complete",
+        "repair.blocked",
+        "host.rejected"
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 digest of the candidate being handed off."
+    },
+    "source_actor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Actor initiating this handoff. Cannot be same as target_actor."
+    },
+    "target_actor": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Actor receiving this handoff."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to evidence supporting this handoff."
+    },
+    "allowed_next_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions the target actor may take after this event."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt number for this handoff chain."
+    },
+    "parent_event_id": {
+      "type": "string",
+      "description": "ID of the parent event in the handoff chain, if any."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Unique key to prevent duplicate processing of this event."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

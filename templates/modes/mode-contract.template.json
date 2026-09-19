@@ -1,0 +1,63 @@
+{
+  "$schema": "urn:dsh-flow:modes:1",
+  "schema_version": 1,
+  "name": "{{PROJECT_NAME}}-{{MODE_TYPE}}",
+  "purpose": "{{MODE_PURPOSE}}",
+  "reuse_source": "{{REUSE_SOURCE}}",
+  "triggers": [
+    "{{PRIMARY_TRIGGER}}"
+  ],
+  "anti_triggers": [
+    "unauthorized write",
+    "unresolved material decision"
+  ],
+  "inputs": [
+    "product source",
+    "instructions index"
+  ],
+  "reads": [
+    "product/"
+  ],
+  "writes": [],
+  "required_capabilities": [
+    "product_read"
+  ],
+  "forbidden_capabilities": [
+    "network",
+    "credential_access"
+  ],
+  "invariants": [
+    "Never modifies product code without candidate authorization",
+    "Max two attempts per unit"
+  ],
+  "anti_goals": [
+    "Do not invent credentials or bypass Host validation"
+  ],
+  "state_machine": {
+    "states": ["READY", "PROCESSING", "COMPLETE", "FAILED"],
+    "transitions": [
+      {"from": "READY", "to": "PROCESSING", "trigger": "start"},
+      {"from": "PROCESSING", "to": "COMPLETE", "trigger": "pass"},
+      {"from": "PROCESSING", "to": "FAILED", "trigger": "fail"}
+    ],
+    "initial": "READY",
+    "terminal": ["COMPLETE", "FAILED"]
+  },
+  "handoffs": [
+    {
+      "target": "{{HANDOFF_TARGET}}",
+      "condition": "{{HANDOFF_CONDITION}}"
+    }
+  ],
+  "failure_modes": {
+    "retries": 1,
+    "timeout_seconds": 300,
+    "on_failure": "retain"
+  },
+  "scenarios": [
+    "SC-001"
+  ],
+  "provenance": {
+    "license": "proprietary"
+  }
+}
