@@ -1,5 +1,9 @@
 # Cambios
 
+## Canje de token tras el lanzamiento de DSH — 2026-09-19
+
+- El despacho seguía sin ocurrir tras un lanzamiento exitoso: `launch_dsh_web` entrega el cliente con la URL de token de un solo proceso, pero `authenticated` permanece `False` hasta canjear el token por la cookie de autoridad, y `run_creator` no despacha a clientes no autenticados — dejaba el hijo DSH corriendo sin usarlo. La ruta de lanzamiento ejecuta ahora `exchange_token()` tras el arranque (con kill del hijo si falla) y el despacho procede. Regresión: el canje ocurre una vez y el hijo no se mata. Suite completa: 361 pruebas OK (2 skips previos).
+
 ## Llave ausente: aviso y continuar, parada solo estricta — 2026-09-19
 
 - La evidencia de tardis invierte la política de la puerta: con DSH configurado, **ninguna** llave de los ocho proveedores estaba en el entorno y sin embargo DSH funciona ahí — el entorno no es la única fuente de llaves (dotenv, keychain, credenciales de UI). Una llave ausente ya no bloquea: se despacha con `aviso:` explícito registrado en el resultado y en el run; si Creator falla por autenticación, el run queda `RETAINED` con la causa real. `DSH_PROVIDER_STRICT=1` restaura la parada dura para entornos que quieran la garantía solo-entorno. La resolución de proveedor utilizable se mantiene como diagnóstico (indica cuál resolvió o qué falta por proveedor). Corregido además un anidamiento de tupla en la rama estricta que devolvía `(client, (None, razón))`. Suite completa: 360 pruebas OK (2 skips previos).

@@ -1028,10 +1028,18 @@ def acquire_dsh_client(*, launch=False):
         blocked = _ensure_port_free_for_dsh(3080)
         if blocked:
             return None, blocked
+        process = None
         try:
             process, client = launch_dsh_web()
+            # The launch client carries only the one-process token URL;
+            # authenticated stays False until the token is exchanged for
+            # the authority cookie. Without this, run_creator would skip
+            # the dispatch and orphan the child.
+            client.exchange_token()
         except Exception as e:
-            return None, f"dsh web no arrancó: {e}"
+            if process is not None:
+                process.kill()
+            return None, f"DSH no quedó autenticado tras el arranque: {e}"
         home = _provider_home(candidates)
         if home is None:
             process.kill()
