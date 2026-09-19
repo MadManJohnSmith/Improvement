@@ -1,5 +1,11 @@
 # Cambios
 
+## Registro de fuentes de skills y biblioteca endurecida — 2026-09-18
+
+- Añadir `schemas/source-registry.schema.json` y `library/source-registry.json`: registro canónico de 42 fuentes externas evaluadas (20 repositorios de skills/índices/runtimes y 22 estándares o guías institucionales/de dominio) con URL canónica, commit fijado, fecha de observación, licencia, estado (`REFERENCE`/`CANDIDATE`) y decisión razonada. Política de adquisición fail-closed: solo pin manual, sin auto-instalación (npx/marketplace/descargas), staging fuera del árbol canónico y validación Host previa a la activación. El inventario pormenorizado de 11.407 entradas que respalda las decisiones permanece fuera del árbol; el registro conserva solo su SHA-256.
+- Endurecer `library.schema.json` y su validador: un patrón de catálogo exige criterios de activación observables, invariantes y escenarios; una skill base exige escenarios; la procedencia exige `license` y `source` (`internal` o `source_id` del registro). Una entrada sin estos requisitos no es seleccionable y la regeneración cae a la capa inferior o a `RETAINED`.
+- Añadir `validate_source_registry` al contrato generacional: rechaza fuentes remotas sin URL/commit/fecha, candidatas sin pin o con licencia no resuelta, políticas relajadas, IDs duplicados, hashes inválidos y rutas locales en metadatos. Corpus nuevo de 23 pruebas positivas y negativas; el archivo de registro real se valida dentro de la suite. Suite completa: 294 pruebas OK (2 skips previos).
+
 ## Estrategia híbrida de skills aprobada — 2026-09-16
 
 - Registrar la decisión: Creator reutiliza primero una biblioteca base inmutable y un catálogo de patrones especializados, luego compone y aplica overrides declarativos; solo genera extensiones como último recurso con contrato, escenarios y aceptación específica. Una skill transferida debe aceptarse en cada proyecto destino.

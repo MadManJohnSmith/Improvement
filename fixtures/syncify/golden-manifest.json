@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "generation_id": "gen-syncify-golden-001",
+  "status": "GENERATED",
+  "project": {
+    "name": "Syncify",
+    "root_identity": "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0",
+    "base_revision": "rev-syncify-fixture-001"
+  },
+  "creator": {
+    "session_ref": "sess-syncify-fixture",
+    "runtime_version": "1.0.0"
+  },
+  "framework": {
+    "revision": "rev-framework-fixture"
+  },
+  "artifacts": [
+    {
+      "path": "modes/Syncify-auditor/mode.json",
+      "type": "mode-definition",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "path": "modes/Syncify-continuous-repair/mode.json",
+      "type": "mode-definition",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "path": "skills/syncify-rust-audit/SKILL.md",
+      "type": "skill-entrypoint",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "path": "contracts/tauri-ipc-contract.json",
+      "type": "contract",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "path": "acceptance-plan.json",
+      "type": "plan",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "path": "generation-report.md",
+      "type": "report",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  ],
+  "required_capabilities": [
+    "product_read"
+  ],
+  "forbidden_capabilities": [
+    "network",
+    "credential_access"
+  ],
+  "effective_routing_digest": "7777777777777777777777777777777777777777777777777777777777777777",
+  "context_policy": {
+    "skill_entrypoint_max_bytes": 32768,
+    "support_file_max_bytes": 24576,
+    "warning_ratio": 0.9
+  },
+  "license_provenance": []
+}

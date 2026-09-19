@@ -35,6 +35,8 @@ La selección de skills de Creator sigue un orden obligatorio:
 
 Creator **no genera libremente desde cero como primera opción**. Una extensión nueva exige demostrar que las capas anteriores no aplican, declarar un contrato propio y pasar aceptación específica. Una skill de producción transferida a otro proyecto no se considera válida automáticamente: debe pasar aceptación en el nuevo proyecto.
 
+La biblioteca base y el catálogo se materializan a partir de un registro de fuentes versionado (`schemas/source-registry.schema.json`, instancia en `library/source-registry.json`). Cada fuente externa evaluada — repositorio de skills, índice, runtime, estándar o guía — queda registrada con URL canónica, revisión fijada, fecha de observación, licencia y estado (`REFERENCE`/`CANDIDATE`/`ACTIVE`/`REJECTED`). Una fuente sin revisión fijada o con licencia no resuelta no puede ser `CANDIDATE` ni `ACTIVE`; la política de adquisición prohíbe auto-instalación (npx/marketplace/descargas) durante bootstrap o accept, y el material externo se inspecciona en staging fuera del árbol canónico. Ninguna fuente es autoridad por sí misma: la incorporación siempre pasa por conversión contractual, validación Host y aceptación en el proyecto destino. Las entradas seleccionables exigen, además de procedencia con fuente, criterios de activación observables, invariantes y escenarios; un patrón sin activación observable o sin escenario probado no es seleccionable y la regeneración debe caer en la capa inferior o en `RETAINED`.
+
 El resultado de la incorporación será:
 
 ```text

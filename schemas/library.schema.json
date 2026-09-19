@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:library:1",
+  "title": "Immutable base library and catalog",
+  "description": "Schema for the immutable base library, specialized catalog, composition rules, override rules, transfer rules, and extension rules. This is the contractual foundation for the skill selection strategy: base → catalog → composition → override → extension → RETAINED.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "base_skills",
+    "catalog_patterns",
+    "composition_rules",
+    "override_rules",
+    "transfer_rules",
+    "extension_rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "base_skills": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/base_skill" },
+      "description": "Immutable base library skills. These are always preferred first."
+    },
+    "catalog_patterns": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/catalog_pattern" },
+      "description": "Specialized catalog patterns. Preferred after base skills."
+    },
+    "composition_rules": {
+      "type": "object",
+      "required": ["allowed", "constraints"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean",
+          "description": "Whether composition of multiple skills is allowed."
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Rules governing skill composition."
+        },
+        "max_composed": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Maximum number of skills in a composition."
+        }
+      }
+    },
+    "override_rules": {
+      "type": "object",
+      "required": ["allowed_slots", "forbidden_slots"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed_slots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Fields that may be overridden declaratively."
+        },
+        "forbidden_slots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Fields that may never be overridden."
+        },
+        "requires_justification": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "transfer_rules": {
+      "type": "object",
+      "required": ["requires_acceptance", "acceptance_scope"],
+      "additionalProperties": false,
+      "properties": {
+        "requires_acceptance": {
+          "type": "boolean",
+          "const": true,
+          "description": "A skill transferred from another project must pass full acceptance in the destination."
+        },
+        "acceptance_scope": {
+          "type": "string",
+          "enum": ["full", "partial"],
+          "description": "Scope of acceptance required for transfers."
+        },
+        "source_tracking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the source project is tracked in provenance."
+        }
+      }
+    },
+    "extension_rules": {
+      "type": "object",
+      "required": ["requires_justification", "must_demonstrate_no_prior_layer"],
+      "additionalProperties": false,
+      "properties": {
+        "requires_justification": {
+          "type": "boolean",
+          "const": true
+        },
+        "must_demonstrate_no_prior_layer": {
+          "type": "boolean",
+          "const": true,
+          "description": "Creator must demonstrate that base, catalog, composition, and override do not apply before generating an extension."
+        },
+        "fallback_on_failure": {
+          "type": "string",
+          "const": "RETAINED",
+          "description": "If no option is acceptable, the run is RETAINED."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "base_skill": {
+      "type": "object",
+      "required": ["name", "purpose", "invariants", "scenarios", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicability": {
+          "type": "string",
+          "description": "When this base skill applies."
+        },
+        "invariants": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "limits": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Known limits of this base skill."
+        },
+        "scenarios": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Scenario IDs that test this base skill. A base skill without at least one scenario is not selectable."
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["license", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "license": { "type": "string", "minLength": 1 },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Origin of the skill: 'internal' for framework-native skills, otherwise the source_id of an entry in library/source-registry.json."
+            },
+            "commit": { "type": "string" }
+          }
+        }
+      }
+    },
+    "catalog_pattern": {
+      "type": "object",
+      "required": [
+        "name", "domain", "purpose", "applicability", "activation_criteria",
+        "invariants", "scenarios", "provenance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Domain specialization (e.g., python-backend, react-frontend)."
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicability": {
+          "type": "string",
+          "minLength": 1,
+          "description": "When this pattern applies to a project."
+        },
+        "activation_criteria": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Observable positive signals in a project that justify selecting this pattern. A pattern without observable activation criteria is not selectable."
+        },
+        "invariants": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "limits": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Known limits and non-goals of this pattern."
+        },
+        "scenarios": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Scenario IDs that test this pattern. A pattern without at least one scenario is not selectable."
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["license", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "license": { "type": "string", "minLength": 1 },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Origin of the pattern: 'internal' for framework-native patterns, otherwise the source_id of an entry in library/source-registry.json."
+            },
+            "commit": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

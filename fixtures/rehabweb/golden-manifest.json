@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "generation_id": "gen-rehabweb-golden-001",
+  "status": "GENERATED",
+  "project": {
+    "name": "RehabWeb",
+    "root_identity": "0f649be2768810bd7e9aa4c8ce8a914608caf1507094b71ab378fa882a224173",
+    "base_revision": "rev-rehabweb-fixture-001"
+  },
+  "creator": {
+    "session_ref": "sess-rehabweb-fixture",
+    "runtime_version": "1.0.0"
+  },
+  "framework": {
+    "revision": "rev-framework-fixture"
+  },
+  "artifacts": [
+    {
+      "path": "modes/RehabWeb-auditor/mode.json",
+      "type": "mode-definition",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "path": "modes/RehabWeb-continuous-repair/mode.json",
+      "type": "mode-definition",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "path": "skills/fastapi-endpoint-audit/SKILL.md",
+      "type": "skill-entrypoint",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "path": "contracts/api-routes-contract.json",
+      "type": "contract",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "path": "acceptance-plan.json",
+      "type": "plan",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "path": "generation-report.md",
+      "type": "report",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "required_capabilities": [
+    "product_read"
+  ],
+  "forbidden_capabilities": [
+    "network",
+    "credential_access"
+  ],
+  "effective_routing_digest": "9999999999999999999999999999999999999999999999999999999999999999",
+  "context_policy": {
+    "skill_entrypoint_max_bytes": 32768,
+    "support_file_max_bytes": 24576,
+    "warning_ratio": 0.9
+  },
+  "license_provenance": []
+}
