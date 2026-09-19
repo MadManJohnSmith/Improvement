@@ -133,8 +133,37 @@ class Transaction:
         }
         return manifest
 
-    def install(self, generated_dir, generation_id):
+    def _require_host_verdict(self, host_verdict, generation_id):
+        """Fail closed: activation requires an explicit Host verdict ACTIVE.
+
+        The verdict comes from acceptance (acceptance/host-verdict.json);
+        the transaction never derives or self-approves it.
+        """
+        if host_verdict is None:
+            raise TransactionError(
+                "Veredicto Host requerido antes de activar: install exige "
+                "host-verdict ACTIVE emitido por acceptance")
+        doc = host_verdict
+        if isinstance(host_verdict, (str, Path)):
+            p = Path(host_verdict)
+            if p.is_symlink() or not p.is_file():
+                raise TransactionError(f"host-verdict no disponible: {p}")
+            doc = _json(p)
+        if not isinstance(doc, dict):
+            raise TransactionError("host-verdict no verificable")
+        verdict = doc.get("verdict")
+        if verdict != "ACTIVE":
+            raise TransactionError(
+                f"Host no aprobó la activación (verdict={verdict!r})")
+        doc_gen = doc.get("generation_id")
+        if doc_gen and doc_gen != generation_id:
+            raise TransactionError(
+                f"host-verdict corresponde a otra generación: {doc_gen}")
+        return doc
+
+    def install(self, generated_dir, generation_id, *, host_verdict=None):
         """Stage and atomically activate a generated package."""
+        self._require_host_verdict(host_verdict, generation_id)
         generated = Path(generated_dir)
         if not generated.is_dir():
             raise TransactionError(f"generated/ ausente: {generated}")
@@ -239,8 +268,9 @@ class Transaction:
         }
 
 
-def install(workspace, generated_dir, generation_id):
-    return Transaction(workspace).install(generated_dir, generation_id)
+def install(workspace, generated_dir, generation_id, *, host_verdict=None):
+    return Transaction(workspace).install(generated_dir, generation_id,
+                                          host_verdict=host_verdict)
 
 
 def rollback(workspace, generation_id):
@@ -259,6 +289,8 @@ if __name__ == "__main__":
     p.add_argument("--workspace", required=True)
     p.add_argument("--generated", required=True)
     p.add_argument("--generation-id", required=True)
+    p.add_argument("--host-verdict", required=True,
+                   help="Ruta a acceptance/host-verdict.json emitido por el Host")
     p = sub.add_parser("rollback")
     p.add_argument("--workspace", required=True)
     p.add_argument("--generation-id", required=True)
@@ -267,7 +299,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         if args.command == "install":
-            result = install(args.workspace, args.generated, args.generation_id)
+            result = install(args.workspace, args.generated, args.generation_id,
+                             host_verdict=args.host_verdict)
         elif args.command == "rollback":
             result = rollback(args.workspace, args.generation_id)
         else:

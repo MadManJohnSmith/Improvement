@@ -105,6 +105,21 @@ def _git_info(repo_path):
         return {"revision": None, "clean": None, "branch": None}
 
 
+def _root_identity(project, project_git):
+    """Base identity used by install and update consistently.
+
+    A full sha256 revision is used verbatim; any other revision is
+    digested; the project path is only a last-resort identity. install
+    and update must derive it the same way or drift detection breaks.
+    """
+    rev = (project_git or {}).get("revision")
+    if rev and len(rev) == 64 and all(c in "0123456789abcdef" for c in rev.lower()):
+        return rev.lower()
+    if rev:
+        return _digest_bytes(rev.encode("utf-8"))
+    return _digest_bytes(str(project).encode("utf-8"))
+
+
 def _detect_languages(project):
     """Detect languages from file extensions without reading file contents."""
     extensions = set()
@@ -368,14 +383,8 @@ def install(project, workspace, *, budget=None):
     project_git = _git_info(project)
     framework_git = _git_info(FRAMEWORK)
 
-    # Root identity (always sha256)
-    rev = project_git.get("revision")
-    if rev and len(rev) == 64 and all(c in "0123456789abcdef" for c in rev.lower()):
-        root_identity = rev.lower()
-    elif rev:
-        root_identity = _digest_bytes(rev.encode("utf-8"))
-    else:
-        root_identity = _digest_bytes(str(project).encode("utf-8"))
+    # Root identity (always sha256, derived identically for update())
+    root_identity = _root_identity(project, project_git)
 
     # Create run.json
     run_doc = {
@@ -757,12 +766,12 @@ def update(project, workspace):
     if active_run is None:
         raise ValueError("No hay generación activa para actualizar; usar install primero")
 
-    # Compare base revision
+    # Compare base identity derived the same way install() derives it
     project_git = _git_info(project)
-    current_rev = project_git.get("revision")
-    active_rev = active_run.get("project", {}).get("root_identity")
+    current_identity = _root_identity(project, project_git)
+    active_identity = active_run.get("project", {}).get("root_identity")
 
-    if current_rev and current_rev == active_rev:
+    if current_identity == active_identity:
         return {
             "result": "NO_OP",
             "generation_id": active_run.get("generation_id"),

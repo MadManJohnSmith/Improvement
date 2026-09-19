@@ -11,6 +11,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
 
 
+def _verdict(generation_id="gen-1", verdict="ACTIVE"):
+    """Host verdict as acceptance would emit it (acceptance/host-verdict.json)."""
+    return {
+        "schema_version": 1,
+        "generation_id": generation_id,
+        "verdict": verdict,
+        "timestamp": "2026-09-19T00:00:00+00:00",
+        "source": "host-acceptance",
+    }
+
+
 class TransactionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -24,8 +35,37 @@ class TransactionTests(unittest.TestCase):
         (self.generated / "skills").mkdir()
         (self.generated / "skills" / "SKILL.md").write_text("# skill\n")
 
+    def _install(self, generated=None, generation_id="gen-1",
+                 verdict="ACTIVE", **kwargs):
+        kwargs.setdefault("host_verdict", _verdict(generation_id, verdict))
+        return tx.install(self.workspace, generated or self.generated,
+                          generation_id, **kwargs)
+
+    def test_install_requires_host_verdict(self):
+        with self.assertRaises(tx.TransactionError) as ctx:
+            tx.install(self.workspace, self.generated, "gen-1")
+        self.assertIn("Veredicto Host", str(ctx.exception))
+
+    def test_install_rejects_non_active_verdict(self):
+        with self.assertRaises(tx.TransactionError) as ctx:
+            self._install(verdict="RETAINED")
+        self.assertIn("no aprobó", str(ctx.exception))
+
+    def test_install_rejects_verdict_for_other_generation(self):
+        with self.assertRaises(tx.TransactionError) as ctx:
+            self._install(generation_id="gen-1",
+                          host_verdict=_verdict(generation_id="gen-9"))
+        self.assertIn("otra generación", str(ctx.exception))
+
+    def test_install_accepts_verdict_file(self):
+        verdict_path = self.root / "host-verdict.json"
+        verdict_path.write_text(json.dumps(_verdict("gen-1")), encoding="utf-8")
+        result = tx.install(self.workspace, self.generated, "gen-1",
+                            host_verdict=verdict_path)
+        self.assertEqual(result["result"], "ACTIVE")
+
     def test_install_activates_generation(self):
-        result = tx.install(self.workspace, self.generated, "gen-1")
+        result = self._install()
         self.assertEqual(result["result"], "ACTIVE")
         managed = self.workspace / ".dsh-managed"
         self.assertEqual((managed / "ACTIVE").read_text().strip(), "gen-1")
@@ -33,34 +73,34 @@ class TransactionTests(unittest.TestCase):
         self.assertTrue((managed / "backups" / "gen-1.json").is_file())
 
     def test_install_is_idempotent(self):
-        first = tx.install(self.workspace, self.generated, "gen-1")
-        second = tx.install(self.workspace, self.generated, "gen-1")
+        first = self._install()
+        second = self._install()
         self.assertEqual(second["result"], "NO_OP")
 
     def test_install_creates_verified_backup(self):
-        tx.install(self.workspace, self.generated, "gen-1")
+        self._install()
         newer = self.root / "newer"
         newer.mkdir()
         (newer / "generation-manifest.json").write_text("new\n")
-        result = tx.install(self.workspace, newer, "gen-2")
+        result = self._install(generated=newer, generation_id="gen-2")
         self.assertEqual(result["previous_generation_id"], "gen-1")
         backup = json.loads((self.workspace / ".dsh-managed" / "backups" / "gen-2.json").read_text())
         self.assertTrue(backup["verified"])
         self.assertEqual(backup["previous_generation_id"], "gen-1")
 
     def test_rollback_restores_previous(self):
-        tx.install(self.workspace, self.generated, "gen-1")
+        self._install()
         newer = self.root / "newer"
         newer.mkdir()
         (newer / "generation-manifest.json").write_text("new\n")
-        tx.install(self.workspace, newer, "gen-2")
+        self._install(generated=newer, generation_id="gen-2")
         result = tx.rollback(self.workspace, "gen-2")
         self.assertEqual(result["result"], "ROLLED_BACK")
         self.assertEqual(result["rolled_back_to"], "gen-1")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
 
     def test_uninstall_removes_pointer_preserves_backups(self):
-        tx.install(self.workspace, self.generated, "gen-1")
+        self._install()
         result = tx.uninstall(self.workspace)
         self.assertEqual(result["result"], "UNINSTALLED")
         self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
@@ -71,12 +111,12 @@ class TransactionTests(unittest.TestCase):
         target.write_text("x")
         (self.generated / "link").symlink_to(target)
         with self.assertRaises(ValueError):
-            tx.install(self.workspace, self.generated, "gen-1")
+            self._install()
 
     def test_missing_manifest_rejected(self):
         (self.generated / "generation-manifest.json").unlink()
         with self.assertRaises(tx.TransactionError):
-            tx.install(self.workspace, self.generated, "gen-1")
+            self._install()
 
     def test_rollback_missing_backup_rejected(self):
         with self.assertRaises(tx.TransactionError):

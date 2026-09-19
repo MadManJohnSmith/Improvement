@@ -333,6 +333,25 @@ class TestUpdate(_BootstrapTestBase):
         result = bs.update(self.project, self.workspace)
         self.assertEqual(result["result"], "IN_PROGRESS")
 
+    def test_install_identity_matches_shared_derivation(self):
+        r1 = bs.install(self.project, self.workspace)
+        run_dir = Path(r1["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        expected = bs._root_identity(self.project, bs._git_info(self.project))
+        self.assertEqual(run_doc["project"]["root_identity"], expected)
+
+    def test_update_same_base_returns_no_op(self):
+        """Identity comparison must match install derivation even without git."""
+        r1 = bs.install(self.project, self.workspace)
+        run_dir = Path(r1["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "ACTIVE"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+
+        result = bs.update(self.project, self.workspace)
+        self.assertEqual(result["result"], "NO_OP")
+
 
 # ===========================================================================
 # Uninstall subcommand
