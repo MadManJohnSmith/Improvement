@@ -817,6 +817,59 @@ def _pid_alive(pid):
         return False
 
 
+def _cmdline_of(pid):
+    """Command line of a PID from /proc (spaces joined), or empty string."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+
+
+def _port_listener_pid(port):
+    """(pid, raw line) of whatever LISTENs on the TCP port, via ss.
+
+    Returns ``(None, "")`` when the port is free or ss is unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ["ss", "-tlnp"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, ""
+    for line in result.stdout.splitlines():
+        if re.search(r":%d\b" % port, line) and "pid=" in line:
+            m = re.search(r"pid=(\d+)", line)
+            if m:
+                return int(m.group(1)), line.strip()
+    return None, ""
+
+
+def _ensure_port_free_for_dsh(port=3080, timeout=6):
+    """Clear the DSH web port: stop lingering DSH listeners, refuse foreign ones.
+
+    A listener whose command line belongs to DSH is stopped and the port is
+    re-checked until the deadline. A foreign listener is never killed: the
+    check fails naming its PID and command so the holder can decide.
+    Returns ``None`` when the port is free, otherwise the failure reason.
+    """
+    deadline = time.time() + timeout
+    while True:
+        pid, _line = _port_listener_pid(port)
+        if pid is None:
+            return None
+        cmdline = _cmdline_of(pid)
+        if "@deepseek-ai/dsh" not in cmdline:
+            return (f"puerto {port} ocupado por un proceso ajeno a DSH "
+                    f"(PID {pid}: {cmdline[:90] or 'sin cmdline'}); "
+                    "libéralo y vuelve a intentarlo")
+        if time.time() >= deadline:
+            return (f"la instancia DSH con PID {pid} no liberó el puerto "
+                    f"{port} en {timeout}s")
+        _stop_dsh_instances([pid])
+        time.sleep(0.3)
+
+
 def _stop_dsh_instances(pids, *, timeout=10):
     """Terminate DSH web processes: SIGTERM, wait, SIGKILL fallback.
 
@@ -940,6 +993,9 @@ def acquire_dsh_client(*, launch=False):
         running = _find_dsh_pids()
         if running:
             _stop_dsh_instances(running)
+        blocked = _ensure_port_free_for_dsh(3080)
+        if blocked:
+            return None, blocked
         try:
             process, client = launch_dsh_web()
         except Exception as e:

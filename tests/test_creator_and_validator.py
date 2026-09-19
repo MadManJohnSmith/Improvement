@@ -477,6 +477,75 @@ class LaunchDshWebTests(unittest.TestCase):
         self.assertIn("token=<redacted>", message)
 
 
+    def test_port_listener_pid_parses_ss(self):
+        fake = unittest.mock.Mock()
+        fake.stdout = (
+            "State  Recv-Q Send-Q Local Address:Port Peer Address:Port\n"
+            "LISTEN 0      511        127.0.0.1:3080      0.0.0.0:*     "
+            'users:(("node",pid=4140,fd=18))\n'
+            "LISTEN 0      511            [::]:9090           [::]:*     "
+            'users:(("app",pid=99,fd=5))\n'
+        )
+        with unittest.mock.patch.object(cc.subprocess, "run",
+                                        return_value=fake):
+            pid, _line = cc._port_listener_pid(3080)
+        self.assertEqual(pid, 4140)
+
+    def test_ensure_port_free_when_no_listener(self):
+        with unittest.mock.patch.object(
+                cc, "_port_listener_pid", return_value=(None, "")):
+            self.assertIsNone(cc._ensure_port_free_for_dsh(3080))
+
+    def test_ensure_port_stops_lingering_dsh_listener(self):
+        listener = [(4140, ""), (4140, ""), (None, "")]
+        with unittest.mock.patch.object(
+                cc, "_port_listener_pid",
+                side_effect=lambda port: listener.pop(0)), \
+                unittest.mock.patch.object(
+                    cc, "_cmdline_of",
+                    return_value="node /x/@deepseek-ai/dsh/lib/bin.js web"), \
+                unittest.mock.patch.object(cc.time, "sleep"), \
+                unittest.mock.patch.object(
+                    cc, "_stop_dsh_instances",
+                    side_effect=lambda pids, **k: None) as stop:
+            self.assertIsNone(cc._ensure_port_free_for_dsh(3080))
+        self.assertEqual(stop.call_args_list,
+                         [unittest.mock.call([4140]),
+                          unittest.mock.call([4140])])
+
+    def test_ensure_port_refuses_foreign_listener(self):
+        with unittest.mock.patch.object(
+                cc, "_port_listener_pid",
+                return_value=(777, "LISTEN")), \
+                unittest.mock.patch.object(
+                    cc, "_cmdline_of",
+                    return_value="python -m http.server 3080"):
+            reason = cc._ensure_port_free_for_dsh(3080)
+        self.assertIn("proceso ajeno a DSH", reason)
+        self.assertIn("777", reason)
+
+    def test_launch_path_fails_closed_when_port_blocked(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(
+                    cc, "_ensure_port_free_for_dsh",
+                    return_value="puerto 3080 ocupado por un proceso ajeno "
+                                 "a DSH (PID 777)"), \
+                unittest.mock.patch.object(
+                    cc, "launch_dsh_web",
+                    side_effect=AssertionError("must not launch")):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertIsNone(client)
+        self.assertIn("puerto 3080 ocupado", origin)
+
     def test_existing_session_without_key_stops_before_dispatch(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
