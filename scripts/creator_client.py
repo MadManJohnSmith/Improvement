@@ -747,7 +747,8 @@ def _read_settings_structure(dsh_home):
                 if m.group(2) == "":
                     current = m.group(1)
                     providers.setdefault(
-                        current, {"api_key_env": None, "models": 0})
+                        current,
+                        {"api_key_env": None, "models": 0, "first_model": None})
                 else:
                     current = None
                 continue
@@ -757,8 +758,12 @@ def _read_settings_structure(dsh_home):
             if km and km.group(1) == "apiKeyEnv":
                 providers[current]["api_key_env"] = (
                     km.group(2).strip().strip('"\''))
-            if re.match(r"^\s*-\s+id\s*:", child):
+            m_id = re.match(r"^\s*-\s+id\s*:\s*(\S.*)$", child)
+            if m_id:
                 providers[current]["models"] += 1
+                if not providers[current]["first_model"]:
+                    providers[current]["first_model"] = (
+                        m_id.group(1).strip().strip('"\''))
     return default, providers
 
 
@@ -840,11 +845,16 @@ def _env_var_present(name):
 
 
 def dsh_provider_status(dsh_home):
-    """Fail-closed provider/API-key presence check.
+    """Resolve a usable provider/model without assuming one setup.
 
-    Reads only configuration structure and variable NAMES. Returns
-    ``{"ok": bool, ...}``; when not ok, ``reason`` names the concrete
-    missing piece so the run can stop with a single actionable message.
+    No user can be expected to hold the same provider keys: the resolver
+    walks the providers configured in settings.yaml — DSH's own default
+    (the last model the user configured) first, then the rest in
+    configuration order — and picks the first one that has models and
+    whose key variable is present. Variable NAMES only; values are never
+    read, copied or logged. When nothing is usable it stops with the
+    per-provider missing variable so the run keeps a single actionable
+    message.
     """
     home = Path(dsh_home).expanduser()
     try:
@@ -852,27 +862,33 @@ def dsh_provider_status(dsh_home):
     except (OSError, ValueError) as e:
         return {"ok": False,
                 "reason": f"settings.yaml no legible en {home}: {e}"}
-    provider = default.get("provider")
-    if not provider:
+    if not providers:
         return {"ok": False,
-                "reason": f"settings.yaml en {home} sin "
-                          "agent-default-model.provider configurado"}
-    info = providers.get(provider)
-    if not info:
-        return {"ok": False,
-                "reason": f"proveedor {provider!r} (default) no está en "
-                          "providers de settings.yaml"}
-    if info["models"] == 0:
-        return {"ok": False,
-                "reason": f"proveedor {provider!r} sin modelos configurados"}
-    env_name = info["api_key_env"]
-    if env_name and not _env_var_present(env_name):
-        return {"ok": False,
-                "reason": f"llave API ausente: la variable {env_name} del "
-                          f"proveedor {provider!r} no está definida en el "
-                          "entorno; configúrala y vuelve a intentarlo"}
-    return {"ok": True, "provider": provider, "models": info["models"],
-            "api_key_env": env_name}
+                "reason": f"settings.yaml en {home} no declara providers"}
+    preferred = default.get("provider")
+    ordered = list(providers)
+    if preferred in providers:
+        ordered.remove(preferred)
+        ordered.insert(0, preferred)
+    checked = []
+    for name in ordered:
+        info = providers[name]
+        if info["models"] == 0:
+            checked.append(f"{name}: sin modelos")
+            continue
+        env_name = info["api_key_env"]
+        if env_name and not _env_var_present(env_name):
+            checked.append(f"{name}: llave {env_name} ausente")
+            continue
+        return {"ok": True, "provider": name, "models": info["models"],
+                "model": info["first_model"], "api_key_env": env_name,
+                "source": ("default" if name == preferred else "fallback"),
+                "skipped": checked}
+    detail = "; ".join(checked) or "sin proveedores con modelos"
+    return {"ok": False,
+            "reason": "ningún proveedor utilizable (" + detail +
+                      "); define la llave de alguno en el entorno de DSH "
+                      "y vuelve a intentarlo"}
 
 
 def _provider_home(candidates):

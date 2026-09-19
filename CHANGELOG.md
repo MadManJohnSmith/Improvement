@@ -1,5 +1,10 @@
 # Cambios
 
+## Resolutor de proveedor utilizable — 2026-09-19
+
+- La puerta de proveedor ya no exige la llave de un proveedor concreto (era ilusorio: ningún usuario debe tener la misma configuración). `dsh_provider_status` resuelve el primer proveedor utilizable recorriendo los declarados en settings.yaml — primero el default de DSH (el último modelo que el usuario configuró), después el resto en orden de configuración — y acepta cualquiera con modelos cuya variable de llave esté presente (verificación solo por nombre, valores jamás leídos ni registrados). Si no hay ninguno utilizable, se detiene enumerando qué variable falta por proveedor, con una sola acción concreta para el titular.
+- Regresiones: fallback cuando la llave del default falta, default desconocido con fallback, parada con lista completa de variables ausentes, y las rutas de lanzamiento/sesión existente con el resolutor. Suite completa: 349 pruebas OK (2 skips previos).
+
 ## Reanudación del despacho en runs existentes — 2026-09-19
 
 - `bootstrap install` sobre un run ya existente ya no se limita a `EXISTING`: con el despacho activo (comportamiento por defecto del CLI) reanuda la generación para los estados reanudables por Creator (`CREATED`, `GENERATING`), aplicando la adquisición de sesión, la puerta de llave y la supervisión. Los estados propiedad del Host (`GENERATED` en adelante) nunca se re-despachan, y los estados intermedios no reanudables (`DISCOVERING`, `DESIGNING`, `REPAIRING`) quedan en `EXISTING` porque despacharlos retendría el run indebidamente. La cadena de despacho se extrajo a `_dispatch_creator_chain`, compartida por run nuevo y existente. Suite completa: 348 pruebas OK (2 skips previos).
