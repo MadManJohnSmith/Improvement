@@ -85,7 +85,7 @@ def validate_package(generated_dir, *, run_dir=None):
     _validate_layer_graph(report, manifest, generated)
 
     # Layer 4: Contracts/requirements/source provenance
-    _validate_layer_contracts(report, manifest, generated)
+    _validate_layer_contracts(report, manifest, generated, run_dir=run_dir)
 
     # Layer 5: Capabilities, roots, tools, models, routing
     _validate_layer_capabilities(report, manifest)
@@ -204,8 +204,20 @@ def _validate_layer_graph(report, manifest, generated):
     report.add_layer("graph", not issues, issues)
 
 
-def _validate_layer_contracts(report, manifest, generated):
-    """Layer 4: Contracts, requirements, source provenance."""
+def _load_run_library(run_dir):
+    """Load and validate the run's library snapshot, if present."""
+    if run_dir is None:
+        return None
+    lib_path = Path(run_dir) / "inputs" / "library.json"
+    if not lib_path.is_file() or lib_path.is_symlink():
+        return None
+    library = json.loads(lib_path.read_text(encoding="utf-8"))
+    gc.validate("library", library)
+    return library
+
+
+def _validate_layer_contracts(report, manifest, generated, run_dir=None):
+    """Layer 4: Contracts, requirements, source provenance, reuse resolution."""
     issues = []
 
     # Check that contracts directory exists if referenced
@@ -216,6 +228,43 @@ def _validate_layer_contracts(report, manifest, generated):
     ]
     if contract_arts and not contracts_dir.is_dir():
         issues.append("Contract artifacts declared but contracts/ missing")
+
+    try:
+        library = _load_run_library(run_dir)
+    except (ValueError, gc.ContractError) as e:
+        issues.append(f"Library snapshot del run inválida: {e}")
+        library = None
+    known_refs = set()
+    if library is not None:
+        known_refs = {b["name"] for b in library.get("base_skills", [])}
+        known_refs |= {c["name"] for c in library.get("catalog_patterns", [])}
+
+    # Contract documents: schema-valid and reuse references resolvable
+    for art in contract_arts:
+        rel = art.get("path", "")
+        cpath = generated / rel
+        if not cpath.is_file() or cpath.is_symlink():
+            continue  # existence/hash covered by the manifest layer
+        try:
+            doc = json.loads(cpath.read_text(encoding="utf-8"))
+        except ValueError:
+            issues.append(f"Contrato JSON inválido: {rel}")
+            continue
+        if not isinstance(doc, dict) or "reuse_source" not in doc:
+            continue
+        schema_name = "skill-contract" if "motive" in doc else "mode-contract"
+        try:
+            gc.validate(schema_name, doc)
+        except gc.ContractError as e:
+            issues.append(f"{rel}: {e}")
+            continue
+        if library is not None and doc.get("reuse_source") in (
+                "base-library", "specialized-catalog"):
+            ref = doc.get("reuse_reference")
+            if ref not in known_refs:
+                issues.append(
+                    f"{rel}: reuse_reference {ref!r} no existe en la "
+                    "biblioteca del run")
 
     # Check provenance entries
     for prov in manifest.get("license_provenance", []):

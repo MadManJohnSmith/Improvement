@@ -290,6 +290,7 @@ def _golden_mode_contract():
         "name": "TestProject-auditor",
         "purpose": "Audit TestProject for defects",
         "reuse_source": "base-library",
+        "reuse_reference": "systematic-debugging",
         "triggers": ["audit request", "scheduled audit"],
         "anti_triggers": ["repair in progress"],
         "inputs": ["project source", "instructions index"],
@@ -329,6 +330,7 @@ def _golden_skill_contract():
         "motive": "Recurring audit procedure for TestProject",
         "domain": ["python-backend"],
         "reuse_source": "base-library",
+        "reuse_reference": "systematic-debugging",
         "inputs": ["project source"],
         "outputs": ["audit report"],
         "required_capabilities": ["product_read"],
@@ -710,6 +712,7 @@ class TestNegativeCorpus(unittest.TestCase):
     def test_extension_without_justification(self):
         doc = _golden_mode_contract()
         doc["reuse_source"] = "extension"
+        doc.pop("reuse_reference", None)
         if "reuse_justification" in doc:
             del doc["reuse_justification"]
         with self.assertRaises(gc.ContractError) as ctx:
@@ -719,6 +722,7 @@ class TestNegativeCorpus(unittest.TestCase):
     def test_skill_extension_without_justification(self):
         doc = _golden_skill_contract()
         doc["reuse_source"] = "extension"
+        doc.pop("reuse_reference", None)
         if "reuse_justification" in doc:
             del doc["reuse_justification"]
         with self.assertRaises(gc.ContractError) as ctx:
@@ -729,7 +733,40 @@ class TestNegativeCorpus(unittest.TestCase):
         doc = _golden_mode_contract()
         doc["reuse_source"] = "extension"
         doc["reuse_justification"] = "Base library has no Python linting support"
+        doc.pop("reuse_reference", None)
         gc.validate("mode-contract", doc)
+
+    # -- 10b. Reuse references must resolve to library entries ---------------
+
+    def test_base_reuse_without_reference_rejected(self):
+        doc = _golden_skill_contract()
+        del doc["reuse_reference"]
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("skill-contract", doc)
+        self.assertIn("reuse_reference", str(ctx.exception))
+
+    def test_catalog_reuse_without_reference_rejected(self):
+        doc = _golden_skill_contract()
+        doc["reuse_source"] = "specialized-catalog"
+        del doc["reuse_reference"]
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("skill-contract", doc)
+        self.assertIn("reuse_reference", str(ctx.exception))
+
+    def test_extension_with_reuse_reference_rejected(self):
+        doc = _golden_skill_contract()
+        doc["reuse_source"] = "extension"
+        doc["reuse_justification"] = "No base or catalog entry applies"
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("skill-contract", doc)
+        self.assertIn("must be omitted", str(ctx.exception))
+
+    def test_mode_base_reuse_without_reference_rejected(self):
+        doc = _golden_mode_contract()
+        del doc["reuse_reference"]
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("mode-contract", doc)
+        self.assertIn("reuse_reference", str(ctx.exception))
 
     # -- 11. Override outside allowed slots ---------------------------------
 

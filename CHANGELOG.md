@@ -1,5 +1,15 @@
 # Cambios
 
+## Biblioteca integrada en el pipeline Creator y refuerzos fail-closed — 2026-09-19
+
+- `bootstrap install` congela un snapshot de `library/library.json` validado en `run/inputs/library.json` y registra su SHA-256 en `bootstrap-request.json`: la selección de Creator queda anclada a la biblioteca exacta del run, como procedencia.
+- El prompt versionado de Creator (`creator_client.build_creator_prompt`) incorpora la sección "Biblioteca disponible" generada fail-closed desde la biblioteca materializada: las 21 skills base con propósito y aplicabilidad, los 4 patrones de catálogo con sus criterios de activación y el digest del documento. Biblioteca ausente o inválida detiene la construcción del prompt.
+- Contratos de modos y skills incorporan `reuse_reference`: reutilizar `base-library` o `specialized-catalog` exige nombrar la entrada exacta; declarar `extension` prohíbe el campo. Esquemas espejo (`skills.schema.json`, `modes.schema.json`) actualizados.
+- La capa de contratos del validador Host ya no es solo estructural: valida los documentos de contrato del paquete contra su schema y resuelve cada `reuse_reference` contra el snapshot de biblioteca del run; una referencia inexistente produce RETAINED.
+- `transaction.install` exige un veredicto Host explícito ACTIVE (acceptance/host-verdict.json, ruta o diccionario) vinculado a la misma generación; activar sin aprobación del Host falla cerrado, y el CLI incorpora `--host-verdict`. No existía ningún llamador además de los tests, así que el gate no tiene bypass silencioso.
+- `bootstrap`: la derivación de `root_identity` se extrae a `_root_identity` y la comparten `install` y `update`; antes `update` comparaba el revision Git crudo contra una identidad que podía ser un digest de revision corto o de la ruta, produciendo drift falso o no-op falsos.
+- Suite completa: 331 pruebas OK (2 skips previos).
+
 ## Coherencia documental de C0–C7 — 2026-09-19
 
 - README y `docs/creator-preset-spec.md` dejan de describir C0–C7 como pendiente: el estado refleja la implementación verificada (bootstrap, Creator, validador Host, aceptación, transacción, promoción) sin afirmar autonomía de extremo a extremo sin sesión DSH real configurada por el usuario. La biblioteca materializada (21 skills base, 4 patrones de catálogo, registro de fuentes) se documenta como parte de la distribución.

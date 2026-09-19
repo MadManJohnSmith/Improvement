@@ -107,6 +107,46 @@ def _update_json(path, value):
 # ---------------------------------------------------------------------------
 
 
+def _library_selection_section():
+    """Render the materialized library for the selection strategy.
+
+    Fail-closed: an absent or invalid library document stops prompt
+    building instead of silently omitting selection inputs.
+    """
+    library_path = FRAMEWORK / "library" / "library.json"
+    if not library_path.is_file() or library_path.is_symlink():
+        raise ValueError(f"Biblioteca materializada ausente: {library_path}")
+    import generation_contracts as gc
+    doc = _read_json(library_path)
+    gc.validate("library", doc)
+    digest = hashlib.sha256(library_path.read_bytes()).hexdigest()
+    lines = [
+        "## Biblioteca disponible",
+        "",
+        f"**Digest de biblioteca:** {digest}",
+        "",
+        "### Base inmutable (capa 1)",
+    ]
+    for b in doc["base_skills"]:
+        lines.append(f"- `{b['name']}` — {b['purpose']}")
+        if b.get("applicability"):
+            lines.append(f"  - aplica: {b['applicability']}")
+    if doc["catalog_patterns"]:
+        lines.append("")
+        lines.append("### Catálogo especializado (capa 2 — solo con señales observadas)")
+        for c in doc["catalog_patterns"]:
+            lines.append(f"- `{c['name']}` [{c['domain']}] — {c['purpose']}")
+            for crit in c["activation_criteria"]:
+                lines.append(f"  - activar si: {crit}")
+    lines += [
+        "",
+        "Al reutilizar declara `reuse_source` y `reuse_reference` con el nombre exacto de la entrada usada. "
+        "Un patrón de catálogo sin sus señales de activación observadas en el proyecto no se selecciona. "
+        "Una extensión nueva exige justificar por qué no aplican las entradas anteriores y no declara `reuse_reference`.",
+    ]
+    return "\n".join(lines)
+
+
 def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
     """Build the versioned Creator prompt from run inputs (§4.5).
 
@@ -179,6 +219,7 @@ Diseña o mejora la skill `{skill_name}` para `{project_name}`.
 Requisitos obligatorios: procedimiento recurrente, evidencia observable en el proyecto,
 fronteras estrictas de lectura/escritura y prueba ejecutable."""
 
+    library_section = _library_selection_section()
     body = f"""
 ## Estrategia de selección obligatoria
 
@@ -189,6 +230,8 @@ Resuelve cada necesidad en este orden estricto:
 4. `override` — override declarativo limitado
 5. `extension` — extensión específica generada (requiere justificación de por qué no aplican las capas anteriores)
 6. `RETAINED` si ninguna opción es aceptable
+
+{library_section}
 
 ## Pipeline interno
 

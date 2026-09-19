@@ -84,6 +84,15 @@ class TestInstallPositive(_BootstrapTestBase):
             self.assertTrue((run_dir / "inputs" / name).is_file(),
                             f"Missing input: {name}")
 
+    def test_install_snapshots_library_with_digest(self):
+        result = bs.install(self.project, self.workspace)
+        run_dir = Path(result["run_dir"])
+        library = json.loads((run_dir / "inputs" / "library.json").read_text())
+        self.assertGreaterEqual(len(library["base_skills"]), 21)
+        request = json.loads(
+            (run_dir / "inputs" / "bootstrap-request.json").read_text())
+        self.assertEqual(len(request["library_sha256"]), 64)
+
     def test_install_creates_discovery(self):
         result = bs.install(self.project, self.workspace)
         run_dir = Path(result["run_dir"])
