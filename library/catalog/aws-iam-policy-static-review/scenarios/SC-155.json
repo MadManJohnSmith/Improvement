@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-155",
+  "type": "capability-denial",
+  "description": "Durante la revisión se intenta usar credenciales AWS o invocar el evaluador de políticas del servicio.",
+  "input": {
+    "skill": "aws-iam-policy-static-review",
+    "aws_credentials_used": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "no_aws_calls",
+    "description": "La revisión es estática: el uso de credenciales o llamadas a AWS se bloquea."
+  },
+  "sr_links": [],
+  "target_skill": "aws-iam-policy-static-review"
+}

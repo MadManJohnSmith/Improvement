@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-151",
+  "type": "negative",
+  "description": "Se afirma que la CSP del proyecto es segura a partir de la configuración del código, sin conocer proxies ni despliegue real.",
+  "input": {
+    "skill": "http-security-headers-verifier",
+    "safe_claim_from_source_only": true,
+    "deployment_context_known": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "context_guard",
+    "description": "Sin contexto de despliegue no se afirma seguridad: la afirmación se invalida."
+  },
+  "sr_links": [],
+  "target_skill": "http-security-headers-verifier"
+}

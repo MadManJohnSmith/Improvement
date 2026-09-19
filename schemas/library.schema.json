@@ -158,7 +158,12 @@
               "minLength": 1,
               "description": "Origin of the skill: 'internal' for framework-native skills, otherwise the source_id of an entry in library/source-registry.json."
             },
-            "commit": { "type": "string" }
+            "commit": { "type": "string" },
+            "spec_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pinned specification version when the source is a versioned standard rather than a git repository. Exactly one of commit or spec_version must be present."
+            }
           }
         }
       }
@@ -222,7 +227,12 @@
               "minLength": 1,
               "description": "Origin of the pattern: 'internal' for framework-native patterns, otherwise the source_id of an entry in library/source-registry.json."
             },
-            "commit": { "type": "string" }
+            "commit": { "type": "string" },
+            "spec_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pinned specification version when the source is a versioned standard rather than a git repository. Exactly one of commit or spec_version must be present."
+            }
           }
         }
       }

@@ -236,7 +236,8 @@ def _golden_library():
                 "invariants": ["Never modifies product code"],
                 "limits": ["Single project per invocation"],
                 "scenarios": ["SC-010"],
-                "provenance": {"license": "proprietary", "source": "internal"},
+                "provenance": {"license": "proprietary", "source": "internal",
+                               "commit": "a" * 40},
             },
         ],
         "catalog_patterns": [
@@ -250,7 +251,8 @@ def _golden_library():
                 ],
                 "invariants": ["Read-only access to product"],
                 "scenarios": ["SC-020"],
-                "provenance": {"license": "proprietary", "source": "internal"},
+                "provenance": {"license": "proprietary", "source": "internal",
+                               "commit": "a" * 40},
             },
         ],
         "composition_rules": {
@@ -1354,6 +1356,34 @@ class TestSourceRegistry(unittest.TestCase):
         with self.assertRaises(gc.ContractError):
             gc.validate("source-registry", doc)
 
+    # -- pin de estándares versionados vía spec_version ----------------------
+
+    def test_standard_pinned_via_spec_version_accepted(self):
+        doc = _golden_source_registry()
+        standard = doc["sources"][1]
+        standard["provenance_status"] = "pinned"
+        standard["spec_version"] = "2.2 (W3C Recommendation, published 2024-12-12)"
+        standard["retrieved_at"] = "2026-09-19"
+        gc.validate("source-registry", doc)
+
+    def test_pinned_without_revision_or_spec_version_rejected(self):
+        doc = _golden_source_registry()
+        doc["sources"][1]["provenance_status"] = "pinned"
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("source-registry", doc)
+        self.assertIn("spec_version", str(ctx.exception))
+
+    def test_spec_version_pin_requires_retrieval_date(self):
+        doc = _golden_source_registry()
+        standard = doc["sources"][1]
+        standard["provenance_status"] = "pinned"
+        standard["spec_version"] = "2.2"
+        standard["retrieved_at"] = "2026-09-19"
+        del standard["retrieved_at"]
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("source-registry", doc)
+        self.assertIn("retrieved_at", str(ctx.exception))
+
 
 # ===========================================================================
 # Library hardening: sin activación/escenarios/procedencia no es seleccionable
@@ -1417,6 +1447,21 @@ class TestLibraryHardening(unittest.TestCase):
         doc["catalog_patterns"][0]["provenance"]["source"] = "example-skills"
         doc["catalog_patterns"][0]["provenance"]["commit"] = "a" * 40
         gc.validate("library", doc)
+
+    def test_spec_version_pin_in_provenance_accepted(self):
+        doc = _golden_library()
+        prov = doc["catalog_patterns"][0]["provenance"]
+        del prov["commit"]
+        prov["spec_version"] = "2.2 (W3C Recommendation, published 2024-12-12)"
+        gc.validate("library", doc)
+
+    def test_provenance_without_pin_rejected(self):
+        doc = _golden_library()
+        prov = doc["catalog_patterns"][0]["provenance"]
+        del prov["commit"]
+        with self.assertRaises(gc.ContractError) as ctx:
+            gc.validate("library", doc)
+        self.assertIn("pin", str(ctx.exception))
 
 
 if __name__ == "__main__":

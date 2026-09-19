@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-150",
+  "type": "positive",
+  "description": "Las cabeceras se evalúan con fuente por cabecera y la parte efectiva se verifica con respuesta capturada en entorno autorizado.",
+  "input": {
+    "skill": "http-security-headers-verifier",
+    "per_header_source": true,
+    "deployed_response_observed": true,
+    "context_known": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "header_evidence",
+    "description": "Declarado vs efectivo distinguido con evidencia por cabecera."
+  },
+  "sr_links": [],
+  "target_skill": "http-security-headers-verifier"
+}

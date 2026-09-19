@@ -71,8 +71,12 @@ class LibraryDocumentTest(unittest.TestCase):
                 source = entry["provenance"]["source"]
                 self.assertIn(source, ids,
                               f"{entry['name']}: source {source!r} not in registry")
-                self.assertRegex(entry["provenance"]["commit"],
-                                 r"^[0-9a-f]{40}$")
+                prov = entry["provenance"]
+                pinned_commit = re.fullmatch(r"[0-9a-f]{40}",
+                                             prov.get("commit", ""))
+                self.assertTrue(pinned_commit or prov.get("spec_version"),
+                                f"{entry['name']}: provenance must pin "
+                                "commit or spec_version")
 
     def test_mvp_skills_not_shadowed(self):
         names = {e["name"] for _k, e, _d in all_entries(self.library)}
@@ -139,8 +143,14 @@ class LibraryContentTest(unittest.TestCase):
         for _kind, entry, d in self.entries:
             with self.subTest(entry=entry["name"]):
                 text = (d / "SKILL.md").read_text(encoding="utf-8")
-                self.assertIn("MIT", text)
                 self.assertIn("Reimplementación propia", text)
+                provenance = text.split("## Procedencia", 1)[1]
+                acknowledged = any(marker in provenance.lower()
+                                   for marker in ("mit", "licencia",
+                                                  "términos", "license"))
+                self.assertTrue(acknowledged,
+                                f"{entry['name']}: license not acknowledged "
+                                "in Procedencia")
 
     def test_catalog_activation_criteria_coupled_to_content(self):
         """Un criterio de activación declarado debe estar en el contenido, verbatim."""
