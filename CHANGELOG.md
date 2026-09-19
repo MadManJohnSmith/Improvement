@@ -1,5 +1,9 @@
 # Cambios
 
+## Sesión de Creator ligada al workspace del run — 2026-09-19
+
+- Hipótesis del piloto confirmada contra el runtime DSH (0.1.5-rc.1): `session/create` acepta `workspaceId` o `cwd`, no ambos; con solo `cwd` la sesión no se adjunta al registro de workspaces (aparece «Ungrouped» en la UI) y su frontera de `workspace-write` queda reducida al directorio del run — cualquier escritura a nivel workspace se deniega y empuja a escaladas. El despacho registra ahora el workspace del run (`workspace/create`, idempotente) y crea la sesión con `workspaceId`: la sesión queda agrupada bajo el nombre del workspace y su cwd — la raíz escribible del modo vigente — es el workspace entero, que es el área de escritura diseñada del Creator. La decisión se apoya en el código del runtime: `SandboxPolicyService.resolve` toma `session.header.cwd` como `workspaceRoot`, y `createOrAdopt` lo fija desde `workspace.path`. Regresiones: los despachos pasan la raíz del workspace y la RPC crea workspace + sesión sin clave `cwd`. Suite completa: 362 pruebas OK (2 skips previos).
+
 ## Invariante anti-escalada en el prompt de Creator — 2026-09-19
 
 - Hallazgo real del piloto tardis: la sesión de Creator pidió `danger-full-access` para escribir un archivo de prueba en el workspace del run, con justificación circular («tool schema conflict»). El prompt versionado incorpora el invariante 8: no solicitar escaladas de sandbox — el área del run es escribible bajo `workspace-write`; una escritura denegada o un conflicto de esquema es un hallazgo que se reporta y reproduce en modo vigente, nunca un motivo de escalada. Coincide con la política vigente (`setup-dsh.md`: strictly-wider exige aprobación real; el error de esquema no autoriza `danger-full-access`). Regresión: el prompt contiene la prohibición.

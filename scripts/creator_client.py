@@ -147,6 +147,12 @@ def _library_selection_section():
     return "\n".join(lines)
 
 
+def _run_workspace(run_dir):
+    """The run's workspace root: the parent of ``creator-runs/`` (§5 layout)."""
+    run_dir = Path(run_dir)
+    return run_dir.parent.parent if run_dir.parent.name == "creator-runs" else run_dir.parent
+
+
 def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
     """Build the versioned Creator prompt from run inputs (§4.5).
 
@@ -163,7 +169,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     gen_id = run_doc["generation_id"]
     project_name = run_doc["project"]["name"]
     framework_rev = run_doc.get("framework_revision", "unknown")
-    workspace = run_dir.parent.parent if run_dir.parent.name == "creator-runs" else run_dir.parent
+    workspace = _run_workspace(run_dir)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -407,9 +413,35 @@ class DshLocalClient:
         """Return the Host session list through the generated descriptor."""
         return self.rpc("session/list", {"_request": {}})
 
-    def create_creator_session(self, *, cwd, agent_preset="cordis"):
-        """Create a session and queue the Creator prompt through DSH."""
-        req = {"cwd": str(cwd)}
+    def create_workspace(self, path):
+        """Register (or look up) ``path`` in the workspace registry.
+
+        Idempotent: a known path returns its existing workspaceId with
+        ``created: false``. Sessions the UI groups under a workspace name are
+        the ones attached here; a session created without this attachment
+        shows as ungrouped.
+        """
+        created = self.rpc("workspace/create", {"request": {"path": str(path)}})
+        value = created.get("value", created) if isinstance(created, dict) else created
+        workspace = value.get("workspace") if isinstance(value, dict) else None
+        workspace_id = workspace.get("workspaceId") if isinstance(workspace, dict) else None
+        if not workspace_id:
+            raise ValueError("DSH workspace/create returned no workspaceId")
+        return workspace_id
+
+    def create_creator_session(self, *, workspace_path, agent_preset="cordis"):
+        """Create the Creator session bound to the run's workspace.
+
+        session/create accepts workspaceId or cwd, not both. With a
+        workspaceId DSH attaches the session to the workspace registry and
+        uses the workspace path as the session cwd — which is the
+        workspace-write boundary. A bare cwd leaves the session unattached
+        (ungrouped in the UI) and confines writes to the run directory alone,
+        so any workspace-level write is denied and drifts into escalation
+        requests.
+        """
+        workspace_id = self.create_workspace(workspace_path)
+        req = {"workspaceId": workspace_id}
         if agent_preset:
             req["agentPreset"] = agent_preset
         created = self.rpc("session/create", {"request": req})
@@ -1155,7 +1187,8 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True)
         # If client authenticated, dispatch to DSH
         session_id = None
         if client is not None and getattr(client, "authenticated", False):
-            session_id = client.create_creator_session(cwd=run_dir)
+            session_id = client.create_creator_session(
+                workspace_path=_run_workspace(run_dir))
             session._session_ref = session_id
             client.send_prompt(session_id, prompt_text)
 
