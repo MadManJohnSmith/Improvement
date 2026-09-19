@@ -701,35 +701,237 @@ def launch_dsh_web(command=("npx", "@deepseek-ai/dsh", "web"), *, env=None):
 DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
 
 
+def _read_settings_structure(dsh_home):
+    """Parse settings.yaml into the fields the provider check needs.
+
+    Structure only: provider names, apiKeyEnv NAMES and model counts.
+    API key values are never read, stored or logged.
+    """
+    path = Path(dsh_home) / "settings.yaml"
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    def block_after(header_regex):
+        for i, line in enumerate(lines):
+            m = re.match(header_regex, line)
+            if m:
+                base_indent = len(m.group(1))
+                out = []
+                for child in lines[i + 1:]:
+                    if not child.strip() or child.lstrip().startswith("#"):
+                        continue
+                    if len(child) - len(child.lstrip()) <= base_indent:
+                        break
+                    out.append(child)
+                return out
+        return None
+
+    default = {}
+    blk = block_after(r"^(\s*)agent-default-model:\s*$")
+    if blk:
+        for child in blk:
+            m = re.match(r"^\s*(provider|model):\s*(\S.*)$", child)
+            if m:
+                default[m.group(1)] = m.group(2).strip().strip('"\'')
+    if "provider" in default:
+        default["provider"] = default["provider"].strip().strip('"\'')
+
+    providers = {}
+    blk = block_after(r"^(\s*)providers:\s*$")
+    if blk:
+        prov_indent = min(len(c) - len(c.lstrip()) for c in blk)
+        current = None
+        for child in blk:
+            indent = len(child) - len(child.lstrip())
+            m = re.match(r"^\s*([A-Za-z0-9_-]+):\s*(.*)$", child)
+            if m and indent == prov_indent:
+                if m.group(2) == "":
+                    current = m.group(1)
+                    providers.setdefault(
+                        current, {"api_key_env": None, "models": 0})
+                else:
+                    current = None
+                continue
+            if not current:
+                continue
+            km = re.match(r"^\s*([A-Za-z0-9_-]+):\s*(\S.*)$", child)
+            if km and km.group(1) == "apiKeyEnv":
+                providers[current]["api_key_env"] = (
+                    km.group(2).strip().strip('"\''))
+            if re.match(r"^\s*-\s+id\s*:", child):
+                providers[current]["models"] += 1
+    return default, providers
+
+
+def _find_dsh_pids():
+    """PIDs of running DSH web processes (exact command match)."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-af", "dsh"], capture_output=True, text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    pids = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2 or not parts[0].isdigit():
+            continue
+        pid, cmdline = int(parts[0]), parts[1]
+        if pid == os.getpid():
+            continue
+        if "@deepseek-ai/dsh" in cmdline and (
+                " web" in cmdline or "--profile web" in cmdline):
+            pids.append(pid)
+    return pids
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _stop_dsh_instances(pids, *, timeout=10):
+    """Terminate DSH web processes: SIGTERM, wait, SIGKILL fallback.
+
+    Returns the list of PIDs that were signaled (evidence for the run).
+    """
+    import signal
+    stopped = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except OSError:
+            continue
+    deadline = time.time() + timeout
+    while time.time() < deadline and any(_pid_alive(p) for p in stopped):
+        time.sleep(0.2)
+    for pid in stopped:
+        if _pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    return stopped
+
+
+def _env_var_present(name):
+    """Whether an env var is set and non-empty, without keeping its value.
+
+    A running DSH may hold the key in its own process environment; those
+    environments are inspected for the variable NAME only and any value
+    found is discarded immediately.
+    """
+    if os.environ.get(name):
+        return True
+    for pid in _find_dsh_pids():
+        try:
+            raw = Path(f"/proc/{pid}/environ").read_bytes()
+        except OSError:
+            continue
+        prefix = name.encode() + b"="
+        for part in raw.split(b"\0"):
+            if part.startswith(prefix) and part[len(prefix):].strip():
+                return True
+    return False
+
+
+def dsh_provider_status(dsh_home):
+    """Fail-closed provider/API-key presence check.
+
+    Reads only configuration structure and variable NAMES. Returns
+    ``{"ok": bool, ...}``; when not ok, ``reason`` names the concrete
+    missing piece so the run can stop with a single actionable message.
+    """
+    home = Path(dsh_home).expanduser()
+    try:
+        default, providers = _read_settings_structure(home)
+    except (OSError, ValueError) as e:
+        return {"ok": False,
+                "reason": f"settings.yaml no legible en {home}: {e}"}
+    provider = default.get("provider")
+    if not provider:
+        return {"ok": False,
+                "reason": f"settings.yaml en {home} sin "
+                          "agent-default-model.provider configurado"}
+    info = providers.get(provider)
+    if not info:
+        return {"ok": False,
+                "reason": f"proveedor {provider!r} (default) no está en "
+                          "providers de settings.yaml"}
+    if info["models"] == 0:
+        return {"ok": False,
+                "reason": f"proveedor {provider!r} sin modelos configurados"}
+    env_name = info["api_key_env"]
+    if env_name and not _env_var_present(env_name):
+        return {"ok": False,
+                "reason": f"llave API ausente: la variable {env_name} del "
+                          f"proveedor {provider!r} no está definida en el "
+                          "entorno; configúrala y vuelve a intentarlo"}
+    return {"ok": True, "provider": provider, "models": info["models"],
+            "api_key_env": env_name}
+
+
+def _provider_home(candidates):
+    """First candidate home that actually holds a settings.yaml."""
+    for home in candidates:
+        if (Path(home) / "settings.yaml").is_file():
+            return home
+    return None
+
+
 def acquire_dsh_client(*, launch=False):
-    """Acquire an authenticated local DSH client without persisting secrets.
+    """Acquire an authenticated, provider-ready DSH client.
 
     Order: injected client (caller), env DSH_HOME, then standard DSH home
     candidates. A candidate only counts when its server answers the token
-    exchange. With launch=True, start ``dsh web`` as a child process when no
-    existing session answers; the child is never auto-started by default and
-    no package download is triggered implicitly. Returns
-    ``(client, origin)`` or ``(None, reason)``. Fail-closed.
+    exchange AND the configured provider has its API key present (checked
+    by variable name only, never by value). With launch=True the launch
+    path owns the DSH lifecycle: any running DSH web instance is stopped
+    first, a fresh one is started with the current configuration, and the
+    provider check gates the result. Without a ready session the run
+    stops with the concrete missing piece. Fail-closed.
     """
     candidates = []
     env_home = os.environ.get("DSH_HOME")
     if env_home:
         candidates.append(Path(env_home).expanduser())
     candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+
+    if launch:
+        running = _find_dsh_pids()
+        if running:
+            _stop_dsh_instances(running)
+        try:
+            process, client = launch_dsh_web()
+        except Exception as e:
+            return None, f"dsh web no arrancó: {e}"
+        home = _provider_home(candidates)
+        if home is None:
+            process.kill()
+            return None, ("no se encontró settings.yaml de DSH; define "
+                          "DSH_HOME y configura el proveedor")
+        status = dsh_provider_status(home)
+        if not status["ok"]:
+            process.kill()
+            return None, status["reason"]
+        return client, f"launched:dsh-web ({status['provider']})"
+
+    last_error = "sin candidatos"
     for home in candidates:
         try:
             client = DshLocalClient.from_dsh_home(home)
             client.exchange_token()
-            return client, str(home)
         except Exception as e:
             last_error = str(e)
             continue
-    if launch:
-        try:
-            process, client = launch_dsh_web()
-            return client, "launched:dsh-web"
-        except Exception as e:
-            return None, f"dsh web no arrancó: {e}"
+        status = dsh_provider_status(home)
+        if not status["ok"]:
+            return None, status["reason"]
+        return client, str(home)
     return None, (
         "sin sesión DSH autenticada "
         f"(última prueba: {last_error}); abre 'dsh web' y reejecuta, "

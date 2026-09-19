@@ -235,6 +235,176 @@ class CreatorTests(Base):
             self.assertIn("Invariantes", prompt)
 
 
+def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
+                    models=2, default_provider=None):
+    """Fixture DSH home: credentials plus a structural settings.yaml."""
+    home = Path(home)
+    home.mkdir(parents=True, exist_ok=True)
+    (home / ".credentials.yaml").write_text(
+        "records:\n"
+        "  client-connection/browser-session:\n"
+        "    payload:\n"
+        "      secret: " + ("a" * 32) + "\n"
+    )
+    models_yaml = "".join(
+        f"        - id: model-{i}\n          name: Model {i}\n"
+        for i in range(models))
+    provider_block = ""
+    if provider:
+        provider_block = f"    {provider}:\n"
+        if api_key_env:
+            provider_block += f"      apiKeyEnv: {api_key_env}\n"
+        provider_block += f"      models:\n{models_yaml}"
+    (home / "settings.yaml").write_text(
+        "agent-default-model:\n"
+        f"  provider: {default_provider or provider or 'none'}\n"
+        "  model: model-0\n"
+        "llm-pi-ai:\n"
+        "  providers:\n"
+        f"{provider_block}"
+    )
+    return home
+
+
+class DshLifecycleTests(unittest.TestCase):
+    """Ciclo de vida DSH: instancias previas y puerta de llave API."""
+
+    def test_provider_status_ok_with_key_in_env(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
+            home = _write_dsh_home(tmp)
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "testprov")
+        self.assertEqual(status["api_key_env"], "TEST_PROV_KEY")
+
+    def test_provider_status_warns_and_stops_without_key(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]):
+            home = _write_dsh_home(tmp)
+            status = cc.dsh_provider_status(home)
+        self.assertFalse(status["ok"])
+        self.assertIn("llave API ausente", status["reason"])
+        self.assertIn("TEST_PROV_KEY", status["reason"])
+
+    def test_provider_status_fails_without_default_provider(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = _write_dsh_home(tmp, default_provider="ghost")
+            status = cc.dsh_provider_status(home)
+        self.assertFalse(status["ok"])
+        self.assertIn("no está en providers", status["reason"])
+
+    def test_provider_status_fails_without_models(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
+            home = _write_dsh_home(tmp, models=0)
+            status = cc.dsh_provider_status(home)
+        self.assertFalse(status["ok"])
+        self.assertIn("sin modelos", status["reason"])
+
+    def test_find_dsh_pids_matches_only_dsh_web(self):
+        fake = unittest.mock.Mock()
+        fake.stdout = (
+            f"{os.getpid()} python3 -B -m unittest tests\n"
+            "4140 node /x/@deepseek-ai/dsh/lib/bin.js --profile web --port 3081\n"
+            "68865 npm exec @deepseek-ai/dsh web\n"
+            "70000 node /x/@deepseek-ai/dsh/lib/bin.js --profile audit\n"
+        )
+        with unittest.mock.patch.object(cc.subprocess, "run",
+                                        return_value=fake):
+            pids = cc._find_dsh_pids()
+        self.assertEqual(pids, [4140, 68865])
+
+    def test_stop_dsh_instances_signals_and_escalates(self):
+        killed = []
+        with unittest.mock.patch.object(cc, "_pid_alive",
+                                        return_value=True), \
+                unittest.mock.patch("os.kill",
+                                    side_effect=lambda p, s: killed.append((p, s))):
+            stopped = cc._stop_dsh_instances([4140, 68865], timeout=0)
+        self.assertEqual(stopped, [4140, 68865])
+        import signal
+        self.assertIn((4140, signal.SIGTERM), killed)
+        self.assertIn((4140, signal.SIGKILL), killed)
+
+    def test_launch_path_stops_existing_and_gates_on_key(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertIs(client, fake_client)
+        self.assertIn("launched:dsh-web", origin)
+        self.assertIn("testprov", origin)
+        fake_process.kill.assert_not_called()
+
+    def test_launch_path_stops_running_instance_first(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        stopped = []
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[68865]), \
+                unittest.mock.patch.object(
+                    cc, "_stop_dsh_instances",
+                    side_effect=lambda pids, **k: stopped.extend(pids)), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertEqual(stopped, [68865])
+        self.assertIsNotNone(client)
+
+    def test_launch_path_kills_child_when_key_missing(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.authenticated = True
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertIsNone(client)
+        self.assertIn("llave API ausente", origin)
+        fake_process.kill.assert_called_once()
+
+    def test_existing_session_without_key_stops_before_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc.DshLocalClient,
+                                           "exchange_token",
+                                           lambda self: None):
+            _write_dsh_home(tmp)
+            client, origin = cc.acquire_dsh_client()
+        self.assertIsNone(client)
+        self.assertIn("llave API ausente", origin)
+
+
+
 class ValidatorTests(Base):
     def _make_contract_package(self, reuse_reference="systematic-debugging"):
         """Package with one contract artifact reusing a base skill."""

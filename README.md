@@ -20,7 +20,7 @@ python3 -B scripts/bootstrap.py install --project /ruta/proyecto
 El bootstrap:
 
 1. descubre el proyecto y prepara un workspace externo;
-2. prepara el run y el prompt versionado y despacha Creator automáticamente: con una sesión DSH autenticada supervisa la generación dentro del presupuesto; sin ella, el run queda en estado recuperable con la acción concreta (abrir `dsh web`, definir `DSH_HOME` o `--launch-dsh`);
+2. prepara el run y el prompt versionado y despacha Creator automáticamente: con una sesión DSH autenticada y el proveedor con su llave presente (verificada por nombre de variable, sin leer valores) supervisa la generación dentro del presupuesto; si falta la llave, avisa con la variable exacta y se detiene; `--launch-dsh` detiene instancias DSH previas, arranca una fresca y aplica la misma puerta;
 3. Creator genera `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas justificadas, seleccionando primero la biblioteca base y el catálogo;
 4. Creator invoca `bootstrap accept`;
 5. el Host valida, crea backups, instala en staging y ejecuta la aceptación;
