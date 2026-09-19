@@ -301,7 +301,8 @@ def _check_dsh():
 # ---------------------------------------------------------------------------
 
 
-def install(project, workspace, *, budget=None):
+def install(project, workspace, *, budget=None, dispatch_creator=False,
+            launch_dsh=False):
     """Create a new generation run from preflight through Creator package.
 
     Idempotent: if an identical run already exists, returns its reference.
@@ -553,7 +554,7 @@ def install(project, workspace, *, budget=None):
         "resumable": True,
     })
 
-    return {
+    result = {
         "result": "CREATED",
         "generation_id": gen_id,
         "run_dir": str(run_dir),
@@ -561,6 +562,24 @@ def install(project, workspace, *, budget=None):
         "project": project_name,
         "message": f"Run {gen_id} creado; listo para Creator",
     }
+
+    if dispatch_creator:
+        sys.path.insert(0, str(FRAMEWORK / "scripts"))
+        import creator_client as cc
+        try:
+            result["creator"] = cc.run_creator(
+                run_dir, acquire=True, launch=launch_dsh)
+        except Exception as e:
+            result["creator"] = {
+                "result": "PREPARED",
+                "generation_id": gen_id,
+                "error": str(e),
+                "message": "Despacho a Creator falló; run recuperable",
+            }
+        creator_state = result["creator"].get("result")
+        detail = result["creator"].get("message") or result["creator"].get("error")
+        result["message"] += f"; Creator: {creator_state} ({detail})" if detail             else f"; Creator: {creator_state}"
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +931,11 @@ def main():
                            help="Ruta absoluta al proyecto")
     p_install.add_argument("--workspace", default=None,
                            help="Ruta al workspace externo (default: hermano del proyecto)")
+    p_install.add_argument("--no-dispatch", action="store_true",
+                           help="Solo preparar el run; no despachar Creator "
+                                "(la supervisión puede durar hasta el presupuesto)")
+    p_install.add_argument("--launch-dsh", action="store_true",
+                           help="Arrancar 'dsh web' como hijo si no hay sesión autenticada")
 
     # accept
     p_accept = sub.add_parser("accept",
@@ -954,7 +978,9 @@ def main():
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
             )
-            result = install(project, workspace)
+            result = install(project, workspace,
+                             dispatch_creator=not args.no_dispatch,
+                             launch_dsh=args.launch_dsh)
 
         elif args.command == "accept":
             result = accept(Path(args.workspace).resolve(),

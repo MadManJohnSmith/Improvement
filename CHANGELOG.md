@@ -1,5 +1,12 @@
 # Cambios
 
+## Despacho automático de Creator — 2026-09-19
+
+- `creator_client.run_creator` adquiere la sesión DSH local por sí misma cuando se le pide (`acquire=True`): cliente inyectado, variable `DSH_HOME` o casas estándar (`~/.dsh`, `~/.deepseek`, `~/.config/dsh`), verificando que el servidor responda al intercambio de token; con `--launch-dsh` arranca `dsh web` como hijo (nunca descarga DSH por iniciativa propia). Sin sesión autenticada devuelve `PREPARED` con la acción concreta, en estado recuperable.
+- Tras despachar, supervisa la generación dentro del presupuesto (poll de `generated/` y estado del run) y verifica el paquete al completarse; el agotamiento del presupuesto retiene con causa o deja el run reanudable, nunca en estado silencioso.
+- `bootstrap install` encadena el despacho automáticamente desde el CLI (`--no-dispatch` para solo preparar; `--launch-dsh` para arrancar DSH). El resultado de Creator se incrusta en la salida de install; un fallo de despacho mantiene el run creado y recuperable. La función Python `install()` sigue sin despachar por defecto (comportamiento de tests y programático invariante).
+- Suite completa: 336 pruebas OK (2 skips previos). Incluye regresiones de adquisición fail-closed, despacho vía adquisición y encadenado de install con Creator inaccesible.
+
 ## Biblioteca integrada en el pipeline Creator y refuerzos fail-closed — 2026-09-19
 
 - `bootstrap install` congela un snapshot de `library/library.json` validado en `run/inputs/library.json` y registra su SHA-256 en `bootstrap-request.json`: la selección de Creator queda anclada a la biblioteca exacta del run, como procedencia.

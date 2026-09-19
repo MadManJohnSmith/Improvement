@@ -5,10 +5,12 @@
 
 import http.server
 import json
+import os
 import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +136,32 @@ class CreatorTests(Base):
         result = cc.run_creator(self.run_dir)
         self.assertEqual(result["result"], "PREPARED")
 
+    def test_acquire_dsh_client_fails_closed_without_session(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}):
+            client, origin = cc.acquire_dsh_client()
+        self.assertIsNone(client)
+        self.assertIn("dsh web", origin)
+
+    def test_run_creator_acquires_client_when_asked(self):
+        class MockClient:
+            authenticated = True
+            def __init__(self):
+                self.prompts = []
+            def create_creator_session(self, *, cwd, agent_preset=None):
+                return "acquired-session"
+            def send_prompt(self, session_id, prompt):
+                self.prompts.append((session_id, prompt))
+                return {"ok": True}
+        mock = MockClient()
+        with unittest.mock.patch.object(
+                cc, "acquire_dsh_client", return_value=(mock, "test-home")):
+            result = cc.run_creator(self.run_dir, acquire=True, wait=False)
+        self.assertEqual(result["result"], "PREPARED")
+        self.assertEqual(result["dsh_session_id"], "acquired-session")
+        self.assertEqual(result["dsh_origin"], "test-home")
+        self.assertEqual(len(mock.prompts), 1)
+
     def test_run_creator_with_authenticated_client_dispatches_prompt(self):
         class MockClient:
             authenticated = True
@@ -145,7 +173,7 @@ class CreatorTests(Base):
                 self.prompts.append((session_id, prompt))
                 return {"ok": True}
         mock = MockClient()
-        result = cc.run_creator(self.run_dir, client=mock)
+        result = cc.run_creator(self.run_dir, client=mock, wait=False)
         self.assertEqual(result["result"], "PREPARED")
         self.assertEqual(result["dsh_session_id"], "mock-session-123")
         self.assertEqual(len(mock.prompts), 1)

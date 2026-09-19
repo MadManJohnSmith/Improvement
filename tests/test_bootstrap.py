@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -325,6 +326,42 @@ class TestAccept(_BootstrapTestBase):
 # ===========================================================================
 # Update subcommand
 # ===========================================================================
+
+
+class TestInstallDispatch(_BootstrapTestBase):
+    """install puede encadenar el despacho a Creator (fail-closed)."""
+
+    def test_dispatch_embeds_creator_result(self):
+        import creator_client as cc
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                return_value={"result": "PREPARED",
+                              "message": "sin sesión DSH autenticada"}):
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        self.assertEqual(result["result"], "CREATED")
+        self.assertEqual(result["creator"]["result"], "PREPARED")
+        self.assertIn("Creator", result["message"])
+
+    def test_dispatch_failure_keeps_run_recoverable(self):
+        import creator_client as cc
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                side_effect=RuntimeError("DSH inalcanzable")):
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        self.assertEqual(result["result"], "CREATED")
+        self.assertEqual(result["creator"]["result"], "PREPARED")
+        self.assertIn("DSH inalcanzable", result["creator"]["error"])
+
+    def test_default_does_not_dispatch(self):
+        import creator_client as cc
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                side_effect=AssertionError("must not dispatch")):
+            result = bs.install(self.project, self.workspace)
+        self.assertEqual(result["result"], "CREATED")
+        self.assertNotIn("creator", result)
 
 
 class TestUpdate(_BootstrapTestBase):
