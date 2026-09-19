@@ -268,6 +268,10 @@ Escribe bajo `{run_dir}/generated/`:
 5. No proveedores/modelos/routing nuevos
 6. Todo valor/decisión tiene fuente
 7. Unknowns load-bearing bloquean la generación
+8. No solicitar escaladas de sandbox a danger-full-access: el área del run
+   es escribible bajo workspace-write; una escritura denegada o un conflicto
+   de esquema son hallazgos que se reportan y se reproducen en modo vigente,
+   nunca un motivo de escalada
 
 ## Al finalizar
 

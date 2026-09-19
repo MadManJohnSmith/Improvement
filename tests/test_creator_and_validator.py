@@ -207,6 +207,7 @@ class CreatorTests(Base):
         prompt = (self.run_dir / "creator-prompt.md").read_text()
         self.assertIn("base-library", prompt)
         self.assertIn("no proveedores/modelos/routing nuevos", prompt.lower())
+        self.assertIn("danger-full-access", prompt)
         self.assertIn("bootstrap.py accept", prompt)
 
     def test_prompt_embeds_materialized_library(self):
