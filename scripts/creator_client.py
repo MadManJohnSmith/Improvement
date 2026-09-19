@@ -671,26 +671,45 @@ class CreatorSession:
         }
 
 
-def launch_dsh_web(command=("npx", "@deepseek-ai/dsh", "web"), *, env=None):
+def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
+                   env=None, spawn_timeout=120):
     """Launch DSH web and return ``(process, client)`` after token capture.
 
-    The child remains attached for the caller's authenticated session. Output
-    is consumed in memory; no token-bearing line is written to disk.
+    ``-y`` keeps npx non-interactive (an "Ok to proceed?" prompt aborts
+    without a TTY); stdin is null. The child remains attached for the
+    caller's authenticated session. Output is consumed in memory; no
+    token-bearing line is written to disk. When DSH exits without a URL,
+    the captured output is included in the error with any token redacted,
+    so the launch failure is diagnosable.
     """
     child_env = os.environ.copy()
     if env:
         child_env.update(env)
     process = subprocess.Popen(
         list(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1, env=child_env,
+        stdin=subprocess.DEVNULL, text=True, bufsize=1, env=child_env,
     )
-    for line in process.stdout:
+    captured = []
+    deadline = time.time() + spawn_timeout
+    url_line = None
+    while time.time() < deadline:
+        line = process.stdout.readline()
+        if not line:
+            break
+        captured.append(line.rstrip())
         if "dsh web:" in line and "?token=" in line:
-            return process, DshLocalClient.from_console_line(line)
+            url_line = line
+            break
         if process.poll() is not None:
             break
+    if url_line:
+        return process, DshLocalClient.from_console_line(url_line)
     process.kill()
-    raise RuntimeError("DSH exited before printing an authenticated URL")
+    tail = re.sub(r"\?token=\S+", "?token=<redacted>",
+                  "\n".join(captured[-15:])) or "<sin salida>"
+    raise RuntimeError(
+        "DSH no imprimió una URL autenticada (exit="
+        f"{process.poll()}); salida capturada sin token:\n{tail}")
 
 
 # ---------------------------------------------------------------------------

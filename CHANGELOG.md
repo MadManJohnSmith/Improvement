@@ -1,5 +1,9 @@
 # Cambios
 
+## Lanzamiento DSH no interactivo con diagnóstico — 2026-09-19
+
+- `launch_dsh_web` ya no falla a ciegas: captura la salida de DSH y la incluye en el error con cualquier token redactado, además de exponer el código de salida. La causa más probable del fallo observado ("Ok to proceed?" de npx abortando sin TTY) se elimina con `npx -y` y `stdin` nulo; el plazo de arranque es de 120s y `DSH_MODULE_ROOT`/instalación local siguen siendo responsabilidad del titular. Regresiones con proceso falso: éxito con URL, fallo con salida capturada y redacción de tokens. Suite completa: 352 pruebas OK (2 skips previos).
+
 ## Resolutor de proveedor utilizable — 2026-09-19
 
 - La puerta de proveedor ya no exige la llave de un proveedor concreto (era ilusorio: ningún usuario debe tener la misma configuración). `dsh_provider_status` resuelve el primer proveedor utilizable recorriendo los declarados en settings.yaml — primero el default de DSH (el último modelo que el usuario configuró), después el resto en orden de configuración — y acepta cualquiera con modelos cuya variable de llave esté presente (verificación solo por nombre, valores jamás leídos ni registrados). Si no hay ninguno utilizable, se detiene enumerando qué variable falta por proveedor, con una sola acción concreta para el titular.
