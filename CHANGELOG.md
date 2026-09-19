@@ -1,5 +1,9 @@
 # Cambios
 
+## Reanudación del despacho en runs existentes — 2026-09-19
+
+- `bootstrap install` sobre un run ya existente ya no se limita a `EXISTING`: con el despacho activo (comportamiento por defecto del CLI) reanuda la generación para los estados reanudables por Creator (`CREATED`, `GENERATING`), aplicando la adquisición de sesión, la puerta de llave y la supervisión. Los estados propiedad del Host (`GENERATED` en adelante) nunca se re-despachan, y los estados intermedios no reanudables (`DISCOVERING`, `DESIGNING`, `REPAIRING`) quedan en `EXISTING` porque despacharlos retendría el run indebidamente. La cadena de despacho se extrajo a `_dispatch_creator_chain`, compartida por run nuevo y existente. Suite completa: 348 pruebas OK (2 skips previos).
+
 ## Ciclo de vida DSH y puerta de llave API — 2026-09-19
 
 - Puerta de proveedor fail-closed antes de despachar: `dsh_provider_status` lee la estructura de `settings.yaml` del home de DSH (proveedor por defecto en `agent-default-model`, su `apiKeyEnv` y modelos) y verifica que la variable de llave exista en el entorno — solo el NOMBRE, jamás el valor, incluida la inspección por nombre del entorno de instancias DSH en ejecución vía `/proc`. Sin proveedor, sin modelos o sin llave, el despacho se detiene con la pieza concreta que falta; ninguna clave se lee, copia ni registra.

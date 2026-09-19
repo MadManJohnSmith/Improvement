@@ -363,6 +363,45 @@ class TestInstallDispatch(_BootstrapTestBase):
         self.assertEqual(result["result"], "CREATED")
         self.assertNotIn("creator", result)
 
+    def test_existing_generating_run_is_resumed(self):
+        """--launch-dsh on an in-progress run dispatches instead of EXISTING."""
+        import creator_client as cc
+        first = bs.install(self.project, self.workspace)
+        run_dir = Path(first["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "GENERATING"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                return_value={"result": "PREPARED",
+                              "message": "sin sesión DSH autenticada"}) as mocked:
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        mocked.assert_called_once()
+        self.assertEqual(result["result"], "EXISTING")
+        self.assertEqual(result["status"], "GENERATING")
+        self.assertEqual(result["creator"]["result"], "PREPARED")
+
+    def test_existing_generated_run_is_not_dispatched(self):
+        """Host-owned states are never re-dispatched."""
+        import creator_client as cc
+        first = bs.install(self.project, self.workspace)
+        run_dir = Path(first["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "VALIDATING"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                side_effect=AssertionError("must not dispatch")):
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        self.assertEqual(result["result"], "EXISTING")
+        self.assertNotIn("creator", result)
+
 
 class TestUpdate(_BootstrapTestBase):
     """Update detecta base cambiada o devuelve no-op."""

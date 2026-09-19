@@ -301,6 +301,32 @@ def _check_dsh():
 # ---------------------------------------------------------------------------
 
 
+def _dispatch_creator_chain(result, run_dir, launch_dsh):
+    """Chain the Creator dispatch into an install result (fail-closed).
+
+    A dispatch failure keeps the run created/recoverable; the error is
+    reported in the result instead of propagating.
+    """
+    sys.path.insert(0, str(FRAMEWORK / "scripts"))
+    import creator_client as cc
+    try:
+        result["creator"] = cc.run_creator(
+            run_dir, acquire=True, launch=launch_dsh)
+    except Exception as e:
+        result["creator"] = {
+            "result": "PREPARED",
+            "generation_id": result.get("generation_id"),
+            "error": str(e),
+            "message": "Despacho a Creator falló; run recuperable",
+        }
+    creator_state = result["creator"].get("result")
+    detail = result["creator"].get("message") or result["creator"].get("error")
+    if detail:
+        result["message"] += f"; Creator: {creator_state} ({detail})"
+    else:
+        result["message"] += f"; Creator: {creator_state}"
+
+
 def install(project, workspace, *, budget=None, dispatch_creator=False,
             launch_dsh=False):
     """Create a new generation run from preflight through Creator package.
@@ -347,13 +373,18 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                               "GENERATING", "GENERATED", "VALIDATING",
                               "BACKED_UP", "STAGED", "ACCEPTING",
                               "REPAIRING"):
-                    return {
+                    result = {
                         "result": "EXISTING",
                         "generation_id": existing_run.get("generation_id"),
                         "run_dir": str(run_path),
                         "status": status,
                         "message": f"Generación existente en progreso: {status}",
                     }
+                    if dispatch_creator and status in ("CREATED", "GENERATING"):
+                        # Only these states are resumable by run_creator;
+                        # dispatching others would wrongly retain the run.
+                        _dispatch_creator_chain(result, run_path, launch_dsh)
+                    return result
                 if status == "ACTIVE":
                     project_git = _git_info(project)
                     if (existing_run.get("project", {}).get("root_identity")
@@ -564,21 +595,7 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     }
 
     if dispatch_creator:
-        sys.path.insert(0, str(FRAMEWORK / "scripts"))
-        import creator_client as cc
-        try:
-            result["creator"] = cc.run_creator(
-                run_dir, acquire=True, launch=launch_dsh)
-        except Exception as e:
-            result["creator"] = {
-                "result": "PREPARED",
-                "generation_id": gen_id,
-                "error": str(e),
-                "message": "Despacho a Creator falló; run recuperable",
-            }
-        creator_state = result["creator"].get("result")
-        detail = result["creator"].get("message") or result["creator"].get("error")
-        result["message"] += f"; Creator: {creator_state} ({detail})" if detail             else f"; Creator: {creator_state}"
+        _dispatch_creator_chain(result, run_dir, launch_dsh)
     return result
 
 
