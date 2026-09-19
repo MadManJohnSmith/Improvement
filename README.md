@@ -5,10 +5,11 @@ Framework para construir y operar flujos de auditoría y reparación con DSH, ev
 ## Estado
 
 - **MVP del núcleo comprobado:** onboarding, skills, Host aislado, Auditor/Reparación, QA, reauditoría, controlador, presupuesto, archivo y recuperación acotada probados en Syncify y RehabWeb. Ver [estado](docs/status.md).
-- **Arquitectura 3.0 aprobada, pendiente de C0–C7:** el flujo final será de un comando y generará modos/skills específicos de cada proyecto mediante DSH Creator. Ver [arquitectura](ARQUITECTURA_FLUJO_AGENTES.md) e [índice](PLAN_IMPLEMENTACION.md).
+- **Arquitectura 3.0 con C0–C7 implementados:** bootstrap install/accept/update/uninstall, contrato generacional de Creator, validador Host de 10 capas, aceptación, activación transaccional y promoción, verificados sobre paquetes reales (preset cordis) y pilotos clean-room. La activación de extremo a extremo requiere una sesión DSH con proveedor configurado por el usuario. Ver [arquitectura](ARQUITECTURA_FLUJO_AGENTES.md) e [índice](PLAN_IMPLEMENTACION.md).
+- **Biblioteca de skills materializada:** registro de fuentes con procedencia fijada, 21 skills base inmutables y 4 patrones de catálogo especializado activados por evidencia, con escenarios y regresión obligatoria. Ver `library/`.
 - Los presets usados en Syncify/RehabWeb son **fixtures de referencia**, no defaults que deba recibir otro proyecto.
 
-## Experiencia final objetivo (aún no implementada)
+## Experiencia final (implementada en C0–C7)
 
 Prerrequisito: DSH instalado, Creator disponible y al menos un proveedor/modelo configurado por el usuario en DSH.
 
@@ -16,18 +17,18 @@ Prerrequisito: DSH instalado, Creator disponible y al menos un proveedor/modelo 
 python3 -B scripts/bootstrap.py install --project /ruta/proyecto
 ```
 
-El bootstrap deberá:
+El bootstrap:
 
-1. descubrir el proyecto y preparar un workspace externo;
-2. llamar automáticamente a DSH Creator mediante la API local autenticada;
-3. generar `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas justificadas;
-4. hacer que Creator invoque `bootstrap accept`;
-5. validar mediante Host, crear backups, instalar en staging y ejecutar aceptación automática;
-6. activar el conjunto o hacer rollback/RETAINED.
+1. descubre el proyecto y prepara un workspace externo;
+2. prepara el run y el prompt versionado para DSH Creator;
+3. Creator genera `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas justificadas, seleccionando primero la biblioteca base y el catálogo;
+4. Creator invoca `bootstrap accept`;
+5. el Host valida, crea backups, instala en staging y ejecuta la aceptación;
+6. activa el conjunto o hace rollback/RETAINED.
 
-El usuario no copiará prompts, JSON, rutas, recibos ni escenarios de aceptación.
+El usuario no copia prompts, JSON, rutas, recibos ni escenarios de aceptación.
 
-Esta interfaz pertenece a C0–C7 y **todavía no está disponible**.
+La activación automática de extremo a extremo corresponde a una sesión DSH real; sin ella el run queda en estado intermedio recuperable, nunca en un estado silencioso.
 
 ## Uso comprobado actual
 
@@ -53,11 +54,12 @@ python3 -B scripts/onboard.py \
 # repetir con --init después de revisar el dry-run
 ```
 
-Este flujo prepara perfil, skills y enlaces gestionados. No implementa todavía la generación Creator 3.0 ni instala modos finales específicos automáticamente. Consulta [uso operativo actual](docs/usage.md) y [preparación DSH](docs/setup-dsh.md).
+Este flujo prepara perfil, skills y enlaces gestionados para mantenimiento o pilotos manuales. La generación Creator 3.0 usa `bootstrap install`; consulta [uso operativo actual](docs/usage.md) y [preparación DSH](docs/setup-dsh.md).
 
 ## Qué distribuye la arquitectura 3.0
 
 - skills generales para bootstrap, aceptación, evidencia, validación segura y entrega;
+- biblioteca base inmutable materializada (21 skills) y catálogo especializado activado por evidencia (4 patrones), con registro de fuentes y escenarios;
 - capacidades internas de Creator adaptadas de scope/audit/architect/document/test/develop/check/debug/sync;
 - selección obligatoria: biblioteca base inmutable → catálogo especializado → composición → override limitado → extensión Creator solo como último recurso;
 - plantillas y schemas;

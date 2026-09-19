@@ -1,6 +1,6 @@
 # Contrato generacional para DSH Creator
 
-**Versión:** 1 (destino C0–C5; aún no implementado)
+**Versión:** 1 (implementado en C0–C5; verificado sobre paquetes reales en C2–C3 y pilotos C6–C7)
 **Arquitectura:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
 El contrato vigente define una generación completa; cualquier composición anterior de dos archivos queda fuera del árbol canónico y solo existe en el historial Git. Creator debe generar un paquete completo y específico del proyecto bajo `creator-runs/<generation-id>/generated/`; nunca instala ni se autoaprueba.
@@ -184,4 +184,4 @@ Se adaptan patrones de `jsmastery-pro/skills` commit `43b69e4` (MIT): scope/audi
 
 ## Aceptación de este contrato
 
-Este documento es destino de C0–C5. No afirma que `bootstrap.py`, schemas, generación, accept o instalación transaccional ya existan. Sus gates están en `PLAN_IMPLEMENTACION.md`.
+Este documento describe el contrato implementado en C0–C5 y verificado sobre paquetes reales en C2–C3 y pilotos clean-room C6–C7. El estado comprobado por etapa está en `PLAN_IMPLEMENTACION.md` y `docs/status.md`; los gates vigentes y las verificaciones de la suite en `tests/`.
