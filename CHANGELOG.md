@@ -1,5 +1,9 @@
 # Cambios
 
+## Reconocimiento del binario dsh de npx — 2026-09-19
+
+- El guardia de puerto clasificó como ajeno a un DSH legítimo: el cmdline de una instalación vía npx es `node .../node_modules/.bin/dsh web`, sin el scope `@deepseek-ai/dsh` en la ruta. Además, el stop anterior mató al wrapper `npm exec` (matcheable) dejando huérfano a su hijo `.bin/dsh` con el puerto — causa exacta del `EADDRINUSE` observado. Nuevo clasificador común `_is_dsh_web_cmdline`: reconocen DSH web tanto las rutas del registry como cualquier ejecutable con basename `dsh`, siempre con indicador web (` web`/`--profile web`); lo usan por igual el buscador de PIDs y el guardia de puerto. Regresión dedicada con el cmdline exacto de tardis. Suite completa: 359 pruebas OK (2 skips previos).
+
 ## Propiedad del puerto 3080 en el lanzamiento — 2026-09-19
 
 - El diagnóstico del fallo real identificó `EADDRINUSE` en 3080: un escucha que el patrón de PIDs no capturó o un puerto sin liberar. La ruta de lanzamiento ahora es dueña del puerto: tras detener las instancias detectadas, `_ensure_port_free_for_dsh` resuelve el escucha del puerto vía `ss`; si su cmdline es de DSH lo detiene y reintenta hasta el plazo, y si es un proceso ajeno se niega nombrando PID y comando — nunca mata procesos foráneos a ciegas. Regresiones: parseo de `ss`, puerto libre, escucha DSH rezagada, escucha ajena y lanzamiento con puerto bloqueado. Suite completa: 357 pruebas OK (2 skips previos).
