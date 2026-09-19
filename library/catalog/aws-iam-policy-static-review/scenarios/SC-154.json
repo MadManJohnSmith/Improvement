@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-154",
+  "type": "negative",
+  "description": "Un Resource con wildcard pasa sin marcarse a pesar de no tener justificación verificable en el documento.",
+  "input": {
+    "skill": "aws-iam-policy-static-review",
+    "wildcard_present": true,
+    "justification": null,
+    "wildcard_flagged": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "wildcard_guard",
+    "description": "El wildcard sin justificar debe marcarse: el inventario incompleto invalida la revisión."
+  },
+  "sr_links": [],
+  "target_skill": "aws-iam-policy-static-review"
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-149",
+  "type": "negative",
+  "description": "Se inicia la auditoría de accesibilidad sin nivel objetivo A/AA/AAA declarado.",
+  "input": {
+    "skill": "web-accessibility-wcag-audit",
+    "target_level": null
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "level_guard",
+    "description": "Sin nivel declarado no hay auditoría: el resultado sería UNVERIFIED genérico."
+  },
+  "sr_links": [],
+  "target_skill": "web-accessibility-wcag-audit"
+}

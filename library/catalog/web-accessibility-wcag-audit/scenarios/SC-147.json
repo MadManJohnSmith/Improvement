@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-147",
+  "type": "positive",
+  "description": "Con nivel AA declarado, la auditoría registra criterios con evidencia de herramientas automáticas y de revisión manual de teclado, distinguiendo lo no cubierto.",
+  "input": {
+    "skill": "web-accessibility-wcag-audit",
+    "target_level": "AA",
+    "automated_evidence": true,
+    "manual_keyboard_sr_evidence": true,
+    "not_covered_declared": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "wcag_evidence",
+    "description": "Evidencia por criterio con nivel, fuente y revisión manual presente."
+  },
+  "sr_links": [],
+  "target_skill": "web-accessibility-wcag-audit"
+}

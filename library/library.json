@@ -538,6 +538,101 @@
         "source": "fastapi-framework",
         "commit": "50113da16fec53b66b80d75e80a89296de4fa5a5"
       }
+    },
+    {
+      "name": "web-accessibility-wcag-audit",
+      "domain": "web-frontend",
+      "purpose": "Auditar la accesibilidad del frontend contra WCAG 2.2 con nivel objetivo declarado, separando pruebas automáticas de revisión manual y produciendo evidencia por criterio, no un sello de conformidad.",
+      "applicability": "Proyectos con frontend web y objetivo de accesibilidad declarado en el encargo o la configuración.",
+      "activation_criteria": [
+        "frontend web con HTML, CSS o ARIA observado en el proyecto",
+        "objetivo WCAG declarado (nivel A, AA o AAA) en el encargo o en la configuración del proyecto",
+        "encargo explícito de auditoría de accesibilidad web"
+      ],
+      "invariants": [
+        "Ningún resultado sin nivel objetivo (A/AA/AAA) declarado",
+        "Las pruebas automáticas no declaran conformidad: solo cubren un subconjunto",
+        "La revisión manual de teclado y lector de pantalla es requisito para afirmar conformidad",
+        "La auditoría es de solo lectura sobre el producto"
+      ],
+      "limits": [
+        "No cubre conformidad legal ni certificadora: produce evidencia por criterio",
+        "Contraste y render dependen del entorno real; se declara la condición verificada",
+        "Las rutas no observadas quedan como no cubiertas"
+      ],
+      "scenarios": [
+        "SC-147",
+        "SC-148",
+        "SC-149"
+      ],
+      "provenance": {
+        "license": "W3C document license (upstream); reimplemented for this framework",
+        "source": "wcag-22",
+        "spec_version": "2.2 (W3C Recommendation, published 2024-12-12)"
+      }
+    },
+    {
+      "name": "http-security-headers-verifier",
+      "domain": "web-platform",
+      "purpose": "Verificar cabeceras de seguridad HTTP (CSP, CORS, cookies, HSTS) distinguiendo lo declarado en código de lo efectivo en el despliegue, con fuente por cabecera y sin afirmaciones de seguridad sin contexto.",
+      "applicability": "Proyectos con respuestas HTTP observables y cabeceras de seguridad en juego o encargadas de revisión.",
+      "activation_criteria": [
+        "frontend o servicio web con configuración de respuestas HTTP observable en el proyecto",
+        "cabeceras de seguridad observadas o encargadas de revisar: CSP, CORS, cookies SameSite, HSTS",
+        "encargo explícito de verificación de cabeceras de seguridad HTTP"
+      ],
+      "invariants": [
+        "Lo declarado en código o configuración no es lo efectivo: sin evidencia de despliegue, UNVERIFIED",
+        "Ninguna afirmación de seguridad sin conocer proxies, navegador objetivo y entorno",
+        "La verificación es de solo lectura; ninguna prueba contra despliegues reales sin autorización",
+        "Cada cabecera evaluada cita su fuente observable"
+      ],
+      "limits": [
+        "No cubre análisis de bypass ni explotación: es un encargo de seguridad propio",
+        "Sin despliegue observable y sin autorización para observarlo, la parte efectiva es NOT_COVERED"
+      ],
+      "scenarios": [
+        "SC-150",
+        "SC-151",
+        "SC-152"
+      ],
+      "provenance": {
+        "license": "MDN per-artifact terms, mixed (upstream); reimplemented for this framework",
+        "source": "mdn-web-docs",
+        "commit": "5a81c288fb7213b2ca2180cda687500981ecf9e1"
+      }
+    },
+    {
+      "name": "aws-iam-policy-static-review",
+      "domain": "aws-security",
+      "purpose": "Revisión estática de documentos de política IAM con hash por documento, marcado de wildcards sin justificación y distinción explícita entre política declarada y permisos efectivos, sin credenciales ni llamadas a AWS.",
+      "applicability": "Proyectos con políticas IAM observables (JSON, Terraform, CloudFormation, CDK) y encargo de revisión de permisos.",
+      "activation_criteria": [
+        "políticas IAM como documentos JSON o en Terraform, CloudFormation o CDK observados en el proyecto",
+        "recursos o roles AWS (Lambda, API Gateway, roles, policies) observados en el proyecto",
+        "encargo explícito de revisión de permisos o mínimo privilegio"
+      ],
+      "invariants": [
+        "Sin credenciales ni llamadas a AWS: la revisión es estática sobre documentos",
+        "Action o Resource con wildcard se marca salvo justificación explícita y verificable",
+        "Política declarada y permisos efectivos se distinguen siempre",
+        "Cada documento revisado queda fijado por hash"
+      ],
+      "limits": [
+        "No declara mínimo privilegio alcanzado: produce un inventario de hallazgos",
+        "La simulación de permisos efectivos requiere encargo y autorización propios",
+        "Sin datos de uso y precios versionados, ningún cálculo de coste"
+      ],
+      "scenarios": [
+        "SC-153",
+        "SC-154",
+        "SC-155"
+      ],
+      "provenance": {
+        "license": "AWS vendor terms, proprietary (upstream); reimplemented for this framework",
+        "source": "aws-waf-apg",
+        "commit": "f63d5a275d29d74f56086c09cccf7e02ed285652"
+      }
     }
   ],
   "composition_rules": {

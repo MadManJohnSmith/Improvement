@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-153",
+  "type": "positive",
+  "description": "Los documentos de política se revisan por hash, los wildcards se marcan y lo efectivo queda distinguido como no verificado.",
+  "input": {
+    "skill": "aws-iam-policy-static-review",
+    "documents_hashed": true,
+    "wildcards_flagged": true,
+    "effective_vs_declared_distinguished": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "policy_findings",
+    "description": "Inventario de hallazgos clasificados con fuente, sin credenciales."
+  },
+  "sr_links": [],
+  "target_skill": "aws-iam-policy-static-review"
+}

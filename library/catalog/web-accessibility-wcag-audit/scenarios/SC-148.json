@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-148",
+  "type": "negative",
+  "description": "Se declara el sitio conforme a WCAG a partir de la puntuación de una herramienta automática, sin revisión manual.",
+  "input": {
+    "skill": "web-accessibility-wcag-audit",
+    "target_level": "AA",
+    "conformity_from_tool_score_only": true,
+    "manual_evidence": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "no_tool_conformity",
+    "description": "La puntuación automática no declara conformidad: el veredicto se invalida."
+  },
+  "sr_links": [],
+  "target_skill": "web-accessibility-wcag-audit"
+}

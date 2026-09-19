@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-152",
+  "type": "boundary",
+  "description": "La configuración es observable pero el despliegue real no puede autorizarse para observación.",
+  "input": {
+    "skill": "http-security-headers-verifier",
+    "config_observed": true,
+    "deployed_response_observed": false,
+    "authorization_unavailable": true
+  },
+  "expected": {
+    "verdict": "NOT_COVERED",
+    "evidence_type": "effective_part_uncovered",
+    "description": "La parte declarada se reporta; la efectiva queda NOT_COVERED con causa."
+  },
+  "sr_links": [],
+  "target_skill": "http-security-headers-verifier"
+}

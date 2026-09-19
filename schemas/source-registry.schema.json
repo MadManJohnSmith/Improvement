@@ -124,6 +124,12 @@
           "description": "Canonical location. Required (with revision and retrieved_at) for repositories, indexes, and runtimes."
         },
         "revision": { "$ref": "#/$defs/revision" },
+        "spec_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Pinned specification version for standards and guidance that are versioned documents rather than git repositories (e.g. '2.2 (W3C Recommendation, published 2024-12-12)'). Requires retrieved_at."
+        },
         "retrieved_at": { "$ref": "#/$defs/date" },
         "provenance_status": {
           "enum": ["pinned", "unpinned"],

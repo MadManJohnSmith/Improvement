@@ -1,5 +1,12 @@
 # Cambios
 
+## Catálogo ampliado: tres patrones evidence-gated y pin de estándares — 2026-09-19
+
+- Añadir tres `catalog_pattern` a `library/library.json` con contenido en `library/catalog/`: `web-accessibility-wcag-audit` (dominio `web-frontend`), `http-security-headers-verifier` (dominio `web-platform`) y `aws-iam-policy-static-review` (dominio `aws-security`). Todos con activación solo por señales observables, invariantes de solo lectura, distinción declarado/efectivo y resultado de inventario de hallazgos, no de conformidad. Nueve escenarios (SC-147…SC-155) con guardas de conformidad por herramienta, afirmación sin contexto de despliegue, wildcard sin marcar y uso de credenciales.
+- Pin de estándares versionados: `source-registry.schema.json` y `library.schema.json` incorporan `spec_version` opcional; un estándar se considera fijado por su versión de especificación (con fecha de observación) y un repositorio sigue exigiendo commit. El validador exige commit o `spec_version` en la procedencia de toda entrada seleccionable.
+- Fuentes fijadas por observación directa (2026-09-19): `wcag-22` por versión de especificación (2.2, W3C Recommendation publicada 2024-12-12, URI fechada), `mdn-web-docs` por instantánea de `mdn/content` y `aws-waf-apg` por instantánea de `awsdocs/iam-user-guide`.
+- Regresiones: corpus nuevo del registro (pin por spec_version aceptado, pin sin ancla rechazado, fecha exigida), procedencia de biblioteca sin pin rechazada, y atribución de licencia exigida en la sección Procedencia sea cual sea la licencia de origen. Suite completa: 316 pruebas OK (2 skips previos).
+
 ## Primer patrón de catálogo con activación por evidencia — 2026-09-19
 
 - Añadir el primer `catalog_pattern` a `library/library.json`: `fastapi-openapi-contract-check` (dominio `python-backend`), contenido en `library/catalog/fastapi-openapi-contract-check/SKILL.md` con cuatro escenarios (SC-143…SC-146: positiva, activación sin evidencia → BLOCKED, capability-denial de llamada a servicio real → BLOCKED, esquema no reproducible → NOT_COVERED).

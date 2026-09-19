@@ -694,11 +694,14 @@ def validate_library(doc):
         prov = bs["provenance"]
         _require_type(prov, dict, f"{prefix}.provenance")
         _require_fields(prov, ["license", "source"], f"{prefix}.provenance")
-        _reject_unknown(prov, ["license", "source", "commit"],
+        _reject_unknown(prov, ["license", "source", "commit", "spec_version"],
                         f"{prefix}.provenance")
         _require(_is_nonempty_str(prov["source"]),
                  f"{prefix}.provenance.source must name the origin "
                  "('internal' or a source-registry source_id)")
+        _require(_is_nonempty_str(prov.get("commit"))
+                 or _is_nonempty_str(prov.get("spec_version")),
+                 f"{prefix}.provenance must pin commit or spec_version")
 
     _require_type(doc["catalog_patterns"], list,
                   f"{schema}.catalog_patterns")
@@ -731,11 +734,14 @@ def validate_library(doc):
         prov = cp["provenance"]
         _require_type(prov, dict, f"{prefix}.provenance")
         _require_fields(prov, ["license", "source"], f"{prefix}.provenance")
-        _reject_unknown(prov, ["license", "source", "commit"],
+        _reject_unknown(prov, ["license", "source", "commit", "spec_version"],
                         f"{prefix}.provenance")
         _require(_is_nonempty_str(prov["source"]),
                  f"{prefix}.provenance.source must name the origin "
                  "('internal' or a source-registry source_id)")
+        _require(_is_nonempty_str(prov.get("commit"))
+                 or _is_nonempty_str(prov.get("spec_version")),
+                 f"{prefix}.provenance must pin commit or spec_version")
 
     cr = doc["composition_rules"]
     _require_type(cr, dict, f"{schema}.composition_rules")
@@ -871,7 +877,8 @@ def validate_source_registry(doc):
             "license", "license_status", "status", "decision_summary",
         ]
         known_entry = required_entry + [
-            "canonical_url", "revision", "retrieved_at", "notes",
+            "canonical_url", "revision", "spec_version", "retrieved_at",
+            "notes",
         ]
         _require_fields(entry, required_entry, prefix)
         _reject_unknown(entry, known_entry, prefix)
@@ -894,6 +901,10 @@ def validate_source_registry(doc):
                  f"{prefix}.decision_summary")
         _require(len(entry["decision_summary"]) <= 600,
                  f"{prefix}.decision_summary must be at most 600 characters")
+        if "spec_version" in entry:
+            _require(_is_nonempty_str(entry["spec_version"]),
+                     f"{prefix}.spec_version")
+
         if "notes" in entry:
             _require(_is_nonempty_str(entry["notes"]), f"{prefix}.notes")
 
@@ -915,6 +926,16 @@ def validate_source_registry(doc):
             _require(entry["provenance_status"] == "pinned",
                      f"{prefix}.provenance_status must be 'pinned' for "
                      f"kind={entry['kind']}")
+
+        if (entry["provenance_status"] == "pinned"
+                and not needs_pin):
+            _require("revision" in entry or "spec_version" in entry,
+                     f"{prefix}: pinned provenance requires a revision or a "
+                     "spec_version")
+            if "revision" not in entry:
+                _require(_is_date(entry.get("retrieved_at")),
+                         f"{prefix}.retrieved_at is required when pinning a "
+                         "spec_version")
 
         if entry["status"] in SOURCE_STATUSES_REQUIRING_PIN:
             _require(entry["provenance_status"] == "pinned",

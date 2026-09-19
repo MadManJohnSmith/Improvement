@@ -98,11 +98,15 @@
       "title": "AWS Well-Architected Framework and Prescriptive Guidance",
       "publisher": "Amazon Web Services",
       "kind": "domain-guidance",
-      "provenance_status": "unpinned",
+      "provenance_status": "pinned",
       "license": "Copyrighted vendor documentation",
       "license_status": "proprietary",
       "status": "REFERENCE",
-      "decision_summary": "aws-iam-policy-static-review is the first candidate if AWS evidence appears: static policy analysis, wildcard actions flagged, no credentials use, declared-vs-effective permissions distinguished. Cold-start optimization rejected until benchmarks are authorized."
+      "decision_summary": "aws-iam-policy-static-review is the first candidate if AWS evidence appears: static policy analysis, wildcard actions flagged, no credentials use, declared-vs-effective permissions distinguished. Cold-start optimization rejected until benchmarks are authorized.",
+      "canonical_url": "https://github.com/awsdocs/iam-user-guide",
+      "revision": "f63d5a275d29d74f56086c09cccf7e02ed285652",
+      "retrieved_at": "2026-09-19",
+      "notes": "Pin refers to the observed awsdocs/iam-user-guide snapshot; vendor terms remain per-page (proprietary)."
     },
     {
       "source_id": "clean-architecture-rcm",
@@ -273,11 +277,15 @@
       "title": "MDN Web Docs",
       "publisher": "Mozilla",
       "kind": "domain-guidance",
-      "provenance_status": "unpinned",
+      "provenance_status": "pinned",
       "license": "Site content and code samples under separate terms",
       "license_status": "mixed",
       "status": "REFERENCE",
-      "decision_summary": "Reference for web-platform checks feeding http-security-headers-verifier candidates. Attribution and per-artifact terms must be fixed before reuse; browser/deployment context is required to judge CSP/CORS/SameSite claims."
+      "decision_summary": "Reference for web-platform checks feeding http-security-headers-verifier candidates. Attribution and per-artifact terms must be fixed before reuse; browser/deployment context is required to judge CSP/CORS/SameSite claims.",
+      "canonical_url": "https://github.com/mdn/content",
+      "revision": "5a81c288fb7213b2ca2180cda687500981ecf9e1",
+      "retrieved_at": "2026-09-19",
+      "notes": "Pin refers to the observed mdn/content repository snapshot; site terms remain per-artifact (mixed)."
     },
     {
       "source_id": "microsoft-azure-architecture",
@@ -535,11 +543,14 @@
       "title": "Web Content Accessibility Guidelines 2.2",
       "publisher": "W3C",
       "kind": "standard",
-      "provenance_status": "unpinned",
+      "provenance_status": "pinned",
       "license": "W3C document license (open with attribution conditions)",
       "license_status": "open",
       "status": "REFERENCE",
-      "decision_summary": "web-accessibility-wcag-audit candidate: requires declared target level (A/AA/AAA), separation of automated checks from manual keyboard/screen-reader review, and PARTIAL/UNVERIFIED when manual evidence is missing. Lighthouse-only conformity claims are prohibited."
+      "decision_summary": "web-accessibility-wcag-audit candidate: requires declared target level (A/AA/AAA), separation of automated checks from manual keyboard/screen-reader review, and PARTIAL/UNVERIFIED when manual evidence is missing. Lighthouse-only conformity claims are prohibited.",
+      "canonical_url": "https://www.w3.org/TR/2024/REC-WCAG22-20241212/",
+      "spec_version": "2.2 (W3C Recommendation, published 2024-12-12)",
+      "retrieved_at": "2026-09-19"
     },
     {
       "source_id": "wshobson-agents",
