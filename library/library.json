@@ -505,7 +505,41 @@
       }
     }
   ],
-  "catalog_patterns": [],
+  "catalog_patterns": [
+    {
+      "name": "fastapi-openapi-contract-check",
+      "domain": "python-backend",
+      "purpose": "Comprobar los contratos de endpoints de una aplicación FastAPI contra su esquema OpenAPI reproducible, clasificando cada diferencia como compatible, breaking o ambigua, sin modificar el producto ni llamar a servicios reales.",
+      "applicability": "Proyectos con evidencia FastAPI/Pydantic y encargo de verificación de contratos de endpoints o compatibilidad entre versiones.",
+      "activation_criteria": [
+        "fastapi o pydantic declarados en pyproject.toml, requirements o lockfile del proyecto",
+        "routers de FastAPI, modelos BaseModel o documento OpenAPI observados en el proyecto",
+        "encargo explícito de verificar compatibilidad de endpoints o contratos de API"
+      ],
+      "invariants": [
+        "La comprobación es de solo lectura sobre el producto; nunca lo modifica",
+        "Sin llamadas a servicios reales por defecto; toda conexión exige autorización explícita",
+        "El esquema OpenAPI debe ser reproducible en las versiones fijadas observadas",
+        "Nada de seguridad se infiere del esquema: auth, idempotencia y autorización no se afirman"
+      ],
+      "limits": [
+        "No cubre ejecución real, carga ni pruebas de runtime: son fases con autorización propia",
+        "Sin esquema OpenAPI reproducible el resultado es NOT_COVERED, no una aproximación",
+        "El resultado es un inventario de diferencias clasificadas, no un sello de conformidad"
+      ],
+      "scenarios": [
+        "SC-143",
+        "SC-144",
+        "SC-145",
+        "SC-146"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "fastapi-framework",
+        "commit": "50113da16fec53b66b80d75e80a89296de4fa5a5"
+      }
+    }
+  ],
   "composition_rules": {
     "allowed": true,
     "constraints": [

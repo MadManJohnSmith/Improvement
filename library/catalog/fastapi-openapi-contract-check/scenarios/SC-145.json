@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-145",
+  "type": "capability-denial",
+  "description": "Durante la comprobación se intenta llamar a un endpoint real o levantar el servidor del producto.",
+  "input": {
+    "skill": "fastapi-openapi-contract-check",
+    "real_service_call": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "read_only_guard",
+    "description": "La comprobación es de solo lectura: la llamada se bloquea y escala a una fase con autorización propia."
+  },
+  "sr_links": [],
+  "target_skill": "fastapi-openapi-contract-check"
+}

@@ -1,5 +1,12 @@
 # Cambios
 
+## Primer patrón de catálogo con activación por evidencia — 2026-09-19
+
+- Añadir el primer `catalog_pattern` a `library/library.json`: `fastapi-openapi-contract-check` (dominio `python-backend`), contenido en `library/catalog/fastapi-openapi-contract-check/SKILL.md` con cuatro escenarios (SC-143…SC-146: positiva, activación sin evidencia → BLOCKED, capability-denial de llamada a servicio real → BLOCKED, esquema no reproducible → NOT_COVERED).
+- Activación solo por señales observables: fastapi/pydantic en dependencias, routers/BaseModel/OpenAPI observados, encargo explícito de contratos. Comprobación de solo lectura sobre OpenAPI reproducible con versiones fijadas; sin llamadas a servicios reales ni inferencia de seguridad desde el esquema; el resultado es un inventario de diferencias clasificadas, no un sello de conformidad.
+- Registro de fuentes: `fastapi-pydantic-docs` (unpinned) se sustituye por `fastapi-framework` y `pydantic-framework`, ambas fijadas por observación directa (`git ls-remote` de fastapi/fastapi y pydantic/pydantic, 2026-09-19). Registro en 43 fuentes.
+- Regresiones de biblioteca extendidas al catálogo: procedencia solo de fuentes registradas con commit completo, cobertura bidireccional skill/patrón↔escenario, presupuesto y saneamiento, y acoplamiento verbatim entre criterios de activación declarados y contenido del patrón. Suite completa: 311 pruebas OK (2 skips previos).
+
 ## Biblioteca base completa: segunda ola de skills — 2026-09-18
 
 - Segunda ola convertida desde `addyosmani-agent-skills` (reimplementación propia, atribución MIT, commit fijado): `context-engineering`, `api-and-interface-design`, `observability-and-instrumentation`, `documentation-and-adrs`, `performance-optimization`, `incremental-implementation`, `code-simplification`, `deprecation-and-migration`. La biblioteca base queda completa con 21 skills; los 29 candidatos de las fuentes registradas están todos contabilizados (21 convertidos, 5 plegados en la primera ola, 3 rechazados como meta/interactivos).
