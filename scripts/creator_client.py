@@ -698,12 +698,72 @@ def launch_dsh_web(command=("npx", "@deepseek-ai/dsh", "web"), *, env=None):
 # ---------------------------------------------------------------------------
 
 
-def run_creator(run_dir, *, client=None):
+DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
+
+
+def acquire_dsh_client(*, launch=False):
+    """Acquire an authenticated local DSH client without persisting secrets.
+
+    Order: injected client (caller), env DSH_HOME, then standard DSH home
+    candidates. A candidate only counts when its server answers the token
+    exchange. With launch=True, start ``dsh web`` as a child process when no
+    existing session answers; the child is never auto-started by default and
+    no package download is triggered implicitly. Returns
+    ``(client, origin)`` or ``(None, reason)``. Fail-closed.
+    """
+    candidates = []
+    env_home = os.environ.get("DSH_HOME")
+    if env_home:
+        candidates.append(Path(env_home).expanduser())
+    candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+    for home in candidates:
+        try:
+            client = DshLocalClient.from_dsh_home(home)
+            client.exchange_token()
+            return client, str(home)
+        except Exception as e:
+            last_error = str(e)
+            continue
+    if launch:
+        try:
+            process, client = launch_dsh_web()
+            return client, "launched:dsh-web"
+        except Exception as e:
+            return None, f"dsh web no arrancó: {e}"
+    return None, (
+        "sin sesión DSH autenticada "
+        f"(última prueba: {last_error}); abre 'dsh web' y reejecuta, "
+        "define DSH_HOME o usa --launch-dsh")
+
+
+def _wait_for_generation(session, *, poll_seconds=5):
+    """Poll until the package is generated or the budget expires.
+
+    Budget exhaustion raises ValueError (handled as RETAINED upstream).
+    Returns True when generated/ contains a manifest (or the run left
+    GENERATING because the Host took over), False when the budget ran out
+    without output.
+    """
+    session.start_time = time.time()
+    while True:
+        session.check_budget()
+        gen_manifest = session.run_dir / "generated" / "generation-manifest.json"
+        if gen_manifest.is_file():
+            return True
+        run_doc = _read_json(session.run_dir / "run.json")
+        if run_doc.get("status") != "GENERATING":
+            return gen_manifest.is_file()
+        time.sleep(poll_seconds)
+
+
+def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True):
     """Execute the Creator pipeline for a run.
 
     Returns the result dict. Validates the structure, builds the prompt,
-    queues through the authenticated DSH client if provided, and collects/verifies
-    the generated package.
+    dispatches through DSH when a client is injected or acquirable, waits
+    for the generated package within budget, and verifies it. Without an
+    authenticated DSH session the run stays in a recoverable PREPARED
+    state; nothing is silently skipped.
     """
     run_dir = Path(run_dir)
     session = CreatorSession(
@@ -719,7 +779,20 @@ def run_creator(run_dir, *, client=None):
         prompt_path = Path(prep["prompt_path"])
         prompt_text = prompt_path.read_text(encoding="utf-8")
 
-        # If client provided and authenticated, dispatch to DSH
+        dsh_origin = None
+        if client is None and acquire:
+            client, dsh_origin = acquire_dsh_client(launch=launch)
+            if client is None:
+                return {
+                    "result": "PREPARED",
+                    "generation_id": prep["generation_id"],
+                    "prompt_path": prep["prompt_path"],
+                    "dsh_session_id": None,
+                    "dsh_origin": dsh_origin,
+                    "message": dsh_origin,
+                }
+
+        # If client authenticated, dispatch to DSH
         session_id = None
         if client is not None and getattr(client, "authenticated", False):
             session_id = client.create_creator_session(cwd=run_dir)
@@ -732,11 +805,27 @@ def run_creator(run_dir, *, client=None):
             manifest = session.verify_generation_output()
             return session.create_finish(manifest)
 
+        if session_id and wait:
+            generated = _wait_for_generation(session)
+            if generated:
+                manifest = session.verify_generation_output()
+                return session.create_finish(manifest)
+            return {
+                "result": "DISPATCHED",
+                "generation_id": prep["generation_id"],
+                "prompt_path": prep["prompt_path"],
+                "dsh_session_id": session_id,
+                "dsh_origin": dsh_origin,
+                "message": "Presupuesto de supervisión agotado sin paquete; "
+                           "el run continúa y es reanudable",
+            }
+
         return {
             "result": "PREPARED",
             "generation_id": prep["generation_id"],
             "prompt_path": prep["prompt_path"],
             "dsh_session_id": session_id,
+            "dsh_origin": dsh_origin,
             "message": "Run preparado y enviado a DSH Creator" if session_id else "Run preparado; Creator debe ejecutarse para generar paquete",
         }
 
@@ -754,9 +843,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True,
                         help="Ruta al directorio del run (creator-runs/<id>)")
+    parser.add_argument("--launch-dsh", action="store_true",
+                        help="Arrancar 'dsh web' como proceso hijo si no hay "
+                             "sesión autenticada (DSH debe estar instalado)")
     args = parser.parse_args()
 
-    result = run_creator(args.run_dir)
+    result = run_creator(args.run_dir, acquire=True, launch=args.launch_dsh)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("result") == "RETAINED":
         sys.exit(1)
