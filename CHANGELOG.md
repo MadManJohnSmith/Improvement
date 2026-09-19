@@ -1,5 +1,9 @@
 # Cambios
 
+## Invariante anti-escalada en el prompt de Creator — 2026-09-19
+
+- Hallazgo real del piloto tardis: la sesión de Creator pidió `danger-full-access` para escribir un archivo de prueba en el workspace del run, con justificación circular («tool schema conflict»). El prompt versionado incorpora el invariante 8: no solicitar escaladas de sandbox — el área del run es escribible bajo `workspace-write`; una escritura denegada o un conflicto de esquema es un hallazgo que se reporta y reproduce en modo vigente, nunca un motivo de escalada. Coincide con la política vigente (`setup-dsh.md`: strictly-wider exige aprobación real; el error de esquema no autoriza `danger-full-access`). Regresión: el prompt contiene la prohibición.
+
 ## Autenticación de lanzamiento por cookie HMAC del home — 2026-09-19
 
 - El 401 del canje tiene causa identificada: el token de consola es de un solo uso y compite con el navegador que `dsh web` auto-abre — quien llega primero lo consume. La autenticación del lanzamiento prefiere ahora la cookie HMAC duradera de `~/.dsh/.credentials.yaml` (`from_dsh_home` con el puerto del URL observado), verificada con un RPC barato (`list_sessions`) antes de usarse; el canje con reintentos queda como respaldo cuando el home no aporta credenciales. Si ninguna vía verifica, el hijo se detiene y el run queda recuperable con la causa. Suite completa: 361 pruebas OK (2 skips previos).
