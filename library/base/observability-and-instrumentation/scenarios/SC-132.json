@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-132",
+  "type": "negative",
+  "description": "El nuevo flujo de escritura falla en producción de prueba y no existe señal que lo distinga ni semántica declarada.",
+  "input": {
+    "skill": "observability-and-instrumentation",
+    "failure_path_declared": false,
+    "failure_unobservable": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "diagnosability_guard",
+    "description": "Un fallo invisible invalida el cierre: falta instrumentación declarada."
+  },
+  "sr_links": [],
+  "target_skill": "observability-and-instrumentation"
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-136",
+  "type": "negative",
+  "description": "Se reescribe un módulo por rendimiento intuído sin línea base ni objetivo medible.",
+  "input": {
+    "skill": "performance-optimization",
+    "baseline_measured": false,
+    "optimization_applied": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "no_blind_optimization",
+    "description": "Optimizar sin medición es especulación: el cambio se revierte o se justifica explícitamente."
+  },
+  "sr_links": [],
+  "target_skill": "performance-optimization"
+}

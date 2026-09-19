@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-138",
+  "type": "negative",
+  "description": "Todos los cambios se acumulan sin verificación intermedia y se integran de una sola vez al final.",
+  "input": {
+    "skill": "incremental-implementation",
+    "intermediate_verification": false,
+    "big_bang_integration": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "big_bang_guard",
+    "description": "La integración big-bang es el fallo: la unidad se replanifica en incrementos."
+  },
+  "sr_links": [],
+  "target_skill": "incremental-implementation"
+}

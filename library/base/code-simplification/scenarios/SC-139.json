@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-139",
+  "type": "positive",
+  "description": "La simplificación protege el comportamiento con tests, avanza en pasos verdes y elimina solo código muerto con evidencia.",
+  "input": {
+    "skill": "code-simplification",
+    "safety_net_verified": true,
+    "steps_green": true,
+    "dead_code_evidence": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "refactor_evidence",
+    "description": "Mismo contrato con menos mecanismo; cada paso reversible y con verde."
+  },
+  "sr_links": [],
+  "target_skill": "code-simplification"
+}

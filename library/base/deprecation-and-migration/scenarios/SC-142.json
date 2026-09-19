@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-142",
+  "type": "negative",
+  "description": "El contrato se elimina directamente sin ventana de deprecación ni inventario de consumidores.",
+  "input": {
+    "skill": "deprecation-and-migration",
+    "window_declared": false,
+    "direct_removal": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "removal_guard",
+    "description": "El borrado directo se bloquea: sin ventana ni inventario no hay retirada válida."
+  },
+  "sr_links": [],
+  "target_skill": "deprecation-and-migration"
+}

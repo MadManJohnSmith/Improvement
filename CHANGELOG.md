@@ -1,5 +1,10 @@
 # Cambios
 
+## Biblioteca base completa: segunda ola de skills — 2026-09-18
+
+- Segunda ola convertida desde `addyosmani-agent-skills` (reimplementación propia, atribución MIT, commit fijado): `context-engineering`, `api-and-interface-design`, `observability-and-instrumentation`, `documentation-and-adrs`, `performance-optimization`, `incremental-implementation`, `code-simplification`, `deprecation-and-migration`. La biblioteca base queda completa con 21 skills; los 29 candidatos de las fuentes registradas están todos contabilizados (21 convertidos, 5 plegados en la primera ola, 3 rechazados como meta/interactivos).
+- 16 escenarios nuevos (SC-127…SC-142) validados contra `scenario.schema.json`, incluyendo un `prompt-injection` para la frontera dato/instrucción de context-engineering y guardas de big-bang, borrado directo y optimización sin medición. Regresión de biblioteca endurecida: el suelo de skills base pasa de 13 a 21. Suite completa: 309 pruebas OK (2 skips previos).
+
 ## Biblioteca base materializada: primera ola de skills — 2026-09-18
 
 - Añadir `library/library.json` (documento de biblioteca validado contra `library.schema.json`) y el contenido de las skills base en `library/base/<skill>/SKILL.md` con escenarios en `library/base/<skill>/scenarios/`.

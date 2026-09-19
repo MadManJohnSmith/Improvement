@@ -41,7 +41,7 @@ class LibraryDocumentTest(unittest.TestCase):
         gc.validate("library", self.library)
 
     def test_base_skills_present(self):
-        self.assertGreaterEqual(len(self.library["base_skills"]), 13)
+        self.assertGreaterEqual(len(self.library["base_skills"]), 21)
         names = [b["name"] for b in self.library["base_skills"]]
         self.assertEqual(len(names), len(set(names)),
                          "duplicate base skill names")
