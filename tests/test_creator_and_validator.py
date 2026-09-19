@@ -337,12 +337,27 @@ class DshLifecycleTests(unittest.TestCase):
             f"{os.getpid()} python3 -B -m unittest tests\n"
             "4140 node /x/@deepseek-ai/dsh/lib/bin.js --profile web --port 3081\n"
             "68865 npm exec @deepseek-ai/dsh web\n"
+            "12059 node /home/t/.npm/_npx/x/node_modules/.bin/dsh web\n"
             "70000 node /x/@deepseek-ai/dsh/lib/bin.js --profile audit\n"
         )
         with unittest.mock.patch.object(cc.subprocess, "run",
                                         return_value=fake):
             pids = cc._find_dsh_pids()
-        self.assertEqual(pids, [4140, 68865])
+        self.assertEqual(pids, [4140, 68865, 12059])
+
+    def test_dsh_web_cmdline_classifier(self):
+        cases = {
+            "node /home/t/.npm/_npx/x/node_modules/.bin/dsh web": True,
+            "npm exec @deepseek-ai/dsh web": True,
+            "node /x/@deepseek-ai/dsh/lib/bin.js --profile web --port 3081":
+                True,
+            "node /x/@deepseek-ai/dsh/lib/bin.js --profile audit": False,
+            "python -m http.server 3080": False,
+            "vim notes-dsh.txt": False,
+        }
+        for cmdline, expected in cases.items():
+            with self.subTest(cmdline=cmdline):
+                self.assertEqual(cc._is_dsh_web_cmdline(cmdline), expected)
 
     def test_stop_dsh_instances_signals_and_escalates(self):
         killed = []
@@ -512,6 +527,24 @@ class LaunchDshWebTests(unittest.TestCase):
         self.assertEqual(stop.call_args_list,
                          [unittest.mock.call([4140]),
                           unittest.mock.call([4140])])
+
+    def test_ensure_port_stops_npx_bin_dsh_listener(self):
+        """The tardis failure: .bin/dsh web carries no scope in its path."""
+        listener = [(12059, ""), (None, "")]
+        with unittest.mock.patch.object(
+                cc, "_port_listener_pid",
+                side_effect=lambda port: listener.pop(0)), \
+                unittest.mock.patch.object(
+                    cc, "_cmdline_of",
+                    return_value="node /home/tardis/.npm/_npx/"
+                                 "1e7f6d9597241db0/node_modules/.bin/dsh web"), \
+                unittest.mock.patch.object(cc.time, "sleep"), \
+                unittest.mock.patch.object(
+                    cc, "_stop_dsh_instances",
+                    side_effect=lambda pids, **k: None) as stop:
+            self.assertIsNone(cc._ensure_port_free_for_dsh(3080))
+        self.assertEqual(stop.call_args_list,
+                         [unittest.mock.call([12059])])
 
     def test_ensure_port_refuses_foreign_listener(self):
         with unittest.mock.patch.object(

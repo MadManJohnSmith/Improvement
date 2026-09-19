@@ -803,8 +803,7 @@ def _find_dsh_pids():
         pid, cmdline = int(parts[0]), parts[1]
         if pid == os.getpid():
             continue
-        if "@deepseek-ai/dsh" in cmdline and (
-                " web" in cmdline or "--profile web" in cmdline):
+        if _is_dsh_web_cmdline(cmdline):
             pids.append(pid)
     return pids
 
@@ -815,6 +814,21 @@ def _pid_alive(pid):
         return True
     except OSError:
         return False
+
+
+def _is_dsh_web_cmdline(cmdline):
+    """Whether a command line is a DSH web instance.
+
+    Covers both registry paths (@deepseek-ai/dsh) and npx bin symlinks
+    (node_modules/.bin/dsh), which carry no scope in their path. A web
+    indicator is required so other dsh-named tools never match.
+    """
+    if not cmdline:
+        return False
+    tokens = cmdline.split()
+    has_dsh_bin = any(os.path.basename(token) == "dsh" for token in tokens)
+    has_web = " web" in cmdline or "--profile web" in cmdline
+    return ("@deepseek-ai/dsh" in cmdline or has_dsh_bin) and has_web
 
 
 def _cmdline_of(pid):
@@ -859,7 +873,7 @@ def _ensure_port_free_for_dsh(port=3080, timeout=6):
         if pid is None:
             return None
         cmdline = _cmdline_of(pid)
-        if "@deepseek-ai/dsh" not in cmdline:
+        if not _is_dsh_web_cmdline(cmdline):
             return (f"puerto {port} ocupado por un proceso ajeno a DSH "
                     f"(PID {pid}: {cmdline[:90] or 'sin cmdline'}); "
                     "libéralo y vuelve a intentarlo")
