@@ -977,6 +977,24 @@ def dsh_provider_status(dsh_home):
                       "y vuelve a intentarlo"}
 
 
+def _provider_gate_origin(status, origin=None):
+    """Origin string for the acquisition result.
+
+    Keys visible in the process environment are only one of DSH's possible
+    sources (dotenv, keychain, UI-entered credentials): a missing key is a
+    warning, not a block — the real authentication failure would surface as
+    a retained run with its cause. DSH_PROVIDER_STRICT handling (the hard
+    stop) belongs to the caller.
+    """
+    if status["ok"]:
+        base = origin or "launched:dsh-web"
+        return f"{base} ({status['provider']})"
+    return ("aviso: " + status["reason"] + (
+        "; se despacha igualmente: DSH puede resolver la llave por otros "
+        "medios (dotenv/keychain/UI). Si Creator falla por autenticación "
+        "el run quedará RETAINED con la causa"))
+
+
 def _provider_home(candidates):
     """First candidate home that actually holds a settings.yaml."""
     for home in candidates:
@@ -1020,10 +1038,10 @@ def acquire_dsh_client(*, launch=False):
             return None, ("no se encontró settings.yaml de DSH; define "
                           "DSH_HOME y configura el proveedor")
         status = dsh_provider_status(home)
-        if not status["ok"]:
+        if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
             process.kill()
             return None, status["reason"]
-        return client, f"launched:dsh-web ({status['provider']})"
+        return client, _provider_gate_origin(status)
 
     last_error = "sin candidatos"
     for home in candidates:
@@ -1034,9 +1052,9 @@ def acquire_dsh_client(*, launch=False):
             last_error = str(e)
             continue
         status = dsh_provider_status(home)
-        if not status["ok"]:
+        if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
             return None, status["reason"]
-        return client, str(home)
+        return client, _provider_gate_origin(status, origin=str(home))
     return None, (
         "sin sesión DSH autenticada "
         f"(última prueba: {last_error}); abre 'dsh web' y reejecuta, "
