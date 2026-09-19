@@ -1,5 +1,9 @@
 # Cambios
 
+## Coherencia documental de C0–C7 — 2026-09-19
+
+- README y `docs/creator-preset-spec.md` dejan de describir C0–C7 como pendiente: el estado refleja la implementación verificada (bootstrap, Creator, validador Host, aceptación, transacción, promoción) sin afirmar autonomía de extremo a extremo sin sesión DSH real configurada por el usuario. La biblioteca materializada (21 skills base, 4 patrones de catálogo, registro de fuentes) se documenta como parte de la distribución.
+
 ## Catálogo ampliado: tres patrones evidence-gated y pin de estándares — 2026-09-19
 
 - Añadir tres `catalog_pattern` a `library/library.json` con contenido en `library/catalog/`: `web-accessibility-wcag-audit` (dominio `web-frontend`), `http-security-headers-verifier` (dominio `web-platform`) y `aws-iam-policy-static-review` (dominio `aws-security`). Todos con activación solo por señales observables, invariantes de solo lectura, distinción declarado/efectivo y resultado de inventario de hallazgos, no de conformidad. Nueve escenarios (SC-147…SC-155) con guardas de conformidad por herramienta, afirmación sin contexto de despliegue, wildcard sin marcar y uso de credenciales.
