@@ -415,6 +415,68 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIn("TEST_PROV_KEY", origin)
         fake_process.kill.assert_called_once()
 
+class _FakeProcess:
+    """Popen fake: poll() reflects exhaustion of stdout, like a real pipe."""
+
+    def __init__(self, lines, exit_code=1):
+        import io
+        self._text = "".join(line + "\n" for line in lines)
+        self.stdout = io.StringIO(self._text)
+        self._exit = exit_code
+        self.killed = False
+
+    def poll(self):
+        return self._exit if self.stdout.tell() >= len(self._text) else None
+
+    def kill(self):
+        self.killed = True
+
+
+class LaunchDshWebTests(unittest.TestCase):
+    """El lanzamiento captura la salida de DSH para diagnosticar fallos."""
+
+    def test_launch_returns_client_on_url(self):
+        proc = _FakeProcess([
+            "starting dsh...",
+            "dsh web: http://127.0.0.1:3080/?token=abc123",
+        ], exit_code=0)
+        with unittest.mock.patch.object(cc.subprocess, "Popen",
+                                        return_value=proc):
+            process, client = cc.launch_dsh_web()
+        self.assertIs(process, proc)
+        self.assertEqual(client.base_url, "http://127.0.0.1:3080")
+        proc.killed is False
+
+    def test_launch_failure_includes_captured_output(self):
+        proc = _FakeProcess([
+            "npm warn deprecated",
+            "Ok to proceed? (y)",
+            "npm error cancelled",
+        ], exit_code=1)
+        with unittest.mock.patch.object(cc.subprocess, "Popen",
+                                        return_value=proc):
+            with self.assertRaises(RuntimeError) as ctx:
+                cc.launch_dsh_web()
+        message = str(ctx.exception)
+        self.assertIn("salida capturada", message)
+        self.assertIn("Ok to proceed?", message)
+        self.assertIn("exit=1", message)
+        self.assertTrue(proc.killed)
+
+    def test_launch_failure_redacts_tokens_in_output(self):
+        proc = _FakeProcess([
+            "connecting ?token=SECRETVALUE",
+            "exited unexpectedly",
+        ], exit_code=1)
+        with unittest.mock.patch.object(cc.subprocess, "Popen",
+                                        return_value=proc):
+            with self.assertRaises(RuntimeError) as ctx:
+                cc.launch_dsh_web()
+        message = str(ctx.exception)
+        self.assertNotIn("SECRETVALUE", message)
+        self.assertIn("token=<redacted>", message)
+
+
     def test_existing_session_without_key_stops_before_dispatch(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
