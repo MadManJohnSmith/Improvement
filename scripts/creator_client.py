@@ -1031,15 +1031,38 @@ def acquire_dsh_client(*, launch=False):
         process = None
         try:
             process, client = launch_dsh_web()
-            # The launch client carries only the one-process token URL;
-            # authenticated stays False until the token is exchanged for
-            # the authority cookie. Without this, run_creator would skip
-            # the dispatch and orphan the child.
-            client.exchange_token()
         except Exception as e:
-            if process is not None:
-                process.kill()
-            return None, f"DSH no quedó autenticado tras el arranque: {e}"
+            return None, f"dsh web no arrancó: {e}"
+
+        # Auth preference: the durable HMAC cookie from the DSH home. The
+        # console token is single-use and races with the browser dsh web
+        # auto-opens, which surfaces as HTTP 401 on exchange.
+        port = int(client.base_url.rsplit(":", 1)[1])
+        home = _provider_home(candidates)
+        verified = False
+        if home is not None:
+            try:
+                home_client = DshLocalClient.from_dsh_home(home, port=port)
+                home_client.list_sessions()
+                client = home_client
+                verified = True
+            except Exception:
+                verified = False
+        if not verified:
+            last_error = "sin intento de canje"
+            for _attempt in range(3):
+                try:
+                    client.exchange_token()
+                    verified = True
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    time.sleep(1)
+            if not verified:
+                if process is not None:
+                    process.kill()
+                return None, (f"DSH no quedó autenticado tras el arranque: "
+                              f"{last_error}")
         home = _provider_home(candidates)
         if home is None:
             process.kill()
