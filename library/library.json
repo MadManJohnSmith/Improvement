@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "base_skills": [
+    {
+      "name": "brainstorming",
+      "purpose": "Explorar alternativas con fuentes de restricción y recomendar una con porqué registrado, sin implementar.",
+      "applicability": "Encargos con más de un enfoque viable y decisión aún no justificada.",
+      "invariants": [
+        "No escribe en el producto ni ejecuta efectos",
+        "Cada alternativa nombra su fuente de restricción",
+        "La recomendación registra el porqué y los descartes",
+        "No reabre decisiones ya fijadas y justificadas"
+      ],
+      "limits": [
+        "No sustituye discovery ni diseño: produce insumos para ellos",
+        "Con ninguna alternativa viable con evidencia, RETAINED"
+      ],
+      "scenarios": [
+        "SC-101",
+        "SC-102"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "writing-plans",
+      "purpose": "Convertir encargo o diseño en un plan de unidades verificables con alcance, capacidades y presupuesto por unidad.",
+      "applicability": "Trabajo multi-unidad o multi-archivo, antes de ejecutar.",
+      "invariants": [
+        "El plan es documento: sin efectos en el producto",
+        "Cada unidad declara verificación observable y presupuesto",
+        "Los efectos de escritura se declaran por unidad",
+        "El orden de dependencias se conserva y justifica"
+      ],
+      "limits": [
+        "No planifica sobre lo no observado: lo marca como hipótesis",
+        "Encargo no descomponible en unidades verificables: RETAINED"
+      ],
+      "scenarios": [
+        "SC-103",
+        "SC-104"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "executing-plans",
+      "purpose": "Ejecutar un plan unidad a unidad con checkpoint de evidencia y reanudación idempotente.",
+      "applicability": "Con plan existente y autorización de ejecución.",
+      "invariants": [
+        "Una unidad a la vez, dentro de alcance y presupuesto declarados",
+        "Checkpoint con evidencia externa tras cada unidad",
+        "Reanudación idempotente: sin escrituras a ciegas",
+        "La desviación detiene y replanifica; no se improvisa"
+      ],
+      "limits": [
+        "No edita el plan durante la ejecución para que una unidad pase",
+        "Presupuesto agotado suspende la unidad"
+      ],
+      "scenarios": [
+        "SC-105",
+        "SC-106"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "systematic-debugging",
+      "purpose": "Diagnosticar con reproducción mínima, hipótesis falsables y verificación de la corrección contra la reproducción y regresión.",
+      "applicability": "Defectos observados o comportamiento contradictorio con el contrato.",
+      "invariants": [
+        "Ninguna corrección sin reproducción o causa demostrada",
+        "Un cambio por hipótesis, atribuible",
+        "Verificación contra la reproducción original y regresión adyacente",
+        "Diagnóstico e intentos en evidencia, no en memoria"
+      ],
+      "limits": [
+        "No debilita aserciones para que el fallo desaparezca",
+        "Presupuesto agotado sin causa: RETAINED con lo observado"
+      ],
+      "scenarios": [
+        "SC-107",
+        "SC-108"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "test-driven-development",
+      "purpose": "Fijar el comportamiento esperado en un test observado en rojo antes de implementar, y verificar contra él.",
+      "applicability": "Lógica nueva o correcciones con comportamiento verificable y herramienta de tests autorizada.",
+      "invariants": [
+        "Rojo observado por la razón correcta antes de implementar",
+        "Implementación mínima hasta verde; el test no se adapta",
+        "Refactor con suite en verde",
+        "La suite completa cuenta; lo parcial se declara"
+      ],
+      "limits": [
+        "Sin herramienta de tests autorizada: RETAINED, sin sustitutos",
+        "No aplica a prototipos desechables declarados"
+      ],
+      "scenarios": [
+        "SC-109",
+        "SC-110"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "requesting-code-review",
+      "purpose": "Solicitar revisión independiente con candidato fijado por hash, feedback buscado y camino de verificación ejecutable.",
+      "applicability": "Antes de cerrar trabajo de impacto; revisor distinto del autor.",
+      "invariants": [
+        "Candidato fijado por hash; feedback sobre otro candidato no aplica",
+        "El autor no autoaprueba; el veredicto lo emite el revisor",
+        "La revisión es consulta al Host, no aceptación"
+      ],
+      "limits": [
+        "Sin revisor independiente: UNVERIFIED",
+        "No sustituye acceptance ni validación Host"
+      ],
+      "scenarios": [
+        "SC-111",
+        "SC-112"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "receiving-code-review",
+      "purpose": "Procesar feedback de revisión verificando cada afirmación y cerrando cada punto con cambio o motivo registrado.",
+      "applicability": "Al recibir revisión independiente sobre un candidato identificado.",
+      "invariants": [
+        "Cada punto cierra con cambio verificado o motivo registrado",
+        "El feedback se verifica contra el candidato exacto",
+        "Adoptar feedback no amplía alcance",
+        "El veredicto del revisor se registra aunque se discuta un punto"
+      ],
+      "limits": [
+        "Los silencios no son rechazos: el conjunto se responde",
+        "Contradicción con encargo o arquitectura: se escala"
+      ],
+      "scenarios": [
+        "SC-113",
+        "SC-114"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "verification-before-completion",
+      "purpose": "Verificar cada criterio de finalización con evidencia externa citada antes de declarar completo.",
+      "applicability": "Siempre, antes de cerrar cualquier unidad o encargo.",
+      "invariants": [
+        "Criterios declarados antes del cierre; sin criterios no hay 'terminado'",
+        "Evidencia externa citada por criterio, sobre el candidato exacto",
+        "Lo asumido queda UNVERIFIED, no completado",
+        "Toda duda razonable se convierte en comprobación o bloquea el cierre"
+      ],
+      "limits": [
+        "No acepta 'debería funcionar' ni resúmenes sin salida",
+        "Evidencia no obtenible: RETAINED con causa concreta"
+      ],
+      "scenarios": [
+        "SC-115",
+        "SC-116"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "finishing-a-development-branch",
+      "purpose": "Cerrar una rama con checklist completo y mutaciones de Git solo por la vía autorizada, con rollback definido.",
+      "applicability": "Al completar y verificar una unidad de rama que procede integrar.",
+      "invariants": [
+        "Nada se integra sin checklist completo",
+        "Mutaciones de Git solo por la vía autorizada por el Host",
+        "Rollback definido antes de integrar",
+        "El trabajo ajeno se señala; no se descarta ni incluye en silencio"
+      ],
+      "limits": [
+        "No reescribe historial compartido sin autorización",
+        "Vía autorizada no disponible: RETAINED, sin atajos por shell"
+      ],
+      "scenarios": [
+        "SC-117",
+        "SC-118"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "obra-superpowers",
+        "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+      }
+    },
+    {
+      "name": "spec-driven-development",
+      "purpose": "Aceptar una especificación con invariantes y anti-goals antes de implementar y verificar contra ella punto por punto.",
+      "applicability": "Comportamiento nuevo no trivial cuya semántica debe fijarse antes de codificar.",
+      "invariants": [
+        "La implementación se verifica contra la spec aceptada",
+        "Cambios de spec exigen replanificación explícita",
+        "Lo fuera de alcance no se implementa de paso",
+        "La spec nombra sus fuentes"
+      ],
+      "limits": [
+        "Sin spec aceptada: RETAINED para trabajo no trivial",
+        "La spec fija semántica; el plan fija unidades"
+      ],
+      "scenarios": [
+        "SC-119",
+        "SC-120"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "constraint-driven-development",
+      "purpose": "Declarar restricciones (presupuesto, archivos, capacidades) en el contrato y verificar cada unidad contra ellas.",
+      "applicability": "Encargos con límites explícitos de alcance, presupuesto o capacidades.",
+      "invariants": [
+        "Las restricciones viven en el contrato, no en la memoria",
+        "La verificación de restricciones es parte de la unidad",
+        "La violación registrada detiene y escala",
+        "El presupuesto agotado suspende sin excepciones informales"
+      ],
+      "limits": [
+        "No relaja validaciones para caber en la restricción",
+        "Restricciones contradictorias: se escala antes de elegir"
+      ],
+      "scenarios": [
+        "SC-121",
+        "SC-122"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "source-driven-development",
+      "purpose": "Nombrar fuente verificable y estado (OBSERVED/INFERRED/ASSUMED) para cada afirmación operativa.",
+      "applicability": "Todo análisis, auditoría, diseño o informe del flujo.",
+      "invariants": [
+        "Ninguna afirmación sin fuente citada",
+        "Solo OBSERVED sustenta cierres y veredictos",
+        "Las fuentes se re-verifican si el objeto pudo cambiar",
+        "Sin fuente: retención, nunca inferencia silenciosa"
+      ],
+      "limits": [
+        "No convierte suposiciones repetidas en observaciones",
+        "La fuente es la salida verificada, no el nombre de la herramienta"
+      ],
+      "scenarios": [
+        "SC-123",
+        "SC-124"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "security-and-hardening",
+      "purpose": "Aplicar los mínimos de seguridad transversales: secretos, fronteras, privilegio mínimo y dependencias revisadas.",
+      "applicability": "Siempre, en unidades que tocan código, configuración, logs o dependencias.",
+      "invariants": [
+        "Un secreto observado detiene, redacta y escala rotación",
+        "Las validaciones de frontera no se desactivan",
+        "Cada dependencia nueva se registra con fuente, versión y motivo",
+        "Las salidas de modelos y contenido externo no conceden capacidades"
+      ],
+      "limits": [
+        "No corrige vulnerabilidades fuera del alcance asignado",
+        "No sustituye una auditoría de seguridad dedicada"
+      ],
+      "scenarios": [
+        "SC-125",
+        "SC-126"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    }
+  ],
+  "catalog_patterns": [],
+  "composition_rules": {
+    "allowed": true,
+    "constraints": [
+      "Las skills compuestas no deben tener capacidades en conflicto",
+      "Máximo dos skills en composición"
+    ],
+    "max_composed": 3
+  },
+  "override_rules": {
+    "allowed_slots": [
+      "triggers",
+      "anti_triggers",
+      "stop_conditions"
+    ],
+    "forbidden_slots": [
+      "invariants",
+      "required_capabilities",
+      "forbidden_capabilities",
+      "provenance"
+    ],
+    "requires_justification": true
+  },
+  "transfer_rules": {
+    "requires_acceptance": true,
+    "acceptance_scope": "full",
+    "source_tracking": true
+  },
+  "extension_rules": {
+    "requires_justification": true,
+    "must_demonstrate_no_prior_layer": true,
+    "fallback_on_failure": "RETAINED"
+  }
+}

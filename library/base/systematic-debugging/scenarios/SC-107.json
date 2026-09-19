@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-107",
+  "type": "positive",
+  "description": "El diagnóstico parte de una reproducción mínima guardada y la corrección se verifica contra ella y contra regresión.",
+  "input": {
+    "skill": "systematic-debugging",
+    "reproduction_saved": true,
+    "fix_verified_against_reproduction": true,
+    "regression_checked": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "debug_evidence",
+    "description": "Reproducción, hipótesis confirmada y verificación doble quedan como evidencia."
+  },
+  "sr_links": [],
+  "target_skill": "systematic-debugging"
+}

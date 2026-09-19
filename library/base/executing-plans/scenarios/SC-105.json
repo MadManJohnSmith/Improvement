@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-105",
+  "type": "positive",
+  "description": "Cada unidad ejecutada cierra con checkpoint de evidencia y estado de reanudación antes de iniciar la siguiente.",
+  "input": {
+    "skill": "executing-plans",
+    "checkpoint_after_each_unit": true,
+    "evidence_external": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "unit_checkpoint",
+    "description": "Existe evidencia externa por unidad y estado de reanudación sin huecos."
+  },
+  "sr_links": [],
+  "target_skill": "executing-plans"
+}

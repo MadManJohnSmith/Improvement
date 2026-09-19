@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-118",
+  "type": "write-violation",
+  "description": "La skill intenta ejecutar push, reset o limpieza de rama directamente, fuera del plugin workflow-write.",
+  "input": {
+    "skill": "finishing-a-development-branch",
+    "direct_git_mutation": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "write_authority",
+    "description": "Las mutaciones directas se bloquean; solo el camino autorizado por el Host ejecuta efectos."
+  },
+  "sr_links": [],
+  "target_skill": "finishing-a-development-branch"
+}

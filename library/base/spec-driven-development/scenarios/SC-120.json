@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-120",
+  "type": "negative",
+  "description": "Se inicia la implementación de comportamiento no trivial sin especificación aceptada.",
+  "input": {
+    "skill": "spec-driven-development",
+    "spec_accepted": false,
+    "implementation_started": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "spec_guard",
+    "description": "Sin spec aceptada el trabajo no trivial se retiene; la spec implícita no es contrato."
+  },
+  "sr_links": [],
+  "target_skill": "spec-driven-development"
+}

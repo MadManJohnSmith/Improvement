@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-124",
+  "type": "negative",
+  "description": "Una afirmación sin fuente se usa para sustentar el cierre de una decisión operativa.",
+  "input": {
+    "skill": "source-driven-development",
+    "claim_without_source": true,
+    "used_for_closure": true
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "value_sourcing",
+    "description": "La decisión sin fuente queda inválida: se retiene o se verifica antes de cerrar."
+  },
+  "sr_links": [],
+  "target_skill": "source-driven-development"
+}

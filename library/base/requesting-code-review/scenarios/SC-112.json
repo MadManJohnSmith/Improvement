@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-112",
+  "type": "scope-violation",
+  "description": "La solicitud de revisión no identifica el candidato exacto o el veredicto lo emite el propio autor.",
+  "input": {
+    "skill": "requesting-code-review",
+    "candidate_hash": false,
+    "self_approval": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "anti_self_approval",
+    "description": "Sin candidato fijado o con auto-aprobación, no hay revisión válida."
+  },
+  "sr_links": [],
+  "target_skill": "requesting-code-review"
+}

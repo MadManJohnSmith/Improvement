@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-106",
+  "type": "idempotence",
+  "description": "Tras una interrupción durante una unidad de escritura, la reanudación repite la unidad sin reconciliar el estado previo.",
+  "input": {
+    "skill": "executing-plans",
+    "interrupted_unit": "write",
+    "resumed_without_reconcile": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "reconcile_guard",
+    "description": "La reanudación exige verificar el efecto previo; repetir a ciegas se bloquea."
+  },
+  "sr_links": [],
+  "target_skill": "executing-plans"
+}

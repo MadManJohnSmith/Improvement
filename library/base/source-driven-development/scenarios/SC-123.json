@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-123",
+  "type": "positive",
+  "description": "Cada afirmación del informe nombra fuente verificable con estado OBSERVED/INFERRED/ASSUMED declarado.",
+  "input": {
+    "skill": "source-driven-development",
+    "claims_with_source": "all",
+    "states_declared": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "sourced_report",
+    "description": "El informe es trazable afirmación→fuente→estado."
+  },
+  "sr_links": [],
+  "target_skill": "source-driven-development"
+}
