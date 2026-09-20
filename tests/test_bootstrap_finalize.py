@@ -42,20 +42,25 @@ class FinalizeTests(unittest.TestCase):
 
     def test_retained_pauses_without_installing(self):
         verdict = self._verdict("RETAINED")
-        with unittest.mock.patch("acceptance.accept", return_value=verdict) as accept, \
+        verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
+        def accept(_run_dir, launch_dsh=False):
+            verdict_path.write_text(json.dumps(verdict) + "\n")
+            return verdict
+        with unittest.mock.patch("acceptance.accept", side_effect=accept) as accept, \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
              unittest.mock.patch("transaction.install") as install:
             result = bootstrap.finalize(self.workspace, "gen-test")
         self.assertEqual(result["result"], "RETAINED")
         self.assertFalse(result["is_active_deployment"])
         self.assertIn("no se instaló nada", result["message"])
-        accept.assert_called_once_with(self.run_dir)
+        accept.assert_called_once_with(self.run_dir, launch_dsh=False)
         install.assert_not_called()
 
     def test_active_verdict_installs_and_marks_checkpoint(self):
         verdict = self._verdict("ACTIVE")
         verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
 
-        def accept(_run_dir):
+        def accept(_run_dir, launch_dsh=False):
             verdict_path.write_text(json.dumps(verdict) + "\n")
             return verdict
 
@@ -65,6 +70,7 @@ class FinalizeTests(unittest.TestCase):
             "previous_generation_id": "",
         }
         with unittest.mock.patch("acceptance.accept", side_effect=accept), \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
              unittest.mock.patch("transaction.install", return_value=activation) as install:
             result = bootstrap.finalize(self.workspace, "gen-test")
 
@@ -85,6 +91,7 @@ class FinalizeTests(unittest.TestCase):
         verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
         verdict_path.write_text(json.dumps(verdict) + "\n")
         with unittest.mock.patch("acceptance.accept") as accept, \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
              unittest.mock.patch("transaction.install", return_value={
                  "result": "NO_OP", "generation_id": "gen-test",
              }) as install:
@@ -104,8 +111,11 @@ class FinalizeTests(unittest.TestCase):
         verdict["generation_id"] = "gen-other"
         path = self.run_dir / "acceptance" / "host-verdict.json"
         path.write_text(json.dumps(verdict) + "\n")
-        with self.assertRaisesRegex(ValueError, "otra generación"):
-            bootstrap.finalize(self.workspace, "gen-test")
+        with unittest.mock.patch(
+                "acceptance.validate_host_verdict",
+                side_effect=ValueError("host-verdict corresponde a otra generación")):
+            with self.assertRaisesRegex(ValueError, "otra generación"):
+                bootstrap.finalize(self.workspace, "gen-test")
 
 
 class DispatchChainTests(unittest.TestCase):
@@ -127,7 +137,8 @@ class DispatchChainTests(unittest.TestCase):
              }) as finalize:
             bootstrap._dispatch_creator_chain(result, self.run_dir, False)
         finalize.assert_called_once_with(
-            self.run_dir.parent.parent, generation_id="gen-test")
+            self.run_dir.parent.parent, generation_id="gen-test",
+            launch_dsh=False)
         self.assertEqual(result["host"]["result"], "ACTIVE")
         self.assertIn("Host: ACTIVE", result["message"])
 

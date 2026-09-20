@@ -333,7 +333,8 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
         workspace = Path(run_dir).parent.parent
         try:
             result["host"] = finalize(
-                workspace, generation_id=result.get("generation_id"))
+                workspace, generation_id=result.get("generation_id"),
+                launch_dsh=launch_dsh)
         except Exception as e:
             result["host"] = {
                 "result": "FINALIZATION_FAILED",
@@ -790,7 +791,7 @@ def verify_acceptance(workspace, generation_id=None):
     }
 
 
-def finalize(workspace, generation_id=None):
+def finalize(workspace, generation_id=None, *, launch_dsh=False):
     """Run Host acceptance and activate only an explicit ACTIVE verdict.
 
     This is Host-side deterministic code, never part of the Creator session.
@@ -815,11 +816,14 @@ def finalize(workspace, generation_id=None):
         raise ValueError(
             "Solicitud de aceptación ausente: Creator debe ejecutar accept antes de finalizar")
 
+    import acceptance
     if verdict_path.is_file():
-        verdict = _read_json(verdict_path)
+        verdict = acceptance.validate_host_verdict(
+            verdict_path, generated, generation_id=gen_id)
     else:
-        import acceptance
-        verdict = acceptance.accept(run_dir)
+        verdict = acceptance.accept(run_dir, launch_dsh=launch_dsh)
+        verdict = acceptance.validate_host_verdict(
+            verdict_path, generated, generation_id=gen_id)
 
     verdict_name = verdict.get("verdict")
     if verdict.get("generation_id") not in (None, gen_id):
@@ -1084,6 +1088,8 @@ def main():
     p_finalize.add_argument("--workspace", required=True)
     p_finalize.add_argument("--generation-id", default=None,
                             help="ID de generación opcional (default: activa o última)")
+    p_finalize.add_argument("--launch-dsh", action="store_true",
+                            help="Arrancar una instancia DSH limpia para evaluator/reviewer")
 
     # update
     p_update = sub.add_parser("update", help="Regenerar sobre base cambiada")
@@ -1131,6 +1137,7 @@ def main():
             result = finalize(
                 Path(args.workspace).resolve(),
                 generation_id=args.generation_id,
+                launch_dsh=args.launch_dsh,
             )
 
         elif args.command == "update":

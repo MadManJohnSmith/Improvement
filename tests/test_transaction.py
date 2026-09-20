@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import acceptance
 import transaction as tx
 
 
@@ -58,11 +59,39 @@ class TransactionTests(unittest.TestCase):
         self.assertIn("otra generación", str(ctx.exception))
 
     def test_install_accepts_verdict_file(self):
-        verdict_path = self.root / "host-verdict.json"
-        verdict_path.write_text(json.dumps(_verdict("gen-1")), encoding="utf-8")
+        acceptance_dir = self.root / "acceptance"
+        acceptance_dir.mkdir()
+        public = acceptance_dir / "public-results.json"
+        holdout = acceptance_dir / "holdout-results.json"
+        review = acceptance_dir / "independent-review.json"
+        for path in (public, holdout, review):
+            path.write_text("{}\n", encoding="utf-8")
+        verdict_path = acceptance_dir / "host-verdict.json"
+        verdict = {
+            "schema_version": 1, "generation_id": "gen-1",
+            "verdict": "ACTIVE", "static_passed": True,
+            "public_passed": True, "holdout_passed": True,
+            "independent_review": "PASS",
+            "candidate_digest": acceptance.tree_digest(self.generated),
+            "manifest_digest": acceptance._digest_file(
+                self.generated / "generation-manifest.json"),
+            "public_results_digest": acceptance._digest_file(public),
+            "holdout_results_digest": acceptance._digest_file(holdout),
+            "review_digest": acceptance._digest_file(review),
+            "host_policy_digest": "a" * 64,
+            "timestamp": "2026-09-19T00:00:00+00:00",
+        }
+        verdict_path.write_text(json.dumps(verdict), encoding="utf-8")
         result = tx.install(self.workspace, self.generated, "gen-1",
                             host_verdict=verdict_path)
         self.assertEqual(result["result"], "ACTIVE")
+
+    def test_install_rejects_unbound_minimal_verdict_file(self):
+        verdict_path = self.root / "host-verdict.json"
+        verdict_path.write_text(json.dumps(_verdict("gen-1")), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "campos inválidos"):
+            tx.install(self.workspace, self.generated, "gen-1",
+                       host_verdict=verdict_path)
 
     def test_install_activates_generation(self):
         result = self._install()
