@@ -101,10 +101,43 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual(result["result"], "NO_OP")
         self.assertTrue(result["is_active_deployment"])
 
-    def test_missing_acceptance_request_fails_closed(self):
-        (self.run_dir / "acceptance" / "request.json").unlink()
-        with self.assertRaisesRegex(ValueError, "Solicitud de aceptación ausente"):
-            bootstrap.finalize(self.workspace, "gen-test")
+    def test_missing_acceptance_request_is_materialized_by_host(self):
+        request = self.run_dir / "acceptance" / "request.json"
+        request.unlink()
+        verdict = self._verdict("RETAINED")
+        verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
+        def host_accept(_workspace, _generated):
+            request.write_text("{}\n")
+            return {"result": "ACCEPT_REQUESTED"}
+        def evaluate(_run_dir, launch_dsh=False):
+            verdict_path.write_text(json.dumps(verdict) + "\n")
+            return verdict
+        with unittest.mock.patch("bootstrap.accept", side_effect=host_accept) as accept_request, \
+             unittest.mock.patch("acceptance.accept", side_effect=evaluate), \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict):
+            result = bootstrap.finalize(self.workspace, "gen-test")
+        accept_request.assert_called_once_with(self.workspace, self.generated)
+        self.assertEqual(result["result"], "RETAINED")
+
+    def test_reevaluate_deletes_only_host_derived_artifacts(self):
+        acceptance_dir = self.run_dir / "acceptance"
+        for name in ("host-verdict.json", "public-results.json", "holdout-results.json",
+                     "independent-review.json", "evidence-ledger.jsonl"):
+            (acceptance_dir / name).write_text("{}\n")
+        verdict = self._verdict("RETAINED")
+        verdict_path = acceptance_dir / "host-verdict.json"
+        def evaluate(_run_dir, launch_dsh=False):
+            # Old artifacts must be absent before the new evaluator runs.
+            self.assertFalse((acceptance_dir / "public-results.json").exists())
+            self.assertTrue((acceptance_dir / "request.json").exists())
+            self.assertTrue((self.generated / "generation-manifest.json").exists())
+            verdict_path.write_text(json.dumps(verdict) + "\n")
+            return verdict
+        with unittest.mock.patch("acceptance.accept", side_effect=evaluate), \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict):
+            result = bootstrap.finalize(
+                self.workspace, "gen-test", reevaluate=True)
+        self.assertEqual(result["result"], "RETAINED")
 
     def test_wrong_generation_verdict_fails_closed(self):
         verdict = self._verdict("ACTIVE")

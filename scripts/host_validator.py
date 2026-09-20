@@ -88,7 +88,7 @@ def validate_package(generated_dir, *, run_dir=None):
     _validate_layer_contracts(report, manifest, generated, run_dir=run_dir)
 
     # Layer 5: Capabilities, roots, tools, models, routing
-    _validate_layer_capabilities(report, manifest)
+    _validate_layer_capabilities(report, manifest, generated)
 
     # Layer 6: Portability, scripts, subprocess, red, datos
     _validate_layer_portability(report, manifest, generated)
@@ -276,23 +276,59 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
     report.add_layer("contracts", not issues, issues)
 
 
-def _validate_layer_capabilities(report, manifest):
-    """Layer 5: Capabilities, routing, models."""
+def _validate_layer_capabilities(report, manifest, generated):
+    """Layer 5: capability consistency across manifest, grant and modes."""
     issues = []
-
-    # Check required vs forbidden capabilities don't overlap
     required = set(manifest.get("required_capabilities", []))
     forbidden = set(manifest.get("forbidden_capabilities", []))
     overlap = required & forbidden
     if overlap:
         issues.append(
-            f"Capabilities both required and forbidden: {sorted(overlap)}"
-        )
+            f"Capabilities both required and forbidden: {sorted(overlap)}")
 
-    # Check routing digest is present
+    capabilities_path = generated / "capabilities.json"
+    capability_required = set()
+    capability_forbidden = set()
+    if not capabilities_path.is_file() or capabilities_path.is_symlink():
+        issues.append("capabilities.json ausente")
+    else:
+        try:
+            capabilities = json.loads(capabilities_path.read_text(encoding="utf-8"))
+            capability_required = set(capabilities.get("required_capabilities", []))
+            capability_forbidden = set(capabilities.get("forbidden_capabilities", []))
+        except (ValueError, TypeError):
+            issues.append("capabilities.json inválido")
+
+    mode_required = set()
+    mode_forbidden = set()
+    mode_paths = sorted((generated / "contracts").glob("*.mode.json"))
+    mode_paths += sorted((generated / "modes").glob("*/mode.json"))
+    for path in mode_paths:
+        try:
+            mode = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        mode_required.update(mode.get("required_capabilities", []))
+        mode_forbidden.update(mode.get("forbidden_capabilities", []))
+    if "product_write" in mode_required:
+        issues.append(
+            "Mode requires product_write; managed repairs must require "
+            "candidate_write and never canonical product mutation")
+    missing = mode_required - capability_required
+    if missing:
+        issues.append(
+            f"Mode capabilities missing from capabilities.json: {sorted(missing)}")
+    conflict = mode_required & (capability_forbidden | mode_forbidden)
+    if conflict:
+        issues.append(
+            f"Mode capabilities also forbidden: {sorted(conflict)}")
+    undeclared = required - capability_required
+    if undeclared:
+        issues.append(
+            f"Manifest capabilities missing from capabilities.json: {sorted(undeclared)}")
+
     if not manifest.get("effective_routing_digest"):
         issues.append("Missing effective_routing_digest")
-
     report.add_layer("capabilities", not issues, issues)
 
 

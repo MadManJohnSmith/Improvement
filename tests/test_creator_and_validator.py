@@ -39,10 +39,31 @@ class Base(unittest.TestCase):
         skill = generated / "skills" / "project-auditor"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("# Auditor\n")
+        capabilities = {
+            "schema_version": 1,
+            "capability_id": "cap-test",
+            "session_id": self.gen_id,
+            "project": "project",
+            "executor": "creator",
+            "roots": {
+                "product_read": ["PROJECT_ROOT"],
+                "framework_execute": ["FRAMEWORK_ROOT"],
+                "workspace_write": ["WORKSPACE_ROOT"],
+            },
+            "scope": ["audit", "repair", "generate"],
+            "required_capabilities": [],
+            "forbidden_capabilities": [],
+        }
+        capabilities_bytes = (json.dumps(capabilities, indent=2) + "\n").encode()
+        (generated / "capabilities.json").write_bytes(capabilities_bytes)
         artifacts = [{
             "path": "skills/project-auditor/SKILL.md",
             "type": "skill-entrypoint",
             "sha256": cc._digest_bytes(b"# Auditor\n"),
+        }, {
+            "path": "capabilities.json",
+            "type": "manifest",
+            "sha256": cc._digest_bytes(capabilities_bytes),
         }]
         manifest = {
             "schema_version": 1,
@@ -821,6 +842,48 @@ class ValidatorTests(Base):
         )
         report = hv.validate_package(generated)
         self.assertFalse(report.layers["capabilities"]["passed"])
+
+    def test_mode_product_write_is_rejected(self):
+        generated, manifest = self.make_package()
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        mode = {
+            "required_capabilities": ["product_read", "product_write"],
+            "forbidden_capabilities": [],
+        }
+        mode_bytes = (json.dumps(mode) + "\n").encode()
+        (contracts / "repair.mode.json").write_bytes(mode_bytes)
+        manifest["artifacts"].append({
+            "path": "contracts/repair.mode.json", "type": "contract",
+            "sha256": cc._digest_bytes(mode_bytes),
+        })
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["capabilities"]["passed"])
+        self.assertIn("candidate_write", " ".join(
+            report.layers["capabilities"]["details"]))
+
+    def test_mode_required_capability_must_be_declared(self):
+        generated, manifest = self.make_package()
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        mode = {
+            "required_capabilities": ["candidate_write"],
+            "forbidden_capabilities": [],
+        }
+        mode_bytes = (json.dumps(mode) + "\n").encode()
+        (contracts / "repair.mode.json").write_bytes(mode_bytes)
+        manifest["artifacts"].append({
+            "path": "contracts/repair.mode.json", "type": "contract",
+            "sha256": cc._digest_bytes(mode_bytes),
+        })
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["capabilities"]["passed"])
+        self.assertIn("missing", " ".join(
+            report.layers["capabilities"]["details"]).lower())
 
     def test_portability_violation_retained(self):
         generated, manifest = self.make_package()
