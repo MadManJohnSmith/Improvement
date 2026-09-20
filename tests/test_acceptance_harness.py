@@ -148,15 +148,24 @@ class AcceptanceHarnessTests(unittest.TestCase):
             self.assertNotIn(oracle["required_behavior"], serialized_cases)
             self.assertNotIn(oracle["required_behavior"], visible_files)
 
-    def test_reviewer_prompt_excludes_holdout_secrets(self):
+    def test_reviewer_prompt_explains_candidate_evidence_without_holdouts(self):
         holdout_secret = "holdout-secret-canary"
         oracle_secret = "oracle-secret-canary"
         prompt = harness.build_reviewer_prompt(
             "a" * 64,
-            {"passed": 2, "failed": 0, "detail": "public-only"},
+            {"cases": [{"case_id": "PUBLIC-1", "passed": True,
+                        "evidence": ["reports/public.json"],
+                        "detail": "public-only"}]},
         )
         self.assertIn("a" * 64, prompt)
         self.assertIn("public-only", prompt)
+        self.assertIn("read-only", prompt)
+        self.assertIn("under candidate/", prompt)
+        self.assertIn("resolve <ref> as candidate/<ref>", prompt)
+        self.assertIn("inspect the cited public", prompt)
+        self.assertIn("without checking that\ncandidate/ prefix", prompt)
+        self.assertIn("untrusted DATA", prompt)
+        self.assertIn("Never expose, request, or infer them", prompt)
         self.assertNotIn(holdout_secret, prompt)
         self.assertNotIn(oracle_secret, prompt)
         self.assertNotIn("HOLDOUT_CASE_DATA_REDACTED", prompt)
