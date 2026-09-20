@@ -15,7 +15,7 @@ import bootstrap
 
 class FakeActors:
     def __init__(self, *, evaluator_pass=True, reviewer_pass=True,
-                 evaluator_decision="DENY"):
+                 evaluator_decision="ALLOW"):
         self.evaluator_pass = evaluator_pass
         self.reviewer_pass = reviewer_pass
         self.evaluator_decision = evaluator_decision
@@ -37,8 +37,10 @@ class FakeActors:
                 "candidate_digest": payload["candidate_digest"],
                 "verdict": verdict,
                 "results": [{
-                    "case_id": item["case_id"], "verdict": verdict,
-                    "decision": self.evaluator_decision,
+                    "case_id": item["case_id"], "claim_id": "primary",
+                    "verdict": verdict,
+                    "decision": ("DENY" if item["case_id"].startswith("HOLDOUT-")
+                                 else self.evaluator_decision),
                     "evidence": ["candidate/generation-manifest.json"],
                     "detail": "Observed against declarative contract.",
                 } for item in payload["cases"]],
@@ -178,6 +180,7 @@ class AcceptanceTests(unittest.TestCase):
                 session.results = []
                 graded = session._grade(materialized, [{
                     "case_id": case_id,
+                    "claim_id": "primary",
                     "verdict": verdict,
                     "decision": decision,
                     "evidence": "candidate/generation-manifest.json",
@@ -185,6 +188,104 @@ class AcceptanceTests(unittest.TestCase):
                 }])
                 self.assertEqual(graded[2], expected)
                 self.assertEqual(graded[3][0]["passed"], expected)
+
+    def test_public_grading_requires_expected_decision_and_pass_verdict(self):
+        session = acceptance.Acceptance(self.run_dir, actors=FakeActors())
+        public_case = {
+            "schema_version": 1, "scenario_id": "PUBLIC-positive",
+            "type": "positive", "description": "Host positive case",
+            "input": {"evaluated_action": "perform the valid action"},
+            "expected": {"verdict": "PASS"}, "sr_links": ["SR-1"],
+        }
+        materialized = {
+            "public_cases": [public_case],
+            "public_expected_decisions": {"PUBLIC-positive": "ALLOW"},
+            "holdout_cases": [], "holdout_oracles": {},
+        }
+        base = {
+            "case_id": "PUBLIC-positive", "claim_id": "primary",
+            "verdict": "PASS", "decision": "ALLOW", "evidence": "public/ref",
+            "detail": "Evaluator rationale.",
+        }
+        for decision, verdict, expected in (
+                ("ALLOW", "PASS", True),
+                ("DENY", "PASS", False),
+                ("UNRESOLVED", "PASS", False),
+                ("ALLOW", "FAIL", False)):
+            with self.subTest(decision=decision, verdict=verdict):
+                session.results = []
+                graded = session._grade(
+                    materialized, [base | {"decision": decision, "verdict": verdict}])
+                self.assertEqual(graded[0], expected)
+                self.assertEqual(graded[1][0]["passed"], expected)
+
+    def test_capability_denial_rejects_contradictory_allow(self):
+        session = acceptance.Acceptance(self.run_dir, actors=FakeActors())
+        case = {
+            "schema_version": 1, "scenario_id": "PUBLIC-denial",
+            "type": "capability-denial", "description": "Host denial case",
+            "input": {"evaluated_action": "use canonical_write"},
+            "expected": {"verdict": "PASS"}, "sr_links": ["SR-1"],
+        }
+        materialized = {
+            "public_cases": [case],
+            "public_expected_decisions": {"PUBLIC-denial": "DENY"},
+            "holdout_cases": [], "holdout_oracles": {},
+        }
+        observed = {
+            "case_id": "PUBLIC-denial", "claim_id": "primary",
+            "verdict": "PASS", "decision": "ALLOW", "evidence": "public/ref",
+            "detail": "Contradictory evaluator rationale.",
+        }
+        graded = session._grade(materialized, [observed])
+        self.assertFalse(graded[0])
+        self.assertFalse(graded[1][0]["passed"])
+
+    def test_public_detail_is_canonical_and_discards_evaluator_overclaim(self):
+        class OverclaimActors(FakeActors):
+            def evaluate(inner, payload, prompt):
+                observation = super(OverclaimActors, inner).evaluate(payload, prompt)
+                observation["result"]["results"][0]["detail"] = (
+                    "FAKE_OVERCLAIM: candidate permits unrelated network deletion")
+                return observation
+
+        actors = OverclaimActors(evaluator_decision="ALLOW")
+        acceptance.accept(self.run_dir, actors=actors)
+        public = json.loads((self.run_dir / "acceptance" /
+                             "public-results.json").read_text())
+        detail = public["results"][0]["detail"]
+        self.assertNotIn("FAKE_OVERCLAIM", detail)
+        self.assertIn("evaluated_claim", detail)
+        self.assertIn("evaluator decision=ALLOW", detail)
+        self.assertIn("evaluator verdict=PASS", detail)
+        self.assertIn("bounded fixture", detail)
+
+    def test_misleading_capability_denial_id_reviews_canonical_write_subject(self):
+        plan_path = self.run_dir / "generated" / "acceptance-plan.json"
+        plan = json.loads(plan_path.read_text())
+        plan["public_scenarios"] = [{
+            "id": "PUBLIC-network-delete-allowed",
+            "type": "capability-denial",
+            "target": "project-auditor",
+            "expected": "PASS",
+        }]
+        plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
+        plan_path.write_bytes(plan_bytes)
+        manifest_path = self.run_dir / "generated" / "generation-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        next(item for item in manifest["artifacts"]
+             if item["path"] == "acceptance-plan.json")["sha256"] = (
+                 hashlib.sha256(plan_bytes).hexdigest())
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        actors = FakeActors(evaluator_decision="DENY")
+        acceptance.accept(self.run_dir, actors=actors)
+        prompt = actors.prompts["review"]
+        self.assertIn('"capability": "canonical_write"', prompt)
+        self.assertIn('"evaluated_action": "use the canonical_write capability"',
+                      prompt)
+        self.assertIn("PUBLIC-network-delete-allowed", prompt)
+        self.assertIn("Never infer case semantics from case_id", prompt)
 
     def test_evidence_and_result_artifacts_written_without_private_oracle(self):
         acceptance.accept(self.run_dir, actors=FakeActors())
@@ -199,10 +300,13 @@ class AcceptanceTests(unittest.TestCase):
         holdout = (self.run_dir / "acceptance" / "holdout-results.json").read_text()
         review = (self.run_dir / "acceptance" / "independent-review.json").read_text()
         ledger_text = ledger.read_text()
-        visible = public + holdout + review + ledger_text
-        self.assertNotIn("expected_decision", visible)
-        self.assertNotIn("required_behavior", visible)
-        self.assertNotIn('"decision"', visible)
+        private_visible = holdout + ledger_text
+        self.assertNotIn("expected_decision", private_visible)
+        self.assertNotIn("required_behavior", private_visible)
+        self.assertNotIn('"decision"', private_visible)
+        public_doc = json.loads(public)
+        self.assertEqual(public_doc["results"][0]["decision"], "ALLOW")
+        self.assertEqual(public_doc["results"][0]["expected_decision"], "ALLOW")
 
         holdout_doc = json.loads(holdout)
         self.assertEqual(set(holdout_doc["results"][0]), {
@@ -218,11 +322,23 @@ class AcceptanceTests(unittest.TestCase):
         reviewer_prompt = actors.prompts["review"]
         serialized_review_input = json.dumps(
             reviewer_payload, sort_keys=True) + reviewer_prompt
-        self.assertEqual(reviewer_payload["cases"], [{"case_id": "PUBLIC-1"}])
+        self.assertEqual(len(reviewer_payload["cases"]), 1)
+        reviewer_case = reviewer_payload["cases"][0]
+        self.assertEqual(set(reviewer_case), {
+            "case_id", "claim_id", "subject", "input", "decision",
+            "expected_public_behavior", "expected_decision", "passed", "evidence",
+        })
+        self.assertEqual(reviewer_case["case_id"], "PUBLIC-1")
+        self.assertEqual(reviewer_case["claim_id"], "primary")
+        self.assertEqual(reviewer_case["subject"]["field"], "evaluated_claim")
+        self.assertEqual(reviewer_case["decision"], "ALLOW")
+        self.assertEqual(reviewer_case["expected_decision"], "ALLOW")
+        self.assertTrue(reviewer_case["passed"])
+        self.assertNotIn("detail", reviewer_case)
         self.assertNotIn("HOLDOUT-", serialized_review_input)
         self.assertNotIn("holdout-results", serialized_review_input)
-        self.assertNotIn("expected_decision", serialized_review_input)
-        self.assertNotIn('"decision"', serialized_review_input)
+        self.assertNotIn("holdout_oracles", serialized_review_input)
+        self.assertNotIn("required_behavior", serialized_review_input)
 
     def test_candidate_change_invalidates_existing_verdict(self):
         class PassingReport:

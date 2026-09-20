@@ -50,13 +50,6 @@ def _read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _public_expected(verdict):
-    # The plan's expected verdict describes the mode behavior under the case
-    # (including BLOCKED/NOT_COVERED). Evaluator PASS means that behavior is
-    # explicitly represented by the candidate contract.
-    return verdict in ("PASS", "BLOCKED", "NOT_COVERED")
-
-
 def validate_host_verdict(path, generated, *, generation_id=None):
     """Validate an existing Host verdict and all candidate/result bindings."""
     path, generated = Path(path), Path(generated)
@@ -194,6 +187,16 @@ class Acceptance:
             {"results": envelope["results"]}, expected_ids)
         return observation, results
 
+    @staticmethod
+    def _canonical_public_detail(case, observed):
+        subject_field, subject = harness._subject(
+            case["input"], f"public case {case['scenario_id']!r}.input")
+        return (
+            f"Host {subject_field} {json.dumps(subject, ensure_ascii=False)}; "
+            f"evaluator decision={observed['decision']}; "
+            f"evaluator verdict={observed['verdict']}."
+        )
+
     def _grade(self, materialized, results):
         public_count = len(materialized["public_cases"])
         public_observed = results[:public_count]
@@ -201,21 +204,27 @@ class Acceptance:
         public_rows = []
         public_passed = True
         for case, observed in zip(materialized["public_cases"], public_observed):
-            expected_supported = _public_expected(case["expected"]["verdict"])
-            passed = expected_supported and observed["verdict"] == "PASS"
+            expected_decision = materialized["public_expected_decisions"][
+                case["scenario_id"]]
+            passed = (observed["verdict"] == "PASS"
+                      and observed["decision"] == expected_decision)
             public_passed = public_passed and passed
+            detail = self._canonical_public_detail(case, observed)
             row = {
                 "case_id": case["scenario_id"],
+                "claim_id": observed["claim_id"],
                 "expected": case["expected"]["verdict"],
                 "observed": observed["verdict"],
+                "decision": observed["decision"],
+                "expected_decision": expected_decision,
                 "passed": passed,
                 "evidence": observed["evidence"],
-                "detail": observed["detail"],
+                "detail": detail,
             }
             public_rows.append(row)
             self._record(case["scenario_id"], "PASS" if passed else "FAIL",
                          observed["evidence"] if isinstance(observed["evidence"], list)
-                         else [observed["evidence"]], observed["detail"])
+                         else [observed["evidence"]], detail)
 
         holdout_rows = []
         holdout_passed = True
@@ -242,11 +251,19 @@ class Acceptance:
                          ["host-private-evaluation"], "Host holdout graded")
         return public_passed, public_rows, holdout_passed, holdout_rows
 
-    def _review(self, actors, public_rows):
+    def _review(self, actors, public_cases, public_rows):
+        cases = {case["scenario_id"]: case for case in public_cases}
         public_summary = {
             "cases": [{
-                "case_id": row["case_id"], "passed": row["passed"],
-                "evidence": row["evidence"], "detail": row["detail"],
+                "case_id": row["case_id"],
+                "claim_id": row["claim_id"],
+                "subject": harness.public_subject(cases[row["case_id"]]),
+                "input": cases[row["case_id"]]["input"],
+                "decision": row["decision"],
+                "expected_public_behavior": cases[row["case_id"]]["expected"],
+                "expected_decision": row["expected_decision"],
+                "passed": row["passed"],
+                "evidence": row["evidence"],
             } for row in public_rows],
         }
         prompt = harness.build_reviewer_prompt(
@@ -255,7 +272,7 @@ class Acceptance:
         payload = {
             "generation_id": self.generation_id,
             "candidate_digest": self.candidate_digest,
-            "cases": [{"case_id": case_id} for case_id in expected_ids],
+            "cases": public_summary["cases"],
         }
         observation = actors.review(payload, prompt)
         result = observation["result"]
@@ -359,7 +376,8 @@ class Acceptance:
             self.evaluator_session = evaluator["session_id"]
             public_passed, public_rows, holdout_passed, holdout_rows = self._grade(
                 materialized, results)
-            review = self._review(actors_ctx, public_rows)
+            review = self._review(
+                actors_ctx, materialized["public_cases"], public_rows)
             if tree_digest(self.generated) != self.candidate_digest:
                 raise ValueError("El candidato cambió durante aceptación")
             self._write_outputs(public_rows, holdout_rows, review)
