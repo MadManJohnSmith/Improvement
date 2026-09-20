@@ -791,7 +791,8 @@ def verify_acceptance(workspace, generation_id=None):
     }
 
 
-def finalize(workspace, generation_id=None, *, launch_dsh=False):
+def finalize(workspace, generation_id=None, *, launch_dsh=False,
+             reevaluate=False):
     """Run Host acceptance and activate only an explicit ACTIVE verdict.
 
     This is Host-side deterministic code, never part of the Creator session.
@@ -810,11 +811,34 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False):
     request_path = run_dir / "acceptance" / "request.json"
     verdict_path = run_dir / "acceptance" / "host-verdict.json"
 
+    if reevaluate:
+        host_artifacts = [
+            run_dir / "acceptance" / name for name in (
+                "host-verdict.json", "public-results.json",
+                "holdout-results.json", "independent-review.json",
+                "evidence-ledger.jsonl")]
+        host_artifacts += [
+            run_dir / "validation" / name for name in (
+                "summary.json", "report.json")]
+        host_artifacts += [
+            run_dir / "tests" / "public" / "scenarios.jsonl",
+            run_dir / "tests" / "holdout-spec.json",
+        ]
+        for artifact in host_artifacts:
+            if artifact.is_symlink():
+                raise ValueError(f"Artefacto Host inesperado es symlink: {artifact}")
+            if artifact.is_file():
+                artifact.unlink()
+
     if not generated.is_dir():
         raise ValueError(f"generated/ ausente: {generated}")
     if not request_path.is_file():
-        raise ValueError(
-            "Solicitud de aceptación ausente: Creator debe ejecutar accept antes de finalizar")
+        # Creator is not an authority boundary for this mechanical transition.
+        # Re-run the same Host validation/request function deterministically so
+        # a model omitting the command cannot strand a valid package.
+        accept(workspace, generated)
+    if not request_path.is_file():
+        raise ValueError("Host no pudo materializar la solicitud de aceptación")
 
     import acceptance
     if verdict_path.is_file():
@@ -1090,6 +1114,8 @@ def main():
                             help="ID de generación opcional (default: activa o última)")
     p_finalize.add_argument("--launch-dsh", action="store_true",
                             help="Arrancar una instancia DSH limpia para evaluator/reviewer")
+    p_finalize.add_argument("--reevaluate", action="store_true",
+                            help="Invalidar solo evidencia Host derivada y volver a evaluar")
 
     # update
     p_update = sub.add_parser("update", help="Regenerar sobre base cambiada")
@@ -1138,6 +1164,7 @@ def main():
                 Path(args.workspace).resolve(),
                 generation_id=args.generation_id,
                 launch_dsh=args.launch_dsh,
+                reevaluate=args.reevaluate,
             )
 
         elif args.command == "update":

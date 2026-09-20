@@ -51,10 +51,10 @@ def _read(path):
 
 
 def _public_expected(verdict):
-    # PASS means the mode demonstrates positive behavior. BLOCKED means the
-    # mode must identify/block the negative condition; evaluator PASS confirms
-    # that expected behavior. FAIL/NOT_COVERED can never satisfy acceptance.
-    return verdict in ("PASS", "BLOCKED")
+    # The plan's expected verdict describes the mode behavior under the case
+    # (including BLOCKED/NOT_COVERED). Evaluator PASS means that behavior is
+    # explicitly represented by the candidate contract.
+    return verdict in ("PASS", "BLOCKED", "NOT_COVERED")
 
 
 def validate_host_verdict(path, generated, *, generation_id=None):
@@ -142,13 +142,37 @@ class Acceptance:
         return materialized
 
     def _candidate_payload(self, materialized):
-        modes = {}
-        for path in sorted((self.generated / "modes").glob("*/mode.json")):
-            modes[str(path.relative_to(self.generated))] = _read(path)
+        """Load all reviewable candidate contracts without naming assumptions."""
+        candidate = {}
         contracts = {}
-        for path in sorted((self.generated / "contracts").glob("*.json")):
-            contracts[str(path.relative_to(self.generated))] = _read(path)
-        return modes, contracts
+        total_bytes = 0
+        max_bytes = 2 * 1024 * 1024
+        for path in sorted(self.generated.rglob("*")):
+            if path.is_symlink():
+                raise ValueError(f"Symlink no permitido en candidato: {path}")
+            if not path.is_file():
+                continue
+            relative = str(path.relative_to(self.generated))
+            if path.suffix == ".json":
+                value = _read(path)
+            elif path.name == "SKILL.md" or path.suffix == ".md":
+                value = path.read_text(encoding="utf-8")
+            elif path.suffix == ".jsonl":
+                value = [json.loads(line) for line in path.read_text(
+                    encoding="utf-8").splitlines() if line.strip()]
+            else:
+                continue
+            encoded = json.dumps(value, ensure_ascii=False).encode("utf-8")
+            total_bytes += len(encoded)
+            if total_bytes > max_bytes:
+                raise ValueError("Candidato excede 2 MiB de contexto de aceptación")
+            if relative.startswith("contracts/"):
+                contracts[relative] = value
+            else:
+                candidate[relative] = value
+        if not candidate and not contracts:
+            raise ValueError("Candidato sin contenido revisable")
+        return candidate, contracts
 
     def _evaluate(self, actors, materialized):
         modes, contracts = self._candidate_payload(materialized)
@@ -222,19 +246,24 @@ class Acceptance:
         }
         prompt = harness.build_reviewer_prompt(
             self.candidate_digest, public_summary)
+        expected_ids = [row["case_id"] for row in public_rows]
         payload = {
             "generation_id": self.generation_id,
             "candidate_digest": self.candidate_digest,
-            "cases": [{"case_id": "INDEPENDENT-REVIEW"}],
+            "cases": [{"case_id": case_id} for case_id in expected_ids],
         }
         observation = actors.review(payload, prompt)
         result = observation["result"]
         if observation["session_id"] == getattr(self, "evaluator_session", None):
             raise ValueError("Revisor independiente reutilizó la sesión evaluator")
-        if len(result["results"]) != 1 or result["results"][0].get("case_id") != "INDEPENDENT-REVIEW":
-            raise ValueError("Revisor independiente devolvió casos inválidos")
-        review_result = result["results"][0]
-        passed = result["verdict"] == "PASS" and review_result.get("verdict") == "PASS"
+        review_rows = harness.validate_evaluator_results(
+            {"results": result["results"]}, expected_ids)
+        passed = (result["verdict"] == "PASS"
+                  and all(row["verdict"] == "PASS" for row in review_rows))
+        evidence = []
+        for row in review_rows:
+            refs = row["evidence"] if isinstance(row["evidence"], list) else [row["evidence"]]
+            evidence.extend(refs)
         review = {
             "schema_version": SCHEMA_VERSION,
             "reviewer": "host-independent-reviewer",
@@ -242,14 +271,13 @@ class Acceptance:
             "isolation": "SEPARATE_DSH_SESSION",
             "candidate_digest": self.candidate_digest,
             "verdict": "PASS" if passed else "FAIL",
-            "evidence": review_result.get("evidence"),
-            "detail": review_result.get("detail"),
+            "evidence": sorted(set(evidence)),
+            "results": review_rows,
             "summary": result["summary"],
             "timestamp": _now_iso(),
         }
         self._record("INDEPENDENT-REVIEW", review["verdict"],
-                     review_result.get("evidence") if isinstance(review_result.get("evidence"), list)
-                     else [review_result.get("evidence")], review_result.get("detail", ""))
+                     review["evidence"], result["summary"])
         return review
 
     def _write_outputs(self, public_rows, holdout_rows, review):

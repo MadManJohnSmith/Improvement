@@ -269,7 +269,9 @@ Escribe bajo `{run_dir}/generated/`:
 
 1. Solo emitir status GENERATED; nunca ACCEPTED/ACTIVE
 2. Exactamente dos modos finales específicos del proyecto
-3. No modificar Host, validadores, tests, holdouts, capabilities ni acceptance
+3. No modificar Host, validadores ni artefactos Host del run (`tests/`,
+   `inputs/runtime-capabilities.json`, `validation/`, `acceptance/`); el
+   `generated/capabilities.json` declarativo sí forma parte de la salida
 4. No rutas/identidades/secretos del mantenedor
 5. No proveedores/modelos/routing nuevos
 6. Todo valor/decisión tiene fuente
@@ -286,6 +288,10 @@ Escribe bajo `{run_dir}/generated/`:
    `justification` — en sesiones delegadas las aprobaciones se rechazan
    automáticamente, así que una denegación ahí es final: se reporta al
    delegante, nunca se reintenta con escalada
+10. `generated/capabilities.json.required_capabilities` debe cubrir la unión de
+    capacidades requeridas por ambos modos. Reparación gestionada requiere
+    `candidate_write`, nunca `product_write` ni escritura canónica. Ninguna
+    capacidad requerida puede aparecer en `forbidden_capabilities`
 
 ## Al finalizar
 

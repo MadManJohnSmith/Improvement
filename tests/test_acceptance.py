@@ -51,10 +51,10 @@ class FakeActors:
                 "candidate_digest": payload["candidate_digest"],
                 "verdict": verdict,
                 "results": [{
-                    "case_id": "INDEPENDENT-REVIEW", "verdict": verdict,
+                    "case_id": item["case_id"], "verdict": verdict,
                     "evidence": ["candidate/generation-manifest.json"],
                     "detail": "Independent evidence review complete.",
-                }],
+                } for item in payload["cases"]],
                 "summary": "Independent review complete.",
             },
         }
@@ -136,6 +136,19 @@ class AcceptanceTests(unittest.TestCase):
             self.run_dir / "acceptance" / "host-verdict.json",
             self.run_dir / "generated", generation_id=self.gen_id)
         self.assertEqual(validated["verdict"], "ACTIVE")
+
+    def test_candidate_payload_accepts_real_mode_and_contract_names(self):
+        contracts = self.run_dir / "generated" / "contracts"
+        modes = self.run_dir / "generated" / "modes" / "project-auditor"
+        contracts.mkdir()
+        modes.mkdir(parents=True)
+        (contracts / "project-auditor.mode.json").write_text(
+            '{"name":"project-auditor"}\n')
+        (modes / "SKILL.md").write_text("# Project auditor\n")
+        session = acceptance.Acceptance(self.run_dir, actors=FakeActors())
+        candidate, contract_data = session._candidate_payload({})
+        self.assertIn("modes/project-auditor/SKILL.md", candidate)
+        self.assertIn("contracts/project-auditor.mode.json", contract_data)
 
     def test_evidence_and_result_artifacts_written(self):
         acceptance.accept(self.run_dir, actors=FakeActors())
