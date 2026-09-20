@@ -133,6 +133,22 @@ class AcceptanceReviewerTests(unittest.TestCase):
                           client.prompts[0][1])
             self.assertFalse((workspace / "candidate" / "mode.json").stat().st_mode & 0o222)
 
+    def test_evaluator_output_contract_enumerates_all_input_cases(self):
+        payload = dict(self.payload)
+        case_ids = ([f"PUBLIC-{index}" for index in range(1, 9)]
+                    + [f"HOLDOUT-{index}" for index in range(1, 6)])
+        payload["cases"] = [{"case_id": case_id} for case_id in case_ids]
+        client = FakeClient(lambda received: self.result(received))
+
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            actors.evaluate(payload, "evalúa")
+
+        prompt = client.prompts[0][1]
+        self.assertIn("input.json.cases requires exactly 13 result objects", prompt)
+        self.assertIn(json.dumps(case_ids), prompt)
+        self.assertIn("Return every listed\ncase_id exactly once", prompt)
+
     def test_evaluator_and_reviewer_use_distinct_sessions_and_workspaces(self):
         def factory(payload):
             actor = "host-evaluator" if len(client.prompts) == 1 else "host-independent-reviewer"

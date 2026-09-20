@@ -224,6 +224,35 @@ class AcceptanceHarnessTests(unittest.TestCase):
         self.assertIn('"decision":"ALLOW"|"DENY"|"UNRESOLVED"', prompt)
         self.assertIn(injection, prompt)
 
+    def test_evaluator_prompt_enumerates_all_public_and_holdout_cases(self):
+        public_cases = [{
+            "schema_version": 1,
+            "scenario_id": f"PUBLIC-{index}",
+            "type": "positive",
+            "description": "Host case",
+            "input": {},
+            "expected": {"verdict": "PASS"},
+            "sr_links": ["SR-1"],
+        } for index in range(1, 9)]
+        holdout_cases = [{
+            "case_id": f"HOLDOUT-{index}",
+            "family": "test",
+            "input": {},
+        } for index in range(1, 6)]
+        all_ids = ([case["scenario_id"] for case in public_cases]
+                   + [case["case_id"] for case in holdout_cases])
+
+        prompt = harness.build_evaluator_prompt(
+            {"mode": "declarative"}, {}, public_cases, holdout_cases)
+
+        self.assertIn("Return exactly 13 result objects", prompt)
+        self.assertIn(harness._json_data(all_ids), prompt)
+        self.assertIn("Each ID must appear exactly once", prompt)
+        self.assertIn("decision field is required for every\npublic and holdout", prompt)
+        self.assertIn("Do not omit public cases or return only holdouts", prompt)
+        self.assertIn("Do not merge, group, deduplicate, or return a subset", prompt)
+        self.assertIn("Do not return any\nother IDs", prompt)
+
     def test_strict_evaluator_result_validation(self):
         valid = {"results": [
             {"case_id": "PUBLIC-1", "verdict": "PASS", "decision": "ALLOW",
@@ -261,6 +290,22 @@ class AcceptanceHarnessTests(unittest.TestCase):
                 with self.assertRaises(harness.HarnessError):
                     harness.validate_evaluator_results(
                         payload, ["PUBLIC-1", "HOLDOUT-1"])
+
+    def test_evaluator_result_validation_rejects_holdout_only_subset(self):
+        expected_ids = ([f"PUBLIC-{index}" for index in range(1, 9)]
+                        + [f"HOLDOUT-{index}" for index in range(1, 6)])
+        holdout_only = {"results": [{
+            "case_id": case_id,
+            "verdict": "PASS",
+            "decision": "DENY",
+            "evidence": "host-private-evaluation",
+            "detail": "Evaluated.",
+        } for case_id in expected_ids[-5:]]}
+
+        with self.assertRaisesRegex(
+                harness.HarnessError,
+                "exactly one result per case"):
+            harness.validate_evaluator_results(holdout_only, expected_ids)
 
     def test_reviewer_result_validation_does_not_require_decision(self):
         payload = {"results": [{
