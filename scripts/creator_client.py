@@ -9,12 +9,15 @@ Versión: 1
 """
 
 import base64
+import contextlib
+import fcntl
 import hashlib
 import hmac
 import json
 import os
 import re
 import secrets
+import selectors
 import subprocess
 import sys
 import time
@@ -85,21 +88,55 @@ def _read_json(path):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def _write_json(path, value):
-    p = Path(path) if not isinstance(path, Path) else path
+def _atomic_json(path, value, *, exclusive=False):
+    """Write JSON atomically without exposing a missing or partial state."""
+    p = Path(path)
     p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as stream:
-        json.dump(value, stream, ensure_ascii=False, indent=2)
-        stream.write("\n")
+    if exclusive and p.exists():
+        raise FileExistsError(str(p))
+    tmp = p.parent / ("." + p.name + "." + secrets.token_hex(8) + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if exclusive and p.exists():
+            raise FileExistsError(str(p))
+        os.replace(tmp, p)
+        dir_fd = os.open(p.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _write_json(path, value):
+    _atomic_json(path, value, exclusive=True)
 
 
 def _update_json(path, value):
-    """Overwrite an existing JSON file (for status updates)."""
-    p = Path(path)
-    if p.is_file():
-        p.unlink()
-    _write_json(p, value)
+    """Atomically replace a Host-owned JSON status file."""
+    _atomic_json(path, value)
+
+
+@contextlib.contextmanager
+def _run_lock(run_dir):
+    """Serialize Creator supervision for one run across Host processes."""
+    lock_path = Path(run_dir) / ".creator.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +480,8 @@ class DshLocalClient:
             raise ValueError("DSH workspace/create returned no workspaceId")
         return workspace_id
 
-    def create_creator_session(self, *, workspace_path, agent_preset="cordis"):
+    def create_creator_session(self, *, workspace_path, agent_preset="cordis",
+                               session_id=None):
         """Create the Creator session bound to the run's workspace.
 
         session/create accepts workspaceId or cwd, not both. With a
@@ -458,6 +496,8 @@ class DshLocalClient:
         req = {"workspaceId": workspace_id}
         if agent_preset:
             req["agentPreset"] = agent_preset
+        if session_id:
+            req["sessionId"] = session_id
         created = self.rpc("session/create", {"request": req})
         value = created.get("value", created) if isinstance(created, dict) else created
         session_id = value.get("sessionId") if isinstance(value, dict) else None
@@ -465,14 +505,154 @@ class DshLocalClient:
             raise ValueError("DSH session/create returned no sessionId")
         return session_id
 
-    def send_prompt(self, session_id, prompt):
-        """Queue a text prompt; returns the Host receipt."""
+    def send_prompt(self, session_id, prompt, *, request_id=None):
+        """Queue a text prompt under a stable, Host-owned request identity."""
         return self.rpc("session/prompt", {"request": {
-            "requestId": secrets.token_hex(16),
+            "requestId": request_id or secrets.token_hex(16),
             "sessionId": session_id,
             "mode": "queue",
             "content": [{"type": "text", "text": prompt}],
         }})
+
+    def cancel_session(self, session_id):
+        """Request cancellation of the active turn without dropping its inbox."""
+        return self.rpc("session/cancel", {"request": {"sessionId": session_id}})
+
+    def session_page(self, session_id, *, through_seq, before_seq=None,
+                     max_messages=200):
+        """Read a durable, message-aligned page from the real DSH journal."""
+        request = {
+            "address": {"kind": "session", "sessionId": session_id},
+            "throughSeq": through_seq,
+            "maxMessages": max_messages,
+        }
+        if before_seq is not None:
+            request["beforeSeq"] = before_seq
+        return self.rpc("session/page", {"request": request})
+
+    def stream_snapshot(self, session_id, *, timeout=10):
+        """Open real ``session/follow`` and ``session/control`` mux streams.
+
+        The helper takes one opening baseline from each stream over the
+        authenticated ``/api/remote.mux`` WebSocket. Those opening frames are
+        authoritative: follow supplies the durable cursor/log and control
+        supplies live queues/jobs. No list-summary cursor is synthesized.
+        """
+        helper = Path(__file__).resolve().parent / "dsh_stream_snapshot.mjs"
+        payload = json.dumps({
+            "baseUrl": self.base_url,
+            "cookie": self._cookie,
+            "sessionId": session_id,
+            "timeoutMs": int(timeout * 1000),
+        })
+        try:
+            result = subprocess.run(
+                ["node", str(helper)], input=payload, capture_output=True,
+                text=True, timeout=timeout + 5,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(f"DSH Remote stream helper falló: {exc}") from exc
+        if result.returncode != 0:
+            detail = result.stderr.strip() or "sin diagnóstico"
+            raise ValueError(f"DSH Remote stream rechazado: {detail}")
+        try:
+            snapshot = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ValueError("DSH Remote stream devolvió JSON inválido") from exc
+        if not isinstance(snapshot.get("follow"), dict) or not isinstance(
+                snapshot.get("control"), dict):
+            raise ValueError("DSH Remote stream no devolvió ambos baselines")
+        return snapshot
+
+    def creator_observation(self, session_id, *, cursor=-1):
+        """Return authoritative durable and live state for Creator supervision."""
+        snapshot = self.stream_snapshot(session_id)
+        follow = snapshot["follow"]
+        control = snapshot["control"]
+        observed_cursor = follow.get("cursor")
+        if not isinstance(observed_cursor, int):
+            raise ValueError("session/follow snapshot sin cursor durable")
+        records = list(follow.get("records") or [])
+        has_more = bool(follow.get("hasMore"))
+        before_seq = min(
+            (record["event"]["seq"] for record in records
+             if isinstance(record, dict) and record.get("type") == "event"
+             and isinstance(record.get("event"), dict)
+             and isinstance(record["event"].get("seq"), int)),
+            default=observed_cursor + 1)
+        pages = 0
+        while has_more and cursor < before_seq - 1:
+            pages += 1
+            if pages > 100:
+                raise ValueError("session/page excedió el límite de supervisión")
+            page = self.session_page(
+                session_id, through_seq=observed_cursor,
+                before_seq=before_seq, max_messages=200)
+            value = page.get("value", page) if isinstance(page, dict) else page
+            older = value.get("records", []) if isinstance(value, dict) else []
+            if not older:
+                raise ValueError("session/page indicó hasMore sin registros")
+            records = list(older) + records
+            prior = before_seq
+            before_seq = min(
+                (record["event"]["seq"] for record in older
+                 if isinstance(record, dict) and record.get("type") == "event"
+                 and isinstance(record.get("event"), dict)
+                 and isinstance(record["event"].get("seq"), int)),
+                default=before_seq)
+            if before_seq >= prior:
+                raise ValueError("session/page no avanzó el cursor histórico")
+            has_more = bool(value.get("hasMore"))
+        events = [record.get("event") for record in records
+                  if isinstance(record, dict) and record.get("type") == "event"
+                  and isinstance(record.get("event"), dict)
+                  and record["event"].get("seq", -1) > cursor]
+
+        listed = self.list_sessions()
+        value = listed.get("value", listed) if isinstance(listed, dict) else listed
+        items = value.get("items", []) if isinstance(value, dict) else []
+        target = next((item for item in items
+                       if item.get("sessionId") == session_id), None)
+        if target is None:
+            raise ValueError(f"DSH session {session_id} no aparece en session/list")
+        by_parent = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            parent_id = item.get("parentSessionId")
+            if parent_id:
+                by_parent.setdefault(parent_id, []).append(item)
+        descendants = []
+        pending = [session_id]
+        reached_ids = {session_id}
+        while pending:
+            parent_id = pending.pop()
+            for child in by_parent.get(parent_id, []):
+                child_id = child.get("sessionId")
+                if not child_id or child_id in reached_ids:
+                    continue
+                reached_ids.add(child_id)
+                descendants.append(child)
+                pending.append(child_id)
+
+        jobs_by_session = control.get("jobs") or {}
+        if not isinstance(jobs_by_session, dict):
+            raise ValueError("session/control baseline sin mapa jobs")
+        jobs = []
+        for reached_id in reached_ids:
+            session_jobs = jobs_by_session.get(reached_id, [])
+            if not isinstance(session_jobs, list):
+                raise ValueError(
+                    f"session/control jobs inválidos para {reached_id}")
+            jobs.extend({**job, "sessionId": reached_id}
+                        for job in session_jobs if isinstance(job, dict))
+        return {
+            "cursor": observed_cursor,
+            "events": events,
+            "running": bool(target.get("running")),
+            "descendants": descendants,
+            "jobs": jobs,
+        }
 
 
 class CreatorSession:
@@ -588,22 +768,20 @@ class CreatorSession:
             "prompt_path": str(prompt_path),
         }
 
-    def check_budget(self):
-        """Check whether we're within budget limits."""
+    def check_budget(self, *, now=None):
+        """Check the limits frozen in ``run.json`` for this invocation."""
         if self.start_time is None:
             return True
-
-        elapsed = time.time() - self.start_time
+        now = time.time() if now is None else now
+        elapsed = now - self.start_time
         if elapsed > self.timeout_seconds:
             raise ValueError(
                 f"Timeout: {elapsed:.0f}s excede {self.timeout_seconds}s"
             )
-
         if self.token_count > self.max_tokens:
             raise ValueError(
                 f"Token budget excedido: {self.token_count} > {self.max_tokens}"
             )
-
         return True
 
     def verify_generation_output(self):
@@ -739,6 +917,26 @@ def _patched_launch_command(command):
     return [*command, "--patch", str(DSH_PLUGIN_PATCH)]
 
 
+def _terminate_process(process, *, wait_timeout=5):
+    """Kill, reap, and close captured output for a failed launch."""
+    try:
+        process.kill()
+    except OSError:
+        pass
+    wait = getattr(process, "wait", None)
+    if wait is not None:
+        try:
+            wait(timeout=wait_timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    stdout = getattr(process, "stdout", None)
+    if stdout is not None:
+        try:
+            stdout.close()
+        except OSError:
+            pass
+
+
 def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
                    env=None, spawn_timeout=120):
     """Launch DSH web and return ``(process, client)`` after token capture.
@@ -759,26 +957,38 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
         bufsize=1, env=child_env,
     )
     captured = []
-    deadline = time.time() + spawn_timeout
+    deadline = time.monotonic() + spawn_timeout
     url_line = None
-    while time.time() < deadline:
-        line = process.stdout.readline()
-        if not line:
-            break
-        captured.append(line.rstrip())
-        if "dsh web:" in line and "?token=" in line:
-            url_line = line
-            break
-        if process.poll() is not None:
-            break
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    try:
+        while time.monotonic() < deadline:
+            remaining = max(0, deadline - time.monotonic())
+            ready = selector.select(min(remaining, 0.25))
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+            line = process.stdout.readline()
+            if not line:
+                if process.poll() is not None:
+                    break
+                continue
+            captured.append(line.rstrip())
+            if "dsh web:" in line and "?token=" in line:
+                url_line = line
+                break
+    finally:
+        selector.close()
     if url_line:
         return process, DshLocalClient.from_console_line(url_line)
-    process.kill()
+    exit_before_kill = process.poll()
+    _terminate_process(process)
     tail = re.sub(r"\?token=\S+", "?token=<redacted>",
                   "\n".join(captured[-15:])) or "<sin salida>"
     raise RuntimeError(
         "DSH no imprimió una URL autenticada (exit="
-        f"{process.poll()}); salida capturada sin token:\n{tail}")
+        f"{exit_before_kill}); salida capturada sin token:\n{tail}")
 
 
 # ---------------------------------------------------------------------------
@@ -1161,102 +1371,308 @@ def acquire_dsh_client(*, launch=False):
         "define DSH_HOME o usa --launch-dsh")
 
 
-def _wait_for_generation(session, *, poll_seconds=5):
-    """Poll until the package is generated or the budget expires.
-
-    Budget exhaustion raises ValueError (handled as RETAINED upstream).
-    Returns True when generated/ contains a manifest (or the run left
-    GENERATING because the Host took over), False when the budget ran out
-    without output.
-    """
-    session.start_time = time.time()
-    while True:
-        session.check_budget()
-        gen_manifest = session.run_dir / "generated" / "generation-manifest.json"
-        if gen_manifest.is_file():
-            return True
-        run_doc = _read_json(session.run_dir / "run.json")
-        if run_doc.get("status") != "GENERATING":
-            return gen_manifest.is_file()
-        time.sleep(poll_seconds)
+CREATOR_SESSION_FILE = "creator-session.json"
+ACTIVE_JOB_STATES = {"running", "stopping"}
 
 
-def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True):
-    """Execute the Creator pipeline for a run.
+def _session_state_path(run_dir):
+    return Path(run_dir) / CREATOR_SESSION_FILE
 
-    Returns the result dict. Validates the structure, builds the prompt,
-    dispatches through DSH when a client is injected or acquirable, waits
-    for the generated package within budget, and verifies it. Without an
-    authenticated DSH session the run stays in a recoverable PREPARED
-    state; nothing is silently skipped.
-    """
-    run_dir = Path(run_dir)
-    session = CreatorSession(
-        run_dir,
-        timeout_seconds=1800,
-        max_tokens=500000,
-    )
 
+def _save_session_state(run_dir, state, *, reason=None, now_fn=time.time):
+    state = dict(state)
+    if reason is not None:
+        state["reason"] = reason
+    state["updated_at"] = _now_iso()
+    _update_json(_session_state_path(run_dir), state)
+    return state
+
+
+def _new_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
+    now = now_fn()
+    budget = run_doc.get("budget") or {}
+    max_seconds = int(budget.get("max_seconds", 1800))
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": prep["generation_id"],
+        "session_id": "session-creator-" + secrets.token_hex(16),
+        "request_id": "creator-request-" + secrets.token_hex(16),
+        "prompt_digest": prep["prompt_digest"],
+        "deadline": now + max_seconds,
+        "cursor": -1,
+        "reason": "DISPATCH_PENDING",
+        "created_at": _now_iso(),
+    }
+
+
+def _load_or_create_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
+    path = _session_state_path(run_dir)
+    if path.is_file():
+        state = _read_json(path)
+        required = {"session_id", "request_id", "prompt_digest", "deadline",
+                    "cursor", "reason"}
+        missing = sorted(required - set(state))
+        if missing:
+            raise ValueError("creator-session.json incompleto: " + ", ".join(missing))
+        if state["prompt_digest"] != prep["prompt_digest"]:
+            raise ValueError("creator-session.json no corresponde al prompt persistido")
+        if state.get("generation_id") != prep["generation_id"]:
+            raise ValueError("creator-session.json no corresponde a este run")
+        return state, False
+    state = _new_session_state(run_dir, prep, run_doc, now_fn=now_fn)
+    _write_json(path, state)
+    return state, True
+
+
+def _call_create_session(client, run_dir, session_id):
+    """Use explicit identity, retaining compatibility with narrow test fakes."""
     try:
-        # Prepare: validate, build prompt, update status
-        prep = session.prepare()
+        return client.create_creator_session(
+            workspace_path=_run_workspace(run_dir), session_id=session_id)
+    except TypeError as exc:
+        if "session_id" not in str(exc):
+            raise
+        created = client.create_creator_session(workspace_path=_run_workspace(run_dir))
+        if created != session_id:
+            raise ValueError("El cliente DSH no admite reanudación con session_id")
+        return created
 
-        prompt_path = Path(prep["prompt_path"])
-        prompt_text = prompt_path.read_text(encoding="utf-8")
 
-        dsh_origin = None
-        if client is None and acquire:
-            client, dsh_origin = acquire_dsh_client(launch=launch)
-            if client is None:
-                return {
-                    "result": "PREPARED",
-                    "generation_id": prep["generation_id"],
-                    "prompt_path": prep["prompt_path"],
-                    "dsh_session_id": None,
-                    "dsh_origin": dsh_origin,
-                    "message": dsh_origin,
-                }
+def _call_send_prompt(client, session_id, prompt, request_id):
+    try:
+        return client.send_prompt(session_id, prompt, request_id=request_id)
+    except TypeError as exc:
+        if "request_id" not in str(exc):
+            raise
+        return client.send_prompt(session_id, prompt)
 
-        # If client authenticated, dispatch to DSH
-        session_id = None
-        if client is not None and getattr(client, "authenticated", False):
-            session_id = client.create_creator_session(
-                workspace_path=_run_workspace(run_dir))
-            session._session_ref = session_id
-            client.send_prompt(session_id, prompt_text)
 
-        # Verify that if outputs exist, they're valid
-        gen_dir = run_dir / "generated"
-        if gen_dir.is_dir() and (gen_dir / "generation-manifest.json").is_file():
-            manifest = session.verify_generation_output()
-            return session.create_finish(manifest)
+def _manifest_exists(run_dir):
+    return (Path(run_dir) / "generated" / "generation-manifest.json").is_file()
 
-        if session_id and wait:
-            generated = _wait_for_generation(session)
-            if generated:
+
+def _event_request_id(event):
+    """Extract only the durable direct-user RPC identity, never fuzzy JSON."""
+    if event.get("type") != "user/message":
+        return None
+    data = event.get("data") or {}
+    message = data.get("message", data) if isinstance(data, dict) else {}
+    source = message.get("source") if isinstance(message, dict) else None
+    return source.get("rpcId") if isinstance(source, dict) else None
+
+
+def _fold_observation(state, observation):
+    events = observation.get("events") or []
+    request_seen = bool(state.get("request_seen"))
+    request_turn = state.get("request_turn")
+    terminal = bool(state.get("terminal"))
+    terminal_reason = state.get("terminal_reason")
+    cursor = state.get("cursor", -1)
+    open_turn = state.get("open_turn")
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        seq = event.get("seq")
+        if isinstance(seq, int):
+            cursor = max(cursor, seq)
+        data = event.get("data") or {}
+        if event.get("type") == "turn/start" and isinstance(data, dict):
+            open_turn = data.get("turn")
+        if _event_request_id(event) == state["request_id"]:
+            event_turn = data.get("turn") if isinstance(data, dict) else None
+            request_turn = event_turn if isinstance(event_turn, int) else open_turn
+            if not isinstance(request_turn, int):
+                raise ValueError("user/message Creator no puede correlacionarse a un turno")
+            request_seen = True
+        if event.get("type") == "turn/end" and isinstance(data, dict):
+            if request_turn is not None and data.get("turn") == request_turn:
+                terminal = True
+                terminal_reason = data.get("reason", "turn/end")
+    observed_cursor = observation.get("cursor")
+    if isinstance(observed_cursor, int):
+        cursor = max(cursor, observed_cursor)
+    descendants = observation.get(
+        "descendants", observation.get("children", [])) or []
+    descendant_running = any(
+        bool(descendant.get("running")) for descendant in descendants
+        if isinstance(descendant, dict))
+    jobs = observation.get("jobs") or []
+    active_jobs = any(job.get("status") in ACTIVE_JOB_STATES for job in jobs
+                      if isinstance(job, dict))
+    state.update({
+        "cursor": cursor,
+        "request_seen": request_seen,
+        "request_turn": request_turn,
+        "open_turn": open_turn,
+        "terminal": terminal,
+        "terminal_reason": terminal_reason,
+        "running": bool(observation.get("running")),
+        "descendant_running": descendant_running,
+        "child_running": descendant_running,
+        "active_jobs": active_jobs,
+    })
+    state["quiescent"] = (terminal and not state["running"] and
+                          not descendant_running and not active_jobs)
+    return state
+
+
+def _mark_recovery_required(session, state, reason):
+    run_doc = _read_json(session.run_dir / "run.json")
+    run_doc["status"] = "RECOVERY_REQUIRED"
+    run_doc["updated_at"] = _now_iso()
+    _update_json(session.run_dir / "run.json", run_doc)
+    _save_session_state(session.run_dir, state, reason=reason)
+    return {
+        "result": "RECOVERY_REQUIRED",
+        "generation_id": run_doc.get("generation_id", "unknown"),
+        "dsh_session_id": state.get("session_id"),
+        "reason": reason,
+    }
+
+
+def _observe_creator(client, state):
+    observer = getattr(client, "creator_observation", None)
+    if observer is None:
+        raise ValueError("Cliente DSH sin API durable de observación Creator")
+    return observer(state["session_id"], cursor=state.get("cursor", -1))
+
+
+def _supervise_creator(session, client, state, *, poll_seconds=5,
+                       cancel_grace_seconds=30, now_fn=time.time,
+                       sleep_fn=time.sleep):
+    """Require correlated ``turn/end`` and whole-session quiescence."""
+    while True:
+        observation = _observe_creator(client, state)
+        _fold_observation(state, observation)
+        _save_session_state(session.run_dir, state, reason="OBSERVING")
+
+        if state.get("quiescent"):
+            if _manifest_exists(session.run_dir):
+                _save_session_state(session.run_dir, state,
+                                    reason="TERMINAL_QUIESCENT")
                 manifest = session.verify_generation_output()
                 return session.create_finish(manifest)
+            reason = "Creator terminó y quedó quiescente sin generation-manifest.json"
+            _save_session_state(session.run_dir, state,
+                                reason="TERMINAL_WITHOUT_MANIFEST")
+            return session.retain(reason)
+
+        now = now_fn()
+        if now >= state["deadline"]:
+            _save_session_state(session.run_dir, state, reason="CANCELLING_TIMEOUT")
+            try:
+                client.cancel_session(state["session_id"])
+            except Exception as exc:
+                return _mark_recovery_required(
+                    session, state, f"Timeout; cancelación DSH no confirmada: {exc}")
+            cancel_deadline = now + cancel_grace_seconds
+            while now_fn() <= cancel_deadline:
+                observation = _observe_creator(client, state)
+                _fold_observation(state, observation)
+                _save_session_state(session.run_dir, state,
+                                    reason="WAITING_FOR_QUIESCENCE")
+                if (not state.get("running") and
+                        not state.get("descendant_running") and
+                        not state.get("active_jobs")):
+                    reason = ("Timeout de Creator; cancelación confirmada y "
+                              "sesión quiescente")
+                    _save_session_state(session.run_dir, state,
+                                        reason="CANCELLED_QUIESCENT")
+                    return session.retain(reason)
+                sleep_fn(poll_seconds)
+            return _mark_recovery_required(
+                session, state,
+                "Timeout de Creator; no se confirmó quiescencia tras cancelar")
+
+        # A terminal event is insufficient while the parent, any transitive
+        # descendant, or any reached session's job remains active.
+        sleep_fn(poll_seconds)
+
+
+def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
+                poll_seconds=5, cancel_grace_seconds=30, now_fn=time.time,
+                sleep_fn=time.sleep):
+    """Execute or idempotently resume one durably supervised Creator run."""
+    run_dir = Path(run_dir)
+    with _run_lock(run_dir):
+        run_doc = _read_json(run_dir / "run.json")
+        budget = run_doc.get("budget") or {}
+        session = CreatorSession(
+            run_dir,
+            timeout_seconds=int(budget.get("max_seconds", 1800)),
+            max_tokens=int(budget.get("max_tokens", 500000)),
+        )
+        try:
+            # A completed valid run is immutable from Creator's perspective.
+            # Verify and return it before prepare() can rewrite status/checkpoint
+            # or any DSH call can redispatch the prompt.
+            if run_doc.get("status") == "GENERATED":
+                manifest = session.verify_generation_output()
+                finish_path = run_dir / "finish.json"
+                if not finish_path.is_file():
+                    return session.create_finish(manifest)
+                finish = _read_json(finish_path)
+                expected = _digest_bytes(
+                    json.dumps(manifest, sort_keys=True).encode("utf-8"))
+                if (finish.get("status") != "GENERATED" or
+                        finish.get("generation_id") != manifest.get("generation_id") or
+                        finish.get("manifest_digest") != expected):
+                    raise ValueError("finish.json no corresponde al manifest GENERATED")
+                return {
+                    "result": "GENERATED",
+                    "generation_id": manifest.get("generation_id", "unknown"),
+                    "artifact_count": len(manifest.get("artifacts", [])),
+                }
+            prep = session.prepare()
+            prompt_text = Path(prep["prompt_path"]).read_text(encoding="utf-8")
+            # This Host-owned record is durable before any session/create or
+            # session/prompt RPC, enabling exact adoption after interruption.
+            state, created_state = _load_or_create_session_state(
+                run_dir, prep, run_doc, now_fn=now_fn)
+
+            dsh_origin = None
+            if client is None and acquire:
+                client, dsh_origin = acquire_dsh_client(launch=launch)
+                if client is None:
+                    _save_session_state(run_dir, state, reason="AWAITING_DSH")
+                    return {
+                        "result": "PREPARED",
+                        "generation_id": prep["generation_id"],
+                        "prompt_path": prep["prompt_path"],
+                        "dsh_session_id": state["session_id"],
+                        "dsh_origin": dsh_origin,
+                        "message": dsh_origin,
+                    }
+
+            if client is not None and getattr(client, "authenticated", False):
+                adopted = _call_create_session(client, run_dir, state["session_id"])
+                if adopted != state["session_id"]:
+                    raise ValueError("DSH devolvió un session_id distinto del persistido")
+                session._session_ref = adopted
+                _save_session_state(run_dir, state, reason="SESSION_ADOPTED")
+                # DSH session/prompt deduplicates the stable requestId against
+                # durable and queued user messages, so replay is intentional.
+                _call_send_prompt(client, adopted, prompt_text, state["request_id"])
+                _save_session_state(run_dir, state, reason="PROMPT_ACCEPTED")
+
+                if wait:
+                    return _supervise_creator(
+                        session, client, state, poll_seconds=poll_seconds,
+                        cancel_grace_seconds=cancel_grace_seconds,
+                        now_fn=now_fn, sleep_fn=sleep_fn)
+
             return {
-                "result": "DISPATCHED",
+                "result": "PREPARED",
                 "generation_id": prep["generation_id"],
                 "prompt_path": prep["prompt_path"],
-                "dsh_session_id": session_id,
+                "dsh_session_id": state["session_id"],
                 "dsh_origin": dsh_origin,
-                "message": "Presupuesto de supervisión agotado sin paquete; "
-                           "el run continúa y es reanudable",
+                "message": ("Run enviado/reanudado idempotentemente en DSH Creator"
+                            if session._session_ref else
+                            "Run preparado; Creator debe ejecutarse para generar paquete"),
             }
-
-        return {
-            "result": "PREPARED",
-            "generation_id": prep["generation_id"],
-            "prompt_path": prep["prompt_path"],
-            "dsh_session_id": session_id,
-            "dsh_origin": dsh_origin,
-            "message": "Run preparado y enviado a DSH Creator" if session_id else "Run preparado; Creator debe ejecutarse para generar paquete",
-        }
-
-    except ValueError as e:
-        return session.retain(str(e))
+        except ValueError as exc:
+            return session.retain(str(exc))
 
 
 # ---------------------------------------------------------------------------

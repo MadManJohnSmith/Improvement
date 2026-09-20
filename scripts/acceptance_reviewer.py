@@ -5,6 +5,7 @@ emiten ACTIVE ni escriben en el run/candidato canónico: el Host valida sus
 resultados y calcula el veredicto determinista en acceptance.py.
 """
 import hashlib
+import inspect
 import json
 import shutil
 import tempfile
@@ -129,6 +130,140 @@ class DshAcceptanceActors:
         _write_input(workspace / "input.json", payload)
         return workspace
 
+    @staticmethod
+    def _call_session_method(method, session_id, **optional):
+        """Call lifecycle helpers while tolerating older FakeClient signatures."""
+        try:
+            parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        kwargs = {name: value for name, value in optional.items()
+                  if name in parameters}
+        return method(session_id, **kwargs)
+
+    @staticmethod
+    def _fold_lifecycle(status, state):
+        """Fold exact request-to-turn correlation and transitive quiescence."""
+        value = status
+        for _depth in range(4):
+            if not isinstance(value, dict):
+                return None
+            if isinstance(value.get("running"), bool):
+                break
+            value = next((value[key] for key in
+                          ("value", "session", "status", "result")
+                          if isinstance(value.get(key), dict)), None)
+        if not isinstance(value, dict) or not isinstance(value.get("running"), bool):
+            return None
+
+        children = value.get("children", [])
+        jobs = value.get("jobs", [])
+        events = value.get("events", [])
+        if not all(isinstance(items, list)
+                   for items in (children, jobs, events)):
+            return None
+
+        request_turn = state.get("request_turn")
+        terminal = bool(state.get("terminal"))
+        cursor = state.get("cursor", -1)
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            seq = event.get("seq")
+            if isinstance(seq, int):
+                cursor = max(cursor, seq)
+            data = event.get("data")
+            if not isinstance(data, dict):
+                continue
+            if event.get("type") == "user/message":
+                source = data.get("source")
+                if (isinstance(source, dict) and
+                        source.get("rpcId") == state["request_id"] and
+                        isinstance(data.get("turn"), int)):
+                    request_turn = data["turn"]
+            elif (event.get("type") == "turn/end" and
+                  request_turn is not None and
+                  data.get("turn") == request_turn):
+                terminal = True
+
+        observed_cursor = value.get("cursor")
+        if isinstance(observed_cursor, int):
+            cursor = max(cursor, observed_cursor)
+        child_running = any(
+            not isinstance(child, dict) or child.get("running") is not False
+            for child in children)
+        active_jobs = any(
+            not isinstance(job, dict) or
+            job.get("status") in (None, "running", "stopping")
+            for job in jobs)
+        quiescent = not value["running"] and not child_running and not active_jobs
+        state.update({
+            "cursor": cursor,
+            "request_turn": request_turn,
+            "terminal": terminal,
+            "quiescent": quiescent,
+        })
+        return state
+
+    def _session_lifecycle(self, client, session_id, state):
+        observe = getattr(client, "creator_observation", None)
+        if callable(observe):
+            observation = self._call_session_method(
+                observe, session_id, cursor=state.get("cursor", -1))
+            return self._fold_lifecycle(observation, state)
+        return None
+
+    def _wait_terminal(self, client, session_id, state, deadline):
+        """Wait using lifecycle APIs, retaining correlation between observations."""
+        remaining = max(0, deadline - time.time())
+        for name in ("wait_for_session", "wait_session", "wait_for_terminal"):
+            method = getattr(client, name, None)
+            if callable(method):
+                status = self._call_session_method(
+                    method, session_id, timeout=remaining,
+                    timeout_seconds=remaining)
+                lifecycle = self._fold_lifecycle(status, state)
+                if lifecycle is not None:
+                    return lifecycle
+                break
+        return self._session_lifecycle(client, session_id, state)
+
+    def _cancel_and_confirm(self, client, session_id, actor, state):
+        if state.get("cancelled"):
+            raise ValueError(
+                f"Sesión DSH {actor} ya fue cancelada sin cierre confirmado "
+                f"(session_id={session_id})")
+        cancel = getattr(client, "cancel_session", None)
+        if not callable(cancel):
+            raise ValueError(
+                f"Sesión DSH {actor} no pudo cerrarse: el cliente no soporta "
+                f"cancel_session (session_id={session_id})")
+        state["cancelled"] = True
+        cancel(session_id)
+        lifecycle = self._wait_terminal(
+            client, session_id, state, time.time() + 5)
+        if lifecycle is None or not lifecycle["quiescent"]:
+            raise ValueError(
+                f"Sesión DSH {actor} no pudo confirmar cierre tras cancelación; "
+                f"se exige running:false y quiescencia de hijos/jobs "
+                f"(session_id={session_id})")
+
+    def _close_before_error(self, client, session_id, actor, state, error):
+        """Never abandon a dispatched session whose quiescence is unproven."""
+        if not state.get("quiescent"):
+            self._cancel_and_confirm(client, session_id, actor, state)
+        raise error
+
+    def _send_prompt(self, client, session_id, prompt, request_id):
+        send = client.send_prompt
+        try:
+            parameters = inspect.signature(send).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "request_id" in parameters:
+            return send(session_id, prompt, request_id=request_id)
+        return send(session_id, prompt)
+
     def _run(self, actor, payload, prompt):
         generation_id = payload["generation_id"]
         candidate_digest = payload["candidate_digest"]
@@ -149,26 +284,57 @@ write any other file. The object MUST have exactly these top-level fields:
  "summary":"..."}}
 Never emit ACTIVE/RETAINED and never call acceptance or transaction tools.
 """
-        client.send_prompt(session_id, prompt + output_contract)
+        request_id = hashlib.sha256(
+            f"acceptance:{generation_id}:{candidate_digest}:{actor}".encode("utf-8")
+        ).hexdigest()
+        self._send_prompt(client, session_id, prompt + output_contract, request_id)
         result_path = workspace / "result.json"
         deadline = time.time() + self.timeout_seconds
+        state = {
+            "request_id": request_id,
+            "request_turn": None,
+            "cursor": -1,
+            "terminal": False,
+            "quiescent": False,
+            "cancelled": False,
+        }
         while time.time() < deadline:
-            if result_path.is_file():
-                result = _load_result(
-                    result_path,
-                    expected_actor=actor,
-                    expected_generation=generation_id,
-                    expected_digest=candidate_digest,
-                )
+            try:
+                lifecycle = self._session_lifecycle(client, session_id, state)
+            except Exception as error:
+                self._close_before_error(
+                    client, session_id, actor, state,
+                    ValueError(f"Error observando sesión DSH {actor}: {error}"))
+            if lifecycle is not None and lifecycle["terminal"]:
+                if not lifecycle["quiescent"]:
+                    time.sleep(min(0.1, max(0, deadline - time.time())))
+                    continue
+                if not result_path.is_file():
+                    self._close_before_error(
+                        client, session_id, actor, state,
+                        ValueError(
+                            f"Sesión DSH {actor} terminó sin result.json "
+                            f"(session_id={session_id})"))
+                try:
+                    result = _load_result(
+                        result_path,
+                        expected_actor=actor,
+                        expected_generation=generation_id,
+                        expected_digest=candidate_digest,
+                    )
+                except Exception as error:
+                    self._close_before_error(
+                        client, session_id, actor, state, error)
                 return {
                     "session_id": session_id,
                     "workspace": str(workspace),
                     "result": result,
                 }
-            time.sleep(2)
+            time.sleep(min(0.1, max(0, deadline - time.time())))
+        self._cancel_and_confirm(client, session_id, actor, state)
         raise ValueError(
-            f"Sesión DSH {actor} agotó {self.timeout_seconds}s sin result.json "
-            f"(session_id={session_id})")
+            f"Sesión DSH {actor} agotó {self.timeout_seconds}s; cancelada y "
+            f"cerrada con running:false (session_id={session_id})")
 
     def evaluate(self, payload, prompt):
         return self._run("host-evaluator", payload, prompt)
