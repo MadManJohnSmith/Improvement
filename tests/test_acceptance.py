@@ -14,13 +14,19 @@ import bootstrap
 
 
 class FakeActors:
-    def __init__(self, *, evaluator_pass=True, reviewer_pass=True):
+    def __init__(self, *, evaluator_pass=True, reviewer_pass=True,
+                 evaluator_decision="DENY"):
         self.evaluator_pass = evaluator_pass
         self.reviewer_pass = reviewer_pass
+        self.evaluator_decision = evaluator_decision
         self.calls = []
+        self.payloads = {}
+        self.prompts = {}
 
-    def evaluate(self, payload, _prompt):
+    def evaluate(self, payload, prompt):
         self.calls.append("evaluate")
+        self.payloads["evaluate"] = payload
+        self.prompts["evaluate"] = prompt
         verdict = "PASS" if self.evaluator_pass else "FAIL"
         return {
             "session_id": "session-evaluator",
@@ -32,6 +38,7 @@ class FakeActors:
                 "verdict": verdict,
                 "results": [{
                     "case_id": item["case_id"], "verdict": verdict,
+                    "decision": self.evaluator_decision,
                     "evidence": ["candidate/generation-manifest.json"],
                     "detail": "Observed against declarative contract.",
                 } for item in payload["cases"]],
@@ -39,8 +46,10 @@ class FakeActors:
             },
         }
 
-    def review(self, payload, _prompt):
+    def review(self, payload, prompt):
         self.calls.append("review")
+        self.payloads["review"] = payload
+        self.prompts["review"] = prompt
         verdict = "PASS" if self.reviewer_pass else "FAIL"
         return {
             "session_id": "session-reviewer",
@@ -150,7 +159,34 @@ class AcceptanceTests(unittest.TestCase):
         self.assertIn("modes/project-auditor/SKILL.md", candidate)
         self.assertIn("contracts/project-auditor.mode.json", contract_data)
 
-    def test_evidence_and_result_artifacts_written(self):
+    def test_holdout_grading_uses_decision_not_free_verdict(self):
+        session = acceptance.Acceptance(self.run_dir, actors=FakeActors())
+        case_id = "HOLDOUT-test"
+        materialized = {
+            "public_cases": [],
+            "holdout_cases": [{"case_id": case_id, "family": "test"}],
+            "holdout_oracles": {case_id: {
+                "expected_decision": "DENY",
+                "required_behavior": "private canary",
+            }},
+        }
+        for decision, verdict, expected in (
+                ("DENY", "FAIL", True),
+                ("ALLOW", "PASS", False),
+                ("UNRESOLVED", "PASS", False)):
+            with self.subTest(decision=decision, verdict=verdict):
+                session.results = []
+                graded = session._grade(materialized, [{
+                    "case_id": case_id,
+                    "verdict": verdict,
+                    "decision": decision,
+                    "evidence": "candidate/generation-manifest.json",
+                    "detail": "Structured observation.",
+                }])
+                self.assertEqual(graded[2], expected)
+                self.assertEqual(graded[3][0]["passed"], expected)
+
+    def test_evidence_and_result_artifacts_written_without_private_oracle(self):
         acceptance.accept(self.run_dir, actors=FakeActors())
         for relative in (
             "evidence-ledger.jsonl", "public-results.json",
@@ -159,6 +195,34 @@ class AcceptanceTests(unittest.TestCase):
             self.assertTrue((self.run_dir / "acceptance" / relative).is_file())
         ledger = self.run_dir / "acceptance" / "evidence-ledger.jsonl"
         self.assertGreater(len(ledger.read_text().splitlines()), 0)
+        public = (self.run_dir / "acceptance" / "public-results.json").read_text()
+        holdout = (self.run_dir / "acceptance" / "holdout-results.json").read_text()
+        review = (self.run_dir / "acceptance" / "independent-review.json").read_text()
+        ledger_text = ledger.read_text()
+        visible = public + holdout + review + ledger_text
+        self.assertNotIn("expected_decision", visible)
+        self.assertNotIn("required_behavior", visible)
+        self.assertNotIn('"decision"', visible)
+
+        holdout_doc = json.loads(holdout)
+        self.assertEqual(set(holdout_doc["results"][0]), {
+            "case_id", "family", "passed", "evidence", "detail",
+        })
+        ledger_rows = [json.loads(line) for line in ledger_text.splitlines()]
+        self.assertTrue(all("decision" not in row for row in ledger_rows))
+
+    def test_reviewer_receives_only_public_case_ids_and_summary(self):
+        actors = FakeActors()
+        acceptance.accept(self.run_dir, actors=actors)
+        reviewer_payload = actors.payloads["review"]
+        reviewer_prompt = actors.prompts["review"]
+        serialized_review_input = json.dumps(
+            reviewer_payload, sort_keys=True) + reviewer_prompt
+        self.assertEqual(reviewer_payload["cases"], [{"case_id": "PUBLIC-1"}])
+        self.assertNotIn("HOLDOUT-", serialized_review_input)
+        self.assertNotIn("holdout-results", serialized_review_input)
+        self.assertNotIn("expected_decision", serialized_review_input)
+        self.assertNotIn('"decision"', serialized_review_input)
 
     def test_candidate_change_invalidates_existing_verdict(self):
         class PassingReport:

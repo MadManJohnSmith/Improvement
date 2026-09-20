@@ -221,20 +221,25 @@ class Acceptance:
         holdout_passed = True
         for case, observed in zip(materialized["holdout_cases"], holdout_observed):
             oracle = materialized["holdout_oracles"][case["case_id"]]
-            passed = observed["verdict"] == oracle["verdict"]
+            # Holdout grading is Host-owned and predicate-based. The free-form
+            # PASS/FAIL verdict is intentionally irrelevant here; unresolved
+            # decisions fail closed because they do not equal the oracle.
+            passed = observed["decision"] == oracle["expected_decision"]
             holdout_passed = holdout_passed and passed
+            # Persist only the opaque grade. Keeping the evaluator decision next
+            # to ``passed`` would disclose the hidden expected decision by simple
+            # inversion, even though the oracle itself never reaches disk.
             holdout_rows.append({
                 "case_id": case["case_id"],
                 "family": case["family"],
-                "observed": observed["verdict"],
                 "passed": passed,
-                "evidence": observed["evidence"],
-                "detail": observed["detail"],
+                "evidence": ["host-private-evaluation"],
+                "detail": "Evaluator classification and rationale withheld after Host grading.",
             })
-            # Ledger exposes only opaque ID/family and pass/fail, never oracle.
+            # The ledger points to a neutral private-evaluation marker rather than
+            # preserving rationale that could restate the discarded decision.
             self._record(case["case_id"], "PASS" if passed else "FAIL",
-                         observed["evidence"] if isinstance(observed["evidence"], list)
-                         else [observed["evidence"]], "Host holdout graded")
+                         ["host-private-evaluation"], "Host holdout graded")
         return public_passed, public_rows, holdout_passed, holdout_rows
 
     def _review(self, actors, public_rows):
@@ -256,7 +261,7 @@ class Acceptance:
         result = observation["result"]
         if observation["session_id"] == getattr(self, "evaluator_session", None):
             raise ValueError("Revisor independiente reutilizó la sesión evaluator")
-        review_rows = harness.validate_evaluator_results(
+        review_rows = harness.validate_reviewer_results(
             {"results": result["results"]}, expected_ids)
         passed = (result["verdict"] == "PASS"
                   and all(row["verdict"] == "PASS" for row in review_rows))
