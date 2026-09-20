@@ -156,14 +156,15 @@ class DshAcceptanceActors:
         if not isinstance(value, dict) or not isinstance(value.get("running"), bool):
             return None
 
-        children = value.get("children", [])
+        descendants = value.get("descendants", value.get("children", []))
         jobs = value.get("jobs", [])
         events = value.get("events", [])
         if not all(isinstance(items, list)
-                   for items in (children, jobs, events)):
+                   for items in (descendants, jobs, events)):
             return None
 
         request_turn = state.get("request_turn")
+        open_turn = state.get("open_turn")
         terminal = bool(state.get("terminal"))
         cursor = state.get("cursor", -1)
         for event in events:
@@ -175,12 +176,18 @@ class DshAcceptanceActors:
             data = event.get("data")
             if not isinstance(data, dict):
                 continue
-            if event.get("type") == "user/message":
-                source = data.get("source")
+            if event.get("type") == "turn/start":
+                open_turn = data.get("turn")
+            elif event.get("type") == "user/message":
+                message = data.get("message", data)
+                source = message.get("source") if isinstance(message, dict) else None
                 if (isinstance(source, dict) and
-                        source.get("rpcId") == state["request_id"] and
-                        isinstance(data.get("turn"), int)):
-                    request_turn = data["turn"]
+                        source.get("rpcId") == state["request_id"]):
+                    event_turn = data.get("turn")
+                    request_turn = (event_turn if isinstance(event_turn, int)
+                                    else open_turn)
+                    if not isinstance(request_turn, int):
+                        return None
             elif (event.get("type") == "turn/end" and
                   request_turn is not None and
                   data.get("turn") == request_turn):
@@ -191,7 +198,7 @@ class DshAcceptanceActors:
             cursor = max(cursor, observed_cursor)
         child_running = any(
             not isinstance(child, dict) or child.get("running") is not False
-            for child in children)
+            for child in descendants)
         active_jobs = any(
             not isinstance(job, dict) or
             job.get("status") in (None, "running", "stopping")
@@ -200,6 +207,7 @@ class DshAcceptanceActors:
         state.update({
             "cursor": cursor,
             "request_turn": request_turn,
+            "open_turn": open_turn,
             "terminal": terminal,
             "quiescent": quiescent,
         })
@@ -293,6 +301,7 @@ Never emit ACTIVE/RETAINED and never call acceptance or transaction tools.
         state = {
             "request_id": request_id,
             "request_turn": None,
+            "open_turn": None,
             "cursor": -1,
             "terminal": False,
             "quiescent": False,
