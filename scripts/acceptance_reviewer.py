@@ -280,7 +280,8 @@ class DshAcceptanceActors:
         session_id = client.create_creator_session(
             workspace_path=workspace, agent_preset="standard")
         result_contract = (
-            '"case_id":"...","verdict":"PASS"|"FAIL",'
+            '"case_id":"...","claim_id":"primary",'
+            '"verdict":"PASS"|"FAIL",'
             '"decision":"ALLOW"|"DENY"|"UNRESOLVED",'
             '"evidence":["candidate/relative/path"],"detail":"..."'
             if actor == "host-evaluator" else

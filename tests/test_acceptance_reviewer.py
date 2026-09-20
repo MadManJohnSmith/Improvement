@@ -107,6 +107,7 @@ class AcceptanceReviewerTests(unittest.TestCase):
         row = {"case_id": "A", "verdict": "PASS",
                "evidence": ["candidate/mode.json"], "detail": "ok"}
         if actor == "host-evaluator":
+            row["claim_id"] = "primary"
             row["decision"] = "DENY"
         return {
             "schema_version": 1,
@@ -129,6 +130,7 @@ class AcceptanceReviewerTests(unittest.TestCase):
             self.assertEqual(client.sessions[0][2], "standard")
             self.assertTrue(client.prompts[0][1].startswith("evalúa"))
             self.assertIn("Write exactly one final JSON object", client.prompts[0][1])
+            self.assertIn('"claim_id":"primary"', client.prompts[0][1])
             self.assertIn('"decision":"ALLOW"|"DENY"|"UNRESOLVED"',
                           client.prompts[0][1])
             self.assertFalse((workspace / "candidate" / "mode.json").stat().st_mode & 0o222)
