@@ -245,6 +245,24 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
         cpath = generated / rel
         if not cpath.is_file() or cpath.is_symlink():
             continue  # existence/hash covered by the manifest layer
+        if rel.endswith(".jsonl"):
+            seen_ids = set()
+            try:
+                lines = [line for line in cpath.read_text(
+                    encoding="utf-8").splitlines() if line.strip()]
+                if not lines:
+                    raise ValueError("JSONL vacío")
+                for index, line in enumerate(lines, 1):
+                    scenario = json.loads(line)
+                    gc.validate("scenario", scenario)
+                    scenario_id = scenario.get("scenario_id")
+                    if scenario_id in seen_ids:
+                        raise ValueError(
+                            f"scenario_id duplicado {scenario_id!r}")
+                    seen_ids.add(scenario_id)
+            except (ValueError, gc.ContractError) as error:
+                issues.append(f"Contrato JSONL inválido: {rel}: {error}")
+            continue
         try:
             doc = json.loads(cpath.read_text(encoding="utf-8"))
         except ValueError:
@@ -300,7 +318,6 @@ def _validate_layer_capabilities(report, manifest, generated):
             issues.append("capabilities.json inválido")
 
     mode_required = set()
-    mode_forbidden = set()
     mode_paths = sorted((generated / "contracts").glob("*.mode.json"))
     mode_paths += sorted((generated / "modes").glob("*/mode.json"))
     for path in mode_paths:
@@ -308,8 +325,14 @@ def _validate_layer_capabilities(report, manifest, generated):
             mode = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        mode_required.update(mode.get("required_capabilities", []))
-        mode_forbidden.update(mode.get("forbidden_capabilities", []))
+        local_required = set(mode.get("required_capabilities", []))
+        local_forbidden = set(mode.get("forbidden_capabilities", []))
+        local_overlap = local_required & local_forbidden
+        if local_overlap:
+            issues.append(
+                f"{path.relative_to(generated)} requires and forbids: "
+                f"{sorted(local_overlap)}")
+        mode_required.update(local_required)
     if "product_write" in mode_required:
         issues.append(
             "Mode requires product_write; managed repairs must require "
@@ -318,10 +341,10 @@ def _validate_layer_capabilities(report, manifest, generated):
     if missing:
         issues.append(
             f"Mode capabilities missing from capabilities.json: {sorted(missing)}")
-    conflict = mode_required & (capability_forbidden | mode_forbidden)
+    conflict = mode_required & capability_forbidden
     if conflict:
         issues.append(
-            f"Mode capabilities also forbidden: {sorted(conflict)}")
+            f"Mode capabilities forbidden globally: {sorted(conflict)}")
     undeclared = required - capability_required
     if undeclared:
         issues.append(
