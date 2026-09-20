@@ -33,6 +33,11 @@ from onboard import checked
 
 SCHEMA_VERSION = 1
 
+
+class HostPrevalidationFailed(ValueError):
+    """Creator output exists but must be rejected by Host acceptance."""
+
+
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
 PROMPT_VERSION = "1.0.0"
@@ -263,6 +268,12 @@ Requisitos obligatorios: procedimiento recurrente, evidencia observable en el pr
 fronteras estrictas de lectura/escritura y prueba ejecutable."""
 
     library_section = _library_selection_section()
+    import generation_contracts as gc
+    scenario_types = ", ".join(f"`{value}`" for value in sorted(gc.SCENARIO_TYPES))
+    scenario_verdicts = ", ".join(
+        f"`{value}`" for value in sorted(gc.SCENARIO_VERDICTS))
+    holdout_families = ", ".join(
+        f"`{value}`" for value in sorted(gc.HOLDOUT_FAMILIES))
     body = f"""
 ## Estrategia de selección obligatoria
 
@@ -301,6 +312,50 @@ Escribe bajo `{run_dir}/generated/`:
 - `contracts/`
 - `acceptance-plan.json`
 - `generation-report.md`
+
+## Contratos exactos de salida (sin formas ad hoc)
+
+Los schemas normativos están en `{FRAMEWORK}/schemas/`; en particular, valida
+`acceptance-plan.json` contra `{FRAMEWORK}/schemas/acceptance-plan.schema.json`.
+Su forma mínima exacta es:
+```json
+{{
+  "schema_version": 1,
+  "generation_id": "{gen_id}",
+  "requirements": [{{"id": "SR-1", "criterion": "...", "evidence": "..."}}],
+  "public_scenarios": [{{"id": "PUBLIC-1", "type": "positive", "target": "{project_name}-auditor", "expected": "PASS"}}],
+  "holdout_families": ["prompt-injection-in-repository"],
+  "gates": ["public scenarios", "hidden holdouts", "independent review"],
+  "creator_limit": "Host validation only; no ACTIVE authority."
+}}
+```
+Campos opcionales únicamente: `status` (solo `GENERATED`) y
+`candidate_base_revision` (string no vacío). Cada requirement contiene
+exactamente `id,criterion,evidence`; cada public scenario contiene exactamente
+`id,type,target,expected`. Enums de `type`: {scenario_types}. Enums de
+`expected`: {scenario_verdicts}. Enums de `holdout_families`: {holdout_families}.
+
+`contracts/scenarios.jsonl` contiene un objeto JSON por línea con exactamente los
+campos requeridos `schema_version,scenario_id,type,description,input,expected,sr_links`;
+`expected` es un objeto con `verdict` (y solo opcionalmente `evidence_type`,
+`description`). Los campos opcionales de escenario son `target_mode`,
+`target_skill`, `holdout_family`, `verification_state`.
+
+Todo contrato nuevo de modo/skill debe cumplir su schema y llevar discriminador
+explícito: `kind: "mode"` para `schemas/modes.schema.json`, o `kind: "skill"`
+para `schemas/skills.schema.json`. `kind` es opcional únicamente para preservar
+contratos schema v1 previos; no lo omitas en salidas nuevas ni infieras variantes
+por campos como `motive`.
+En `generation-manifest.json`, todo archivo cuyo basename sea `SKILL.md` debe
+usar artifact `type: "skill-entrypoint"`.
+
+Antes de emitir `status: GENERATED`, ejecuta la prevalidación Host read-only:
+```bash
+python3 -B {FRAMEWORK}/scripts/host_validator.py \
+  --generated {run_dir}/generated
+```
+Corrige todos los errores de schema, contracts y manifest que reporte; solo
+entonces deja el manifest en estado GENERATED y solicita aceptación.
 
 ## Invariantes
 
@@ -828,6 +883,20 @@ class CreatorSession:
                 raise ValueError(
                     "Creator intentó escribir host-verdict.json (auto-aprobación)"
                 )
+
+        # Host-owned read-only prevalidation must pass before create_finish()
+        # advances run.json/checkpoint.json to GENERATED.
+        import host_validator
+        report = host_validator.validate_package(gen_dir, run_dir=self.run_dir)
+        if not report.passed:
+            failures = []
+            for layer, result in report.layers.items():
+                if not result["passed"]:
+                    detail = "; ".join(result["details"]) or "sin detalle"
+                    failures.append(f"{layer}: {detail}")
+            raise HostPrevalidationFailed(
+                "Prevalidación Host falló antes de GENERATED: "
+                + " | ".join(failures))
 
         return manifest
 
@@ -1550,7 +1619,23 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
             if _manifest_exists(session.run_dir):
                 _save_session_state(session.run_dir, state,
                                     reason="TERMINAL_QUIESCENT")
-                manifest = session.verify_generation_output()
+                try:
+                    manifest = session.verify_generation_output()
+                except HostPrevalidationFailed as exc:
+                    # The Creator turn is terminal and the whole session is
+                    # quiescent: do not retain here (which would strand the
+                    # Host chain) and never redispatch this immutable turn.
+                    # Acceptance owns the authoritative RETAINED transition
+                    # and binds the rejected candidate in static-retained.json.
+                    _save_session_state(
+                        session.run_dir, state,
+                        reason="READY_FOR_HOST_REJECTION")
+                    return {
+                        "result": "READY_FOR_HOST_REJECTION",
+                        "generation_id": state.get("generation_id", "unknown"),
+                        "dsh_session_id": state.get("session_id"),
+                        "reason": str(exc),
+                    }
                 return session.create_finish(manifest)
             reason = "Creator terminó y quedó quiescente sin generation-manifest.json"
             _save_session_state(session.run_dir, state,
@@ -1629,6 +1714,24 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
             # session/prompt RPC, enabling exact adoption after interruption.
             state, created_state = _load_or_create_session_state(
                 run_dir, prep, run_doc, now_fn=now_fn)
+
+            # A previously observed terminal/quiescent turn is immutable. If
+            # its package failed Host prevalidation, return control to the
+            # Host boundary without adopting the session or replaying prompt.
+            if (state.get("terminal") and state.get("quiescent")
+                    and _manifest_exists(run_dir)):
+                try:
+                    manifest = session.verify_generation_output()
+                except HostPrevalidationFailed as exc:
+                    _save_session_state(
+                        run_dir, state, reason="READY_FOR_HOST_REJECTION")
+                    return {
+                        "result": "READY_FOR_HOST_REJECTION",
+                        "generation_id": prep["generation_id"],
+                        "dsh_session_id": state.get("session_id"),
+                        "reason": str(exc),
+                    }
+                return session.create_finish(manifest)
 
             dsh_origin = None
             if client is None and acquire:

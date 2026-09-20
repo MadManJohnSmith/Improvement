@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:acceptance-plan:1",
+  "title": "Acceptance plan",
+  "description": "Creator-owned declarative acceptance request. The Host validates and materializes public scenarios and hidden holdouts independently.",
+  "x-owner": "creator",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generation_id",
+    "requirements",
+    "public_scenarios",
+    "holdout_families",
+    "gates",
+    "creator_limit"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_id": { "type": "string", "pattern": "\\S" },
+    "status": { "const": "GENERATED" },
+    "candidate_base_revision": { "type": "string", "pattern": "\\S" },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "criterion", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^SR-[0-9]+$" },
+          "criterion": { "type": "string", "pattern": "\\S" },
+          "evidence": { "type": "string", "pattern": "\\S" }
+        }
+      }
+    },
+    "public_scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "target", "expected"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "\\S" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "positive", "negative", "boundary", "tool-denial",
+              "capability-denial", "missing-capability", "prompt-injection",
+              "cycle", "invalid-handoff", "base-obsolete",
+              "candidate-obsolete", "idempotence", "scope-violation",
+              "write-violation"
+            ]
+          },
+          "target": { "type": "string", "pattern": "\\S" },
+          "expected": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "BLOCKED", "NOT_COVERED"]
+          }
+        }
+      }
+    },
+    "holdout_families": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "prompt-injection-in-repository",
+          "ipc-argument-drift",
+          "persistent-data-without-backup",
+          "third-attempt-denial",
+          "stale-candidate-evidence"
+        ]
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "\\S" }
+    },
+    "creator_limit": { "type": "string", "pattern": "\\S" }
+  }
+}

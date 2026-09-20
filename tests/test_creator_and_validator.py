@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import bootstrap
 import creator_client as cc
+import generation_contracts as gc
 import host_validator as hv
 
 
@@ -56,6 +57,23 @@ class Base(unittest.TestCase):
         }
         capabilities_bytes = (json.dumps(capabilities, indent=2) + "\n").encode()
         (generated / "capabilities.json").write_bytes(capabilities_bytes)
+        acceptance_plan = {
+            "schema_version": 1,
+            "generation_id": self.gen_id,
+            "requirements": [{
+                "id": "SR-1", "criterion": "Respect project boundaries",
+                "evidence": "Host scenario evidence",
+            }],
+            "public_scenarios": [{
+                "id": "PUBLIC-1", "type": "positive",
+                "target": "project-auditor", "expected": "PASS",
+            }],
+            "holdout_families": ["prompt-injection-in-repository"],
+            "gates": ["public scenarios", "hidden holdouts"],
+            "creator_limit": "Host validation only; no ACTIVE authority.",
+        }
+        acceptance_bytes = (json.dumps(acceptance_plan, indent=2) + "\n").encode()
+        (generated / "acceptance-plan.json").write_bytes(acceptance_bytes)
         artifacts = [{
             "path": "skills/project-auditor/SKILL.md",
             "type": "skill-entrypoint",
@@ -64,6 +82,10 @@ class Base(unittest.TestCase):
             "path": "capabilities.json",
             "type": "manifest",
             "sha256": cc._digest_bytes(capabilities_bytes),
+        }, {
+            "path": "acceptance-plan.json",
+            "type": "plan",
+            "sha256": cc._digest_bytes(acceptance_bytes),
         }]
         manifest = {
             "schema_version": 1,
@@ -353,6 +375,91 @@ class CreatorTests(Base):
         self.assertTrue(state["terminal"])
         self.assertTrue(state["quiescent"])
 
+    def test_terminal_prevalidation_failure_hands_off_to_host_retention(self):
+        generated, manifest = self.make_package()
+        plan_path = generated / "acceptance-plan.json"
+        plan = json.loads(plan_path.read_text())
+        del plan["public_scenarios"][0]["type"]
+        plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
+        plan_path.write_bytes(plan_bytes)
+        next(item for item in manifest["artifacts"]
+             if item["path"] == "acceptance-plan.json")["sha256"] = (
+                 cc._digest_bytes(plan_bytes))
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+
+        class Client:
+            authenticated = True
+            prompts = 0
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                inner.prompts += 1
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                return {"cursor": 3, "events": [
+                    {"seq": 1, "type": "turn/start", "data": {"turn": 3}},
+                    {"seq": 2, "type": "user/message",
+                     "data": {"turn": 3,
+                              "source": {"rpcId": inner.request_id}}},
+                    {"seq": 3, "type": "turn/end",
+                     "data": {"turn": 3, "reason": "completed"}},
+                ], "running": False, "children": [], "jobs": []}
+
+        client = Client()
+        result = {"generation_id": self.gen_id, "message": "Run creado"}
+        with unittest.mock.patch.object(
+                cc, "acquire_dsh_client", return_value=(client, "test")):
+            bootstrap._dispatch_creator_chain(
+                result, self.run_dir, launch_dsh=False)
+
+        self.assertEqual(result["creator"]["result"],
+                         "READY_FOR_HOST_REJECTION")
+        self.assertEqual(result["host"]["result"], "RETAINED")
+        self.assertEqual(client.prompts, 1)
+        self.assertTrue((self.run_dir / "acceptance" /
+                         "static-retained.json").is_file())
+        self.assertFalse((self.run_dir / "finish.json").exists())
+        run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(run["status"], "RETAINED")
+
+    def test_terminal_invalid_package_is_not_redispatched_before_host_handoff(self):
+        generated, manifest = self.make_package()
+        manifest["artifacts"][0]["sha256"] = "0" * 64
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        session = cc.CreatorSession(self.run_dir)
+        session.prepare()
+        state = {
+            "schema_version": 1,
+            "generation_id": self.gen_id,
+            "session_id": "session-stable",
+            "request_id": "request-stable",
+            "prompt_digest": json.loads(
+                (self.run_dir / "generation-request.json").read_text()
+            )["prompt_digest"],
+            "deadline": 9999,
+            "cursor": 3,
+            "reason": "READY_FOR_HOST_REJECTION",
+            "terminal": True,
+            "quiescent": True,
+        }
+        cc._write_json(self.run_dir / "creator-session.json", state)
+
+        class ExplodingClient:
+            authenticated = True
+            def create_creator_session(self, **_kwargs):
+                raise AssertionError("must not redispatch")
+
+        result = cc.run_creator(
+            self.run_dir, client=ExplodingClient(), now_fn=lambda: 100)
+        self.assertEqual(result["result"], "READY_FOR_HOST_REJECTION")
+        self.assertFalse((self.run_dir / "finish.json").exists())
+        run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(run["status"], "GENERATING")
+
     def test_turn_end_without_manifest_retains_immediately(self):
         class Client:
             authenticated = True
@@ -630,6 +737,24 @@ class CreatorTests(Base):
         with self.assertRaises(ValueError):
             cc.CreatorSession(self.run_dir).verify_generation_output()
 
+    def test_generation_output_requires_host_prevalidation_before_generated(self):
+        generated, manifest = self.make_package()
+        plan_path = generated / "acceptance-plan.json"
+        plan = json.loads(plan_path.read_text())
+        del plan["public_scenarios"][0]["type"]
+        plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
+        plan_path.write_bytes(plan_bytes)
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "acceptance-plan.json":
+                artifact["sha256"] = cc._digest_bytes(plan_bytes)
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+
+        with self.assertRaisesRegex(ValueError, "Prevalidación Host falló"):
+            cc.CreatorSession(self.run_dir).verify_generation_output()
+        run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertNotEqual(run["status"], "GENERATED")
+
     def test_retain_marks_run(self):
         session = cc.CreatorSession(self.run_dir)
         result = session.retain("missing provider")
@@ -648,6 +773,24 @@ class CreatorTests(Base):
         self.assertIn("workflow_write", prompt)
         self.assertIn("subagentes", prompt)
         self.assertIn("bootstrap.py accept", prompt)
+
+    def test_prompt_exposes_exact_generation_contracts_and_prevalidation(self):
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn("schemas/acceptance-plan.schema.json", prompt)
+        self.assertIn('"public_scenarios": [{"id": "PUBLIC-1", "type":', prompt)
+        self.assertIn("`id,type,target,expected`", prompt)
+        for value in cc.__dict__.get("PROMPT_TYPES", ()):
+            self.assertTrue(value)
+        import generation_contracts as gc
+        for value in gc.SCENARIO_TYPES | gc.SCENARIO_VERDICTS | gc.HOLDOUT_FAMILIES:
+            self.assertIn(f"`{value}`", prompt)
+        self.assertIn("schema_version,scenario_id,type,description,input,expected,sr_links", prompt)
+        self.assertIn('`kind: "mode"`', prompt)
+        self.assertIn('`kind: "skill"`', prompt)
+        self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
+        self.assertIn("scripts/host_validator.py", prompt)
+        self.assertIn("Antes de emitir `status: GENERATED`", prompt)
 
     def test_prompt_embeds_materialized_library(self):
         """The versioned prompt lists the real base skills and catalog gates."""
@@ -1166,6 +1309,7 @@ class ValidatorTests(Base):
         """Package with one contract artifact reusing a base skill."""
         contract = {
             "schema_version": 1,
+            "kind": "skill",
             "name": "project-debugger",
             "motive": "Recurring debugging procedure",
             "domain": ["python-backend"],
@@ -1211,6 +1355,121 @@ class ValidatorTests(Base):
         self.assertIn("no existe en la biblioteca",
                       " ".join(report.layers["contracts"]["details"]))
 
+    def test_contract_kind_accepts_legacy_name_and_rejects_bad_values(self):
+        generated, manifest = self._make_contract_package()
+        contract_path = generated / "contracts" / "skill-contract.json"
+        original = json.loads(contract_path.read_text())
+
+        legacy = dict(original)
+        del legacy["kind"]
+        legacy_bytes = (json.dumps(legacy, indent=2) + "\n").encode()
+        contract_path.write_bytes(legacy_bytes)
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "contracts/skill-contract.json":
+                artifact["sha256"] = cc._digest_bytes(legacy_bytes)
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+
+        for value, expected in (
+            ("ad-hoc", "contract.kind must be 'mode' or 'skill'"),
+            ("mode", "mode-contract: missing required field 'purpose'"),
+        ):
+            with self.subTest(kind=value):
+                contract = dict(original, kind=value)
+                contract_bytes = (json.dumps(contract, indent=2) + "\n").encode()
+                contract_path.write_bytes(contract_bytes)
+                for artifact in manifest["artifacts"]:
+                    if artifact["path"] == "contracts/skill-contract.json":
+                        artifact["sha256"] = cc._digest_bytes(contract_bytes)
+                (generated / "generation-manifest.json").write_text(
+                    json.dumps(manifest, indent=2) + "\n")
+                report = hv.validate_package(generated, run_dir=self.run_dir)
+                self.assertFalse(report.layers["contracts"]["passed"])
+                self.assertIn(expected, " ".join(
+                    report.layers["contracts"]["details"]))
+
+    def test_contract_kind_legacy_free_names_validate_both_schemas(self):
+        skill = {
+            "schema_version": 1,
+            "name": "api-routes",
+            "motive": "Validate API routes",
+            "domain": ["http-api"],
+            "reuse_source": "base-library",
+            "reuse_reference": "systematic-debugging",
+            "inputs": ["route declarations"],
+            "outputs": ["route report"],
+            "required_capabilities": ["product_read"],
+            "forbidden_capabilities": ["product_write"],
+            "files": [{"path": "SKILL.md", "type": "entrypoint"}],
+            "behavior_test": "SC-001",
+            "provenance": {"license": "proprietary"},
+        }
+        mode = {
+            "schema_version": 1,
+            "name": "tauri-ipc",
+            "purpose": "Validate IPC boundaries",
+            "reuse_source": "base-library",
+            "reuse_reference": "systematic-debugging",
+            "triggers": ["IPC audit"],
+            "anti_triggers": [],
+            "inputs": ["command declarations"],
+            "reads": ["src-tauri/"],
+            "writes": [],
+            "required_capabilities": ["product_read"],
+            "forbidden_capabilities": ["product_write"],
+            "invariants": ["Arguments match"],
+            "anti_goals": ["Do not mutate commands"],
+            "state_machine": {
+                "states": ["READY"], "transitions": [],
+                "initial": "READY", "terminal": ["READY"],
+            },
+            "handoffs": [],
+            "failure_modes": {},
+            "scenarios": ["SC-001"],
+            "provenance": {"license": "proprietary"},
+        }
+        self.assertEqual(
+            hv._contract_kind(skill, "contracts/api-routes-contract.json"),
+            "skill")
+        self.assertEqual(
+            hv._contract_kind(mode, "contracts/tauri-ipc-contract.json"),
+            "mode")
+
+    def test_contract_kind_legacy_ambiguity_and_no_match_are_precise(self):
+        legacy = {"schema_version": 1, "motive": "not a discriminator"}
+        with self.assertRaisesRegex(
+                gc.ContractError, "matched neither mode-contract nor skill-contract"):
+            hv._contract_kind(legacy, "contracts/invalid.contract.json")
+
+        with unittest.mock.patch.object(gc, "validate", return_value=None):
+            with self.assertRaisesRegex(
+                    gc.ContractError,
+                    "ambiguous: both mode-contract and skill-contract validate"):
+                hv._contract_kind({}, "contracts/ambiguous.contract.json")
+
+    def test_contract_kind_precedence_never_uses_motive(self):
+        legacy = {"schema_version": 1, "motive": "not a discriminator"}
+        self.assertEqual(
+            hv._contract_kind(legacy, "contracts/legacy.skill.json"), "skill")
+        self.assertEqual(
+            hv._contract_kind({"kind": "mode", "motive": "ignored"},
+                              "contracts/legacy.skill.json"), "mode")
+        with self.assertRaisesRegex(gc.ContractError, "contract.kind must be"):
+            hv._contract_kind({"kind": []}, "contracts/legacy.skill.json")
+
+    def test_manifest_requires_skill_entrypoint_type_for_skill_md(self):
+        generated, manifest = self.make_package()
+        manifest["artifacts"][0]["type"] = "reference"
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["manifest"]["passed"])
+        self.assertIn("SKILL.md must use type 'skill-entrypoint'", " ".join(
+            report.layers["manifest"]["details"]))
+
     def test_contract_missing_reuse_reference_retained(self):
         generated, _ = self._make_contract_package(reuse_reference=None)
         contract = json.loads(
@@ -1244,6 +1503,28 @@ class ValidatorTests(Base):
         self.assertFalse(report.passed)
         self.assertEqual(report.verdict, "RETAINED")
         self.assertFalse(report.layers["schema"]["passed"])
+
+    def test_missing_public_scenario_type_is_retained_in_static_report(self):
+        generated, manifest = self.make_package()
+        plan_path = generated / "acceptance-plan.json"
+        plan = json.loads(plan_path.read_text())
+        del plan["public_scenarios"][0]["type"]
+        plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
+        plan_path.write_bytes(plan_bytes)
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "acceptance-plan.json":
+                artifact["sha256"] = cc._digest_bytes(plan_bytes)
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+
+        report = hv.validate_package(generated)
+
+        self.assertFalse(report.passed)
+        self.assertEqual(report.verdict, "RETAINED")
+        self.assertFalse(report.layers["schema"]["passed"])
+        details = " ".join(report.layers["schema"]["details"])
+        self.assertIn("acceptance-plan.json inválido", details)
+        self.assertIn("missing required field 'type'", details)
 
     def test_hash_mismatch_retained(self):
         generated, manifest = self.make_package()
@@ -1408,8 +1689,36 @@ class ValidatorTests(Base):
         generated, _ = self.make_package()
         report = hv.validate_package(generated)
         result = hv.write_reports(report, self.run_dir)
-        self.assertTrue((self.run_dir / "validation" / "summary.json").is_file())
+        summary = json.loads(
+            (self.run_dir / "validation" / "summary.json").read_text())
+        layer = json.loads(
+            (self.run_dir / "validation" / "manifest.json").read_text())
         self.assertEqual(result["verdict"], "READY_FOR_ACCEPTANCE")
+        for field in ("generation_id", "candidate_digest", "manifest_digest"):
+            self.assertEqual(summary[field], result[field])
+            self.assertEqual(layer[field], result[field])
+
+    def test_write_reports_atomically_replaces_previous_evaluation(self):
+        generated, _ = self.make_package()
+        first = hv.validate_package(generated)
+        hv.write_reports(first, self.run_dir)
+        old_summary = json.loads(
+            (self.run_dir / "validation" / "summary.json").read_text())
+
+        (generated / "capabilities.json").unlink()
+        second = hv.validate_package(generated)
+        hv.write_reports(second, self.run_dir)
+        summary = json.loads(
+            (self.run_dir / "validation" / "summary.json").read_text())
+        capabilities = json.loads(
+            (self.run_dir / "validation" / "capabilities.json").read_text())
+
+        self.assertFalse(summary["passed"])
+        self.assertNotEqual(summary["candidate_digest"],
+                            old_summary["candidate_digest"])
+        self.assertEqual(capabilities["candidate_digest"],
+                         summary["candidate_digest"])
+        self.assertFalse(capabilities["passed"])
 
 
 if __name__ == "__main__":

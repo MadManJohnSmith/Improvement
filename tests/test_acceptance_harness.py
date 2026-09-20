@@ -1,4 +1,5 @@
 """Focused tests for the Host-owned acceptance materializer."""
+import copy
 import hashlib
 import json
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import acceptance_harness as harness
+import generation_contracts as gc
 
 
 POLICY_DIGEST = hashlib.sha256(b"host-policy-v1").hexdigest()
@@ -143,6 +145,112 @@ class AcceptanceHarnessTests(unittest.TestCase):
         with self.assertRaisesRegex(harness.HarnessError, "duplicate scenario_id"):
             harness.load_acceptance_plan(self.plan_path)
 
+    def test_acceptance_plan_corpus_has_validator_parity(self):
+        positive = [_plan()]
+        without_optional = _plan()
+        without_optional.pop("status")
+        without_optional.pop("candidate_base_revision")
+        positive.append(without_optional)
+
+        negative = []
+        mutations = (
+            lambda doc: doc.__setitem__("generation_id", "  "),
+            lambda doc: doc.__setitem__("candidate_base_revision", "\t"),
+            lambda doc: doc["requirements"][0].__setitem__("criterion", "\n"),
+            lambda doc: doc["requirements"][0].__setitem__("evidence", " "),
+            lambda doc: doc["public_scenarios"][0].__setitem__("id", "\t"),
+            lambda doc: doc["public_scenarios"][0].__setitem__("target", "  "),
+            lambda doc: doc.__setitem__("gates", ["\n"]),
+            lambda doc: doc.__setitem__("creator_limit", " "),
+            lambda doc: doc["public_scenarios"][0].__setitem__("type", "other"),
+            lambda doc: doc.__setitem__("holdout_families", ["other"]),
+            lambda doc: doc["public_scenarios"][0].__setitem__("extra", True),
+        )
+        for mutate in mutations:
+            document = _plan()
+            mutate(document)
+            negative.append(document)
+
+        for expected, corpus in ((True, positive), (False, negative)):
+            for index, document in enumerate(corpus):
+                with self.subTest(expected=expected, index=index):
+                    gc_ok = harness_ok = True
+                    try:
+                        gc.validate("acceptance-plan", document)
+                    except gc.ContractError:
+                        gc_ok = False
+                    try:
+                        harness.validate_acceptance_plan(document)
+                    except harness.HarnessError:
+                        harness_ok = False
+                    self.assertEqual(gc_ok, expected)
+                    self.assertEqual(harness_ok, expected)
+
+    def test_acceptance_plan_adversarial_types_raise_domain_errors_with_parity(self):
+        mutations = (
+            ("top-level null", lambda _doc: None),
+            ("top-level list", lambda _doc: []),
+            ("requirements null", lambda doc: doc.__setitem__(
+                "requirements", None) or doc),
+            ("requirement list", lambda doc: doc["requirements"].__setitem__(
+                0, []) or doc),
+            ("requirement id object", lambda doc: doc["requirements"][0].__setitem__(
+                "id", {}) or doc),
+            ("requirement id list", lambda doc: doc["requirements"][0].__setitem__(
+                "id", []) or doc),
+            ("scenarios object", lambda doc: doc.__setitem__(
+                "public_scenarios", {}) or doc),
+            ("scenario null", lambda doc: doc["public_scenarios"].__setitem__(
+                0, None) or doc),
+            ("scenario type object", lambda doc: doc["public_scenarios"][0].__setitem__(
+                "type", {}) or doc),
+            ("scenario expected list", lambda doc: doc["public_scenarios"][0].__setitem__(
+                "expected", []) or doc),
+            ("families object", lambda doc: doc.__setitem__(
+                "holdout_families", {}) or doc),
+            ("family object", lambda doc: doc["holdout_families"].__setitem__(
+                0, {}) or doc),
+            ("gates object", lambda doc: doc.__setitem__("gates", {}) or doc),
+        )
+        for label, mutate in mutations:
+            with self.subTest(case=label):
+                document = mutate(copy.deepcopy(_plan()))
+                with self.assertRaises(gc.ContractError):
+                    gc.validate("acceptance-plan", document)
+                with self.assertRaises(harness.HarnessError):
+                    harness.validate_acceptance_plan(document)
+
+    def test_acceptance_plan_json_schema_parity_when_validator_available(self):
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        schema = json.loads(
+            (ROOT / "schemas" / "acceptance-plan.schema.json").read_text())
+        documents = [_plan()]
+        for field in ("generation_id", "candidate_base_revision", "creator_limit"):
+            document = _plan()
+            document[field] = " \t"
+            documents.append(document)
+        for document in documents:
+            with self.subTest(document=document):
+                schema_ok = True
+                try:
+                    jsonschema.Draft202012Validator(schema).validate(document)
+                except jsonschema.ValidationError:
+                    schema_ok = False
+                gc_ok = harness_ok = True
+                try:
+                    gc.validate("acceptance-plan", document)
+                except gc.ContractError:
+                    gc_ok = False
+                try:
+                    harness.validate_acceptance_plan(document)
+                except harness.HarnessError:
+                    harness_ok = False
+                self.assertEqual(schema_ok, gc_ok)
+                self.assertEqual(schema_ok, harness_ok)
+
     def test_holdout_cases_are_deterministic_and_policy_bound(self):
         families = _plan()["holdout_families"]
         first = harness.generate_holdout_cases(
@@ -224,9 +332,13 @@ class AcceptanceHarnessTests(unittest.TestCase):
         self.assertIn("a" * 64, prompt)
         self.assertIn("canonical_write", prompt)
         self.assertIn("canonical public summary is authoritative", prompt)
+        self.assertIn("including BLOCKED or NOT_COVERED", prompt)
+        self.assertIn("not an evaluator quality\nverdict", prompt)
+        self.assertIn("expected_decision is the Host decision", prompt)
+        self.assertIn("expected\nFAIL is fail-closed", prompt)
         self.assertIn("Never infer case semantics from case_id", prompt)
-        self.assertIn("supports the decision", prompt)
-        self.assertIn("excludes evaluator\nrationale", prompt)
+        self.assertIn("supports the\ndecision", prompt)
+        self.assertIn("excludes\nevaluator rationale", prompt)
         self.assertIn("read-only", prompt)
         self.assertIn("under candidate/", prompt)
         self.assertIn("resolve <ref>\nas candidate/<ref>", prompt)
@@ -274,6 +386,10 @@ class AcceptanceHarnessTests(unittest.TestCase):
         self.assertIn("ALLOW means the candidate authorizes", prompt)
         self.assertIn("restrictive categorical prohibition\nsatisfies", prompt)
         self.assertIn("hypothetical precondition absent", prompt)
+        self.assertIn("expected.verdict describes the behavior expected", prompt)
+        self.assertIn("not your evaluator\nverdict", prompt)
+        self.assertIn("Never return BLOCKED or NOT_COVERED as an evaluator", prompt)
+        self.assertIn("expected.verdict of FAIL as fail-closed", prompt)
         self.assertIn('"decision":"ALLOW"|"DENY"|"UNRESOLVED"', prompt)
         self.assertIn(injection, prompt)
 

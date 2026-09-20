@@ -133,6 +133,13 @@ class AcceptanceReviewerTests(unittest.TestCase):
             self.assertIn('"claim_id":"primary"', client.prompts[0][1])
             self.assertIn('"decision":"ALLOW"|"DENY"|"UNRESOLVED"',
                           client.prompts[0][1])
+            self.assertIn("Evaluator verdict is a quality judgment only",
+                          client.prompts[0][1])
+            self.assertIn("Never use BLOCKED or NOT_COVERED as evaluator verdicts",
+                          client.prompts[0][1])
+            self.assertIn('"verdict":"PASS"|"FAIL",', client.prompts[0][1])
+            self.assertNotIn('"verdict":"PASS"|"FAIL"|"BLOCKED"',
+                             client.prompts[0][1])
             self.assertFalse((workspace / "candidate" / "mode.json").stat().st_mode & 0o222)
 
     def test_evaluator_output_contract_enumerates_all_input_cases(self):
@@ -371,6 +378,19 @@ class AcceptanceReviewerTests(unittest.TestCase):
         with ar.DshAcceptanceActors(
                 self.run_dir, client=client, timeout_seconds=1) as actors:
             with self.assertRaisesRegex(ValueError, "Actor"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, [])
+
+    def test_evaluator_top_level_blocked_verdict_is_rejected(self):
+        def blocked(payload):
+            result = self.result(payload)
+            result["verdict"] = "BLOCKED"
+            return result
+
+        client = FakeClient(blocked)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            with self.assertRaisesRegex(ValueError, "PASS o FAIL"):
                 actors.evaluate(self.payload, "evalúa")
         self.assertEqual(client.cancel_calls, [])
 

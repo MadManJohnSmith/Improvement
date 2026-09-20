@@ -145,6 +145,26 @@ def _golden_scenario():
     }
 
 
+def _golden_acceptance_plan():
+    return {
+        "schema_version": 1,
+        "generation_id": "gen-001",
+        "status": "GENERATED",
+        "candidate_base_revision": "rev-001",
+        "requirements": [{
+            "id": "SR-1", "criterion": "Respect boundaries",
+            "evidence": "Host scenario evidence",
+        }],
+        "public_scenarios": [{
+            "id": "PUBLIC-1", "type": "positive",
+            "target": "TestProject-auditor", "expected": "PASS",
+        }],
+        "holdout_families": ["prompt-injection-in-repository"],
+        "gates": ["public scenarios", "hidden holdouts"],
+        "creator_limit": "Host validation only; no ACTIVE authority.",
+    }
+
+
 def _golden_handoff():
     return {
         "schema_version": 1,
@@ -287,6 +307,7 @@ def _golden_library():
 def _golden_mode_contract():
     return {
         "schema_version": 1,
+        "kind": "mode",
         "name": "TestProject-auditor",
         "purpose": "Audit TestProject for defects",
         "reuse_source": "base-library",
@@ -326,6 +347,7 @@ def _golden_mode_contract():
 def _golden_skill_contract():
     return {
         "schema_version": 1,
+        "kind": "skill",
         "name": "TestProject-auditor",
         "motive": "Recurring audit procedure for TestProject",
         "domain": ["python-backend"],
@@ -483,6 +505,42 @@ class TestPositiveCorpus(unittest.TestCase):
         doc["holdout_family"] = "boundary"
         doc["verification_state"] = "UNVERIFIED"
         gc.validate("scenario", doc)
+
+    def test_acceptance_plan_golden(self):
+        gc.validate("acceptance-plan", _golden_acceptance_plan())
+
+    def test_acceptance_plan_all_enums(self):
+        for scenario_type in gc.SCENARIO_TYPES:
+            doc = _golden_acceptance_plan()
+            doc["public_scenarios"][0]["type"] = scenario_type
+            gc.validate("acceptance-plan", doc)
+        for verdict in gc.SCENARIO_VERDICTS:
+            doc = _golden_acceptance_plan()
+            doc["public_scenarios"][0]["expected"] = verdict
+            gc.validate("acceptance-plan", doc)
+        for family in gc.HOLDOUT_FAMILIES:
+            doc = _golden_acceptance_plan()
+            doc["holdout_families"] = [family]
+            gc.validate("acceptance-plan", doc)
+
+    def test_acceptance_plan_schema_enums_align_with_validator(self):
+        schema = json.loads(
+            (ROOT / "schemas" / "acceptance-plan.schema.json").read_text())
+        properties = schema["properties"]
+        scenario_properties = properties["public_scenarios"]["items"]["properties"]
+        self.assertEqual(set(scenario_properties["type"]["enum"]),
+                         set(gc.SCENARIO_TYPES))
+        self.assertEqual(set(scenario_properties["expected"]["enum"]),
+                         set(gc.SCENARIO_VERDICTS))
+        self.assertEqual(set(properties["holdout_families"]["items"]["enum"]),
+                         set(gc.HOLDOUT_FAMILIES))
+
+    def test_contract_schema_discriminators_are_optional_in_v1(self):
+        for filename, kind in (("modes.schema.json", "mode"),
+                               ("skills.schema.json", "skill")):
+            schema = json.loads((ROOT / "schemas" / filename).read_text())
+            self.assertNotIn("kind", schema["required"])
+            self.assertEqual(schema["properties"]["kind"]["const"], kind)
 
     def test_handoff_golden(self):
         gc.validate("handoff", _golden_handoff())
@@ -1002,6 +1060,51 @@ class TestNegativeCorpus(unittest.TestCase):
         doc["files"] = []
         with self.assertRaises(gc.ContractError):
             gc.validate("skill-contract", doc)
+
+    def test_contract_kind_preserves_v1_and_rejects_mismatch(self):
+        for schema_name, document, expected in (
+            ("mode-contract", _golden_mode_contract(), "mode"),
+            ("skill-contract", _golden_skill_contract(), "skill"),
+        ):
+            with self.subTest(schema=schema_name, mutation="legacy-missing"):
+                legacy = copy.deepcopy(document)
+                del legacy["kind"]
+                gc.validate(schema_name, legacy)
+            with self.subTest(schema=schema_name, mutation="wrong"):
+                wrong = copy.deepcopy(document)
+                wrong["kind"] = "skill" if expected == "mode" else "mode"
+                with self.assertRaisesRegex(
+                        gc.ContractError, f"expected '{expected}'"):
+                    gc.validate(schema_name, wrong)
+
+    def test_acceptance_plan_rejects_wrong_minimal_shape(self):
+        doc = _golden_acceptance_plan()
+        del doc["public_scenarios"][0]["type"]
+        with self.assertRaisesRegex(gc.ContractError, "missing required field 'type'"):
+            gc.validate("acceptance-plan", doc)
+
+    def test_acceptance_plan_rejects_whitespace_only_strings(self):
+        mutations = (
+            ("generation_id", lambda doc: doc.__setitem__("generation_id", " \t")),
+            ("candidate_base_revision", lambda doc: doc.__setitem__(
+                "candidate_base_revision", "\n")),
+            ("criterion", lambda doc: doc["requirements"][0].__setitem__(
+                "criterion", "   ")),
+            ("evidence", lambda doc: doc["requirements"][0].__setitem__(
+                "evidence", "\t")),
+            ("scenario id", lambda doc: doc["public_scenarios"][0].__setitem__(
+                "id", " \n")),
+            ("target", lambda doc: doc["public_scenarios"][0].__setitem__(
+                "target", "   ")),
+            ("gate", lambda doc: doc.__setitem__("gates", ["\t"])),
+            ("creator_limit", lambda doc: doc.__setitem__("creator_limit", " \n")),
+        )
+        for label, mutate in mutations:
+            with self.subTest(field=label):
+                doc = _golden_acceptance_plan()
+                mutate(doc)
+                with self.assertRaises(gc.ContractError):
+                    gc.validate("acceptance-plan", doc)
 
     # -- Unknown schema name ------------------------------------------------
 
