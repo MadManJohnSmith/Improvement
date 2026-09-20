@@ -2,14 +2,16 @@
 """Bootstrap determinista para generación de modos y skills específicos.
 
 Subcomandos:
-    install     Preflight, crear run, snapshot, inventario, paquete Creator
+    install     Flujo completo: preflight, Creator, aceptación Host y activación
     accept      Solicitar validación Host de un paquete generado (invocado por Creator)
+    finalize    Reanudar aceptación Host y activar si el veredicto es ACTIVE
+    verify-acceptance  Consultar veredicto, evidencia y despliegue activo
     update      Regenerar sobre base material cambiada
     uninstall   Retirar modos/skills gestionados sin tocar producto
     purge-data  Eliminar datos de runs (destructivo, separado, con confirmación)
 
-    python3 -B scripts/bootstrap.py install --project /ruta/proyecto
-    python3 -B scripts/bootstrap.py accept --workspace /ws --generated /run/generated
+    python3 -B scripts/bootstrap.py install --project /ruta/proyecto --launch-dsh
+    python3 -B scripts/bootstrap.py finalize --workspace /ws --generation-id gen-id
 """
 
 import argparse
@@ -301,11 +303,12 @@ def _check_dsh():
 # ---------------------------------------------------------------------------
 
 
-def _dispatch_creator_chain(result, run_dir, launch_dsh):
-    """Chain the Creator dispatch into an install result (fail-closed).
+def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
+    """Dispatch Creator, then let deterministic Host code accept and activate.
 
-    A dispatch failure keeps the run created/recoverable; the error is
-    reported in the result instead of propagating.
+    Creator remains unable to self-approve: it can only produce GENERATED and
+    request acceptance. The Host-side chain runs after that session returns.
+    Failures remain recoverable and are reported without granting activation.
     """
     sys.path.insert(0, str(FRAMEWORK / "scripts"))
     import creator_client as cc
@@ -326,9 +329,27 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh):
     else:
         result["message"] += f"; Creator: {creator_state}"
 
+    if finalize_host and creator_state == "GENERATED":
+        workspace = Path(run_dir).parent.parent
+        try:
+            result["host"] = finalize(
+                workspace, generation_id=result.get("generation_id"))
+        except Exception as e:
+            result["host"] = {
+                "result": "FINALIZATION_FAILED",
+                "generation_id": result.get("generation_id"),
+                "error": str(e),
+                "message": "Finalización Host falló; run recuperable",
+            }
+        host_state = result["host"].get("result")
+        host_detail = result["host"].get("message") or result["host"].get("error")
+        result["message"] += f"; Host: {host_state}"
+        if host_detail:
+            result["message"] += f" ({host_detail})"
+
 
 def install(project, workspace, *, budget=None, dispatch_creator=False,
-            launch_dsh=False):
+            launch_dsh=False, finalize_host=True):
     """Create a new generation run from preflight through Creator package.
 
     Idempotent: if an identical run already exists, returns its reference.
@@ -383,7 +404,8 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                     if dispatch_creator and status in ("CREATED", "GENERATING"):
                         # Only these states are resumable by run_creator;
                         # dispatching others would wrongly retain the run.
-                        _dispatch_creator_chain(result, run_path, launch_dsh)
+                        _dispatch_creator_chain(
+                            result, run_path, launch_dsh, finalize_host)
                     return result
                 if status == "ACTIVE":
                     project_git = _git_info(project)
@@ -595,7 +617,8 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     }
 
     if dispatch_creator:
-        _dispatch_creator_chain(result, run_dir, launch_dsh)
+        _dispatch_creator_chain(
+            result, run_dir, launch_dsh, finalize_host)
     return result
 
 
@@ -700,6 +723,27 @@ def accept(workspace, generated_dir):
 # ---------------------------------------------------------------------------
 
 
+def _resolve_run_dir(workspace, generation_id=None):
+    """Resolve a run directory: explicit id, active pointer, or newest run."""
+    runs_dir = workspace / RUN_DIR_NAME
+    if not runs_dir.is_dir():
+        raise ValueError("No hay runs de generación en el workspace")
+    if generation_id:
+        target = runs_dir / generation_id
+        if not target.is_dir():
+            raise ValueError(f"Run no encontrado: {generation_id}")
+        return target
+    active_pointer = workspace / ".dsh-managed" / "ACTIVE"
+    if active_pointer.is_file():
+        active_id = active_pointer.read_text(encoding="utf-8").strip()
+        if active_id and (runs_dir / active_id).is_dir():
+            return runs_dir / active_id
+    runs = [p for p in runs_dir.iterdir() if p.is_dir() and (p / "run.json").is_file()]
+    if not runs:
+        raise ValueError("No se encontraron ejecuciones válidas")
+    return max(runs, key=lambda p: p.stat().st_mtime)
+
+
 def verify_acceptance(workspace, generation_id=None):
     """Verify acceptance state of a generation run or active deployment.
 
@@ -711,27 +755,7 @@ def verify_acceptance(workspace, generation_id=None):
     if not workspace.is_dir():
         raise ValueError(f"Workspace no existe: {workspace}")
 
-    runs_dir = workspace / RUN_DIR_NAME
-    if not runs_dir.is_dir():
-        raise ValueError("No hay runs de generación en el workspace")
-
-    target_run_dir = None
-    if generation_id:
-        target_run_dir = runs_dir / generation_id
-        if not target_run_dir.is_dir():
-            raise ValueError(f"Run no encontrado: {generation_id}")
-    else:
-        active_pointer = workspace / ".dsh-managed" / "ACTIVE"
-        if active_pointer.is_file():
-            active_id = active_pointer.read_text(encoding="utf-8").strip()
-            if active_id and (runs_dir / active_id).is_dir():
-                target_run_dir = runs_dir / active_id
-
-        if target_run_dir is None:
-            runs = [p for p in runs_dir.iterdir() if p.is_dir() and (p / "run.json").is_file()]
-            if not runs:
-                raise ValueError("No se encontraron ejecuciones válidas")
-            target_run_dir = max(runs, key=lambda p: p.stat().st_mtime)
+    target_run_dir = _resolve_run_dir(workspace, generation_id)
 
     run_json = _read_json(target_run_dir / "run.json")
     gen_id = run_json.get("generation_id", target_run_dir.name)
@@ -763,6 +787,90 @@ def verify_acceptance(workspace, generation_id=None):
         "evidence_ledger_entries": ledger_entries,
         "acceptance_request_present": (target_run_dir / "acceptance" / "request.json").is_file(),
         "verified_at": _now_iso(),
+    }
+
+
+def finalize(workspace, generation_id=None):
+    """Run Host acceptance and activate only an explicit ACTIVE verdict.
+
+    This is Host-side deterministic code, never part of the Creator session.
+    RETAINED pauses cleanly with evidence and no installation. Existing
+    verdicts and byte-identical installations are reused idempotently.
+    """
+    workspace = checked(workspace)
+    if workspace.name == RUN_DIR_NAME:
+        workspace = workspace.parent
+    if not workspace.is_dir():
+        raise ValueError(f"Workspace no existe: {workspace}")
+    run_dir = _resolve_run_dir(workspace, generation_id)
+    run_doc = _read_json(run_dir / "run.json")
+    gen_id = run_doc.get("generation_id", run_dir.name)
+    generated = run_dir / "generated"
+    request_path = run_dir / "acceptance" / "request.json"
+    verdict_path = run_dir / "acceptance" / "host-verdict.json"
+
+    if not generated.is_dir():
+        raise ValueError(f"generated/ ausente: {generated}")
+    if not request_path.is_file():
+        raise ValueError(
+            "Solicitud de aceptación ausente: Creator debe ejecutar accept antes de finalizar")
+
+    if verdict_path.is_file():
+        verdict = _read_json(verdict_path)
+    else:
+        import acceptance
+        verdict = acceptance.accept(run_dir)
+
+    verdict_name = verdict.get("verdict")
+    if verdict.get("generation_id") not in (None, gen_id):
+        raise ValueError("host-verdict corresponde a otra generación")
+    if verdict_name == "RETAINED":
+        return {
+            "result": "RETAINED",
+            "generation_id": gen_id,
+            "verdict": verdict,
+            "is_active_deployment": False,
+            "message": (
+                "Host retuvo el candidato; no se instaló nada. Revisar "
+                "acceptance/host-verdict.json y evidence-ledger.jsonl"),
+        }
+    if verdict_name != "ACTIVE":
+        raise ValueError(f"Veredicto Host no activable: {verdict_name!r}")
+
+    import transaction
+    activation = transaction.install(
+        workspace, generated, gen_id, host_verdict=verdict_path)
+
+    run_path = run_dir / "run.json"
+    current = _read_json(run_path)
+    if current.get("status") != "ACTIVE":
+        current["status"] = "ACTIVE"
+        current["updated_at"] = _now_iso()
+        run_path.unlink()
+        _write_json(run_path, current)
+
+    checkpoint_path = run_dir / "checkpoint.json"
+    if checkpoint_path.is_file():
+        checkpoint_path.unlink()
+    _write_json(checkpoint_path, {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": gen_id,
+        "phase": "ACTIVE",
+        "completed_phases": [
+            "preflight", "snapshot", "inventory", "skills",
+            "creator_call", "generation", "validation", "backup",
+            "acceptance", "activation",
+        ],
+        "pending_phases": [],
+        "timestamp": _now_iso(),
+        "resumable": False,
+    })
+    return {
+        "result": activation.get("result", "ACTIVE"),
+        "generation_id": gen_id,
+        "activation": activation,
+        "is_active_deployment": True,
+        "message": "Host aceptó y activó el paquete transaccionalmente",
     }
 
 
@@ -953,6 +1061,8 @@ def main():
                                 "(la supervisión puede durar hasta el presupuesto)")
     p_install.add_argument("--launch-dsh", action="store_true",
                            help="Arrancar 'dsh web' como hijo si no hay sesión autenticada")
+    p_install.add_argument("--no-finalize", action="store_true",
+                           help="No encadenar aceptación Host ni activación tras Creator")
 
     # accept
     p_accept = sub.add_parser("accept",
@@ -967,6 +1077,13 @@ def main():
     p_verify.add_argument("--workspace", required=True)
     p_verify.add_argument("--generation-id", default=None,
                           help="ID de generación opcional (default: activa o última)")
+
+    # finalize
+    p_finalize = sub.add_parser(
+        "finalize", help="Ejecutar aceptación Host y activar si el veredicto es ACTIVE")
+    p_finalize.add_argument("--workspace", required=True)
+    p_finalize.add_argument("--generation-id", default=None,
+                            help="ID de generación opcional (default: activa o última)")
 
     # update
     p_update = sub.add_parser("update", help="Regenerar sobre base cambiada")
@@ -997,7 +1114,8 @@ def main():
             )
             result = install(project, workspace,
                              dispatch_creator=not args.no_dispatch,
-                             launch_dsh=args.launch_dsh)
+                             launch_dsh=args.launch_dsh,
+                             finalize_host=not args.no_finalize)
 
         elif args.command == "accept":
             result = accept(Path(args.workspace).resolve(),
@@ -1005,6 +1123,12 @@ def main():
 
         elif args.command == "verify-acceptance":
             result = verify_acceptance(
+                Path(args.workspace).resolve(),
+                generation_id=args.generation_id,
+            )
+
+        elif args.command == "finalize":
+            result = finalize(
                 Path(args.workspace).resolve(),
                 generation_id=args.generation_id,
             )
