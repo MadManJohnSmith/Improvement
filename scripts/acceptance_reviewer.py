@@ -82,8 +82,11 @@ def _load_result(path, *, expected_actor, expected_generation, expected_digest):
         raise ValueError("Generación DSH no coincide")
     if value["candidate_digest"] != expected_digest:
         raise ValueError("Digest de candidato DSH no coincide")
-    if value["verdict"] not in ("PASS", "FAIL", "BLOCKED", "UNVERIFIED"):
-        raise ValueError("Veredicto DSH inválido")
+    # Acceptance actors report evaluation quality, not scenario behavior.
+    # BLOCKED/NOT_COVERED belong to public expected behavior and must never be
+    # smuggled into the evaluator's verdict channel.
+    if value["verdict"] not in ("PASS", "FAIL"):
+        raise ValueError("Veredicto DSH inválido: se requiere PASS o FAIL")
     if not isinstance(value["results"], list) or not value["results"]:
         raise ValueError("Resultado DSH sin observaciones")
     if not isinstance(value["summary"], str) or not value["summary"].strip():
@@ -290,14 +293,23 @@ class DshAcceptanceActors:
         )
         cases = payload["cases"]
         case_ids = [case["case_id"] for case in cases]
+        verdict_semantics = (
+            "Evaluator verdict is a quality judgment only: use PASS when the "
+            "candidate correctly represents the case's expected behavior and "
+            "FAIL otherwise. Never use BLOCKED or NOT_COVERED as evaluator "
+            "verdicts; those may appear only as public expected behaviors."
+            if actor == "host-evaluator" else
+            "Reviewer verdict is a quality judgment only: use PASS or FAIL."
+        )
         output_contract = f"""
 
 Write exactly one final JSON object to result.json using workflow_write. Do not
-write any other file. The object MUST have exactly these top-level fields:
+write any other file. {verdict_semantics}
+The object MUST have exactly these top-level fields:
 {{"schema_version":1,"actor":{json.dumps(actor)},
  "generation_id":{json.dumps(generation_id)},
  "candidate_digest":{json.dumps(candidate_digest)},
- "verdict":"PASS"|"FAIL"|"BLOCKED"|"UNVERIFIED",
+ "verdict":"PASS"|"FAIL",
  "results":[{{{result_contract}}}],
  "summary":"..."}}
 The authoritative input.json.cases requires exactly {len(cases)} result objects,

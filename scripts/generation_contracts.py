@@ -36,6 +36,10 @@ def _is_nonempty_str(v):
     return isinstance(v, str) and len(v) > 0
 
 
+def _is_nonblank_str(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
 def _is_iso_datetime(v):
     """Loose check for ISO 8601 date-time string."""
     if not isinstance(v, str):
@@ -106,6 +110,14 @@ VERIFICATION_STATES = frozenset([
     "IMPLEMENTED_NOT_APPLIED",
 ])
 
+HOLDOUT_FAMILIES = frozenset([
+    "prompt-injection-in-repository", "ipc-argument-drift",
+    "persistent-data-without-backup", "third-attempt-denial",
+    "stale-candidate-evidence",
+])
+
+CONTRACT_KINDS = frozenset(["mode", "skill"])
+
 # ---------------------------------------------------------------------------
 # Handoff event types
 # ---------------------------------------------------------------------------
@@ -171,8 +183,12 @@ def _require_type(value, expected_type, field_name):
 
 
 def _require_enum(value, allowed, field_name):
+    try:
+        accepted = value in allowed
+    except TypeError:
+        accepted = False
     _require(
-        value in allowed,
+        accepted,
         f"{field_name}: {value!r} not in {sorted(allowed)}",
     )
 
@@ -504,6 +520,85 @@ def validate_scenario(doc):
     if "verification_state" in doc:
         _require_enum(doc["verification_state"], VERIFICATION_STATES,
                       f"{schema}.verification_state")
+
+
+def validate_acceptance_plan(doc):
+    """Validate generated/acceptance-plan.json using the current Host shape."""
+    schema = "acceptance-plan"
+    _require_type(doc, dict, schema)
+    required = [
+        "schema_version", "generation_id", "requirements",
+        "public_scenarios", "holdout_families", "gates", "creator_limit",
+    ]
+    known = required + ["status", "candidate_base_revision"]
+    _require_fields(doc, required, schema)
+    _reject_unknown(doc, known, schema)
+    _require(doc["schema_version"] == SCHEMA_VERSION,
+             f"{schema}: unsupported schema_version")
+    _require(_is_nonblank_str(doc["generation_id"]),
+             f"{schema}.generation_id must be non-empty")
+    if "status" in doc:
+        _require(doc["status"] == "GENERATED",
+                 f"{schema}.status must be GENERATED")
+    if "candidate_base_revision" in doc:
+        _require(_is_nonblank_str(doc["candidate_base_revision"]),
+                 f"{schema}.candidate_base_revision must be non-empty")
+
+    requirements = doc["requirements"]
+    _require_type(requirements, list, f"{schema}.requirements")
+    _require(bool(requirements), f"{schema}.requirements must not be empty")
+    requirement_ids = set()
+    for i, requirement in enumerate(requirements):
+        prefix = f"{schema}.requirements[{i}]"
+        _require_type(requirement, dict, prefix)
+        fields = ["id", "criterion", "evidence"]
+        _require_fields(requirement, fields, prefix)
+        _reject_unknown(requirement, fields, prefix)
+        requirement_id = requirement["id"]
+        _require(isinstance(requirement_id, str)
+                 and bool(_SR_RE.fullmatch(requirement_id)),
+                 f"{prefix}.id must match SR-N")
+        _require(requirement_id not in requirement_ids,
+                 f"{schema}: duplicate requirement {requirement_id!r}")
+        requirement_ids.add(requirement_id)
+        for field in ("criterion", "evidence"):
+            _require(_is_nonblank_str(requirement[field]),
+                     f"{prefix}.{field} must be non-empty")
+
+    scenarios = doc["public_scenarios"]
+    _require_type(scenarios, list, f"{schema}.public_scenarios")
+    _require(bool(scenarios), f"{schema}.public_scenarios must not be empty")
+    scenario_ids = set()
+    for i, scenario in enumerate(scenarios):
+        prefix = f"{schema}.public_scenarios[{i}]"
+        _require_type(scenario, dict, prefix)
+        fields = ["id", "type", "target", "expected"]
+        _require_fields(scenario, fields, prefix)
+        _reject_unknown(scenario, fields, prefix)
+        _require(_is_nonblank_str(scenario["id"]), f"{prefix}.id")
+        _require(scenario["id"] not in scenario_ids,
+                 f"{schema}: duplicate scenario id {scenario['id']!r}")
+        scenario_ids.add(scenario["id"])
+        _require_enum(scenario["type"], SCENARIO_TYPES, f"{prefix}.type")
+        _require(_is_nonblank_str(scenario["target"]), f"{prefix}.target")
+        _require_enum(scenario["expected"], SCENARIO_VERDICTS,
+                      f"{prefix}.expected")
+
+    families = doc["holdout_families"]
+    _require_type(families, list, f"{schema}.holdout_families")
+    _require(bool(families), f"{schema}.holdout_families must not be empty")
+    seen_families = set()
+    for i, family in enumerate(families):
+        _require_enum(family, HOLDOUT_FAMILIES,
+                      f"{schema}.holdout_families[{i}]")
+        _require(family not in seen_families,
+                 f"{schema}.holdout_families must not contain duplicates")
+        seen_families.add(family)
+    _require(isinstance(doc["gates"], list) and bool(doc["gates"])
+             and all(_is_nonblank_str(gate) for gate in doc["gates"]),
+             f"{schema}.gates must be a non-empty string array")
+    _require(_is_nonblank_str(doc["creator_limit"]),
+             f"{schema}.creator_limit must be non-empty")
 
 
 def validate_handoff(doc):
@@ -983,7 +1078,7 @@ def validate_mode_contract(doc):
         "scenarios", "provenance",
     ]
     known = required + [
-        "reuse_justification", "reuse_reference", "sources", "rollback",
+        "kind", "reuse_justification", "reuse_reference", "sources", "rollback",
         "migration", "sr_criteria", "stop_conditions", "evidence",
         "entrypoint", "progressive_disclosure",
     ]
@@ -991,6 +1086,9 @@ def validate_mode_contract(doc):
     _reject_unknown(doc, known, schema)
     _require(doc["schema_version"] == SCHEMA_VERSION,
              f"{schema}: unsupported schema_version")
+    if "kind" in doc:
+        _require(doc["kind"] == "mode",
+                 f"{schema}.kind: expected 'mode', got {doc['kind']!r}")
     _require(_is_nonempty_str(doc["name"]), f"{schema}.name")
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
                   f"{schema}.reuse_source")
@@ -1034,7 +1132,7 @@ def validate_skill_contract(doc):
         "forbidden_capabilities", "files", "behavior_test", "provenance",
     ]
     known = required + [
-        "evidence", "reuse_justification", "reuse_reference", "replaces",
+        "kind", "evidence", "reuse_justification", "reuse_reference", "replaces",
         "prohibited_tools", "hot_paths", "load_test",
         "activation_criteria", "invariants", "anti_goals",
     ]
@@ -1042,6 +1140,9 @@ def validate_skill_contract(doc):
     _reject_unknown(doc, known, schema)
     _require(doc["schema_version"] == SCHEMA_VERSION,
              f"{schema}: unsupported schema_version")
+    if "kind" in doc:
+        _require(doc["kind"] == "skill",
+                 f"{schema}.kind: expected 'skill', got {doc['kind']!r}")
     _require(_is_nonempty_str(doc["name"]), f"{schema}.name")
     _require(_is_nonempty_str(doc["motive"]), f"{schema}.motive")
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
@@ -1222,6 +1323,7 @@ VALIDATORS = {
     "instructions-index": validate_instructions_index,
     "capabilities": validate_capabilities,
     "scenario": validate_scenario,
+    "acceptance-plan": validate_acceptance_plan,
     "handoff": validate_handoff,
     "drift": validate_drift,
     "backup": validate_backup,

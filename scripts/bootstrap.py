@@ -65,6 +65,34 @@ def _write_json(path, value):
         stream.write("\n")
 
 
+def _replace_json(path, value):
+    """Atomically replace Host-owned JSON and reject symlink destinations."""
+    path = Path(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError(f"Artefacto Host es enlace simbólico: {path}")
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _read_json(path):
     p = Path(path)
     if not p.is_file() or p.is_symlink():
@@ -329,7 +357,8 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
     else:
         result["message"] += f"; Creator: {creator_state}"
 
-    if finalize_host and creator_state == "GENERATED":
+    if finalize_host and creator_state in (
+            "GENERATED", "READY_FOR_HOST_REJECTION"):
         workspace = Path(run_dir).parent.parent
         try:
             result["host"] = finalize(
@@ -628,7 +657,75 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
 # ---------------------------------------------------------------------------
 
 
-def accept(workspace, generated_dir):
+def _acceptance_request(run_dir, generated, *, source):
+    """Build a request bound to the current run and validated manifest."""
+    run_dir, generated = Path(run_dir), Path(generated)
+    manifest_path = generated / "generation-manifest.json"
+    manifest = _read_json(manifest_path)
+    run_doc = _read_json(run_dir / "run.json")
+    gen_id = run_doc.get("generation_id")
+    if manifest.get("generation_id") != gen_id:
+        raise ValueError("generation-manifest corresponde a otra generación")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("generation-manifest artifacts inválido")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": gen_id,
+        "manifest_digest": _digest_file(manifest_path),
+        "artifact_count": len(artifacts),
+        "timestamp": _now_iso(),
+        "source": source,
+    }
+
+
+def _validate_acceptance_request(path, run_dir, generated):
+    """Validate strict request shape and bind it to the current manifest."""
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"Solicitud de aceptación ausente o symlink: {path}")
+    request = _read_json(path)
+    required = {
+        "schema_version", "generation_id", "manifest_digest",
+        "artifact_count", "timestamp", "source",
+    }
+    if set(request) != required:
+        raise ValueError("Solicitud de aceptación tiene campos inválidos")
+    if request["schema_version"] != SCHEMA_VERSION:
+        raise ValueError("Solicitud de aceptación schema_version inválida")
+    expected = _acceptance_request(run_dir, generated, source=request["source"])
+    for field in ("generation_id", "manifest_digest", "artifact_count"):
+        if request[field] != expected[field]:
+            raise ValueError(
+                f"Solicitud de aceptación obsoleta: {field} no coincide")
+    if request["source"] not in ("creator", "host"):
+        raise ValueError("Solicitud de aceptación source inválido")
+    if not isinstance(request["timestamp"], str) or not request["timestamp"]:
+        raise ValueError("Solicitud de aceptación timestamp inválido")
+    return request
+
+
+def _ensure_acceptance_request(workspace, run_dir, generated, *, regenerate=False):
+    """Validate a request or regenerate the Host-owned copy when stale."""
+    request_path = Path(run_dir) / "acceptance" / "request.json"
+    if request_path.is_symlink():
+        raise ValueError(
+            f"Solicitud de aceptación es enlace simbólico: {request_path}")
+    regenerated = regenerate
+    try:
+        if regenerate:
+            raise ValueError("reevaluate requiere solicitud Host fresca")
+        request = _validate_acceptance_request(request_path, run_dir, generated)
+    except ValueError:
+        # Reuse accept() for full manifest/hash/symlink validation. A symlink
+        # destination remains fail-closed in _replace_json rather than followed.
+        accept(workspace, generated, source="host")
+        request = _validate_acceptance_request(request_path, run_dir, generated)
+        regenerated = True
+    return request, regenerated
+
+
+def accept(workspace, generated_dir, *, source="creator"):
     """Request Host validation of a generated package.
 
     Called by Creator after generation is complete. This only submits
@@ -676,15 +773,10 @@ def accept(workspace, generated_dir):
     run_doc = _read_json(run_json_path)
     gen_id = run_doc.get("generation_id")
 
-    # Create acceptance request
-    _write_json(run_dir / "acceptance" / "request.json", {
-        "schema_version": SCHEMA_VERSION,
-        "generation_id": gen_id,
-        "manifest_digest": _digest_file(manifest_path),
-        "artifact_count": len(manifest["artifacts"]),
-        "timestamp": _now_iso(),
-        "source": "creator",
-    })
+    # Create or replace the request. Repaired candidates may legitimately have a
+    # prior request for the same generation, but it must never survive unbound.
+    request_doc = _acceptance_request(run_dir, generated, source=source)
+    _replace_json(run_dir / "acceptance" / "request.json", request_doc)
 
     # Update run status to VALIDATING
     run_doc["status"] = "VALIDATING"
@@ -713,8 +805,8 @@ def accept(workspace, generated_dir):
     return {
         "result": "ACCEPT_REQUESTED",
         "generation_id": gen_id,
-        "manifest_digest": _digest_file(manifest_path),
-        "artifact_count": len(manifest["artifacts"]),
+        "manifest_digest": request_doc["manifest_digest"],
+        "artifact_count": request_doc["artifact_count"],
         "message": "Solicitud de aceptación enviada al Host",
     }
 
@@ -763,7 +855,46 @@ def verify_acceptance(workspace, generation_id=None):
     status = run_json.get("status", "UNKNOWN")
 
     verdict_path = target_run_dir / "acceptance" / "host-verdict.json"
-    verdict_data = _read_json(verdict_path) if verdict_path.is_file() else None
+    retained_path = target_run_dir / "acceptance" / "static-retained.json"
+    verdict_files = [
+        ("static-retained", retained_path),
+        ("host-verdict", verdict_path),
+    ]
+    present_verdicts = [item for item in verdict_files if item[1].is_file()]
+    if len(present_verdicts) > 1:
+        raise ValueError(
+            "Aceptación ambigua: existen static-retained y host-verdict")
+
+    verdict_type = None
+    verdict_data = None
+    verdict_stage = None
+    verdict_reason = None
+    verdict_binding = None
+    if present_verdicts:
+        import acceptance
+        verdict_type, selected_path = present_verdicts[0]
+        if verdict_type == "static-retained":
+            verdict_data = acceptance.validate_early_retained(
+                selected_path, target_run_dir / "generated",
+                generation_id=gen_id)
+            verdict_stage = verdict_data["stage"]
+            verdict_reason = verdict_data["reason"]
+            verdict_binding = {
+                "candidate_digest": verdict_data["candidate_digest"],
+                "manifest_digest": verdict_data["manifest_digest"],
+                "validation_summary": verdict_data["validation_summary"],
+            }
+        else:
+            verdict_data = acceptance.validate_host_verdict(
+                selected_path, target_run_dir / "generated",
+                generation_id=gen_id)
+            verdict_stage = "HOST_ACCEPTANCE"
+            verdict_binding = {
+                key: verdict_data[key] for key in (
+                    "candidate_digest", "manifest_digest",
+                    "public_results_digest", "holdout_results_digest",
+                    "review_digest", "host_policy_digest")
+            }
 
     val_path = target_run_dir / "validation" / "summary.json"
     val_data = _read_json(val_path) if val_path.is_file() else None
@@ -784,6 +915,10 @@ def verify_acceptance(workspace, generation_id=None):
         "run_status": status,
         "is_active_deployment": is_active,
         "host_verdict": verdict_data.get("verdict") if verdict_data else None,
+        "verdict_type": verdict_type,
+        "stage": verdict_stage,
+        "reason": verdict_reason,
+        "binding": verdict_binding,
         "static_validation_passed": val_data.get("passed") if val_data else None,
         "evidence_ledger_entries": ledger_entries,
         "acceptance_request_present": (target_run_dir / "acceptance" / "request.json").is_file(),
@@ -810,13 +945,14 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
     generated = run_dir / "generated"
     request_path = run_dir / "acceptance" / "request.json"
     verdict_path = run_dir / "acceptance" / "host-verdict.json"
+    retained_path = run_dir / "acceptance" / "static-retained.json"
 
     if reevaluate:
         host_artifacts = [
             run_dir / "acceptance" / name for name in (
-                "host-verdict.json", "public-results.json",
-                "holdout-results.json", "independent-review.json",
-                "evidence-ledger.jsonl")]
+                "host-verdict.json", "static-retained.json",
+                "public-results.json", "holdout-results.json",
+                "independent-review.json", "evidence-ledger.jsonl")]
         host_artifacts += [
             run_dir / "validation" / name for name in (
                 "summary.json", "report.json")]
@@ -832,27 +968,66 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
 
     if not generated.is_dir():
         raise ValueError(f"generated/ ausente: {generated}")
-    if not request_path.is_file():
-        # Creator is not an authority boundary for this mechanical transition.
-        # Re-run the same Host validation/request function deterministically so
-        # a model omitting the command cannot strand a valid package.
-        accept(workspace, generated)
-    if not request_path.is_file():
-        raise ValueError("Host no pudo materializar la solicitud de aceptación")
+    request_input_error = None
+    request_regenerated = False
+    if request_path.is_symlink():
+        raise ValueError(
+            f"Solicitud de aceptación es enlace simbólico: {request_path}")
+    try:
+        _request, request_regenerated = _ensure_acceptance_request(
+            workspace, run_dir, generated, regenerate=reevaluate)
+    except ValueError as error:
+        # Invalid candidate input is handed to static validation so the Host can
+        # retain it with fresh evidence. Request tampering itself remains
+        # harmless because neither stale request nor stale verdict is consumed.
+        request_input_error = error
+    if request_input_error is not None:
+        for artifact in (retained_path, verdict_path):
+            if artifact.is_symlink():
+                raise ValueError(f"Artefacto Host inesperado es symlink: {artifact}")
+            if artifact.is_file():
+                artifact.unlink()
+    elif request_regenerated and not reevaluate:
+        # A repaired candidate or stale request invalidates all earlier Host
+        # evidence even when finalize was invoked without --reevaluate.
+        for artifact in (retained_path, verdict_path):
+            if artifact.is_symlink():
+                raise ValueError(f"Artefacto Host inesperado es symlink: {artifact}")
+            if artifact.is_file():
+                artifact.unlink()
 
     import acceptance
-    if verdict_path.is_file():
+    early_retained = False
+    if retained_path.is_file():
+        try:
+            verdict = acceptance.validate_early_retained(
+                retained_path, generated, generation_id=gen_id)
+            early_retained = True
+        except ValueError:
+            # A retained candidate is explicitly repairable. Its old retention
+            # record is not an authority once any bound input/report changed.
+            retained_path.unlink()
+            verdict = acceptance.accept(run_dir, launch_dsh=launch_dsh)
+    elif verdict_path.is_file():
         verdict = acceptance.validate_host_verdict(
             verdict_path, generated, generation_id=gen_id)
     else:
         verdict = acceptance.accept(run_dir, launch_dsh=launch_dsh)
-        verdict = acceptance.validate_host_verdict(
-            verdict_path, generated, generation_id=gen_id)
+        if retained_path.is_file():
+            verdict = acceptance.validate_early_retained(
+                retained_path, generated, generation_id=gen_id)
+            early_retained = True
+        else:
+            verdict = acceptance.validate_host_verdict(
+                verdict_path, generated, generation_id=gen_id)
 
     verdict_name = verdict.get("verdict")
     if verdict.get("generation_id") not in (None, gen_id):
         raise ValueError("host-verdict corresponde a otra generación")
     if verdict_name == "RETAINED":
+        evidence = (
+            "acceptance/static-retained.json" if early_retained else
+            "acceptance/host-verdict.json y evidence-ledger.jsonl")
         return {
             "result": "RETAINED",
             "generation_id": gen_id,
@@ -860,7 +1035,7 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
             "is_active_deployment": False,
             "message": (
                 "Host retuvo el candidato; no se instaló nada. Revisar "
-                "acceptance/host-verdict.json y evidence-ledger.jsonl"),
+                f"{evidence}"),
         }
     if verdict_name != "ACTIVE":
         raise ValueError(f"Veredicto Host no activable: {verdict_name!r}")

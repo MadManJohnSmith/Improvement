@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
@@ -23,16 +24,47 @@ from onboard import checked
 SCHEMA_VERSION = 1
 
 
+def _digest_file(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _candidate_digest(root):
+    """Digest every candidate entry, including symlinks rejected by validation."""
+    root = Path(root)
+    entries = []
+    for path in sorted(root.rglob("*")):
+        relative = str(path.relative_to(root))
+        if path.is_symlink():
+            entries.append({
+                "path": relative,
+                "kind": "symlink",
+                "target": os.readlink(path),
+            })
+        elif path.is_file():
+            entries.append({
+                "path": relative,
+                "kind": "file",
+                "sha256": _digest_file(path),
+                "size_bytes": path.stat().st_size,
+            })
+    return hashlib.sha256(json.dumps(
+        entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Validation layers
 # ---------------------------------------------------------------------------
 
 
 class ValidationReport:
-    """Accumulates validation results across layers."""
+    """Accumulates results bound to one generation and candidate snapshot."""
 
-    def __init__(self, generation_id):
+    def __init__(self, generation_id, *, candidate_digest=None,
+                 manifest_digest=None):
         self.generation_id = generation_id
+        self.candidate_digest = candidate_digest
+        self.manifest_digest = manifest_digest
         self.layers = {}
         self.passed = True
         self.verdict = "READY_FOR_ACCEPTANCE"
@@ -50,6 +82,8 @@ class ValidationReport:
         return {
             "schema_version": SCHEMA_VERSION,
             "generation_id": self.generation_id,
+            "candidate_digest": self.candidate_digest,
+            "manifest_digest": self.manifest_digest,
             "verdict": self.verdict,
             "passed": self.passed,
             "layers": self.layers,
@@ -72,11 +106,22 @@ def validate_package(generated_dir, *, run_dir=None):
         raise ValueError("generation-manifest.json es enlace simbólico")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    gen_id = manifest.get("generation_id", "unknown")
-    report = ValidationReport(gen_id)
+    manifest_gen_id = manifest.get("generation_id", "unknown")
+    expected_gen_id = manifest_gen_id
+    if run_dir is not None:
+        run_path = Path(run_dir) / "run.json"
+        if run_path.is_file() and not run_path.is_symlink():
+            run_doc = json.loads(run_path.read_text(encoding="utf-8"))
+            expected_gen_id = run_doc.get("generation_id", manifest_gen_id)
+    report = ValidationReport(
+        expected_gen_id,
+        candidate_digest=_candidate_digest(generated),
+        manifest_digest=_digest_file(manifest_path),
+    )
 
-    # Layer 1: Schema/version/unknown fields
-    _validate_layer_schema(report, manifest)
+    # Layer 1: Schema/version/unknown fields, including acceptance-plan early
+    _validate_layer_schema(
+        report, manifest, generated, expected_generation=expected_gen_id)
 
     # Layer 2: Manifest exhaustivo, hashes, file types, paths, symlinks
     _validate_layer_manifest(report, manifest, generated)
@@ -113,13 +158,30 @@ def validate_package(generated_dir, *, run_dir=None):
 # ---------------------------------------------------------------------------
 
 
-def _validate_layer_schema(report, manifest):
-    """Layer 1: Schema validation with unknown field rejection."""
+def _validate_layer_schema(report, manifest, generated,
+                           expected_generation=None):
+    """Layer 1: validate manifest and acceptance plan before later layers."""
     issues = []
     try:
         gc.validate("generation-manifest", manifest)
     except gc.ContractError as e:
         issues.append(str(e))
+    if (expected_generation is not None
+            and manifest.get("generation_id") != expected_generation):
+        issues.append("generation-manifest corresponde a otra generación")
+
+    plan_path = generated / "acceptance-plan.json"
+    if not plan_path.is_file() or plan_path.is_symlink():
+        issues.append("acceptance-plan.json faltante o enlace simbólico")
+    else:
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            gc.validate("acceptance-plan", plan)
+            if plan.get("generation_id") != manifest.get("generation_id"):
+                issues.append(
+                    "acceptance-plan.generation_id no coincide con el manifest")
+        except (OSError, UnicodeError, ValueError, gc.ContractError) as e:
+            issues.append(f"acceptance-plan.json inválido: {e}")
     report.add_layer("schema", not issues, issues)
 
 
@@ -141,12 +203,17 @@ def _validate_layer_manifest(report, manifest, generated):
     except gc.ContractError as e:
         issues.append(str(e))
 
-    # Check path safety on all artifacts
+    # Check path safety and semantic artifact typing on all artifacts.
     for art in manifest.get("artifacts", []):
+        path = art.get("path", "")
         try:
-            gc.check_path_safety(art.get("path", ""))
+            gc.check_path_safety(path)
         except gc.ContractError as e:
             issues.append(str(e))
+        if Path(path).name == "SKILL.md" and art.get("type") != "skill-entrypoint":
+            issues.append(
+                f"Manifest artifact {path}: SKILL.md must use type "
+                "'skill-entrypoint'")
 
     report.add_layer("manifest", not issues, issues)
 
@@ -216,6 +283,60 @@ def _load_run_library(run_dir):
     return library
 
 
+def _contract_kind(doc, rel):
+    """Resolve a contract kind without inspecting motive or other payload fields.
+
+    Explicit discriminators and unambiguous schema-v1 locations/names take
+    precedence.  Free-form legacy names under ``contracts/`` are classified only
+    by complete validation against both contract schemas.
+    """
+    kind = doc.get("kind")
+    if kind is not None:
+        if not isinstance(kind, str) or kind not in gc.CONTRACT_KINDS:
+            raise gc.ContractError(
+                f"contract.kind must be 'mode' or 'skill', got {kind!r}")
+        return kind
+
+    path = Path(rel)
+    parts = path.parts
+    name = path.name
+    if len(parts) >= 2 and parts[0] == "modes" and name == "mode.json":
+        return "mode"
+    if len(parts) >= 2 and parts[0] == "skills" and name in (
+            "skill.json", "skill-contract.json", "contract.json"):
+        return "skill"
+    if parts and parts[0] == "contracts":
+        if name == "mode-contract.json" or name.endswith(".mode.json"):
+            return "mode"
+        if name == "skill-contract.json" or name.endswith(".skill.json"):
+            return "skill"
+
+        matches = []
+        failures = {}
+        for candidate in sorted(gc.CONTRACT_KINDS):
+            try:
+                gc.validate(f"{candidate}-contract", doc)
+            except gc.ContractError as error:
+                failures[candidate] = str(error)
+            else:
+                matches.append(candidate)
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise gc.ContractError(
+                "contract.kind is missing and legacy contract validation is "
+                "ambiguous: both mode-contract and skill-contract validate")
+        raise gc.ContractError(
+            "contract.kind is missing and legacy contract validation matched "
+            "neither mode-contract nor skill-contract; "
+            f"mode-contract: {failures['mode']}; "
+            f"skill-contract: {failures['skill']}")
+
+    raise gc.ContractError(
+        "contract.kind is missing and the schema-v1 contract path/name is not "
+        "a recognized legacy mode or skill location")
+
+
 def _validate_layer_contracts(report, manifest, generated, run_dir=None):
     """Layer 4: Contracts, requirements, source provenance, reuse resolution."""
     issues = []
@@ -270,8 +391,9 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
             continue
         if not isinstance(doc, dict) or "reuse_source" not in doc:
             continue
-        schema_name = "skill-contract" if "motive" in doc else "mode-contract"
         try:
+            kind = _contract_kind(doc, rel)
+            schema_name = f"{kind}-contract"
             gc.validate(schema_name, doc)
         except gc.ContractError as e:
             issues.append(f"{rel}: {e}")
@@ -487,35 +609,68 @@ def _validate_layer_lifecycle(report, manifest):
 # ---------------------------------------------------------------------------
 
 
-def write_reports(report, run_dir):
-    """Write validation reports to the run's validation/ directory.
+def _atomic_write_json(path, value):
+    """Replace one Host report atomically without a stale/write-once window."""
+    path = Path(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError(f"Reporte de validación es enlace simbólico: {path}")
+    encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode(
+        "utf-8")
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
-    This is the only write operation, and it's called by the Host
-    orchestration, not by the validator.
-    """
+
+def write_reports(report, run_dir):
+    """Atomically replace the complete validation result for each evaluation."""
     val_dir = Path(run_dir) / "validation"
     val_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    binding = {
+        "generation_id": report.generation_id,
+        "candidate_digest": report.candidate_digest,
+        "manifest_digest": report.manifest_digest,
+    }
 
+    expected_names = set()
     for layer_name, layer_data in report.layers.items():
         report_path = val_dir / f"{layer_name}.json"
-        if not report_path.exists():
-            report_path.write_text(
-                json.dumps({
-                    "schema_version": SCHEMA_VERSION,
-                    "layer": layer_name,
-                    "passed": layer_data["passed"],
-                    "details": layer_data["details"],
-                }, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+        expected_names.add(report_path.name)
+        _atomic_write_json(report_path, {
+            "schema_version": SCHEMA_VERSION,
+            **binding,
+            "layer": layer_name,
+            "passed": layer_data["passed"],
+            "details": layer_data["details"],
+        })
 
-    summary_path = val_dir / "summary.json"
-    if not summary_path.exists():
-        summary_path.write_text(
-            json.dumps(report.to_dict(), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    # A previous evaluation may have had a different set of layers. Do not leave
+    # those stale Host reports beside the newly authoritative summary.
+    for report_path in val_dir.glob("*.json"):
+        if (report_path.name not in expected_names
+                and report_path.name != "summary.json"):
+            if report_path.is_symlink():
+                raise ValueError(
+                    f"Reporte de validación es enlace simbólico: {report_path}")
+            report_path.unlink()
 
+    _atomic_write_json(val_dir / "summary.json", report.to_dict())
     return report.to_dict()
 
 

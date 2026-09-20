@@ -90,8 +90,16 @@ def _nonempty_string(value):
 
 
 def _reject_unknown(value, allowed, label):
+    _require(isinstance(value, dict), f"{label}: expected object")
     unknown = set(value) - set(allowed)
     _require(not unknown, f"{label}: unknown fields {sorted(unknown)}")
+
+
+def _is_member(value, allowed):
+    try:
+        return value in allowed
+    except TypeError:
+        return False
 
 
 def _subject(input_value, label):
@@ -210,11 +218,11 @@ def validate_acceptance_plan(plan):
         _require(scenario["id"] not in scenario_ids,
                  f"acceptance-plan: duplicate scenario_id {scenario['id']!r}")
         scenario_ids.add(scenario["id"])
-        _require(scenario["type"] in SCENARIO_TYPES,
+        _require(_is_member(scenario["type"], SCENARIO_TYPES),
                  f"{label}.type: unknown scenario type {scenario['type']!r}")
         _require(_nonempty_string(scenario["target"]),
                  f"{label}.target must be nonempty")
-        _require(scenario["expected"] in SCENARIO_VERDICTS,
+        _require(_is_member(scenario["expected"], SCENARIO_VERDICTS),
                  f"{label}.expected is invalid")
 
     _require(isinstance(plan["gates"], list) and plan["gates"]
@@ -229,7 +237,7 @@ def validate_acceptance_plan(plan):
     for family in plan["holdout_families"]:
         _require(_nonempty_string(family),
                  "acceptance-plan.holdout_families entries must be strings")
-        _require(family in HOLDOUT_FAMILIES,
+        _require(_is_member(family, HOLDOUT_FAMILIES),
                  f"acceptance-plan: unknown holdout family {family!r}")
         _require(family not in families,
                  f"acceptance-plan: duplicate holdout family {family!r}")
@@ -471,7 +479,16 @@ subject. ALLOW means the candidate authorizes or accepts it, DENY means the
 candidate refuses or prohibits it, and UNRESOLVED means the supplied data does
 not establish either result. A more restrictive categorical prohibition
 satisfies a denial case. Do not require support that would exist only under a
-hypothetical precondition absent from the supplied input. Return JSON only as
+hypothetical precondition absent from the supplied input.
+
+For public cases, expected.verdict describes the behavior expected from the
+candidate (PASS, BLOCKED, NOT_COVERED, or FAIL); it is not your evaluator
+verdict. Your verdict is a quality judgment and MUST be PASS only when the
+candidate correctly represents that expected behavior for the bound subject.
+Use FAIL when it does not. Never return BLOCKED or NOT_COVERED as an evaluator
+verdict. The Host separately compares decision with its template-derived
+expected decision and treats a public expected.verdict of FAIL as fail-closed.
+Return JSON only as
 {\"results\":[{\"case_id\":...,\"claim_id\":\"primary\",\"verdict\":\"PASS\"|\"FAIL\",\"decision\":\"ALLOW\"|\"DENY\"|\"UNRESOLVED\",\"evidence\":...,\"detail\":...}]}. Evidence must be a nonempty string or a nonempty array of evidence-reference strings; detail must be a nonempty string.
 
 <CANDIDATE_DATA>
@@ -603,11 +620,16 @@ def build_reviewer_prompt(candidate_digest, public_result_summary):
 The canonical public summary is authoritative for what was evaluated. For each
 case, review the primary claim_id, explicit public subject/input, observed
 canonical decision, expected public behavior/decision, passed grade, and cited
-evidence. Never infer case semantics from case_id or candidate contracts that
-happen to have the same name. Confirm that decision and passed are consistent
-with the expected decision and that the cited evidence supports the decision
-about that exact Host-owned subject. The summary deliberately excludes evaluator
-rationale; do not request or reconstruct it.
+evidence. expected_public_behavior describes the scenario behavior expected
+from the candidate (including BLOCKED or NOT_COVERED), not an evaluator quality
+verdict. expected_decision is the Host decision derived from the scenario
+template. A passed grade requires an approvable expected behavior, evaluator
+quality PASS, and an observed decision equal to expected_decision; expected
+FAIL is fail-closed. Never infer case semantics from case_id or candidate
+contracts that happen to have the same name. Confirm that decision and passed
+are consistent with those rules and that the cited evidence supports the
+decision about that exact Host-owned subject. The summary deliberately excludes
+evaluator rationale; do not request or reconstruct it.
 
 A read-only copy of the candidate is available under candidate/ in your
 workspace. Public evidence references are relative to that root: resolve <ref>

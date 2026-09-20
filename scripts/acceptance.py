@@ -7,6 +7,7 @@ nunca deciden el lifecycle ni escriben en el run canónico.
 import hashlib
 import json
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import host_validator
 
 SCHEMA_VERSION = 1
 HOST_POLICY_VERSION = "acceptance-host-policy-v1"
+EARLY_RETAINED_NAME = "static-retained.json"
 
 
 def _now_iso():
@@ -30,6 +32,34 @@ def _digest_file(path):
     return _digest_bytes(Path(path).read_bytes())
 
 
+def current_host_policy_digest():
+    """Digest the current Host policy from its authoritative version source."""
+    return _digest_bytes(HOST_POLICY_VERSION.encode("utf-8"))
+
+
+def _retained_candidate_digest(root):
+    """Bind rejected trees too, including symlinks static validation found."""
+    root = Path(root)
+    entries = []
+    for path in sorted(root.rglob("*")):
+        relative = str(path.relative_to(root))
+        if path.is_symlink():
+            entries.append({
+                "path": relative,
+                "kind": "symlink",
+                "target": os.readlink(path),
+            })
+        elif path.is_file():
+            entries.append({
+                "path": relative,
+                "kind": "file",
+                "sha256": _digest_file(path),
+                "size_bytes": path.stat().st_size,
+            })
+    return _digest_bytes(json.dumps(
+        entries, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+
 def _write(path, value):
     p = Path(path)
     p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -40,14 +70,146 @@ def _write(path, value):
 
 
 def _replace(path, value):
+    """Atomically replace Host-owned JSON and reject symlink destinations."""
     path = Path(path)
-    if path.exists():
-        path.unlink()
-    _write(path, value)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError(f"Artefacto Host es enlace simbólico: {path}")
+    encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode(
+        "utf-8")
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _public_expected(expected_behavior):
+    """Return whether a declared public behavior may satisfy the Host gate.
+
+    ``expected_behavior`` describes what the case expects the candidate to do;
+    it is not the evaluator's quality verdict. PASS, BLOCKED and NOT_COVERED
+    are valid expected behaviors. Expected FAIL remains a fail-closed negative
+    gate and cannot approve a candidate.
+    """
+    return expected_behavior in ("PASS", "BLOCKED", "NOT_COVERED")
+
+
+def validate_early_retained(path, generated, *, generation_id=None):
+    """Validate a Host early-retention record without acceptance artifacts."""
+    path, generated = Path(path), Path(generated)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"static-retained no disponible: {path}")
+    retained = _read(path)
+    required = {
+        "schema_version", "generation_id", "verdict", "stage", "reason",
+        "candidate_digest", "manifest_digest", "validation_summary",
+        "host_policy_digest", "timestamp",
+    }
+    if set(retained) != required:
+        raise ValueError("static-retained tiene campos inválidos")
+    if retained["schema_version"] != SCHEMA_VERSION:
+        raise ValueError("static-retained schema_version inválida")
+    if generation_id and retained["generation_id"] != generation_id:
+        raise ValueError("static-retained corresponde a otra generación")
+    if retained["verdict"] != "RETAINED":
+        raise ValueError("static-retained verdict inválido")
+    if retained["stage"] not in ("STATIC_VALIDATION", "ACCEPTANCE_PLAN"):
+        raise ValueError("static-retained stage inválido")
+    if retained["host_policy_digest"] != current_host_policy_digest():
+        raise ValueError("static-retained obsoleto: cambió la política Host")
+    if not isinstance(retained["reason"], str) or not retained["reason"].strip():
+        raise ValueError("static-retained reason inválido")
+    if _retained_candidate_digest(generated) != retained["candidate_digest"]:
+        raise ValueError("static-retained obsoleto: cambió el candidato")
+    manifest = generated / "generation-manifest.json"
+    expected_manifest = (
+        _digest_file(manifest) if manifest.is_file()
+        and not manifest.is_symlink() else None)
+    if retained["manifest_digest"] != expected_manifest:
+        raise ValueError("static-retained obsoleto: cambió el manifest")
+    summary = retained["validation_summary"]
+    if not isinstance(summary, dict) or set(summary) != {"ref", "digest"}:
+        raise ValueError("static-retained validation_summary inválido")
+    summary_path = path.parent.parent / summary["ref"]
+    if (summary_path.is_symlink() or not summary_path.is_file()
+            or _digest_file(summary_path) != summary["digest"]):
+        raise ValueError("static-retained obsoleto: validation summary no coincide")
+    try:
+        summary_doc = _read(summary_path)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise ValueError(
+            f"static-retained obsoleto: validation summary inválido: {error}") from error
+    required_summary = {
+        "schema_version", "generation_id", "candidate_digest",
+        "manifest_digest", "verdict", "passed", "layers",
+    }
+    if set(summary_doc) != required_summary:
+        raise ValueError("static-retained obsoleto: validation summary sin binding")
+    expected_binding = {
+        "generation_id": retained["generation_id"],
+        "candidate_digest": retained["candidate_digest"],
+        "manifest_digest": retained["manifest_digest"],
+    }
+    if any(summary_doc.get(field) != value
+           for field, value in expected_binding.items()):
+        raise ValueError(
+            "static-retained obsoleto: validation summary corresponde a otro candidato")
+    if (retained["stage"] == "STATIC_VALIDATION"
+            and summary_doc.get("passed")):
+        raise ValueError(
+            "static-retained contradice un validation summary exitoso")
+    if (retained["stage"] == "ACCEPTANCE_PLAN"
+            and not summary_doc.get("passed")):
+        raise ValueError(
+            "static-retained de acceptance-plan requiere validación estática exitosa")
+    layers = summary_doc.get("layers")
+    if not isinstance(layers, dict) or not layers:
+        raise ValueError("static-retained obsoleto: validation summary sin capas")
+    validation_dir = summary_path.parent
+    for layer_name, layer_data in layers.items():
+        layer_path = validation_dir / f"{layer_name}.json"
+        if layer_path.is_symlink() or not layer_path.is_file():
+            raise ValueError(
+                f"static-retained obsoleto: falta reporte de capa {layer_name}")
+        try:
+            layer_doc = _read(layer_path)
+        except (OSError, UnicodeError, ValueError) as error:
+            raise ValueError(
+                f"static-retained obsoleto: reporte {layer_name} inválido: {error}") from error
+        expected_layer = {
+            "schema_version", "generation_id", "candidate_digest",
+            "manifest_digest", "layer", "passed", "details",
+        }
+        if set(layer_doc) != expected_layer:
+            raise ValueError(
+                f"static-retained obsoleto: reporte {layer_name} sin binding")
+        if (layer_doc["layer"] != layer_name
+                or layer_doc["passed"] != layer_data.get("passed")
+                or layer_doc["details"] != layer_data.get("details")
+                or any(layer_doc.get(field) != value
+                       for field, value in expected_binding.items())):
+            raise ValueError(
+                f"static-retained obsoleto: reporte {layer_name} no coincide")
+    return retained
 
 
 def validate_host_verdict(path, generated, *, generation_id=None):
@@ -71,6 +233,8 @@ def validate_host_verdict(path, generated, *, generation_id=None):
         raise ValueError("host-verdict corresponde a otra generación")
     if verdict["verdict"] not in ("ACTIVE", "RETAINED"):
         raise ValueError("host-verdict verdict inválido")
+    if verdict["host_policy_digest"] != current_host_policy_digest():
+        raise ValueError("host-verdict obsoleto: cambió la política Host")
     manifest = generated / "generation-manifest.json"
     if tree_digest(generated) != verdict["candidate_digest"]:
         raise ValueError("host-verdict obsoleto: cambió el candidato")
@@ -108,8 +272,7 @@ class Acceptance:
         self.timeout_seconds = timeout_seconds
         self.generation_id = _read(self.run_dir / "run.json").get("generation_id")
         self.candidate_digest = None
-        self.host_policy_digest = _digest_bytes(
-            HOST_POLICY_VERSION.encode("utf-8"))
+        self.host_policy_digest = current_host_policy_digest()
 
     def _record(self, scenario_id, verdict, evidence=None, detail=""):
         self.results.append({
@@ -120,7 +283,8 @@ class Acceptance:
         })
 
     def static_validation(self):
-        report = host_validator.validate_package(self.generated)
+        report = host_validator.validate_package(
+            self.generated, run_dir=self.run_dir)
         host_validator.write_reports(report, self.run_dir)
         verdict = "PASS" if report.passed else "FAIL"
         self._record("HOST-STATIC", verdict, ["validation/summary.json"],
@@ -131,8 +295,56 @@ class Acceptance:
         materialized = harness.materialize_run(
             self.run_dir, self.host_policy_digest)
         if materialized["plan"]["generation_id"] != self.generation_id:
-            raise ValueError("acceptance-plan corresponde a otra generación")
+            raise harness.HarnessError(
+                "acceptance-plan corresponde a otra generación")
         return materialized
+
+    def retain_early(self, static_report, *, stage, reason):
+        """Persist a Host-only, resumable retention before dynamic acceptance."""
+        self.candidate_digest = _retained_candidate_digest(self.generated)
+        manifest_path = self.generated / "generation-manifest.json"
+        summary_path = self.run_dir / "validation" / "summary.json"
+        retained = {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": self.generation_id,
+            "verdict": "RETAINED",
+            "stage": stage,
+            "reason": reason,
+            "candidate_digest": self.candidate_digest,
+            "manifest_digest": (
+                _digest_file(manifest_path) if manifest_path.is_file() else None),
+            "host_policy_digest": self.host_policy_digest,
+            "validation_summary": {
+                "ref": "validation/summary.json",
+                "digest": _digest_file(summary_path),
+            },
+            "timestamp": _now_iso(),
+        }
+        retained_path = self.acceptance_dir / EARLY_RETAINED_NAME
+        _replace(retained_path, retained)
+        validate_early_retained(
+            retained_path, self.generated, generation_id=self.generation_id)
+
+        run_path = self.run_dir / "run.json"
+        run_doc = _read(run_path)
+        run_doc["status"] = "RETAINED"
+        run_doc["updated_at"] = _now_iso()
+        _replace(run_path, run_doc)
+        _replace(self.run_dir / "checkpoint.json", {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": self.generation_id,
+            "phase": "RETAINED",
+            "reason": reason,
+            "retained_artifact": f"acceptance/{EARLY_RETAINED_NAME}",
+            "completed_phases": [
+                "preflight", "snapshot", "inventory", "skills",
+                "creator_call", "generation", "validation",
+            ],
+            "pending_phases": ["repair", "acceptance", "activation"],
+            "timestamp": _now_iso(),
+            "resumable": True,
+        })
+        return retained
 
     def _candidate_payload(self, materialized):
         """Load all reviewable candidate contracts without naming assumptions."""
@@ -204,9 +416,17 @@ class Acceptance:
         public_rows = []
         public_passed = True
         for case, observed in zip(materialized["public_cases"], public_observed):
+            expected_behavior = case["expected"]["verdict"]
             expected_decision = materialized["public_expected_decisions"][
                 case["scenario_id"]]
-            passed = (observed["verdict"] == "PASS"
+            # ``expected_behavior`` is the scenario's desired behavior, while
+            # evaluator PASS is a quality judgment: the candidate represents
+            # that behavior correctly. Keep the structured Host decision as a
+            # separate mandatory predicate. In particular, BLOCKED and
+            # NOT_COVERED can pass with evaluator PASS, evaluator FAIL never
+            # passes, and expected FAIL remains fail-closed by policy.
+            passed = (_public_expected(expected_behavior)
+                      and observed["verdict"] == "PASS"
                       and observed["decision"] == expected_decision)
             public_passed = public_passed and passed
             detail = self._canonical_public_detail(case, observed)
@@ -362,8 +582,32 @@ class Acceptance:
         return host_verdict
 
     def run(self):
-        static_report = self.static_validation()
-        materialized = self.materialize()
+        try:
+            static_report = self.static_validation()
+        except OSError:
+            raise
+        except (ValueError, UnicodeError) as error:
+            manifest_path = self.generated / "generation-manifest.json"
+            static_report = host_validator.ValidationReport(
+                self.generation_id,
+                candidate_digest=_retained_candidate_digest(self.generated),
+                manifest_digest=(
+                    _digest_file(manifest_path) if manifest_path.is_file()
+                    and not manifest_path.is_symlink() else None),
+            )
+            static_report.add_layer("static_input", False, [str(error)])
+            host_validator.write_reports(static_report, self.run_dir)
+        if not static_report.passed:
+            return self.retain_early(
+                static_report, stage="STATIC_VALIDATION",
+                reason=(
+                    "Static Host validation failed: "
+                    f"{static_report.verdict}"))
+        try:
+            materialized = self.materialize()
+        except harness.HarnessError as error:
+            return self.retain_early(
+                static_report, stage="ACCEPTANCE_PLAN", reason=str(error))
         self.candidate_digest = tree_digest(self.generated)
         actors_ctx = self.actors or DshAcceptanceActors(
             self.run_dir, launch=self.launch_dsh,
