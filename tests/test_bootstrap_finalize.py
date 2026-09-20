@@ -114,7 +114,7 @@ class FinalizeTests(unittest.TestCase):
         install.assert_not_called()
 
     def test_active_verdict_installs_and_marks_checkpoint(self):
-        verdict = self._verdict("ACTIVE")
+        verdict = self._verdict("READY_FOR_INSTALL")
         verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
 
         def accept(_run_dir, launch_dsh=False):
@@ -126,8 +126,12 @@ class FinalizeTests(unittest.TestCase):
             "generation_id": "gen-test",
             "previous_generation_id": "",
         }
+        client = unittest.mock.Mock()
+        client.resolved_dsh_home = Path(self.tmp.name) / "resolved-dsh-home"
         with unittest.mock.patch("acceptance.accept", side_effect=accept), \
              unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
+             unittest.mock.patch("creator_client.acquire_dsh_client",
+                                 return_value=(client, "test")), \
              unittest.mock.patch("transaction.install", return_value=activation) as install:
             result = bootstrap.finalize(self.workspace, "gen-test")
 
@@ -135,7 +139,8 @@ class FinalizeTests(unittest.TestCase):
         self.assertTrue(result["is_active_deployment"])
         install.assert_called_once_with(
             self.workspace, self.generated, "gen-test",
-            host_verdict=verdict_path)
+            host_verdict=verdict_path,
+            dsh_home=client.resolved_dsh_home, client=client)
         run = json.loads((self.run_dir / "run.json").read_text())
         checkpoint = json.loads((self.run_dir / "checkpoint.json").read_text())
         self.assertEqual(run["status"], "ACTIVE")
@@ -144,11 +149,15 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual(checkpoint["pending_phases"], [])
 
     def test_existing_verdict_is_reused_without_rerunning_acceptance(self):
-        verdict = self._verdict("ACTIVE")
+        verdict = self._verdict("READY_FOR_INSTALL")
         verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
         verdict_path.write_text(json.dumps(verdict) + "\n")
+        client = unittest.mock.Mock()
+        client.resolved_dsh_home = Path(self.tmp.name) / "resolved-dsh-home"
         with unittest.mock.patch("acceptance.accept") as accept, \
              unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
+             unittest.mock.patch("creator_client.acquire_dsh_client",
+                                 return_value=(client, "test")), \
              unittest.mock.patch("transaction.install", return_value={
                  "result": "NO_OP", "generation_id": "gen-test",
              }) as install:
@@ -157,6 +166,36 @@ class FinalizeTests(unittest.TestCase):
         install.assert_called_once()
         self.assertEqual(result["result"], "NO_OP")
         self.assertTrue(result["is_active_deployment"])
+
+    def test_finalize_uses_acquired_home_not_environment_home(self):
+        verdict = self._verdict("READY_FOR_INSTALL")
+        verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
+        verdict_path.write_text(json.dumps(verdict) + "\n")
+        client = unittest.mock.Mock()
+        client.resolved_dsh_home = Path(self.tmp.name) / "runtime-home"
+        with unittest.mock.patch.dict("os.environ", {
+                "DSH_HOME": str(Path(self.tmp.name) / "wrong-home")}), \
+             unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
+             unittest.mock.patch("creator_client.acquire_dsh_client",
+                                 return_value=(client, "runtime")), \
+             unittest.mock.patch("transaction.install", return_value={
+                 "result": "ACTIVE", "generation_id": "gen-test",
+             }) as install:
+            bootstrap.finalize(self.workspace, "gen-test")
+        self.assertEqual(install.call_args.kwargs["dsh_home"],
+                         client.resolved_dsh_home)
+
+    def test_finalize_rejects_client_without_resolved_home(self):
+        verdict = self._verdict("READY_FOR_INSTALL")
+        verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
+        verdict_path.write_text(json.dumps(verdict) + "\n")
+        with unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
+             unittest.mock.patch("creator_client.acquire_dsh_client",
+                                 return_value=(object(), "legacy-home")), \
+             unittest.mock.patch("transaction.install") as install:
+            with self.assertRaisesRegex(ValueError, "home resuelto"):
+                bootstrap.finalize(self.workspace, "gen-test")
+        install.assert_not_called()
 
     def test_missing_acceptance_request_is_materialized_by_host(self):
         request = self.run_dir / "acceptance" / "request.json"
@@ -314,7 +353,7 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual(result["result"], "RETAINED")
 
     def test_wrong_generation_verdict_fails_closed(self):
-        verdict = self._verdict("ACTIVE")
+        verdict = self._verdict("READY_FOR_INSTALL")
         verdict["generation_id"] = "gen-other"
         path = self.run_dir / "acceptance" / "host-verdict.json"
         path.write_text(json.dumps(verdict) + "\n")

@@ -8,6 +8,8 @@
   "required": [
     "schema_version",
     "name",
+    "preset_id",
+    "role",
     "purpose",
     "reuse_source",
     "triggers",
@@ -38,6 +40,16 @@
       "type": "string",
       "minLength": 1,
       "description": "Mode name, project-prefixed (e.g., MyProject-auditor)."
+    },
+    "preset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Selectable DSH user-preset identifier; required for newly generated modes."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["auditor", "continuous-repair"],
+      "description": "Final operational role exposed by the preset."
     },
     "purpose": {
       "type": "string",

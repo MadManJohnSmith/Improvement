@@ -41,6 +41,14 @@ class _BootstrapTestBase(unittest.TestCase):
         # Workspace (hermano del proyecto, fuera de Git)
         self.workspace = self.base / "my-project-workspace"
 
+        # Never let integration tests fall through to the user's real DSH home.
+        self.dsh_home = self.base / "dsh-home"
+        self.dsh_home.mkdir()
+        self._env = unittest.mock.patch.dict(
+            os.environ, {"DSH_HOME": str(self.dsh_home)})
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
 
 # ===========================================================================
 # Positive corpus: install crea un run completo
@@ -477,6 +485,35 @@ class TestUninstall(_BootstrapTestBase):
         result = bs.uninstall(self.project, self.workspace)
         self.assertIn("product", result["preserved"])
         self.assertIn("backups", result["preserved"])
+
+    def test_legacy_uninstall_without_receipt_does_not_acquire_or_touch_dsh(self):
+        sentinel = self.dsh_home / ".agent-presets" / "foreign" / "keep"
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_text("untouched\n")
+        bs.install(self.project, self.workspace)
+        with unittest.mock.patch(
+                "creator_client.acquire_dsh_client",
+                side_effect=AssertionError("legacy uninstall must not acquire DSH")):
+            result = bs.uninstall(self.project, self.workspace)
+        self.assertEqual(result["result"], "UNINSTALLED")
+        self.assertEqual(sentinel.read_text(), "untouched\n")
+
+    def test_uninstall_with_receipt_uses_acquired_authoritative_home(self):
+        bs.install(self.project, self.workspace)
+        managed = self.workspace / ".dsh-managed"
+        managed.mkdir()
+        (managed / "published-presets.json").write_text("{}\n")
+        authoritative = self.base / "authoritative-dsh-home"
+        client = unittest.mock.Mock(resolved_dsh_home=authoritative)
+        with unittest.mock.patch(
+                "creator_client.acquire_dsh_client",
+                return_value=(client, "runtime")), \
+             unittest.mock.patch("transaction.uninstall", return_value={
+                 "result": "UNINSTALLED", "removed_presets": [],
+             }) as uninstall:
+            bs.uninstall(self.project, self.workspace)
+        uninstall.assert_called_once_with(
+            self.workspace, dsh_home=authoritative)
 
 
 # ===========================================================================

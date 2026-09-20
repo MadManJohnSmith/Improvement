@@ -11,6 +11,7 @@ Versión: 1
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -345,9 +346,12 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
     contracts_dir = generated / "contracts"
     contract_arts = [
         a for a in manifest.get("artifacts", [])
-        if a.get("type") == "contract"
+        if a.get("type") == "contract" or
+        (a.get("type") == "mode-definition" and
+         a.get("path", "").endswith("/mode.json"))
     ]
-    if contract_arts and not contracts_dir.is_dir():
+    if (any(a.get("path", "").startswith("contracts/") for a in contract_arts)
+            and not contracts_dir.is_dir()):
         issues.append("Contract artifacts declared but contracts/ missing")
 
     try:
@@ -405,6 +409,45 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
                 issues.append(
                     f"{rel}: reuse_reference {ref!r} no existe en la "
                     "biblioteca del run")
+
+    # Exactly two selectable user presets, one per final role. New mode
+    # contracts carry preset_id/role and their DSH composition beside mode.json.
+    mode_dirs = sorted(path for path in (generated / "modes").glob("*")
+                       if path.is_dir())
+    if len(mode_dirs) != 2:
+        issues.append("generated/modes must contain exactly 2 mode directories")
+    roles = set()
+    preset_ids = set()
+    for mode_dir in mode_dirs:
+        expected_files = {"mode.json", "preset.yml", "agent.cordis.yml", "SKILL.md"}
+        present = {path.name for path in mode_dir.iterdir() if path.is_file()}
+        missing = expected_files - present
+        if missing:
+            issues.append(
+                f"{mode_dir.relative_to(generated)} missing preset files: "
+                f"{sorted(missing)}")
+            continue
+        try:
+            mode = json.loads((mode_dir / "mode.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            issues.append(f"{mode_dir.relative_to(generated)}/mode.json invalid: {error}")
+            continue
+        preset_id = mode.get("preset_id")
+        role = mode.get("role")
+        if preset_id != mode_dir.name:
+            issues.append(
+                f"{mode_dir.relative_to(generated)} preset_id must equal directory name")
+        if not isinstance(preset_id, str) or not re.fullmatch(
+                r"[a-z0-9][a-z0-9-]*", preset_id or ""):
+            issues.append(f"{mode_dir.relative_to(generated)} preset_id invalid")
+        if role not in {"auditor", "continuous-repair"}:
+            issues.append(f"{mode_dir.relative_to(generated)} role invalid")
+        if preset_id in preset_ids:
+            issues.append(f"Duplicate preset_id: {preset_id}")
+        preset_ids.add(preset_id)
+        roles.add(role)
+    if roles != {"auditor", "continuous-repair"}:
+        issues.append("Final modes must contain auditor and continuous-repair roles")
 
     # Check provenance entries
     for prov in manifest.get("license_provenance", []):

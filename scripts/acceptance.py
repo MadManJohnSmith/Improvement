@@ -1,8 +1,8 @@
-"""Aceptación automática Host — C5.
+"""Aceptación determinista y veraz propiedad del Host.
 
-Materializa casos Host, ejecuta evaluación y revisión DSH en sesiones separadas,
-valida evidencia y hashes, y emite ACTIVE o RETAINED. Creator y actores DSH
-nunca deciden el lifecycle ni escriben en el run canónico.
+Valida estáticamente el paquete y su plan, conserva bindings de candidato y
+política, y emite READY_FOR_INSTALL o RETAINED. No crea sesiones DSH evaluator,
+reviewer ni descendientes y no afirma haber ejecutado holdouts dinámicos.
 """
 import hashlib
 import json
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import acceptance_harness as harness
-from acceptance_reviewer import DshAcceptanceActors, tree_digest
+from acceptance_reviewer import tree_digest
 import host_validator
 
 SCHEMA_VERSION = 1
@@ -220,10 +220,9 @@ def validate_host_verdict(path, generated, *, generation_id=None):
     verdict = _read(path)
     required = {
         "schema_version", "generation_id", "verdict", "static_passed",
-        "public_passed", "holdout_passed", "independent_review",
-        "candidate_digest", "manifest_digest", "public_results_digest",
-        "holdout_results_digest", "review_digest", "host_policy_digest",
-        "timestamp",
+        "acceptance_plan_valid", "dynamic_evaluation", "candidate_digest",
+        "manifest_digest", "validation_summary_digest", "acceptance_plan_digest",
+        "host_policy_digest", "timestamp",
     }
     if set(verdict) != required:
         raise ValueError("host-verdict tiene campos inválidos")
@@ -231,7 +230,7 @@ def validate_host_verdict(path, generated, *, generation_id=None):
         raise ValueError("host-verdict schema_version inválida")
     if generation_id and verdict["generation_id"] != generation_id:
         raise ValueError("host-verdict corresponde a otra generación")
-    if verdict["verdict"] not in ("ACTIVE", "RETAINED"):
+    if verdict["verdict"] not in ("READY_FOR_INSTALL", "RETAINED"):
         raise ValueError("host-verdict verdict inválido")
     if verdict["host_policy_digest"] != current_host_policy_digest():
         raise ValueError("host-verdict obsoleto: cambió la política Host")
@@ -242,19 +241,16 @@ def validate_host_verdict(path, generated, *, generation_id=None):
         raise ValueError("host-verdict obsoleto: cambió el manifest")
     acceptance_dir = path.parent
     bound = {
-        "public_results_digest": acceptance_dir / "public-results.json",
-        "holdout_results_digest": acceptance_dir / "holdout-results.json",
-        "review_digest": acceptance_dir / "independent-review.json",
+        "validation_summary_digest": path.parent.parent / "validation" / "summary.json",
+        "acceptance_plan_digest": generated / "acceptance-plan.json",
     }
     for field, artifact in bound.items():
         if not artifact.is_file() or _digest_file(artifact) != verdict[field]:
             raise ValueError(f"host-verdict obsoleto: {field} no coincide")
-    active = all((
-        verdict["static_passed"], verdict["public_passed"],
-        verdict["holdout_passed"], verdict["independent_review"] == "PASS",
-    ))
-    if (verdict["verdict"] == "ACTIVE") != active:
-        raise ValueError("host-verdict contradice sus gates")
+    ready = (verdict["static_passed"] and verdict["acceptance_plan_valid"]
+             and verdict["dynamic_evaluation"] == "NOT_RUN")
+    if (verdict["verdict"] == "READY_FOR_INSTALL") != ready:
+        raise ValueError("host-verdict contradice sus gates deterministas")
     return verdict
 
 
@@ -609,27 +605,33 @@ class Acceptance:
             return self.retain_early(
                 static_report, stage="ACCEPTANCE_PLAN", reason=str(error))
         self.candidate_digest = tree_digest(self.generated)
-        actors_ctx = self.actors or DshAcceptanceActors(
-            self.run_dir, launch=self.launch_dsh,
-            timeout_seconds=self.timeout_seconds)
-        owns_context = self.actors is None
-        if owns_context:
-            actors_ctx.__enter__()
-        try:
-            evaluator, results = self._evaluate(actors_ctx, materialized)
-            self.evaluator_session = evaluator["session_id"]
-            public_passed, public_rows, holdout_passed, holdout_rows = self._grade(
-                materialized, results)
-            review = self._review(
-                actors_ctx, materialized["public_cases"], public_rows)
-            if tree_digest(self.generated) != self.candidate_digest:
-                raise ValueError("El candidato cambió durante aceptación")
-            self._write_outputs(public_rows, holdout_rows, review)
-            return self.finalize(
-                static_report, public_passed, holdout_passed, review)
-        finally:
-            if owns_context:
-                actors_ctx.__exit__(None, None, None)
+        if self.actors is not None:
+            raise ValueError(
+                "La aceptación vigente no admite evaluator/reviewer DSH")
+        if tree_digest(self.generated) != self.candidate_digest:
+            raise ValueError("El candidato cambió durante aceptación")
+        manifest_path = self.generated / "generation-manifest.json"
+        plan_path = self.generated / "acceptance-plan.json"
+        summary_path = self.run_dir / "validation" / "summary.json"
+        verdict = {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": self.generation_id,
+            "verdict": "READY_FOR_INSTALL",
+            "static_passed": True,
+            "acceptance_plan_valid": True,
+            "dynamic_evaluation": "NOT_RUN",
+            "candidate_digest": self.candidate_digest,
+            "manifest_digest": _digest_file(manifest_path),
+            "validation_summary_digest": _digest_file(summary_path),
+            "acceptance_plan_digest": _digest_file(plan_path),
+            "host_policy_digest": self.host_policy_digest,
+            "timestamp": _now_iso(),
+        }
+        verdict_path = self.acceptance_dir / "host-verdict.json"
+        _replace(verdict_path, verdict)
+        validate_host_verdict(
+            verdict_path, self.generated, generation_id=self.generation_id)
+        return verdict
 
 
 def accept(run_dir, *, actors=None, launch_dsh=False, timeout_seconds=900):
