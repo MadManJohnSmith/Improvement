@@ -40,6 +40,41 @@ class Base(unittest.TestCase):
         skill = generated / "skills" / "project-auditor"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("# Auditor\n")
+        mode_artifacts = []
+        for role, suffix in (("auditor", "auditor"),
+                             ("continuous-repair", "continuous-repair")):
+            preset_id = f"project-{suffix}"
+            mode_dir = generated / "modes" / preset_id
+            mode_dir.mkdir(parents=True)
+            mode = {
+                "schema_version": 1, "kind": "mode", "name": preset_id,
+                "preset_id": preset_id, "role": role,
+                "purpose": role, "reuse_source": "composition",
+                "triggers": [role], "anti_triggers": [], "inputs": [],
+                "reads": ["project"], "writes": ["mode-state"],
+                "required_capabilities": [], "forbidden_capabilities": [],
+                "invariants": ["Use shared mode-state"], "anti_goals": [],
+                "state_machine": {"states": ["READY"], "transitions": [],
+                                  "initial": "READY", "terminal": ["READY"]},
+                "handoffs": [], "failure_modes": {"retries": 0,
+                    "timeout_seconds": 60, "on_failure": "retain"},
+                "scenarios": ["PUBLIC-1"], "provenance": {"license": "MIT"},
+            }
+            files = {
+                "mode.json": json.dumps(mode, indent=2) + "\n",
+                "preset.yml": f"name: {preset_id}\n",
+                "agent.cordis.yml": "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n",
+                "SKILL.md": f"# {preset_id}\n",
+            }
+            for name, content in files.items():
+                (mode_dir / name).write_text(content)
+                mode_artifacts.append({
+                    "path": f"modes/{preset_id}/{name}",
+                    "type": "skill-entrypoint" if name == "SKILL.md" else
+                            ("mode-definition" if name == "mode.json" else
+                             "mode-adapter"),
+                    "sha256": cc._digest_bytes(content.encode()),
+                })
         capabilities = {
             "schema_version": 1,
             "capability_id": "cap-test",
@@ -74,7 +109,7 @@ class Base(unittest.TestCase):
         }
         acceptance_bytes = (json.dumps(acceptance_plan, indent=2) + "\n").encode()
         (generated / "acceptance-plan.json").write_bytes(acceptance_bytes)
-        artifacts = [{
+        artifacts = mode_artifacts + [{
             "path": "skills/project-auditor/SKILL.md",
             "type": "skill-entrypoint",
             "sha256": cc._digest_bytes(b"# Auditor\n"),
@@ -954,6 +989,64 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIn((4140, signal.SIGTERM), killed)
         self.assertIn((4140, signal.SIGKILL), killed)
 
+    def test_launch_with_env_unset_passes_and_binds_official_home(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            official = Path(tmp) / ".dsh"
+            _write_dsh_home(official)
+            with unittest.mock.patch.dict(os.environ, {}, clear=True), \
+                 unittest.mock.patch.object(Path, "expanduser",
+                                            autospec=True,
+                                            side_effect=lambda path: official if str(path) == "~/.dsh" else path), \
+                 unittest.mock.patch.object(cc, "_ensure_port_free_for_dsh",
+                                            return_value=None), \
+                 unittest.mock.patch.object(cc, "launch_dsh_web",
+                                            return_value=(fake_process, fake_client)) as launch, \
+                 unittest.mock.patch.object(cc.DshLocalClient, "from_dsh_home",
+                                            side_effect=ValueError("no durable cookie")), \
+                 unittest.mock.patch.object(cc, "dsh_provider_status",
+                                            return_value={"ok": True, "provider": "p"}):
+                client, _origin = cc.acquire_dsh_client(launch=True)
+        launch.assert_called_once_with(env={"DSH_HOME": str(official.resolve())}, cwd=None)
+        fake_client.exchange_token.assert_called_once()
+        self.assertEqual(client.resolved_dsh_home, official.resolve())
+
+    def test_launch_never_reuses_authenticated_legacy_candidate_home(self):
+        fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            official = Path(tmp) / "official"
+            legacy = Path(tmp) / "legacy"
+            _write_dsh_home(official)
+            _write_dsh_home(legacy)
+            legacy_client = unittest.mock.Mock()
+            with unittest.mock.patch.dict(
+                    os.environ, {"DSH_HOME": str(official)}), \
+                 unittest.mock.patch.object(
+                    cc, "DSH_HOME_CANDIDATES", (str(legacy),)), \
+                 unittest.mock.patch.object(
+                    cc, "_ensure_port_free_for_dsh", return_value=None), \
+                 unittest.mock.patch.object(
+                    cc, "launch_dsh_web",
+                    return_value=(fake_process, fake_client)) as launch, \
+                 unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    side_effect=lambda home, **kwargs: (
+                        legacy_client if Path(home) == legacy else
+                        (_ for _ in ()).throw(ValueError("no durable cookie")))), \
+                 unittest.mock.patch.object(
+                    cc, "dsh_provider_status",
+                    return_value={"ok": True, "provider": "p"}):
+                client, _origin = cc.acquire_dsh_client(launch=True)
+        launch.assert_called_once_with(
+            env={"DSH_HOME": str(official.resolve())}, cwd=None)
+        fake_client.exchange_token.assert_called_once()
+        legacy_client.list_sessions.assert_not_called()
+        self.assertEqual(client.resolved_dsh_home, official.resolve())
+
     def test_launch_falls_back_to_token_exchange(self):
         """Without home credentials the console token is the fallback; the
         dispatch still needs it exchanged, else the client stays
@@ -997,7 +1090,7 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIn("testprov", origin)
         fake_process.kill.assert_not_called()
 
-    def test_launch_path_stops_running_instance_first(self):
+    def test_launch_path_reuses_healthy_running_instance(self):
         fake_client = unittest.mock.Mock()
         fake_client.base_url = "http://127.0.0.1:3080"
         fake_client.authenticated = True
@@ -1017,7 +1110,7 @@ class DshLifecycleTests(unittest.TestCase):
                                                          fake_client)):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
-        self.assertEqual(stopped, [68865])
+        self.assertEqual(stopped, [])
         self.assertIsNotNone(client)
 
     def test_launch_path_warns_and_proceeds_when_key_missing(self):
@@ -1073,7 +1166,7 @@ class DshLifecycleTests(unittest.TestCase):
             client, origin = cc.acquire_dsh_client(launch=True)
         self.assertIsNone(client)
         self.assertIn("ningún proveedor utilizable", origin)
-        fake_process.kill.assert_called_once()
+        fake_process.kill.assert_not_called()
 
 class _FakeProcess:
     """Popen fake backed by a selectable OS pipe."""
@@ -1462,7 +1555,9 @@ class ValidatorTests(Base):
 
     def test_manifest_requires_skill_entrypoint_type_for_skill_md(self):
         generated, manifest = self.make_package()
-        manifest["artifacts"][0]["type"] = "reference"
+        artifact = next(item for item in manifest["artifacts"]
+                        if item["path"].endswith("SKILL.md"))
+        artifact["type"] = "reference"
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
         report = hv.validate_package(generated)

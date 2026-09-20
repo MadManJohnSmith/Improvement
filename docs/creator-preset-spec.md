@@ -63,7 +63,15 @@ generated/
 ├── capabilities.json
 ├── modes/
 │   ├── <Proyecto>-auditor/
+│   │   ├── mode.json
+│   │   ├── preset.yml
+│   │   ├── agent.cordis.yml
+│   │   └── SKILL.md
 │   └── <Proyecto>-continuous-repair/
+│       ├── mode.json
+│       ├── preset.yml
+│       ├── agent.cordis.yml
+│       └── SKILL.md
 ├── skills/
 │   ├── <Proyecto>-auditor/
 │   ├── <Proyecto>-continuous-repair/

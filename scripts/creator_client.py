@@ -228,9 +228,16 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
         objective = f"""## Objetivo
 
 Genera un paquete completo y específico para el proyecto `{project_name}`.
-El paquete debe incluir exactamente dos modos finales:
+El paquete debe incluir exactamente dos modos finales y presets DSH seleccionables:
 - `{project_name}-auditor`
 - `{project_name}-continuous-repair`
+
+Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
+`preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
+`preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Los dos
+presets usan el estado compartido relativo `{project_name}-workspace/mode-state`
+y comprueban que su sesión se abrió desde el padre común que contiene producto y
+workspace. No crean sesiones descendientes, subagentes ni workflows.
 
 Más skills específicas justificadas con procedimiento recurrente, evidencia,
 fronteras y prueba."""
@@ -364,7 +371,9 @@ entonces deja el manifest en estado GENERATED y solicita aceptación.
 3. No modificar Host, validadores ni artefactos Host del run (`tests/`,
    `inputs/runtime-capabilities.json`, `validation/`, `acceptance/`); el
    `generated/capabilities.json` declarativo sí forma parte de la salida
-4. No rutas/identidades/secretos del mantenedor
+4. Esta sesión Creator es la única sesión de generación: no crear sesiones
+   descendientes, subagentes, forks ni workflows
+5. No rutas/identidades/secretos del mantenedor
 5. No proveedores/modelos/routing nuevos
 6. Todo valor/decisión tiene fuente
 7. Unknowns load-bearing bloquean la generación
@@ -518,6 +527,10 @@ class DshLocalClient:
     def list_sessions(self):
         """Return the Host session list through the generated descriptor."""
         return self.rpc("session/list", {"_request": {}})
+
+    def list_agent_presets(self):
+        """Return the authoritative DSH user-preset roster."""
+        return self.rpc("agentPresets/list", {})
 
     def create_workspace(self, path):
         """Register (or look up) ``path`` in the workspace registry.
@@ -1007,7 +1020,7 @@ def _terminate_process(process, *, wait_timeout=5):
 
 
 def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
-                   env=None, spawn_timeout=120):
+                   env=None, cwd=None, spawn_timeout=120):
     """Launch DSH web and return ``(process, client)`` after token capture.
 
     ``-y`` keeps npx non-interactive (an "Ok to proceed?" prompt aborts
@@ -1023,7 +1036,7 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
     process = subprocess.Popen(
         _patched_launch_command(command), stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
-        bufsize=1, env=child_env,
+        bufsize=1, env=child_env, cwd=str(cwd) if cwd is not None else None,
     )
     captured = []
     deadline = time.monotonic() + spawn_timeout
@@ -1066,6 +1079,14 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
 
 
 DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
+
+
+def _official_dsh_home():
+    """Resolve the sole home a newly launched DSH process will use."""
+    configured = os.environ.get("DSH_HOME")
+    if configured is not None and not configured.strip():
+        configured = None
+    return Path(configured).expanduser().resolve() if configured else Path("~/.dsh").expanduser().resolve()
 
 
 def _read_settings_structure(dsh_home):
@@ -1351,7 +1372,13 @@ def _provider_home(candidates):
     return None
 
 
-def acquire_dsh_client(*, launch=False):
+def _bind_resolved_dsh_home(client, home):
+    """Attach the one home authenticated by acquisition to its client."""
+    client.resolved_dsh_home = Path(home).expanduser().resolve()
+    return client
+
+
+def acquire_dsh_client(*, launch=False, workspace_root=None):
     """Acquire an authenticated, provider-ready DSH client.
 
     Order: injected client (caller), env DSH_HOME, then standard DSH home
@@ -1370,15 +1397,29 @@ def acquire_dsh_client(*, launch=False):
     candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
 
     if launch:
-        running = _find_dsh_pids()
-        if running:
-            _stop_dsh_instances(running)
+        launch_home = _official_dsh_home()
+        # Reuse a healthy authenticated runtime only when it belongs to the
+        # exact home the launch would use.  Legacy candidate homes must never
+        # redirect publication away from the explicit/default official home.
+        for home in (launch_home,):
+            try:
+                client = DshLocalClient.from_dsh_home(home)
+                client.list_sessions()
+            except Exception:
+                continue
+            status = dsh_provider_status(home)
+            if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
+                return None, status["reason"]
+            return _bind_resolved_dsh_home(client, home), _provider_gate_origin(status, origin=str(home))
+
         blocked = _ensure_port_free_for_dsh(3080)
         if blocked:
             return None, blocked
         process = None
+        launch_env = {"DSH_HOME": str(launch_home)}
         try:
-            process, client = launch_dsh_web()
+            process, client = launch_dsh_web(
+                env=launch_env, cwd=workspace_root)
         except Exception as e:
             return None, f"dsh web no arrancó: {e}"
 
@@ -1386,9 +1427,9 @@ def acquire_dsh_client(*, launch=False):
         # console token is single-use and races with the browser dsh web
         # auto-opens, which surfaces as HTTP 401 on exchange.
         port = int(client.base_url.rsplit(":", 1)[1])
-        home = _provider_home(candidates)
+        home = launch_home
         verified = False
-        if home is not None:
+        if (home / "settings.yaml").is_file():
             try:
                 home_client = DshLocalClient.from_dsh_home(home, port=port)
                 home_client.list_sessions()
@@ -1411,16 +1452,15 @@ def acquire_dsh_client(*, launch=False):
                     process.kill()
                 return None, (f"DSH no quedó autenticado tras el arranque: "
                               f"{last_error}")
-        home = _provider_home(candidates)
-        if home is None:
+        if not (home / "settings.yaml").is_file():
             process.kill()
-            return None, ("no se encontró settings.yaml de DSH; define "
-                          "DSH_HOME y configura el proveedor")
+            return None, (f"no se encontró settings.yaml en el home lanzado {home}; "
+                          "define DSH_HOME o configura ~/.dsh")
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
             process.kill()
             return None, status["reason"]
-        return client, _provider_gate_origin(status)
+        return _bind_resolved_dsh_home(client, home), _provider_gate_origin(status)
 
     last_error = "sin candidatos"
     for home in candidates:
@@ -1433,7 +1473,8 @@ def acquire_dsh_client(*, launch=False):
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
             return None, status["reason"]
-        return client, _provider_gate_origin(status, origin=str(home))
+        return (_bind_resolved_dsh_home(client, home),
+                _provider_gate_origin(status, origin=str(home)))
     return None, (
         "sin sesión DSH autenticada "
         f"(última prueba: {last_error}); abre 'dsh web' y reejecuta, "
@@ -1735,7 +1776,8 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
 
             dsh_origin = None
             if client is None and acquire:
-                client, dsh_origin = acquire_dsh_client(launch=launch)
+                client, dsh_origin = acquire_dsh_client(
+                    launch=launch, workspace_root=_run_workspace(run_dir).parent)
                 if client is None:
                     _save_session_state(run_dir, state, reason="AWAITING_DSH")
                     return {

@@ -1078,7 +1078,7 @@ def validate_mode_contract(doc):
         "scenarios", "provenance",
     ]
     known = required + [
-        "kind", "reuse_justification", "reuse_reference", "sources", "rollback",
+        "kind", "preset_id", "role", "reuse_justification", "reuse_reference", "sources", "rollback",
         "migration", "sr_criteria", "stop_conditions", "evidence",
         "entrypoint", "progressive_disclosure",
     ]
@@ -1090,6 +1090,13 @@ def validate_mode_contract(doc):
         _require(doc["kind"] == "mode",
                  f"{schema}.kind: expected 'mode', got {doc['kind']!r}")
     _require(_is_nonempty_str(doc["name"]), f"{schema}.name")
+    if "preset_id" in doc:
+        _require(isinstance(doc["preset_id"], str) and
+                 re.fullmatch(r"[a-z0-9][a-z0-9-]*", doc["preset_id"]),
+                 f"{schema}.preset_id")
+    if "role" in doc:
+        _require_enum(doc["role"], {"auditor", "continuous-repair"},
+                      f"{schema}.role")
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
                   f"{schema}.reuse_source")
     _require_reuse_reference(doc, schema)

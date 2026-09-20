@@ -892,8 +892,8 @@ def verify_acceptance(workspace, generation_id=None):
             verdict_binding = {
                 key: verdict_data[key] for key in (
                     "candidate_digest", "manifest_digest",
-                    "public_results_digest", "holdout_results_digest",
-                    "review_digest", "host_policy_digest")
+                    "validation_summary_digest", "acceptance_plan_digest",
+                    "host_policy_digest")
             }
 
     val_path = target_run_dir / "validation" / "summary.json"
@@ -1037,12 +1037,21 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
                 "Host retuvo el candidato; no se instaló nada. Revisar "
                 f"{evidence}"),
         }
-    if verdict_name != "ACTIVE":
-        raise ValueError(f"Veredicto Host no activable: {verdict_name!r}")
+    if verdict_name != "READY_FOR_INSTALL":
+        raise ValueError(f"Veredicto Host no instalable: {verdict_name!r}")
 
+    import creator_client as cc
+    client, dsh_origin = cc.acquire_dsh_client(
+        launch=launch_dsh, workspace_root=workspace.parent)
+    if client is None:
+        raise ValueError(f"DSH no disponible para publicar/verificar presets: {dsh_origin}")
+    resolved_dsh_home = getattr(client, "resolved_dsh_home", None)
+    if resolved_dsh_home is None:
+        raise ValueError("Cliente DSH adquirido sin home resuelto autoritativo")
     import transaction
     activation = transaction.install(
-        workspace, generated, gen_id, host_verdict=verdict_path)
+        workspace, generated, gen_id, host_verdict=verdict_path,
+        dsh_home=resolved_dsh_home, client=client)
 
     run_path = run_dir / "run.json"
     current = _read_json(run_path)
@@ -1156,6 +1165,36 @@ def uninstall(project, workspace):
 
     removed = []
 
+    import transaction
+    receipt = workspace / ".dsh-managed" / "published-presets.json"
+    recovery = transaction.uninstall_recovery(workspace)
+    if receipt.is_file() or recovery is not None:
+        import creator_client as cc
+        client, dsh_origin = cc.acquire_dsh_client(
+            launch=False, workspace_root=workspace.parent)
+        if client is None:
+            raise ValueError(
+                f"DSH no disponible para retirar presets publicados: {dsh_origin}")
+        resolved_dsh_home = getattr(client, "resolved_dsh_home", None)
+        if resolved_dsh_home is None:
+            raise ValueError("Cliente DSH adquirido sin home resuelto autoritativo")
+        tx_result = transaction.uninstall(
+            workspace, dsh_home=resolved_dsh_home)
+    else:
+        # Legacy workspaces predate preset publication receipts. There is no
+        # authoritative DSH-owned state to remove, so do not probe or default to
+        # the user's ~/.dsh; only clear the workspace-local active pointer.
+        tx_result = transaction.uninstall_unpublished(workspace)
+    removed.extend(f"preset:{preset_id}"
+                   for preset_id in tx_result.get("removed_presets", []))
+    if tx_result.get("result") == "RECOVERY_REQUIRED":
+        return {
+            "result": "RECOVERY_REQUIRED",
+            "removed": removed,
+            "preserved": tx_result.get("preserved", []),
+            "error": tx_result.get("error", "Uninstall requiere recuperación"),
+        }
+
     # Find and mark active generation as ROLLED_BACK
     runs_dir = workspace / RUN_DIR_NAME
     if runs_dir.is_dir():
@@ -1192,7 +1231,8 @@ def uninstall(project, workspace):
     return {
         "result": "UNINSTALLED",
         "removed": removed,
-        "preserved": ["product", "foreign-config", "receipts", "backups"],
+        "preserved": ["product", "foreign-config", "receipts", "backups",
+                      "mode-state"],
         "message": f"Desinstalados {len(removed)} elementos gestionados",
     }
 
