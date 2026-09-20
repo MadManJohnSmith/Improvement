@@ -162,9 +162,15 @@ class Transaction:
         return doc
 
     def install(self, generated_dir, generation_id, *, host_verdict=None):
-        """Stage and atomically activate a generated package."""
+        """Stage and atomically activate an exact Host-accepted package."""
         self._require_host_verdict(host_verdict, generation_id)
         generated = Path(generated_dir)
+        if isinstance(host_verdict, (str, Path)):
+            # Defense in depth for direct transaction.py invocations: bind the
+            # verdict to the current candidate and Host result artifacts.
+            import acceptance
+            acceptance.validate_host_verdict(
+                host_verdict, generated, generation_id=generation_id)
         if not generated.is_dir():
             raise TransactionError(f"generated/ ausente: {generated}")
         _safe_tree(generated)

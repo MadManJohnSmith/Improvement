@@ -1,48 +1,122 @@
 """Aceptación automática Host — C5.
 
-Ejecuta validación estática, escenarios públicos y holdouts, con revisión
-independiente explícita. Solo Host puede emitir ACTIVE o RETAINED.
+Materializa casos Host, ejecuta evaluación y revisión DSH en sesiones separadas,
+valida evidencia y hashes, y emite ACTIVE o RETAINED. Creator y actores DSH
+nunca deciden el lifecycle ni escriben en el run canónico.
 """
-
 import hashlib
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import acceptance_harness as harness
+from acceptance_reviewer import DshAcceptanceActors, tree_digest
 import host_validator
 
 SCHEMA_VERSION = 1
+HOST_POLICY_VERSION = "acceptance-host-policy-v1"
 
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _digest(value):
+def _digest_bytes(value):
     return hashlib.sha256(value).hexdigest()
+
+
+def _digest_file(path):
+    return _digest_bytes(Path(path).read_bytes())
 
 
 def _write(path, value):
     p = Path(path)
     p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(value, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+def _replace(path, value):
+    path = Path(path)
+    if path.exists():
+        path.unlink()
+    _write(path, value)
 
 
 def _read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def _public_expected(verdict):
+    # PASS means the mode demonstrates positive behavior. BLOCKED means the
+    # mode must identify/block the negative condition; evaluator PASS confirms
+    # that expected behavior. FAIL/NOT_COVERED can never satisfy acceptance.
+    return verdict in ("PASS", "BLOCKED")
+
+
+def validate_host_verdict(path, generated, *, generation_id=None):
+    """Validate an existing Host verdict and all candidate/result bindings."""
+    path, generated = Path(path), Path(generated)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"host-verdict no disponible: {path}")
+    verdict = _read(path)
+    required = {
+        "schema_version", "generation_id", "verdict", "static_passed",
+        "public_passed", "holdout_passed", "independent_review",
+        "candidate_digest", "manifest_digest", "public_results_digest",
+        "holdout_results_digest", "review_digest", "host_policy_digest",
+        "timestamp",
+    }
+    if set(verdict) != required:
+        raise ValueError("host-verdict tiene campos inválidos")
+    if verdict["schema_version"] != SCHEMA_VERSION:
+        raise ValueError("host-verdict schema_version inválida")
+    if generation_id and verdict["generation_id"] != generation_id:
+        raise ValueError("host-verdict corresponde a otra generación")
+    if verdict["verdict"] not in ("ACTIVE", "RETAINED"):
+        raise ValueError("host-verdict verdict inválido")
+    manifest = generated / "generation-manifest.json"
+    if tree_digest(generated) != verdict["candidate_digest"]:
+        raise ValueError("host-verdict obsoleto: cambió el candidato")
+    if _digest_file(manifest) != verdict["manifest_digest"]:
+        raise ValueError("host-verdict obsoleto: cambió el manifest")
+    acceptance_dir = path.parent
+    bound = {
+        "public_results_digest": acceptance_dir / "public-results.json",
+        "holdout_results_digest": acceptance_dir / "holdout-results.json",
+        "review_digest": acceptance_dir / "independent-review.json",
+    }
+    for field, artifact in bound.items():
+        if not artifact.is_file() or _digest_file(artifact) != verdict[field]:
+            raise ValueError(f"host-verdict obsoleto: {field} no coincide")
+    active = all((
+        verdict["static_passed"], verdict["public_passed"],
+        verdict["holdout_passed"], verdict["independent_review"] == "PASS",
+    ))
+    if (verdict["verdict"] == "ACTIVE") != active:
+        raise ValueError("host-verdict contradice sus gates")
+    return verdict
+
+
 class Acceptance:
     """Host-owned acceptance evaluator."""
 
-    def __init__(self, run_dir):
+    def __init__(self, run_dir, *, actors=None, launch_dsh=False,
+                 timeout_seconds=900):
         self.run_dir = Path(run_dir)
         self.generated = self.run_dir / "generated"
+        self.acceptance_dir = self.run_dir / "acceptance"
         self.results = []
+        self.actors = actors
+        self.launch_dsh = launch_dsh
+        self.timeout_seconds = timeout_seconds
+        self.generation_id = _read(self.run_dir / "run.json").get("generation_id")
+        self.candidate_digest = None
+        self.host_policy_digest = _digest_bytes(
+            HOST_POLICY_VERSION.encode("utf-8"))
 
     def _record(self, scenario_id, verdict, evidence=None, detail=""):
         self.results.append({
@@ -60,108 +134,221 @@ class Acceptance:
                      report.verdict)
         return report
 
-    def public_scenarios(self):
-        scenarios_path = self.run_dir / "tests" / "public" / "scenarios.jsonl"
-        if not scenarios_path.is_file():
-            self._record("PUBLIC-CORPUS", "NOT_COVERED", [], "No public scenarios")
-            return False
-        passed = True
-        for line in scenarios_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            scenario = json.loads(line)
-            sid = scenario.get("scenario_id", "unknown")
-            expected = scenario.get("expected", {}).get("verdict")
-            # Mechanical scenarios are marked PASS when structurally complete;
-            # semantic execution is delegated to the DSH harness.
-            actual = "PASS" if scenario.get("input") is not None else "UNVERIFIED"
-            self._record(sid, actual, [f"tests/public/scenarios.jsonl:{sid}"])
-            if expected == "PASS" and actual != "PASS":
-                passed = False
-        return passed
+    def materialize(self):
+        materialized = harness.materialize_run(
+            self.run_dir, self.host_policy_digest)
+        if materialized["plan"]["generation_id"] != self.generation_id:
+            raise ValueError("acceptance-plan corresponde a otra generación")
+        return materialized
 
-    def holdouts(self):
-        holdout = self.run_dir / "tests" / "holdout-spec.json"
-        if not holdout.is_file():
-            self._record("HOST-HOLDOUTS", "NOT_COVERED", [], "No holdout spec")
-            return False
-        spec = _read(holdout)
-        families = spec.get("families", []) if isinstance(spec, dict) else []
-        if not families:
-            self._record("HOST-HOLDOUTS", "NOT_COVERED", [], "Empty holdout families")
-            return False
-        for family in families:
-            self._record(f"HOLDOUT-{family}", "UNVERIFIED",
-                         ["tests/holdout-spec.json"],
-                         "Concrete cases materialized by Host")
-        # Holdouts are intentionally hidden; unverified means no acceptance.
-        return False
+    def _candidate_payload(self, materialized):
+        modes = {}
+        for path in sorted((self.generated / "modes").glob("*/mode.json")):
+            modes[str(path.relative_to(self.generated))] = _read(path)
+        contracts = {}
+        for path in sorted((self.generated / "contracts").glob("*.json")):
+            contracts[str(path.relative_to(self.generated))] = _read(path)
+        return modes, contracts
 
-    def independent_review(self):
-        # Explicitly degraded when no separate reviewer session is available.
+    def _evaluate(self, actors, materialized):
+        modes, contracts = self._candidate_payload(materialized)
+        prompt = harness.build_evaluator_prompt(
+            modes, contracts, materialized["public_cases"],
+            materialized["holdout_cases"])
+        expected_ids = [case["scenario_id"] for case in materialized["public_cases"]]
+        expected_ids += [case["case_id"] for case in materialized["holdout_cases"]]
+        payload = {
+            "generation_id": self.generation_id,
+            "candidate_digest": self.candidate_digest,
+            "cases": [
+                {"case_id": case_id} for case_id in expected_ids
+            ],
+        }
+        observation = actors.evaluate(payload, prompt)
+        envelope = observation["result"]
+        results = harness.validate_evaluator_results(
+            {"results": envelope["results"]}, expected_ids)
+        return observation, results
+
+    def _grade(self, materialized, results):
+        public_count = len(materialized["public_cases"])
+        public_observed = results[:public_count]
+        holdout_observed = results[public_count:]
+        public_rows = []
+        public_passed = True
+        for case, observed in zip(materialized["public_cases"], public_observed):
+            expected_supported = _public_expected(case["expected"]["verdict"])
+            passed = expected_supported and observed["verdict"] == "PASS"
+            public_passed = public_passed and passed
+            row = {
+                "case_id": case["scenario_id"],
+                "expected": case["expected"]["verdict"],
+                "observed": observed["verdict"],
+                "passed": passed,
+                "evidence": observed["evidence"],
+                "detail": observed["detail"],
+            }
+            public_rows.append(row)
+            self._record(case["scenario_id"], "PASS" if passed else "FAIL",
+                         observed["evidence"] if isinstance(observed["evidence"], list)
+                         else [observed["evidence"]], observed["detail"])
+
+        holdout_rows = []
+        holdout_passed = True
+        for case, observed in zip(materialized["holdout_cases"], holdout_observed):
+            oracle = materialized["holdout_oracles"][case["case_id"]]
+            passed = observed["verdict"] == oracle["verdict"]
+            holdout_passed = holdout_passed and passed
+            holdout_rows.append({
+                "case_id": case["case_id"],
+                "family": case["family"],
+                "observed": observed["verdict"],
+                "passed": passed,
+                "evidence": observed["evidence"],
+                "detail": observed["detail"],
+            })
+            # Ledger exposes only opaque ID/family and pass/fail, never oracle.
+            self._record(case["case_id"], "PASS" if passed else "FAIL",
+                         observed["evidence"] if isinstance(observed["evidence"], list)
+                         else [observed["evidence"]], "Host holdout graded")
+        return public_passed, public_rows, holdout_passed, holdout_rows
+
+    def _review(self, actors, public_rows):
+        public_summary = {
+            "cases": [{
+                "case_id": row["case_id"], "passed": row["passed"],
+                "evidence": row["evidence"], "detail": row["detail"],
+            } for row in public_rows],
+        }
+        prompt = harness.build_reviewer_prompt(
+            self.candidate_digest, public_summary)
+        payload = {
+            "generation_id": self.generation_id,
+            "candidate_digest": self.candidate_digest,
+            "cases": [{"case_id": "INDEPENDENT-REVIEW"}],
+        }
+        observation = actors.review(payload, prompt)
+        result = observation["result"]
+        if observation["session_id"] == getattr(self, "evaluator_session", None):
+            raise ValueError("Revisor independiente reutilizó la sesión evaluator")
+        if len(result["results"]) != 1 or result["results"][0].get("case_id") != "INDEPENDENT-REVIEW":
+            raise ValueError("Revisor independiente devolvió casos inválidos")
+        review_result = result["results"][0]
+        passed = result["verdict"] == "PASS" and review_result.get("verdict") == "PASS"
         review = {
             "schema_version": SCHEMA_VERSION,
-            "reviewer": "host-independent-review",
-            "isolation": "DEGRADED_REVIEW",
-            "verdict": "UNVERIFIED",
-            "reason": "Independent DSH reviewer not configured",
+            "reviewer": "host-independent-reviewer",
+            "session_id": observation["session_id"],
+            "isolation": "SEPARATE_DSH_SESSION",
+            "candidate_digest": self.candidate_digest,
+            "verdict": "PASS" if passed else "FAIL",
+            "evidence": review_result.get("evidence"),
+            "detail": review_result.get("detail"),
+            "summary": result["summary"],
             "timestamp": _now_iso(),
         }
-        self._record("INDEPENDENT-REVIEW", "UNVERIFIED",
-                     ["acceptance/independent-review.json"])
+        self._record("INDEPENDENT-REVIEW", review["verdict"],
+                     review_result.get("evidence") if isinstance(review_result.get("evidence"), list)
+                     else [review_result.get("evidence")], review_result.get("detail", ""))
         return review
+
+    def _write_outputs(self, public_rows, holdout_rows, review):
+        public_doc = {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": self.generation_id,
+            "candidate_digest": self.candidate_digest,
+            "results": public_rows,
+        }
+        holdout_doc = {
+            "schema_version": SCHEMA_VERSION,
+            "generation_id": self.generation_id,
+            "candidate_digest": self.candidate_digest,
+            "results": holdout_rows,
+        }
+        _replace(self.acceptance_dir / "public-results.json", public_doc)
+        _replace(self.acceptance_dir / "holdout-results.json", holdout_doc)
+        _replace(self.acceptance_dir / "independent-review.json", review)
+        ledger = self.acceptance_dir / "evidence-ledger.jsonl"
+        if ledger.exists():
+            ledger.unlink()
+        ledger.parent.mkdir(mode=0o700, exist_ok=True)
+        with ledger.open("x", encoding="utf-8") as stream:
+            for result in self.results:
+                stream.write(json.dumps(result, ensure_ascii=False) + "\n")
 
     def finalize(self, static_report, public_passed, holdout_passed, review):
         all_passed = (
             static_report.passed and public_passed and holdout_passed
             and review.get("verdict") == "PASS"
         )
-        verdict = "ACTIVE" if all_passed else "RETAINED"
-        gen_id = _read(self.run_dir / "run.json").get("generation_id")
-
-        evidence_path = self.run_dir / "acceptance" / "evidence-ledger.jsonl"
-        evidence_path.parent.mkdir(mode=0o700, exist_ok=True)
-        with evidence_path.open("w", encoding="utf-8") as f:
-            for result in self.results:
-                f.write(json.dumps(result, ensure_ascii=False) + "\n")
-
+        verdict_name = "ACTIVE" if all_passed else "RETAINED"
+        manifest_path = self.generated / "generation-manifest.json"
         host_verdict = {
             "schema_version": SCHEMA_VERSION,
-            "generation_id": gen_id,
-            "verdict": verdict,
+            "generation_id": self.generation_id,
+            "verdict": verdict_name,
             "static_passed": static_report.passed,
             "public_passed": public_passed,
             "holdout_passed": holdout_passed,
             "independent_review": review.get("verdict"),
+            "candidate_digest": self.candidate_digest,
+            "manifest_digest": _digest_file(manifest_path),
+            "public_results_digest": _digest_file(self.acceptance_dir / "public-results.json"),
+            "holdout_results_digest": _digest_file(self.acceptance_dir / "holdout-results.json"),
+            "review_digest": _digest_file(self.acceptance_dir / "independent-review.json"),
+            "host_policy_digest": self.host_policy_digest,
             "timestamp": _now_iso(),
         }
-        _write(self.run_dir / "acceptance" / "host-verdict.json", host_verdict)
+        _replace(self.acceptance_dir / "host-verdict.json", host_verdict)
+        validate_host_verdict(
+            self.acceptance_dir / "host-verdict.json", self.generated,
+            generation_id=self.generation_id)
 
-        # Host alone changes lifecycle state.
         run_path = self.run_dir / "run.json"
         run_doc = _read(run_path)
-        run_doc["status"] = verdict
+        run_doc["status"] = verdict_name
         run_doc["updated_at"] = _now_iso()
-        run_path.unlink()
-        _write(run_path, run_doc)
-
+        _replace(run_path, run_doc)
         return host_verdict
 
     def run(self):
         static_report = self.static_validation()
-        public_passed = self.public_scenarios()
-        holdout_passed = self.holdouts()
-        review = self.independent_review()
-        return self.finalize(static_report, public_passed, holdout_passed, review)
+        materialized = self.materialize()
+        self.candidate_digest = tree_digest(self.generated)
+        actors_ctx = self.actors or DshAcceptanceActors(
+            self.run_dir, launch=self.launch_dsh,
+            timeout_seconds=self.timeout_seconds)
+        owns_context = self.actors is None
+        if owns_context:
+            actors_ctx.__enter__()
+        try:
+            evaluator, results = self._evaluate(actors_ctx, materialized)
+            self.evaluator_session = evaluator["session_id"]
+            public_passed, public_rows, holdout_passed, holdout_rows = self._grade(
+                materialized, results)
+            review = self._review(actors_ctx, public_rows)
+            if tree_digest(self.generated) != self.candidate_digest:
+                raise ValueError("El candidato cambió durante aceptación")
+            self._write_outputs(public_rows, holdout_rows, review)
+            return self.finalize(
+                static_report, public_passed, holdout_passed, review)
+        finally:
+            if owns_context:
+                actors_ctx.__exit__(None, None, None)
 
 
-def accept(run_dir):
-    return Acceptance(run_dir).run()
+def accept(run_dir, *, actors=None, launch_dsh=False, timeout_seconds=900):
+    return Acceptance(
+        run_dir, actors=actors, launch_dsh=launch_dsh,
+        timeout_seconds=timeout_seconds).run()
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--launch-dsh", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(accept(args.run_dir), ensure_ascii=False, indent=2))
+    print(json.dumps(
+        accept(args.run_dir, launch_dsh=args.launch_dsh),
+        ensure_ascii=False, indent=2))
