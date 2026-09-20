@@ -124,6 +124,77 @@ class CreatorTransportTests(unittest.TestCase):
         client.exchange_token()
         self.assertTrue(client.authenticated)
 
+    def test_real_adapter_uses_authoritative_follow_and_control_baselines(self):
+        client = cc.DshLocalClient("http://127.0.0.1:3080/?token=t")
+        client._cookie = "dsh-auth-test=opaque"
+        snapshot = {
+            "follow": {
+                "type": "snapshot", "cursor": 12,
+                "records": [
+                    {"type": "event", "event": {"seq": 7,
+                     "type": "turn/start", "data": {"turn": 2}}},
+                    {"type": "event", "event": {"seq": 8,
+                     "type": "user/message", "data": {"turn": 2,
+                     "source": {"rpcId": "req"}}}},
+                ],
+            },
+            "control": {"jobs": {
+                "sess": [{"id": "parent-job", "status": "completed"}],
+                "child": [{"id": "child-job", "status": "running"}],
+                "grandchild": [{"id": "grand-job", "status": "completed"}],
+            }, "queues": {}, "projections": {}},
+        }
+        listed = {"value": {"items": [
+            {"sessionId": "sess", "running": True},
+            {"sessionId": "child", "parentSessionId": "sess",
+             "running": False},
+            {"sessionId": "grandchild", "parentSessionId": "child",
+             "running": True},
+            {"sessionId": "unrelated", "parentSessionId": "other",
+             "running": True},
+        ]}}
+        with unittest.mock.patch.object(
+                client, "stream_snapshot", return_value=snapshot) as stream, \
+                unittest.mock.patch.object(
+                    client, "list_sessions", return_value=listed):
+            observed = client.creator_observation("sess", cursor=7)
+        stream.assert_called_once_with("sess")
+        self.assertEqual(observed["cursor"], 12)
+        self.assertEqual([event["seq"] for event in observed["events"]], [8])
+        self.assertEqual(
+            {job["id"] for job in observed["jobs"]},
+            {"parent-job", "child-job", "grand-job"})
+        child_job = next(job for job in observed["jobs"]
+                         if job["id"] == "child-job")
+        self.assertEqual(child_job["sessionId"], "child")
+        self.assertEqual(
+            {item["sessionId"] for item in observed["descendants"]},
+            {"child", "grandchild"})
+        grandchild = next(item for item in observed["descendants"]
+                          if item["sessionId"] == "grandchild")
+        self.assertTrue(grandchild["running"])
+
+    def test_stream_helper_protocol_opens_follow_and_control(self):
+        client = cc.DshLocalClient("http://127.0.0.1:3080/?token=t")
+        client._cookie = "dsh-auth-test=opaque"
+        completed = unittest.mock.Mock(
+            returncode=0, stderr="", stdout=json.dumps({
+                "follow": {"type": "snapshot", "cursor": 5, "records": []},
+                "control": {"jobs": {}, "queues": {}, "projections": {}},
+            }))
+        with unittest.mock.patch.object(
+                cc.subprocess, "run", return_value=completed) as run:
+            result = client.stream_snapshot("sess-1", timeout=3)
+        argv = run.call_args.args[0]
+        payload = json.loads(run.call_args.kwargs["input"])
+        self.assertEqual(Path(argv[1]).name, "dsh_stream_snapshot.mjs")
+        helper_text = Path(argv[1]).read_text()
+        self.assertIn("/api/remote.mux", helper_text)
+        self.assertIn("endpoint: 'session/follow'", helper_text)
+        self.assertIn("endpoint: 'session/control'", helper_text)
+        self.assertEqual(payload["sessionId"], "sess-1")
+        self.assertEqual(result["follow"]["cursor"], 5)
+
     def test_from_dsh_home_generates_valid_cookie(self):
         with tempfile.TemporaryDirectory() as tmp:
             dsh_home = Path(tmp)
@@ -170,20 +241,23 @@ class CreatorTests(Base):
             def __init__(self):
                 self.prompts = []
                 self.workspace_paths = []
-            def create_creator_session(self, *, workspace_path, agent_preset=None):
+            def create_creator_session(self, *, workspace_path, agent_preset=None,
+                                       session_id=None):
                 self.workspace_paths.append(workspace_path)
-                return "acquired-session"
-            def send_prompt(self, session_id, prompt):
-                self.prompts.append((session_id, prompt))
+                return session_id
+            def send_prompt(self, session_id, prompt, request_id=None):
+                self.prompts.append((session_id, prompt, request_id))
                 return {"ok": True}
         mock = MockClient()
         with unittest.mock.patch.object(
                 cc, "acquire_dsh_client", return_value=(mock, "test-home")):
             result = cc.run_creator(self.run_dir, acquire=True, wait=False)
         self.assertEqual(result["result"], "PREPARED")
-        self.assertEqual(result["dsh_session_id"], "acquired-session")
+        self.assertTrue(result["dsh_session_id"].startswith("session-creator-"))
         self.assertEqual(result["dsh_origin"], "test-home")
         self.assertEqual(len(mock.prompts), 1)
+        state = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertEqual(mock.prompts[0][2], state["request_id"])
         self.assertEqual(mock.workspace_paths, [self.workspace])
 
     def test_run_creator_with_authenticated_client_dispatches_prompt(self):
@@ -192,19 +266,307 @@ class CreatorTests(Base):
             def __init__(self):
                 self.prompts = []
                 self.workspace_paths = []
-            def create_creator_session(self, *, workspace_path, agent_preset=None):
+            def create_creator_session(self, *, workspace_path, agent_preset=None,
+                                       session_id=None):
                 self.workspace_paths.append(workspace_path)
-                return "mock-session-123"
-            def send_prompt(self, session_id, prompt):
-                self.prompts.append((session_id, prompt))
+                return session_id
+            def send_prompt(self, session_id, prompt, request_id=None):
+                self.prompts.append((session_id, prompt, request_id))
                 return {"ok": True}
         mock = MockClient()
         result = cc.run_creator(self.run_dir, client=mock, wait=False)
         self.assertEqual(result["result"], "PREPARED")
-        self.assertEqual(result["dsh_session_id"], "mock-session-123")
+        self.assertTrue(result["dsh_session_id"].startswith("session-creator-"))
         self.assertEqual(len(mock.prompts), 1)
-        self.assertIn("mock-session-123", mock.prompts[0][0])
+        self.assertEqual(result["dsh_session_id"], mock.prompts[0][0])
         self.assertEqual(mock.workspace_paths, [self.workspace])
+
+    def test_creator_session_state_precedes_rpc_and_resume_reuses_ids(self):
+        calls = []
+
+        class Client:
+            authenticated = True
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                state = json.loads(
+                    (self.run_dir / "creator-session.json").read_text())
+                calls.append(("create", session_id, state["request_id"]))
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                calls.append(("prompt", session_id, request_id))
+                return {"accepted": True}
+
+        first = cc.run_creator(self.run_dir, client=Client(), wait=False,
+                               now_fn=lambda: 100.0)
+        state1 = json.loads((self.run_dir / "creator-session.json").read_text())
+        second = cc.run_creator(self.run_dir, client=Client(), wait=False,
+                                now_fn=lambda: 200.0)
+        state2 = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertEqual(first["dsh_session_id"], second["dsh_session_id"])
+        self.assertEqual(state1["session_id"], state2["session_id"])
+        self.assertEqual(state1["request_id"], state2["request_id"])
+        self.assertEqual(state1["deadline"], state2["deadline"])
+        self.assertEqual(calls[0][1], calls[2][1])
+        self.assertEqual(calls[1][1:], calls[3][1:])
+
+    def test_run_budget_is_frozen_into_deadline(self):
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_seconds"] = 17
+        cc._update_json(self.run_dir / "run.json", run)
+        cc.run_creator(self.run_dir, wait=False, now_fn=lambda: 1000.0)
+        state = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertEqual(state["deadline"], 1017.0)
+
+    def test_manifest_waits_for_terminal_and_quiescence(self):
+        self.make_package()
+
+        class Client:
+            authenticated = True
+            observations = [
+                {"cursor": 1, "events": [], "running": True,
+                 "children": [], "jobs": []},
+                {"cursor": 4, "events": [
+                  {"seq": 1, "type": "turn/start", "data": {"turn": 7}},
+                  {"seq": 2, "type": "user/message",
+                   "data": {"turn": 7, "source": {"rpcId": "placeholder"}}}],
+                 "running": False, "children": [], "jobs": []},
+            ]
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                inner.observations[1]["events"][1]["data"]["source"]["rpcId"] = request_id
+                inner.observations[1]["events"].append(
+                    {"seq": 4, "type": "turn/end",
+                     "data": {"turn": 7, "reason": "completed"}})
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                return inner.observations.pop(0)
+
+        client = Client()
+        result = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            now_fn=lambda: 100.0, sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "GENERATED")
+        state = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertTrue(state["terminal"])
+        self.assertTrue(state["quiescent"])
+
+    def test_turn_end_without_manifest_retains_immediately(self):
+        class Client:
+            authenticated = True
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                return {"cursor": 3, "events": [
+                    {"seq": 1, "type": "turn/start", "data": {"turn": 3}},
+                    {"seq": 2, "type": "user/message",
+                     "data": {"turn": 3,
+                              "source": {"rpcId": inner.request_id}}},
+                    {"seq": 3, "type": "turn/end",
+                     "data": {"turn": 3, "reason": "completed"}},
+                ], "running": False, "children": [], "jobs": []}
+
+        result = cc.run_creator(self.run_dir, client=Client(),
+                                now_fn=lambda: 100.0,
+                                sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "RETAINED")
+        self.assertIn("sin generation-manifest", result["reason"])
+
+    def test_only_matching_request_turn_end_is_terminal(self):
+        state = {"request_id": "wanted", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 8,
+            "events": [
+                {"seq": 1, "type": "turn/start", "data": {"turn": 1}},
+                {"seq": 2, "type": "user/message",
+                 "data": {"turn": 1, "source": {"rpcId": "other"}}},
+                {"seq": 3, "type": "turn/end",
+                 "data": {"turn": 1, "reason": "completed"}},
+                {"seq": 4, "type": "turn/start", "data": {"turn": 2}},
+                {"seq": 5, "type": "user/message",
+                 "data": {"turn": 2, "source": {"rpcId": "wanted"}}},
+                {"seq": 6, "type": "turn/start", "data": {"turn": 3}},
+                {"seq": 7, "type": "turn/end",
+                 "data": {"turn": 3, "reason": "completed"}},
+            ],
+            "running": False, "children": [], "jobs": [],
+        })
+        self.assertEqual(state["request_turn"], 2)
+        self.assertFalse(state["terminal"])
+        cc._fold_observation(state, {
+            "cursor": 9,
+            "events": [{"seq": 9, "type": "turn/end",
+                        "data": {"turn": 2, "reason": "completed"}}],
+            "running": False, "children": [], "jobs": [],
+        })
+        self.assertTrue(state["terminal"])
+
+    def test_request_turn_correlation_survives_poll_boundary(self):
+        state = {"request_id": "wanted", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 1,
+            "events": [{"seq": 1, "type": "turn/start",
+                        "data": {"turn": 9}}],
+            "running": True, "children": [], "jobs": [],
+        })
+        cc._fold_observation(state, {
+            "cursor": 3,
+            "events": [
+                {"seq": 2, "type": "user/message",
+                 "data": {"source": {"rpcId": "wanted"}}},
+                {"seq": 3, "type": "turn/end",
+                 "data": {"turn": 9, "reason": "completed"}},
+            ],
+            "running": False, "children": [], "jobs": [],
+        })
+        self.assertEqual(state["request_turn"], 9)
+        self.assertTrue(state["terminal"])
+
+    def test_active_jobs_prevent_quiescence(self):
+        state = {"request_id": "wanted", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 3,
+            "events": [
+                {"seq": 1, "type": "turn/start", "data": {"turn": 4}},
+                {"seq": 2, "type": "user/message",
+                 "data": {"turn": 4, "source": {"rpcId": "wanted"}}},
+                {"seq": 3, "type": "turn/end",
+                 "data": {"turn": 4, "reason": "completed"}},
+            ],
+            "running": False, "children": [],
+            "jobs": [{"id": "job-1", "status": "running"}],
+        })
+        self.assertTrue(state["terminal"])
+        self.assertTrue(state["active_jobs"])
+        self.assertFalse(state["quiescent"])
+
+    def test_terminal_without_manifest_waits_for_descendants_and_child_jobs(self):
+        class Client:
+            authenticated = True
+            observation_count = 0
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                inner.observation_count += 1
+                terminal_events = [
+                    {"seq": 1, "type": "turn/start", "data": {"turn": 4}},
+                    {"seq": 2, "type": "user/message",
+                     "data": {"turn": 4,
+                              "source": {"rpcId": inner.request_id}}},
+                    {"seq": 3, "type": "turn/end",
+                     "data": {"turn": 4, "reason": "completed"}},
+                ] if inner.observation_count == 1 else []
+                if inner.observation_count == 1:
+                    return {
+                        "cursor": 3, "events": terminal_events,
+                        "running": False,
+                        "descendants": [
+                            {"sessionId": "child", "running": False},
+                            {"sessionId": "grandchild", "running": True},
+                        ],
+                        "jobs": [{"id": "child-job", "sessionId": "child",
+                                  "status": "running"}],
+                    }
+                return {"cursor": 3, "events": [], "running": False,
+                        "descendants": [
+                            {"sessionId": "child", "running": False},
+                            {"sessionId": "grandchild", "running": False},
+                        ], "jobs": [
+                            {"id": "child-job", "sessionId": "child",
+                             "status": "completed"}],
+                        }
+
+        client = Client()
+        result = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            now_fn=lambda: 100.0, sleep_fn=lambda _seconds: None)
+        self.assertEqual(client.observation_count, 2)
+        self.assertEqual(result["result"], "RETAINED")
+        self.assertIn("sin generation-manifest", result["reason"])
+
+    def test_generated_rerun_does_not_dispatch_or_degrade(self):
+        generated, manifest = self.make_package()
+        session = cc.CreatorSession(self.run_dir)
+        session.create_finish(manifest)
+
+        class ExplodingClient:
+            authenticated = True
+            def create_creator_session(self, **_kwargs):
+                raise AssertionError("must not dispatch")
+
+        before_run = json.loads((self.run_dir / "run.json").read_text())
+        result = cc.run_creator(self.run_dir, client=ExplodingClient())
+        after_run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(result["result"], "GENERATED")
+        self.assertEqual(after_run["status"], "GENERATED")
+        self.assertEqual(before_run["status"], after_run["status"])
+
+    def test_timeout_cancels_and_requires_confirmed_quiescence(self):
+        clock = iter([100.0, 102.0, 102.0, 103.0])
+
+        class Client:
+            authenticated = True
+            cancelled = False
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                return {"cursor": cursor, "events": [],
+                        "running": not inner.cancelled,
+                        "children": [], "jobs": []}
+            def cancel_session(inner, session_id):
+                inner.cancelled = True
+                return {"accepted": True}
+
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_seconds"] = 1
+        cc._update_json(self.run_dir / "run.json", run)
+        client = Client()
+        result = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            now_fn=lambda: next(clock), sleep_fn=lambda _seconds: None)
+        self.assertTrue(client.cancelled)
+        self.assertEqual(result["result"], "RETAINED")
+        self.assertIn("cancelación confirmada", result["reason"])
+
+    def test_timeout_without_quiescence_marks_recovery_required(self):
+        times = iter([100.0, 102.0, 102.0, 104.0])
+
+        class Client:
+            authenticated = True
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                return {"cursor": cursor, "events": [], "running": True,
+                        "children": [], "jobs": []}
+            def cancel_session(inner, session_id):
+                return {"accepted": True}
+
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_seconds"] = 1
+        cc._update_json(self.run_dir / "run.json", run)
+        result = cc.run_creator(
+            self.run_dir, client=Client(), poll_seconds=0,
+            cancel_grace_seconds=1, now_fn=lambda: next(times),
+            sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "RECOVERY_REQUIRED")
+        run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(run["status"], "RECOVERY_REQUIRED")
 
     def test_session_create_binds_workspace_not_bare_cwd(self):
         """session/create takes a workspaceId, never a bare cwd (M-pilot:
@@ -230,6 +592,28 @@ class CreatorTests(Base):
         self.assertEqual(calls[0][1]["request"]["path"], str(self.workspace))
         self.assertEqual(calls[1][1]["request"]["workspaceId"], "ws-1")
         self.assertNotIn("cwd", calls[1][1]["request"])
+
+    def test_session_create_and_prompt_accept_stable_ids(self):
+        client = cc.DshLocalClient("http://127.0.0.1:3080/?token=t")
+        calls = []
+
+        def fake_rpc(endpoint, args=None, timeout=30):
+            calls.append((endpoint, args))
+            if endpoint == "workspace/create":
+                return {"value": {"workspace": {"workspaceId": "ws-1"}}}
+            if endpoint == "session/create":
+                return {"value": {"sessionId": "stable-session"}}
+            return {"value": {"accepted": True}}
+
+        with unittest.mock.patch.object(client, "rpc", side_effect=fake_rpc):
+            client.create_creator_session(
+                workspace_path=self.workspace, session_id="stable-session")
+            client.send_prompt("stable-session", "hello",
+                               request_id="stable-request")
+        self.assertEqual(calls[1][1]["request"]["sessionId"],
+                         "stable-session")
+        self.assertEqual(calls[2][1]["request"]["requestId"],
+                         "stable-request")
 
     def test_generation_output_requires_generated_status(self):
         generated, _ = self.make_package(status="ACTIVE")
@@ -549,24 +933,67 @@ class DshLifecycleTests(unittest.TestCase):
         fake_process.kill.assert_called_once()
 
 class _FakeProcess:
-    """Popen fake: poll() reflects exhaustion of stdout, like a real pipe."""
+    """Popen fake backed by a selectable OS pipe."""
 
     def __init__(self, lines, exit_code=1):
-        import io
-        self._text = "".join(line + "\n" for line in lines)
-        self.stdout = io.StringIO(self._text)
+        read_fd, write_fd = os.pipe()
+        self.stdout = os.fdopen(read_fd, "r")
+        os.write(write_fd, "".join(line + "\n" for line in lines).encode())
+        os.close(write_fd)
         self._exit = exit_code
         self.killed = False
 
     def poll(self):
-        return self._exit if self.stdout.tell() >= len(self._text) else None
+        return self._exit
 
     def kill(self):
         self.killed = True
+    def wait(self, timeout=None):
+        return self._exit
+
+
+class _SilentPipe:
+    def __init__(self):
+        self.read_fd, self.write_fd = os.pipe()
+        self.reader = os.fdopen(self.read_fd, "r")
+    def fileno(self):
+        return self.reader.fileno()
+    def readline(self):
+        return self.reader.readline()
+    def close(self):
+        if not self.reader.closed:
+            self.reader.close()
+        if self.write_fd is not None:
+            os.close(self.write_fd)
+            self.write_fd = None
+
+
+class _SilentProcess:
+    def __init__(self):
+        self.stdout = _SilentPipe()
+        self.killed = False
+    def poll(self):
+        return -9 if self.killed else None
+    def kill(self):
+        self.killed = True
+    def wait(self, timeout=None):
+        return -9
 
 
 class LaunchDshWebTests(unittest.TestCase):
     """El lanzamiento captura la salida de DSH para diagnosticar fallos."""
+
+    def test_silent_launch_honors_spawn_timeout(self):
+        proc = _SilentProcess()
+        with unittest.mock.patch.object(cc.subprocess, "Popen",
+                                        return_value=proc):
+            started = cc.time.monotonic()
+            with self.assertRaises(RuntimeError) as ctx:
+                cc.launch_dsh_web(spawn_timeout=0.05)
+            elapsed = cc.time.monotonic() - started
+        self.assertLess(elapsed, 0.5)
+        self.assertTrue(proc.killed)
+        self.assertIn("<sin salida>", str(ctx.exception))
 
     def test_launch_returns_client_on_url(self):
         proc = _FakeProcess([
@@ -578,7 +1005,8 @@ class LaunchDshWebTests(unittest.TestCase):
             process, client = cc.launch_dsh_web()
         self.assertIs(process, proc)
         self.assertEqual(client.base_url, "http://127.0.0.1:3080")
-        proc.killed is False
+        self.assertFalse(proc.killed)
+        proc.stdout.close()
 
     def test_launch_failure_includes_captured_output(self):
         proc = _FakeProcess([

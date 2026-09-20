@@ -13,23 +13,73 @@ import acceptance_reviewer as ar
 class FakeClient:
     authenticated = True
 
-    def __init__(self, result_factory):
+    def __init__(self, result_factory, *, write_result=True, running=False,
+                 terminal=True, children=None, jobs=None,
+                 cancel_running=False, cancel_children=None, cancel_jobs=None,
+                 observations=None, lifecycle_error=None):
         self.result_factory = result_factory
+        self.write_result = write_result
+        self.running = running
+        self.terminal = terminal
+        self.children = list(children or [])
+        self.jobs = list(jobs or [])
+        self.cancel_running = cancel_running
+        self.cancel_children = list(cancel_children or [])
+        self.cancel_jobs = list(cancel_jobs or [])
+        self.observations = list(observations or [])
+        self.lifecycle_error = lifecycle_error
         self.sessions = []
         self.prompts = []
+        self.request_ids = []
+        self.observation_calls = []
+        self.cancel_calls = []
 
     def create_creator_session(self, *, workspace_path, agent_preset="cordis"):
         sid = f"session-{len(self.sessions) + 1}"
         self.sessions.append((sid, Path(workspace_path), agent_preset))
         return sid
 
-    def send_prompt(self, session_id, prompt):
+    def send_prompt(self, session_id, prompt, request_id=None):
+        self.request_ids.append(request_id)
         self.prompts.append((session_id, prompt))
-        _, workspace, _ = next(row for row in self.sessions if row[0] == session_id)
-        payload = json.loads((workspace / "input.json").read_text())
-        result = self.result_factory(payload)
-        (workspace / "result.json").write_text(json.dumps(result) + "\n")
+        if self.write_result:
+            _, workspace, _ = next(
+                row for row in self.sessions if row[0] == session_id)
+            payload = json.loads((workspace / "input.json").read_text())
+            result = self.result_factory(payload)
+            (workspace / "result.json").write_text(json.dumps(result) + "\n")
         return {"queued": True}
+
+    def creator_observation(self, session_id, cursor=-1):
+        self.observation_calls.append((session_id, cursor))
+        if self.lifecycle_error is not None:
+            error, self.lifecycle_error = self.lifecycle_error, None
+            raise error
+        if self.observations:
+            return self.observations.pop(0)
+        events = []
+        if self.terminal:
+            events = [
+                {"seq": 1, "type": "user/message",
+                 "data": {"turn": 7,
+                          "source": {"rpcId": self.request_ids[-1]}}},
+                {"seq": 2, "type": "turn/end",
+                 "data": {"turn": 7, "reason": "completed"}},
+            ]
+        return {
+            "cursor": 2 if events else cursor,
+            "events": events,
+            "running": self.running,
+            "children": self.children,
+            "jobs": self.jobs,
+        }
+
+    def cancel_session(self, session_id):
+        self.cancel_calls.append(session_id)
+        self.running = self.cancel_running
+        self.children = self.cancel_children
+        self.jobs = self.cancel_jobs
+        return {"accepted": True}
 
 
 class AcceptanceReviewerTests(unittest.TestCase):
@@ -84,20 +134,198 @@ class AcceptanceReviewerTests(unittest.TestCase):
         self.assertNotEqual(evaluator["session_id"], reviewer["session_id"])
         self.assertNotEqual(evaluator["workspace"], reviewer["workspace"])
 
-    def test_tampered_digest_is_rejected(self):
+    def test_success_waits_for_terminal_session_and_uses_stable_request_id(self):
+        client = FakeClient(lambda payload: self.result(payload))
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            observed = actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(observed["result"]["verdict"], "PASS")
+        self.assertTrue(client.observation_calls)
+        expected = ar.hashlib.sha256(
+            f"acceptance:{self.payload['generation_id']}:{self.digest}:host-evaluator".encode()
+        ).hexdigest()
+        self.assertEqual(client.request_ids, [expected])
+
+    def test_request_turn_correlation_persists_across_observations(self):
+        class SplitObservationClient(FakeClient):
+            def creator_observation(inner, session_id, cursor=-1):
+                inner.observation_calls.append((session_id, cursor))
+                if len(inner.observation_calls) == 1:
+                    return {
+                        "cursor": 10,
+                        "events": [
+                            {"seq": 10, "type": "user/message",
+                             "data": {"turn": 41, "source": {
+                                 "rpcId": inner.request_ids[-1]}}},
+                        ],
+                        "running": True, "children": [], "jobs": [],
+                    }
+                return {
+                    "cursor": 14,
+                    "events": [
+                        {"seq": 11, "type": "user/message",
+                         "data": {"turn": 42, "source": {
+                             "rpcId": "other-request"}}},
+                        {"seq": 12, "type": "turn/end",
+                         "data": {"turn": 42, "reason": "completed"}},
+                        {"seq": 14, "type": "turn/end",
+                         "data": {"turn": 41, "reason": "completed"}},
+                    ],
+                    "running": False, "children": [], "jobs": [],
+                }
+
+        client = SplitObservationClient(lambda payload: self.result(payload),
+                                        running=True, terminal=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            observed = actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(observed["result"]["verdict"], "PASS")
+        self.assertEqual(client.observation_calls[:2],
+                         [("session-1", -1), ("session-1", 10)])
+        self.assertEqual(client.cancel_calls, [])
+
+    def test_interleaved_other_turn_end_is_not_accepted(self):
+        class InterleavedClient(FakeClient):
+            def creator_observation(inner, session_id, cursor=-1):
+                inner.observation_calls.append((session_id, cursor))
+                if inner.cancel_calls:
+                    return {
+                        "cursor": 3, "events": [], "running": False,
+                        "children": [], "jobs": [],
+                    }
+                return {
+                    "cursor": 3,
+                    "events": [
+                        {"seq": 1, "type": "user/message",
+                         "data": {"turn": 5, "source": {
+                             "rpcId": inner.request_ids[-1]}}},
+                        {"seq": 2, "type": "user/message",
+                         "data": {"turn": 6, "source": {
+                             "rpcId": "other-request"}}},
+                        {"seq": 3, "type": "turn/end",
+                         "data": {"turn": 6, "reason": "completed"}},
+                    ],
+                    "running": False, "children": [], "jobs": [],
+                }
+
+        client = InterleavedClient(lambda payload: self.result(payload),
+                                   terminal=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_timeout_cancels_once_and_requires_running_false(self):
+        client = FakeClient(lambda _payload: None, write_result=False,
+                            running=True, terminal=False,
+                            cancel_running=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_cancel_without_quiescence_fails_closed(self):
+        client = FakeClient(lambda _payload: None, write_result=False,
+                            running=True, terminal=False,
+                            cancel_running=True)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0) as actors:
+            with self.assertRaisesRegex(ValueError, "no pudo confirmar cierre"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+        self.assertTrue(client.observation_calls)
+
+    def test_result_is_not_accepted_while_session_remains_running(self):
+        client = FakeClient(lambda payload: self.result(payload),
+                            running=True, terminal=False,
+                            cancel_running=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertTrue(client.observation_calls)
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_active_child_prevents_result_acceptance(self):
+        client = FakeClient(
+            lambda payload: self.result(payload), terminal=True,
+            children=[{"sessionId": "child-1", "running": True}],
+            cancel_children=[])
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_active_job_prevents_result_acceptance(self):
+        client = FakeClient(
+            lambda payload: self.result(payload), terminal=True,
+            jobs=[{"jobId": "job-1", "status": "running"}],
+            cancel_jobs=[])
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_result_without_lifecycle_evidence_fails_closed(self):
+        class LegacyClient(FakeClient):
+            creator_observation = None
+
+        client = LegacyClient(lambda payload: self.result(payload))
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "no pudo confirmar cierre"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_tampered_result_does_not_cancel_proven_quiescent_session(self):
         client = FakeClient(lambda payload: self.result(payload, digest="0" * 64))
         with ar.DshAcceptanceActors(
                 self.run_dir, client=client, timeout_seconds=1) as actors:
             with self.assertRaisesRegex(ValueError, "Digest"):
                 actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, [])
 
-    def test_wrong_actor_is_rejected(self):
+    def test_invalid_result_cancels_once_if_session_not_quiescent(self):
+        client = FakeClient(lambda payload: self.result(payload, digest="0" * 64),
+                            running=True, terminal=True,
+                            cancel_running=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=0.01) as actors:
+            with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_wrong_actor_does_not_cancel_proven_quiescent_session(self):
         client = FakeClient(lambda payload: self.result(
             payload, actor="host-independent-reviewer"))
         with ar.DshAcceptanceActors(
                 self.run_dir, client=client, timeout_seconds=1) as actors:
             with self.assertRaisesRegex(ValueError, "Actor"):
                 actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, [])
+
+    def test_missing_result_after_quiescence_does_not_cancel_again(self):
+        client = FakeClient(lambda _payload: None, write_result=False)
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            with self.assertRaisesRegex(ValueError, "terminó sin result.json"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, [])
+
+    def test_lifecycle_error_cancels_once_before_raising(self):
+        client = FakeClient(lambda payload: self.result(payload),
+                            running=True, terminal=False,
+                            cancel_running=False,
+                            lifecycle_error=RuntimeError("follow roto"))
+        with ar.DshAcceptanceActors(
+                self.run_dir, client=client, timeout_seconds=1) as actors:
+            with self.assertRaisesRegex(ValueError, "Error observando.*follow roto"):
+                actors.evaluate(self.payload, "evalúa")
+        self.assertEqual(client.cancel_calls, ["session-1"])
 
     def test_tree_digest_changes_with_content(self):
         before = self.digest
