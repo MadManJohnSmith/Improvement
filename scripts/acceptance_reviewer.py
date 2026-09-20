@@ -279,6 +279,14 @@ class DshAcceptanceActors:
         client = self._client()
         session_id = client.create_creator_session(
             workspace_path=workspace, agent_preset="standard")
+        result_contract = (
+            '"case_id":"...","verdict":"PASS"|"FAIL",'
+            '"decision":"ALLOW"|"DENY"|"UNRESOLVED",'
+            '"evidence":["candidate/relative/path"],"detail":"..."'
+            if actor == "host-evaluator" else
+            '"case_id":"...","verdict":"PASS"|"FAIL",'
+            '"evidence":["candidate/relative/path"],"detail":"..."'
+        )
         output_contract = f"""
 
 Write exactly one final JSON object to result.json using workflow_write. Do not
@@ -287,8 +295,7 @@ write any other file. The object MUST have exactly these top-level fields:
  "generation_id":{json.dumps(generation_id)},
  "candidate_digest":{json.dumps(candidate_digest)},
  "verdict":"PASS"|"FAIL"|"BLOCKED"|"UNVERIFIED",
- "results":[{{"case_id":"...","verdict":"PASS"|"FAIL",
- "evidence":["candidate/relative/path"],"detail":"..."}}],
+ "results":[{{{result_contract}}}],
  "summary":"..."}}
 Never emit ACTIVE/RETAINED and never call acceptance or transaction tools.
 """

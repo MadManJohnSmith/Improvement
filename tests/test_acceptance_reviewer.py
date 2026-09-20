@@ -104,13 +104,17 @@ class AcceptanceReviewerTests(unittest.TestCase):
 
     @staticmethod
     def result(payload, *, actor="host-evaluator", digest=None):
+        row = {"case_id": "A", "verdict": "PASS",
+               "evidence": ["candidate/mode.json"], "detail": "ok"}
+        if actor == "host-evaluator":
+            row["decision"] = "DENY"
         return {
             "schema_version": 1,
             "actor": actor,
             "generation_id": payload["generation_id"],
             "candidate_digest": digest or payload["candidate_digest"],
             "verdict": "PASS",
-            "results": [{"case_id": "A", "verdict": "PASS", "evidence": ["candidate/mode.json"], "detail": "ok"}],
+            "results": [row],
             "summary": "Todo correcto",
         }
 
@@ -125,6 +129,8 @@ class AcceptanceReviewerTests(unittest.TestCase):
             self.assertEqual(client.sessions[0][2], "standard")
             self.assertTrue(client.prompts[0][1].startswith("evalúa"))
             self.assertIn("Write exactly one final JSON object", client.prompts[0][1])
+            self.assertIn('"decision":"ALLOW"|"DENY"|"UNRESOLVED"',
+                          client.prompts[0][1])
             self.assertFalse((workspace / "candidate" / "mode.json").stat().st_mode & 0o222)
 
     def test_evaluator_and_reviewer_use_distinct_sessions_and_workspaces(self):
@@ -137,6 +143,7 @@ class AcceptanceReviewerTests(unittest.TestCase):
             evaluator = actors.evaluate(self.payload, "eval")
             reviewer = actors.review(self.payload, "review")
             reviewer_root = Path(reviewer["workspace"]) / "candidate"
+            self.assertNotIn('"decision":', client.prompts[1][1])
             reviewer_candidate = reviewer_root / "mode.json"
             self.assertTrue(reviewer_candidate.is_file())
             self.assertFalse(reviewer_root.stat().st_mode & 0o222)
