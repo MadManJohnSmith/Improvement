@@ -103,7 +103,7 @@ class AcceptanceHarnessTests(unittest.TestCase):
             self.plan_path, self.root / "tests", POLICY_DIGEST)
         self.assertEqual(len(result["public_cases"]), len(harness.SCENARIO_TYPES))
         expected = {
-            "positive": "ALLOW", "negative": "DENY", "boundary": "ALLOW",
+            "positive": "ALLOW", "negative": "DENY", "boundary": "DENY",
             "tool-denial": "DENY", "capability-denial": "DENY",
             "missing-capability": "DENY", "prompt-injection": "DENY",
             "cycle": "DENY", "invalid-handoff": "DENY",
