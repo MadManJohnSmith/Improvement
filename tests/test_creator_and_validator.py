@@ -885,6 +885,56 @@ class ValidatorTests(Base):
         self.assertIn("missing", " ".join(
             report.layers["capabilities"]["details"]).lower())
 
+    def test_different_modes_may_require_and_forbid_candidate_write(self):
+        generated, manifest = self.make_package()
+        capabilities = json.loads((generated / "capabilities.json").read_text())
+        capabilities["required_capabilities"] = ["product_read", "candidate_write"]
+        cap_bytes = (json.dumps(capabilities, indent=2) + "\n").encode()
+        (generated / "capabilities.json").write_bytes(cap_bytes)
+        for art in manifest["artifacts"]:
+            if art["path"] == "capabilities.json":
+                art["sha256"] = cc._digest_bytes(cap_bytes)
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        for name, required, forbidden in (
+            ("auditor", ["product_read"], ["candidate_write"]),
+            ("repair", ["candidate_write"], ["canonical_write"]),
+        ):
+            data = (json.dumps({"required_capabilities": required,
+                                "forbidden_capabilities": forbidden}) + "\n").encode()
+            path = contracts / f"{name}.mode.json"
+            path.write_bytes(data)
+            manifest["artifacts"].append({
+                "path": f"contracts/{name}.mode.json", "type": "contract",
+                "sha256": cc._digest_bytes(data),
+            })
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["capabilities"]["passed"],
+                        report.layers["capabilities"]["details"])
+
+    def test_scenario_jsonl_contract_is_validated_line_by_line(self):
+        generated, manifest = self.make_package()
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        scenario = {
+            "schema_version": 1, "scenario_id": "SC-1", "type": "positive",
+            "description": "Host case", "input": {},
+            "expected": {"verdict": "PASS"}, "sr_links": ["SR-1"],
+        }
+        data = (json.dumps(scenario) + "\n").encode()
+        (contracts / "scenarios.jsonl").write_bytes(data)
+        manifest["artifacts"].append({
+            "path": "contracts/scenarios.jsonl", "type": "contract",
+            "sha256": cc._digest_bytes(data),
+        })
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+
     def test_portability_violation_retained(self):
         generated, manifest = self.make_package()
         skill = generated / "skills/project-auditor/SKILL.md"
