@@ -160,5 +160,43 @@ check('M9: guard del plugin activo junto a la bash real', guards2.length === 1 &
 // workflow_write también presente en el mismo registro compartido
 check('M9: workflow_write registrada en la composición compartida', registry.get('workflow_write') !== undefined);
 
+// ── 5. M9 vía por-request: waterfall system-prompt/assemble ──────────
+let assembleListener;
+const realCtx2 = {
+  get: realCtx.get,
+  tools: { register: (d) => registry.set(d.name, d), guard: (g) => guards2.push(g), get: (name) => registry.get(name) },
+  shell: realCtx.shell,
+  shellEnv: realCtx.shellEnv,
+  systemPrompt: realCtx.systemPrompt,
+  on(event, handler) {
+    if (event === 'system-prompt/assemble') assembleListener = handler;
+    return () => {};
+  },
+};
+const originalBashDescription = 'Execute a bash command. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn with sandbox_permissions. Do not set sandbox_permissions speculatively.';
+const assemblyInput = {
+  sections: [],
+  contexts: [],
+  variables: {},
+  tools: [
+    { name: 'bash', description: originalBashDescription, parameters: { type: 'object', properties: { command: { type: 'string' }, description: { type: 'string' }, sandbox_permissions: { type: 'string', enum: ['workspace-write'] }, justification: { type: 'string' } }, required: ['command', 'description'] } },
+    { name: 'read', description: 'Read a file.', parameters: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] } },
+  ],
+};
+mod.apply(realCtx2, {});
+check('M9: plugin registra listener de system-prompt/assemble', typeof assembleListener === 'function');
+const assembled = await assembleListener(assemblyInput, {}, async () => assemblyInput);
+const bashWire = assembled.tools.find((t) => t.name === 'bash');
+const readWire = assembled.tools.find((t) => t.name === 'read');
+check('M9 waterfall: bash sin sandbox_permissions', bashWire && !('sandbox_permissions' in bashWire.parameters.properties));
+check('M9 waterfall: bash sin justification', bashWire && !('justification' in bashWire.parameters.properties));
+check('M9 waterfall: required sin campos de escalada', JSON.stringify(bashWire.parameters.required) === JSON.stringify(['command', 'description']), JSON.stringify(bashWire.parameters.required));
+check('M9 waterfall: descripción de bash saneada', !/escalat|sandbox_permissions|justification/i.test(bashWire.description), bashWire.description);
+check('M9 waterfall: read NO alterada', readWire === assemblyInput.tools[1]);
+check('M9 waterfall: input original no mutado', 'sandbox_permissions' in assemblyInput.tools[0].parameters.properties);
+const passInput = { tools: [{ name: 'x', parameters: { type: 'object', properties: { a: { type: 'string' } } } }] };
+const passthrough = await assembleListener(passInput, {}, async () => passInput);
+check('M9 waterfall: tools sin campos pasan intactas', passthrough.tools[0] === passInput.tools[0]);
+
 console.log(failures === 0 ? '\nTODO OK' : `\n${failures} FALLOS`);
 process.exit(failures === 0 ? 0 : 1);

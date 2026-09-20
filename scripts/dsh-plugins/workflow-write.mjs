@@ -15,14 +15,20 @@
  * en TODA llamada bash desde la primera (sin denegación previa) pese a tres
  * capas de instrucción contraria (prompt de misión, contexto de runtime y
  * mensaje correctivo del guard M7); 60+ llamadas idénticas quemaron la sesión
- * delegada. La cura es estructural: el esquema model-facing se proyecta en
- * cada request (provider de systemPrompt.tools → schemaOf por definición),
- * así que este plugin MUTA las definiciones ya registradas de bash/pwsh/
- * write/edit para eliminar sandbox_permissions/justification de sus
- * parámetros y las frases de escalada de sus descripciones. Lo que el
- * esquema no anuncia, el modelo deja de enviar; los validadores de args de
- * defineTool solo miran claves anunciadas, y el guard sigue denegando
- * cualquier aparición residual antes del dispatch.
+ * delegada. La cura es estructural: retirar los campos del esquema
+ * model-facing. Se aplican dos vías:
+ *  1. Waterfall system-prompt/assemble (por request, la efectiva): el
+ *     assembly re-deriva las schemas de las definiciones en cada paso
+ *     (structuredClone vía wireSchemas) y su valor transformado es
+ *     autoritario; assembly.tools es exactamente el array de
+ *     function-calling. El hook sanea cada tool (parámetros y descripción)
+ *     para todos los agentes y subagentes, sin importar cuándo se
+ *     registraron las filas de tool de los presets (por sesión, no en boot).
+ *  2. Barrido en apply de las definiciones ya registradas (bash/pwsh/write/
+ *     edit): cubre composiciones donde las tools existen en boot. La
+ *     ejecución aguanta igual: los validadores de args de defineTool solo
+ *     miran claves anunciadas, y el guard sigue denegando cualquier
+ *     aparición residual antes del dispatch.
  *
  * Correcciones de este plugin (mantenedor, no Creator):
  *  1. workflow_write registra un JSON Schema CRUDO ya compilado
@@ -135,6 +141,27 @@ export function apply(ctx, config) {
     }
     return true;
   };
+  // Variante no mutante para las schemas clonadas del assembly.
+  const stripToolSchema = (tool) => {
+    if (!tool || typeof tool !== 'object') return tool;
+    const params = tool.parameters;
+    if (!params || typeof params !== 'object' || !params.properties) return tool;
+    if (!('sandbox_permissions' in params.properties) && !('justification' in params.properties)) return tool;
+    const properties = { ...params.properties };
+    delete properties.sandbox_permissions;
+    delete properties.justification;
+    const cleanedParams = { ...params, properties };
+    if (Array.isArray(cleanedParams.required)) {
+      const required = cleanedParams.required.filter((k) => k !== 'sandbox_permissions' && k !== 'justification');
+      if (required.length > 0) cleanedParams.required = required;
+      else delete cleanedParams.required;
+    }
+    const cleaned = { ...tool, parameters: cleanedParams };
+    if (typeof cleaned.description === 'string') {
+      cleaned.description = sanitizeDescription(cleaned.description);
+    }
+    return cleaned;
+  };
   let stripped = [];
   for (const toolName of ['bash', 'pwsh', 'write', 'edit']) {
     try {
@@ -144,8 +171,30 @@ export function apply(ctx, config) {
       // herramienta ausente en esta composición: nada que sanear
     }
   }
-  if (stripped.length === 0) {
-    console.warn('[workflow-write] M9: ninguna tool con sandbox_permissions encontrada para sanear (¿orden de composición?)');
+
+  // Corrección M9 (vía por-request, la efectiva): el waterfall
+  // system-prompt/assemble es autoritario y assembly.tools alimenta
+  // directamente el array de function-calling de cada petición. Sanea también
+  // para subagentes y para tools registradas después de este apply.
+  let notified = false;
+  try {
+    ctx.on?.('system-prompt/assemble', async (_assembly, _context, next) => {
+      const assembled = await next();
+      if (!assembled || !Array.isArray(assembled.tools)) return assembled;
+      let changed = false;
+      const tools = assembled.tools.map((tool) => {
+        const cleaned = stripToolSchema(tool);
+        if (cleaned !== tool) changed = true;
+        return cleaned;
+      });
+      if (changed && !notified) {
+        notified = true;
+        console.warn('[workflow-write] M9: parámetros de escalada retirados del esquema model-facing');
+      }
+      return changed ? { ...assembled, tools } : assembled;
+    });
+  } catch {
+    // sin servicio de eventos en esta composición: queda el barrido de apply
   }
 
   // Esquema CRUDO ya compilado: es la forma que register() consume tal cual.
