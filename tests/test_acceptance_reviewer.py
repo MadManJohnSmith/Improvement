@@ -14,16 +14,19 @@ class FakeClient:
     authenticated = True
 
     def __init__(self, result_factory, *, write_result=True, running=False,
-                 terminal=True, children=None, jobs=None,
-                 cancel_running=False, cancel_children=None, cancel_jobs=None,
+                 terminal=True, descendants=None, children=None, jobs=None,
+                 cancel_running=False, cancel_descendants=None,
+                 cancel_children=None, cancel_jobs=None,
                  observations=None, lifecycle_error=None):
         self.result_factory = result_factory
         self.write_result = write_result
         self.running = running
         self.terminal = terminal
+        self.descendants = list(descendants or [])
         self.children = list(children or [])
         self.jobs = list(jobs or [])
         self.cancel_running = cancel_running
+        self.cancel_descendants = list(cancel_descendants or [])
         self.cancel_children = list(cancel_children or [])
         self.cancel_jobs = list(cancel_jobs or [])
         self.observations = list(observations or [])
@@ -60,16 +63,17 @@ class FakeClient:
         events = []
         if self.terminal:
             events = [
-                {"seq": 1, "type": "user/message",
-                 "data": {"turn": 7,
-                          "source": {"rpcId": self.request_ids[-1]}}},
-                {"seq": 2, "type": "turn/end",
+                {"seq": 1, "type": "turn/start", "data": {"turn": 7}},
+                {"seq": 2, "type": "user/message",
+                 "data": {"source": {"rpcId": self.request_ids[-1]}}},
+                {"seq": 3, "type": "turn/end",
                  "data": {"turn": 7, "reason": "completed"}},
             ]
         return {
-            "cursor": 2 if events else cursor,
+            "cursor": 3 if events else cursor,
             "events": events,
             "running": self.running,
+            "descendants": self.descendants,
             "children": self.children,
             "jobs": self.jobs,
         }
@@ -77,6 +81,7 @@ class FakeClient:
     def cancel_session(self, session_id):
         self.cancel_calls.append(session_id)
         self.running = self.cancel_running
+        self.descendants = self.cancel_descendants
         self.children = self.cancel_children
         self.jobs = self.cancel_jobs
         return {"accepted": True}
@@ -154,24 +159,32 @@ class AcceptanceReviewerTests(unittest.TestCase):
                     return {
                         "cursor": 10,
                         "events": [
-                            {"seq": 10, "type": "user/message",
-                             "data": {"turn": 41, "source": {
+                            {"seq": 10, "type": "turn/start",
+                             "data": {"turn": 41}},
+                        ],
+                        "running": True, "descendants": [], "jobs": [],
+                    }
+                if len(inner.observation_calls) == 2:
+                    return {
+                        "cursor": 11,
+                        "events": [
+                            {"seq": 11, "type": "user/message",
+                             "data": {"source": {
                                  "rpcId": inner.request_ids[-1]}}},
                         ],
-                        "running": True, "children": [], "jobs": [],
+                        "running": True, "descendants": [], "jobs": [],
                     }
                 return {
                     "cursor": 14,
                     "events": [
-                        {"seq": 11, "type": "user/message",
-                         "data": {"turn": 42, "source": {
-                             "rpcId": "other-request"}}},
-                        {"seq": 12, "type": "turn/end",
+                        {"seq": 12, "type": "turn/start",
+                         "data": {"turn": 42}},
+                        {"seq": 13, "type": "turn/end",
                          "data": {"turn": 42, "reason": "completed"}},
                         {"seq": 14, "type": "turn/end",
                          "data": {"turn": 41, "reason": "completed"}},
                     ],
-                    "running": False, "children": [], "jobs": [],
+                    "running": False, "descendants": [], "jobs": [],
                 }
 
         client = SplitObservationClient(lambda payload: self.result(payload),
@@ -180,8 +193,9 @@ class AcceptanceReviewerTests(unittest.TestCase):
                 self.run_dir, client=client, timeout_seconds=1) as actors:
             observed = actors.evaluate(self.payload, "evalúa")
         self.assertEqual(observed["result"]["verdict"], "PASS")
-        self.assertEqual(client.observation_calls[:2],
-                         [("session-1", -1), ("session-1", 10)])
+        self.assertEqual(client.observation_calls[:3],
+                         [("session-1", -1), ("session-1", 10),
+                          ("session-1", 11)])
         self.assertEqual(client.cancel_calls, [])
 
     def test_interleaved_other_turn_end_is_not_accepted(self):
@@ -190,22 +204,23 @@ class AcceptanceReviewerTests(unittest.TestCase):
                 inner.observation_calls.append((session_id, cursor))
                 if inner.cancel_calls:
                     return {
-                        "cursor": 3, "events": [], "running": False,
-                        "children": [], "jobs": [],
+                        "cursor": 4, "events": [], "running": False,
+                        "descendants": [], "jobs": [],
                     }
                 return {
-                    "cursor": 3,
+                    "cursor": 4,
                     "events": [
-                        {"seq": 1, "type": "user/message",
-                         "data": {"turn": 5, "source": {
-                             "rpcId": inner.request_ids[-1]}}},
+                        {"seq": 1, "type": "turn/start",
+                         "data": {"turn": 5}},
                         {"seq": 2, "type": "user/message",
-                         "data": {"turn": 6, "source": {
-                             "rpcId": "other-request"}}},
-                        {"seq": 3, "type": "turn/end",
+                         "data": {"source": {
+                             "rpcId": inner.request_ids[-1]}}},
+                        {"seq": 3, "type": "turn/start",
+                         "data": {"turn": 6}},
+                        {"seq": 4, "type": "turn/end",
                          "data": {"turn": 6, "reason": "completed"}},
                     ],
-                    "running": False, "children": [], "jobs": [],
+                    "running": False, "descendants": [], "jobs": [],
                 }
 
         client = InterleavedClient(lambda payload: self.result(payload),
@@ -248,16 +263,37 @@ class AcceptanceReviewerTests(unittest.TestCase):
         self.assertTrue(client.observation_calls)
         self.assertEqual(client.cancel_calls, ["session-1"])
 
-    def test_active_child_prevents_result_acceptance(self):
+    def test_active_descendant_prevents_result_acceptance(self):
         client = FakeClient(
             lambda payload: self.result(payload), terminal=True,
-            children=[{"sessionId": "child-1", "running": True}],
-            cancel_children=[])
+            descendants=[{"sessionId": "grandchild-1", "running": True}],
+            cancel_descendants=[])
         with ar.DshAcceptanceActors(
                 self.run_dir, client=client, timeout_seconds=0.01) as actors:
             with self.assertRaisesRegex(ValueError, "cancelada.*running:false"):
                 actors.evaluate(self.payload, "evalúa")
         self.assertEqual(client.cancel_calls, ["session-1"])
+
+    def test_children_remain_compatible_when_descendants_are_absent(self):
+        state = {
+            "request_id": "request-1", "request_turn": None,
+            "open_turn": None, "cursor": -1, "terminal": False,
+        }
+        observation = {
+            "cursor": 3,
+            "events": [
+                {"seq": 1, "type": "turn/start", "data": {"turn": 7}},
+                {"seq": 2, "type": "user/message",
+                 "data": {"source": {"rpcId": "request-1"}}},
+                {"seq": 3, "type": "turn/end",
+                 "data": {"turn": 7, "reason": "completed"}},
+            ],
+            "running": False,
+            "children": [{"sessionId": "child-1", "running": True}],
+            "jobs": [],
+        }
+        lifecycle = ar.DshAcceptanceActors._fold_lifecycle(observation, state)
+        self.assertFalse(lifecycle["quiescent"])
 
     def test_active_job_prevents_result_acceptance(self):
         client = FakeClient(
