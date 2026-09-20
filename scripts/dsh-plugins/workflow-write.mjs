@@ -11,6 +11,19 @@
  * `workflow_write = () => any`, llamaba sin argumentos y execute fallaba en
  * bucle con «file_path debe ser un string no vacío».
  *
+ * Defecto M9 (2026-09-19, sesión tardis): el modelo envía sandbox_permissions
+ * en TODA llamada bash desde la primera (sin denegación previa) pese a tres
+ * capas de instrucción contraria (prompt de misión, contexto de runtime y
+ * mensaje correctivo del guard M7); 60+ llamadas idénticas quemaron la sesión
+ * delegada. La cura es estructural: el esquema model-facing se proyecta en
+ * cada request (provider de systemPrompt.tools → schemaOf por definición),
+ * así que este plugin MUTA las definiciones ya registradas de bash/pwsh/
+ * write/edit para eliminar sandbox_permissions/justification de sus
+ * parámetros y las frases de escalada de sus descripciones. Lo que el
+ * esquema no anuncia, el modelo deja de enviar; los validadores de args de
+ * defineTool solo miran claves anunciadas, y el guard sigue denegando
+ * cualquier aparición residual antes del dispatch.
+ *
  * Correcciones de este plugin (mantenedor, no Creator):
  *  1. workflow_write registra un JSON Schema CRUDO ya compilado
  *     ({type:'object', properties, required}), la forma que register() consume.
@@ -69,7 +82,7 @@ export function apply(ctx, config) {
     const requested = args?.sandbox_permissions;
     const justification = args?.justification;
     if (requested === undefined && justification === undefined) return undefined;
-    const corrective = 'Este despliegue no admite escalada por parámetros: reenvía exactamente el mismo comando omitiendo sandbox_permissions y justification; el modo vigente ya cubre el workspace de la sesión, y una denegación real de sandbox se informa como [sandbox: ...], nunca escalando.';
+    const corrective = 'Estos parámetros ya no forman parte del esquema de la herramienta en este despliegue: reenvía exactamente el mismo comando sin sandbox_permissions ni justification; el modo vigente ya cubre el workspace de la sesión, y una denegación real de sandbox se informa como [sandbox: ...], nunca escalando.';
     if (requested === undefined) {
       return `invalid escalation: justification solo es válida junto a sandbox_permissions. ${corrective}`;
     }
@@ -92,6 +105,48 @@ export function apply(ctx, config) {
     }
     return undefined; // estrictamente mayor: prosigue hacia la aprobación de upstream
   });
+
+  // Corrección M9: barrer las definiciones ya registradas y retirar del
+  // esquema model-facing los parámetros de escalada y su narrativa. El
+  // registro expone las definiciones por referencia y el proveedor de
+  // systemPrompt.tools las re-proyecta en cada request, así que la mutación
+  // alcanza a la vista del modelo en la siguiente petición. Orden: este
+  // plugin se aplica después de las filas de tools del preset (el patch se
+  // inserta al final); si una herramienta no existe en la composición, se
+  // omite sin ruido.
+  const sanitizeDescription = (text) => {
+    if (typeof text !== 'string') return text;
+    const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z`$])/);
+    const kept = sentences.filter((s) => !/escalat|sandbox_permissions|justification/i.test(s));
+    return kept.length > 0 ? kept.join(' ') : text;
+  };
+  const stripEscalation = (definition) => {
+    const params = definition?.parameters;
+    if (!params || typeof params !== 'object' || !params.properties) return false;
+    if (!('sandbox_permissions' in params.properties) && !('justification' in params.properties)) return false;
+    delete params.properties.sandbox_permissions;
+    delete params.properties.justification;
+    if (Array.isArray(params.required)) {
+      params.required = params.required.filter((k) => k !== 'sandbox_permissions' && k !== 'justification');
+      if (params.required.length === 0) delete params.required;
+    }
+    if (typeof definition.description === 'string') {
+      definition.description = sanitizeDescription(definition.description);
+    }
+    return true;
+  };
+  let stripped = [];
+  for (const toolName of ['bash', 'pwsh', 'write', 'edit']) {
+    try {
+      const definition = ctx.tools.get?.(toolName);
+      if (definition && stripEscalation(definition)) stripped.push(toolName);
+    } catch {
+      // herramienta ausente en esta composición: nada que sanear
+    }
+  }
+  if (stripped.length === 0) {
+    console.warn('[workflow-write] M9: ninguna tool con sandbox_permissions encontrada para sanear (¿orden de composición?)');
+  }
 
   // Esquema CRUDO ya compilado: es la forma que register() consume tal cual.
   const parameters = {
