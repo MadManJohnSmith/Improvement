@@ -287,6 +287,8 @@ class DshAcceptanceActors:
             '"case_id":"...","verdict":"PASS"|"FAIL",'
             '"evidence":["candidate/relative/path"],"detail":"..."'
         )
+        cases = payload["cases"]
+        case_ids = [case["case_id"] for case in cases]
         output_contract = f"""
 
 Write exactly one final JSON object to result.json using workflow_write. Do not
@@ -297,6 +299,9 @@ write any other file. The object MUST have exactly these top-level fields:
  "verdict":"PASS"|"FAIL"|"BLOCKED"|"UNVERIFIED",
  "results":[{{{result_contract}}}],
  "summary":"..."}}
+The authoritative input.json.cases requires exactly {len(cases)} result objects,
+one for each case_id in this order: {json.dumps(case_ids)}. Return every listed
+case_id exactly once and no other case_id.
 Never emit ACTIVE/RETAINED and never call acceptance or transaction tools.
 """
         request_id = hashlib.sha256(
