@@ -136,6 +136,11 @@ class AcceptanceReviewerTests(unittest.TestCase):
                 self.run_dir, client=client, timeout_seconds=1) as actors:
             evaluator = actors.evaluate(self.payload, "eval")
             reviewer = actors.review(self.payload, "review")
+            reviewer_root = Path(reviewer["workspace"]) / "candidate"
+            reviewer_candidate = reviewer_root / "mode.json"
+            self.assertTrue(reviewer_candidate.is_file())
+            self.assertFalse(reviewer_root.stat().st_mode & 0o222)
+            self.assertFalse(reviewer_candidate.stat().st_mode & 0o222)
         self.assertNotEqual(evaluator["session_id"], reviewer["session_id"])
         self.assertNotEqual(evaluator["workspace"], reviewer["workspace"])
 
