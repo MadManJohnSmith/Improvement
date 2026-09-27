@@ -19,3 +19,4 @@ node_modules/
 *.visual-check.*
 *.swp
 *.kate-swp
+.zcode/
