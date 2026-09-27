@@ -19,7 +19,7 @@ Creator recibe referencias a:
 - presupuesto y stop conditions;
 - directorio de staging único.
 
-Producto/framework se montan read-only; escritura solo dentro del run. La configuración/proveedor ya existe en DSH. El framework no recibe API keys.
+Producto/framework se montan read-only; escritura solo dentro del run. La sesión DSH del Creator se crea ligada al workspace del run (`workspace/create` + `workspaceId`), de modo que la frontera `workspace-write` es el workspace entero y la sesión queda agrupada en la UI; el detalle del ciclo de vida está en la arquitectura §7-B3. La configuración/proveedor ya existe en DSH. El framework no recibe API keys.
 
 ## Estrategia de selección de skills
 

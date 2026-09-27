@@ -1,5 +1,7 @@
 # Planes de implementación de arquitectura 3.0
 
+**Estado:** C0–C7 completados. Estos planes se conservan como registro del procedimiento ejecutado y como plantilla de adaptación para trabajo futuro; el estado vigente vive en `PLAN_IMPLEMENTACION.md` (incluida la sección post-C7) y `docs/status.md`.
+
 Estos documentos descomponen la arquitectura aprobada en iteraciones adaptables. No sustituyen `ARQUITECTURA_FLUJO_AGENTES.md` ni `PLAN_IMPLEMENTACION.md`:
 
 - `ARQUITECTURA_FLUJO_AGENTES.md` es la norma.

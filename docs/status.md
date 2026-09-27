@@ -1,8 +1,8 @@
 # Estado comprobado del framework
 
-**Actualización:** 2026-09-18
-**Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md)
-**Backlog único:** [C0–C7](../PLAN_IMPLEMENTACION.md)
+**Actualización:** 2026-09-27
+**Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (implementada)
+**Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md)
 
 Este documento registra únicamente el estado vigente. El detalle de iteraciones anteriores está en Git/`CHANGELOG.md`, no aquí.
 
@@ -60,15 +60,17 @@ usuario configura DSH/proveedor una vez
 → usuario opera <Proyecto>-auditor y <Proyecto>-continuous-repair
 ```
 
+Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; el detalle vigente del despacho está en la arquitectura §7-B3 y el uso en [usage.md](usage.md).
+
 ## Límites vigentes
 
-- C0–C7 completados con evidencia recuperable de DSH real (preset cordis) en dos proyectos piloto (Python y multiparte).
 - `THIRD_PARTY_NOTICES.md` incorporado para atribución MIT de jsmastery-pro/skills.
 - Publicación remota y release público requieren autorización del titular según la política de distribución.
 - La pérdida física de energía y descendientes remotos hostiles no tienen garantía total.
 - Configurar proveedor en DSH es responsabilidad previa del usuario; el framework no obtiene API keys.
+- El hardening de piloto requiere evidencia real: un prompt o un estado declarativo no acreditan autonomía, carga de skills ni aislamiento.
 
-## Pendiente vigente — C0–C7
+## C0–C7 — completadas
 
 | Etapa | Estado | Salida requerida |
 |---|---|---|
@@ -79,4 +81,22 @@ usuario configura DSH/proveedor una vez
 | C4 | HECHO | backups verificados, staging, swap atómico y rollback comprobados sobre paquete real |
 | C5 | HECHO | Creator invocó accept; Host ejecutó validación estática, ledger de evidencia y veredicto |
 | C6 | HECHO | pilotos clean-room ejecutados en proyecto Python y proyecto multiparte con DSH real |
-| C7 | HECHO | reconciliación de runs, THIRD_PARTY_NOTICES.md, 193 pruebas pasando y promoción verificada |
+| C7 | HECHO | reconciliación de runs, THIRD_PARTY_NOTICES.md (MIT) y promoción verificada |
+
+## Hardening posterior a C7 (piloto real)
+
+Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el detalle y las regresiones de cada una están en `CHANGELOG.md`:
+
+| Unidad | Estado | Contenido comprobado |
+|---|---|---|
+| Registro de fuentes y biblioteca materializada | HECHO | 43 fuentes con procedencia fijada; 21 skills base inmutables y 4 patrones de catálogo con escenarios y regresión bidireccional |
+| Integración biblioteca ↔ Creator | HECHO | snapshot de biblioteca por run, prompt con base/catálogo y criterios de activación, `reuse_reference` resuelto por el validador Host contra el snapshot |
+| Despacho automático y ciclo de vida DSH | HECHO | detección/parada de instancias previas, propiedad del puerto 3080 sin matar procesos ajenos, cookie HMAC del home, `npx -y` no interactivo con salida capturada y tokens redactados, resolutor de proveedor utilizable (aviso, no bloqueo; `DSH_PROVIDER_STRICT=1` para parada dura) |
+| Sesión ligada al workspace del run | HECHO | `workspace/create` + `session/create` con `workspaceId`; única sesión Creator, agrupada en la UI, frontera `workspace-write` en el workspace entero, sin sesiones evaluator/reviewer ni delegación |
+| Política anti-escalada de sandbox | HECHO | el plugin del framework retira `sandbox_permissions`/`justification` de los schemas de tools y guarda la escalada de bash, corrige el mismo-modo en `workflow_write` (overlay vía `dsh web --patch`), y el prompt prohíbe el canal completo con relevo a cualquier delegado |
+| Transacción con veredicto Host | HECHO | `install` exige `host-verdict.json` ACTIVE ligado a la misma generación antes de activar |
+| Aceptación Host aislada del Creator | HECHO | harness de aceptación del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa exigida y actores correlacionados con turnos reales de DSH; aceptación previa determinista (`READY_FOR_INSTALL`), sin afirmación de evaluación dinámica |
+| Instalación de modos como presets DSH | HECHO | modos con `mode.json`/`preset.yml`/`agent.cordis.yml`/`SKILL.md`; el Host prepara `mode-state`, publica en `$DSH_HOME/.agent-presets` y exige roster verificado vía `agentPresets/list` antes de `ACTIVE` |
+| Piloto tardis (Syncify) | EN CURSO | cada salida del piloto se convierte en cambio de flujo y regresión; la generación completa con paquete aceptado sigue siendo la salida pendiente |
+
+Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

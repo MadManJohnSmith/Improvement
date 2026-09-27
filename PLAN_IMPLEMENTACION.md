@@ -1,13 +1,14 @@
 # Plan de implementación y progreso
 
-**Estado:** arquitectura 3.0 aprobada; MVP operativo anterior aceptado; nueva capa de distribución/generación por proyecto pendiente de C0–C7.
-**Actualización:** 2026-09-17 — C0–C7 completados; promoción local verificada
+**Estado:** arquitectura 3.0 implementada: C0–C7 completados y verificados; hardening sobre piloto real en curso (ver «Post-C7»).
+**Actualización:** 2026-09-27
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
-Este archivo es el único índice de progreso. Conserva dos niveles:
+Este archivo es el único índice de progreso. Conserva tres niveles:
 
 1. **Base MVP comprobada:** capacidades ya demostradas con DSH real, Syncify y RehabWeb.
-2. **C0–C7:** implementación pendiente del flujo final de un comando: bootstrap → Creator automático → modos/skills específicos → validación/backup/aceptación Host → activación/rollback.
+2. **C0–C7:** implementación del flujo final de un comando: bootstrap → Creator automático → modos/skills específicos → validación/backup/aceptación Host → activación/rollback. Completadas.
+3. **Post-C7:** hardening del flujo sobre evidencia real de pilotos en curso.
 
 Los detalles históricos están en `CHANGELOG.md`; la evidencia privada, candidatos, sesiones y logs permanecen fuera del repositorio. Ningún documento o estado generado acredita por sí mismo ejecución.
 
@@ -40,7 +41,25 @@ Los detalles históricos están en `CHANGELOG.md`; la evidencia privada, candida
 | C4 | Backups, instalación transaccional y desinstalación | HECHO | Backup verificado, staging, swap atómico y rollback verificados sobre el paquete real | Fallos inyectados nunca dejan conjunto mixto; estado anterior restaurable |
 | C5 | Aceptación automática DSH | HECHO | Creator invocó accept; Host ejecutó validación estática, ledger de evidencia y veredicto fail-closed | Creator invoca `accept`; solo Host emite ACTIVE o RETAINED/rollback |
 | C6 | Piloto clean-room en proyectos nuevos | HECHO | Pilotos clean-room ejecutados en proyecto Python/backend y proyecto multiparte (Python+TS) con DSH real, métricas, rollback y uninstall | Usuario con DSH/proveedor configurado obtiene modos específicos con un comando |
-| C7 | Promoción y distribución de piloto | HECHO | Reconciliación de runs ejecutada; THIRD_PARTY_NOTICES.md (MIT) añadido; suite de 193 pruebas pasando; preparación y publicación verificadas | Repo enlazable para testers, versión fijada y clean-room repetible |
+| C7 | Promoción y distribución de piloto | HECHO | Reconciliación de runs ejecutada; THIRD_PARTY_NOTICES.md (MIT) añadido; preparación y publicación verificadas | Repo enlazable para testers, versión fijada y clean-room repetible |
+
+## Post-C7 — hardening sobre piloto real
+
+Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en `CHANGELOG.md`:
+
+| ID | Resultado | Estado | Contenido comprobado |
+|---|---|---|---|
+| P1 | Registro de fuentes y biblioteca materializada | HECHO | 43 fuentes con procedencia fijada (commit o spec_version); 21 skills base inmutables y 4 patrones de catálogo con criterios de activación y escenarios; regresión bidireccional |
+| P2 | Integración biblioteca ↔ Creator | HECHO | snapshot de biblioteca por run, prompt con base/catálogo, `reuse_reference` resuelto por el validador Host contra el snapshot |
+| P3 | Despacho automático y ciclo de vida DSH | HECHO | detención de instancias previas, propiedad del puerto, cookie HMAC del home, lanzamiento no interactivo con diagnóstico, resolutor de proveedor utilizable |
+| P4 | Sesión Creator ligada al workspace | HECHO | `workspace/create` + `workspaceId`; única sesión Creator, agrupada en la UI, sin sesiones evaluator/reviewer ni delegación; frontera `workspace-write` = workspace del run |
+| P5 | Política anti-escalada de sandbox | HECHO | plugin del framework: campos de escalada fuera de los schemas de tools, escalada de bash guardada, mismo-modo corregido en `workflow_write` (overlay `dsh web --patch`); prompt prohíbe el canal completo |
+| P6 | Transacción con veredicto Host | HECHO | `install` exige veredicto ACTIVE explícito de la misma generación antes de activar |
+| P7 | Aceptación Host aislada del Creator | HECHO | harness del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa, actores correlacionados con turnos DSH reales |
+| P8 | Instalación de modos como presets DSH | HECHO | publicación en `$DSH_HOME/.agent-presets` con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
+| P9 | Piloto tardis (Syncify) con DSH real | EN CURSO | cada salida del piloto produce cambio de flujo y regresión; paquete aceptado de extremo a extremo pendiente |
+
+Suite de regresión vigente: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
 
 ## Dependencias
 

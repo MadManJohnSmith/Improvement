@@ -42,24 +42,26 @@ class ArchitectureConsistencyTest(unittest.TestCase):
 
     def test_entry_docs_do_not_present_generic_modes(self):
         agents = self.read('AGENTS.md')
-        start = self.read('START.md')
+        readme = self.read('README.md')
         self.assertNotIn('los modos finales siguen siendo Auditor y Reparación continua', agents)
         self.assertIn('<Proyecto>-auditor', agents)
-        self.assertNotIn('workflow-complete-auditor', start)
-        self.assertNotIn('workflow-continuous-repair', start)
-        self.assertNotIn('workflow-auditor', start)
+        self.assertNotIn('workflow-complete-auditor', readme)
+        self.assertNotIn('workflow-continuous-repair', readme)
+        self.assertNotIn('workflow-auditor', readme)
 
     def test_status_ends_with_v3_backlog(self):
         status = self.read('docs/status.md')
         last_heading = list(re.finditer(r'(?m)^## ', status))[-1]
         last_section = status[last_heading.start():]
-        self.assertIn('C0', last_section)
+        self.assertIn('C7', last_section)
+        self.assertIn('C0', status)
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
     def test_operational_docs_have_no_maintainer_home_path(self):
         for relative in (
-            'README.md', 'START.md', 'AGENTS.md', 'PLAN_IMPLEMENTACION.md',
+            'README.md', 'AGENTS.md', 'PLAN_IMPLEMENTACION.md',
             'docs/usage.md', 'docs/setup-dsh.md', 'docs/creator-preset-spec.md',
+            'docs/audit-contract.md',
         ):
             with self.subTest(relative=relative):
                 self.assertNotIn('/home/alan', self.read(relative))
@@ -92,7 +94,7 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             'docs/diagrams/',
             'bash con redirección',
         ]
-        for relative in ('README.md', 'START.md', 'PLAN_IMPLEMENTACION.md',
+        for relative in ('README.md', 'PLAN_IMPLEMENTACION.md',
                          'docs/usage.md', 'docs/setup-dsh.md', 'docs/creator-preset-spec.md'):
             text = self.read(relative)
             for pattern in forbidden:

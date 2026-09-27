@@ -2,7 +2,7 @@
 
 **Estado:** BORRADOR de propuesta. Nada de este documento es decisión aceptada, implementación ni evidencia.
 **Fecha:** 2026-09-13
-**Subordinado a:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) (diseño normativo vigente, v2.4)
+**Subordinado a:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) (diseño normativo vigente, v3.0)
 **Origen:** análisis del mantenedor con ZCode sobre capacidades de herramientas agénticas de terceros (Factory/droid, Cursor, AWS Kiro, Vibe Kanban, Aider) y su encaje con el flujo existente.
 
 Este borrador no compite con la arquitectura normativa ni con [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md): propone qué capacidades de terceros valen la pena evaluar, cuáles se rechazan y cómo se mapearían sobre las piezas ya implementadas. Cualquier adopción pasa primero por las reglas habituales: decisión del mantenedor, actualización de la arquitectura y acreditación por separado.

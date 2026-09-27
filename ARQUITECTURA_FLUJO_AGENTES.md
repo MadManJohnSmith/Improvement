@@ -1,8 +1,8 @@
 # Arquitectura del flujo de trabajo con agentes
 
 **Versión:** 3.0
-**Actualización:** 2026-09-16
-**Estado:** arquitectura normativa objetivo para la siguiente etapa del framework. El MVP operativo anterior permanece comprobado según `docs/status.md`; la capa nueva de bootstrap, generación Creator específica por proyecto y activación transaccional sigue pendiente de implementación por etapas C0–C7.
+**Actualización:** 2026-09-27
+**Estado:** arquitectura normativa implementada. El MVP operativo anterior permanece comprobado según `docs/status.md`; la capa 3.0 (bootstrap, generación Creator específica por proyecto, validación Host, activación transaccional) está implementada y verificada por etapas C0–C7, con hardening sobre piloto real en curso. El estado comprobado vive en `docs/status.md`; este documento define el diseño, no registra avance.
 **Responsable de alcance y autorización:** usuario/titular.
 **Propósito:** definir el flujo final distribuible en el que un usuario configura DSH una vez, clona el framework y ejecuta un bootstrap único que coordina Creator, validación Host, backups, aceptación automática, activación y rollback de modos y skills específicos del proyecto.
 **Jerarquía:** subordinada a `AGENTS.md`; `PLAN_IMPLEMENTACION.md` registra el progreso comprobado y `docs/status.md` separa hechos de destino.
@@ -421,14 +421,16 @@ El manifest cubre todos los archivos. Archivo no manifestado, hash incorrecto, s
 
 ### B3 — paquete y llamada a Creator
 
-- crear `generation-request.json` y prompt versionado;
-- abrir/reutilizar Host DSH autorizado;
-- derivar cookie/token local en memoria;
-- crear sesión Creator con cwd correcto;
-- enviar prompt automáticamente;
-- supervisar turno, presupuesto y timeout;
+- crear `generation-request.json` y prompt versionado (con el snapshot de biblioteca materializado embebido);
+- adquirir la sesión DSH local: cliente inyectado, o instancia existente autenticada vía cookie HMAC del home de DSH verificada con un RPC barato, o lanzamiento explícito;
+- derivar cookie/token local en memoria; nunca persistir secretos;
+- crear la única sesión Creator ligada al workspace del run (`workspace/create` idempotente + `session/create` con `workspaceId`): queda agrupada en la UI de DSH y su frontera `workspace-write` es el workspace entero, que contiene el run;
+- enviar prompt automáticamente; sin sesión autenticada el run queda en estado intermedio recuperable, nunca silencioso;
+- supervisar el turno hasta su quiescencia terminal, con presupuesto y timeout;
 - exigir `generation-manifest.json` y `finish.json`;
 - Creator ejecuta `bootstrap.py accept` al terminar.
+
+El lanzamiento (`--launch-dsh`) es dueño del ciclo de vida: detecta y detiene instancias DSH previas (clasificador de cmdline que reconoce registry y binarios npx), resuelve la propiedad del puerto vía `ss` sin matar procesos ajenos, arranca `dsh web` no interactivo (`npx -y`, stdin nulo, salida capturada con tokens redactados) aplicando el overlay `cordis-patch.yml` que carga el plugin del framework: corrige la denegación upstream de escrituras con `sandbox_permissions` igual al modo vigente en `workflow_write`, retira los campos de escalada de los schemas de tools y guarda la escalada de bash. La puerta de proveedor resuelve el primer proveedor utilizable del settings de DSH (estructura y nombres de variable, jamás valores de llaves): una llave ausente es un aviso registrado, no un bloqueo, porque el entorno no es la única fuente de llaves de DSH; `DSH_PROVIDER_STRICT=1` restaura la parada dura. El prompt versionado prohíbe todo uso de `sandbox_permissions`/`justification` y releva esa prohibición a cualquier sesión delegada — el runtime rechaza automáticamente las aprobaciones en sesiones delegadas y estas no ven el prompt del Creator.
 
 ### B4 — `accept` invocado por Creator
 
@@ -460,7 +462,7 @@ Creator puede corregir errores mecánicos dentro del límite de intentos, pero n
 14. Colisiones/precedencia y ownership.
 15. Licencias/procedencia.
 
-Todo rechazo ocurre antes de tocar destinos activos.
+Todo rechazo ocurre antes de tocar destinos activos. La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación publica los dos modos como presets de usuario (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en `$DSH_HOME/.agent-presets` y solo considera el conjunto activo cuando `agentPresets/list` confirma ambos con `trust: user` y sin `broken`.
 
 ---
 
@@ -682,6 +684,8 @@ Si solo se adoptan ideas/patrones, documentar inspiración y mantener implementa
 
 ## 16. Plan de implementación de la candidata
 
+Desglose que se implementó por etapas C0–C7; el estado por etapa vive en `PLAN_IMPLEMENTACION.md` y `docs/status.md`. Los procedimientos detallados de cada etapa se conservan en `docs/plans/`.
+
 ### C0 — contratos y fixtures
 
 - schema generation/project/capabilities/modes/skills;
@@ -798,24 +802,19 @@ Proyectos nuevos no usados durante implementación:
 
 ## 18. Implementación gradual desde el MVP comprobado
 
-Durante la implementación C0–C7:
+C0–C7 están completados y verificados; este documento fue actualizado con los contratos finales validados tras cada cambio de diseño (el despacho y ciclo de vida DSH de §7-B3, la biblioteca materializada de §1, la transacción con veredicto Host de §10). Reglas vigentes:
 
-- Este archivo es la referencia normativa única.
-- `docs/creator-preset-spec.md` define el contrato generacional 3.0 (paquete completo, no un preset de dos archivos).
-- `START.md`/`usage.md` conservan el procedimiento MVP de preparación mientras C0–C7 lo reemplazan.
-- El diseño no acredita que bootstrap, Creator o instalación ya estén implementados.
-- Los planes y skills del MVP anterior fueron eliminados del árbol; permanecen en Git.
-
-Al completar C0–C7:
-
-1. actualizar este documento con los contratos finales validados;
-2. actualizar el índice de implementación;
-3. retirar cualquier compatibilidad transitoria del flujo operativo;
-4. conservar únicamente fixtures sanitizados en el corpus de regresión; no instalarlos como defaults.
+- Este archivo es la referencia normativa única; `docs/creator-preset-spec.md` define el contrato generacional 3.0 (paquete completo, no un preset de dos archivos).
+- `usage.md` describe el uso operativo vigente: el flujo automático de bootstrap y las herramientas de mantenimiento del MVP.
+- Los planes y skills del MVP anterior fueron eliminados del árbol; permanecen en Git y no se reconstruyen como instrucciones actuales.
+- Los fixtures permanecen sanitizados en el corpus de regresión; nunca se instalan como defaults.
+- El hardening posterior a C7 se guía por evidencia real de pilotos: cada hallazgo se convierte en cambio de diseño aquí, cambio de flujo y regresión.
 
 ---
 
-## 19. Preguntas que la implementación debe resolver antes del piloto
+## 19. Preguntas que la implementación debía resolver antes del piloto
+
+Estas preguntas se respondieron durante C0–C7 y el hardening de piloto; las respuestas vigentes son los contratos implementados (§7-B3 para el ciclo DSH, §10 para la transacción, `docs/creator-preset-spec.md` para el paquete) y se citan por unidad en `CHANGELOG.md`. Se conservan como registro de qué se validó antes de exponer el flujo a usuarios.
 
 1. ¿Creator puede invocar `accept` y recibir errores estructurados sin necesitar shell libre?
 2. ¿La API local DSH permite todo el ciclo sin token manual y sin filtrar secretos?
@@ -847,7 +846,7 @@ usuario configura DSH/proveedor una vez
 → usuario opera con mensajes cortos
 ```
 
-Este es el flujo que C0–C7 debe implementar y validar antes del piloto con usuarios reales.
+Este es el flujo que C0–C7 implementó y validó, y que el hardening de piloto mantiene sobre evidencia real de sesiones DSH.
 
 ---
 
