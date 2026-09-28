@@ -59,8 +59,22 @@ class AcceptanceTests(unittest.TestCase):
             }
             files = {"mode.json": json.dumps(mode, indent=2) + "\n",
                      "preset.yml": f"name: {preset_id}\n",
-                     "agent.cordis.yml": "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n",
-                     "SKILL.md": f"# {preset_id}\n"}
+                     "agent.cordis.yml": """- id: persona
+  name: '@deepseek-ai/dsh-persona'
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+""",
+                     "SKILL.md": (f"---\nname: {preset_id}\n"
+                                  f"description: {role} mode\n---\n"
+                                  f"# {preset_id}\n")}
             for name, text in files.items():
                 (mode_dir / name).write_text(text)
                 artifacts.append({"path": f"modes/{preset_id}/{name}",

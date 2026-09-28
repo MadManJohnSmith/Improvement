@@ -87,6 +87,24 @@ generated/
 
 Fuera de `generated/`, el run conserva discovery/design/tests/validation/checkpoint/report/finish según la arquitectura.
 
+## Gate operativo de modos y skills
+
+Cada `agent.cordis.yml` de modo incluye exactamente la base operativa necesaria:
+`@deepseek-ai/dsh-persona`, `@deepseek-ai/dsh-tool-bash`,
+`@deepseek-ai/dsh-tool-fs`, `@deepseek-ai/dsh-tool-fs-search`,
+`@deepseek-ai/dsh-skill-filesystem` y `@deepseek-ai/dsh-tool-skill`. El Host falla
+cerrado si falta una fila o aparece subagente/delegación, workflow, web/red o
+plugin-manager. Cada plugin requerido aparece una sola vez, sin nombres ni IDs
+duplicados, y cualquier YAML no reconocido invalida la composición. Cada `SKILL.md` bajo `generated/skills/<name>` y
+`generated/modes/<name>` lleva frontmatter YAML mínimo con `name: <name>` exacto y
+`description` no vacía.
+
+La transacción copia cada skill completa — incluidos recursos — y el `SKILL.md` de
+cada modo a `bundle/skills/<name>`. Rechaza colisiones, symlinks y entradas no
+regulares; configura cada proveedor de skills con `includeDefaultRoots: false` y un
+`customSkillDirs` absoluto al root del bundle. El recibo conserva los dos IDs de
+preset.
+
 ## Invariantes
 
 1. Creator solo emite `GENERATED` o un bloqueo propio; nunca `ACCEPTED`/`ACTIVE`.

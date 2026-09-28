@@ -462,7 +462,9 @@ Creator puede corregir errores mecánicos dentro del límite de intentos, pero n
 14. Colisiones/precedencia y ownership.
 15. Licencias/procedencia.
 
-Todo rechazo ocurre antes de tocar destinos activos. La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación transforma los dos modos (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`, lo instala mediante `pluginManager/installBundle` y solo considera el conjunto activo cuando `agentPresets/list` confirma ambos sin diagnóstico `broken`. La ruta legacy `$DSH_HOME/.agent-presets` no se usa: el runtime vigente ya no la lee.
+Todo rechazo ocurre antes de tocar destinos activos. Cada composición de modo debe incluir persona, bash, filesystem, búsqueda filesystem, proveedor de skills y loader (`dsh-persona`, `dsh-tool-bash`, `dsh-tool-fs`, `dsh-tool-fs-search`, `dsh-skill-filesystem`, `dsh-tool-skill`); falta de cualquiera retiene el paquete, igual que cualquier fila de subagente/delegación, workflow, web/red o plugin-manager. Todo `SKILL.md` generado, incluido el de cada modo, exige frontmatter mínimo con `name` idéntico al directorio y `description` no vacía.
+
+La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación transforma los dos modos (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`, copia todas las skills generadas con sus recursos y los `SKILL.md` de modo a `bundle/skills/<name>`, y configura cada `dsh-skill-filesystem` con `includeDefaultRoots: false` y el directorio absoluto de skills del bundle. Colisiones, symlinks y entradas no regulares bloquean la transacción. Después instala mediante `pluginManager/installBundle` y solo considera el conjunto activo cuando `agentPresets/list` confirma ambos IDs — preservados también en el recibo — sin diagnóstico `broken`. La ruta legacy `$DSH_HOME/.agent-presets` no se usa: el runtime vigente ya no la lee.
 
 ---
 

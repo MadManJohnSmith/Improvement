@@ -235,13 +235,21 @@ El paquete debe incluir exactamente dos modos finales y presets DSH seleccionabl
 
 Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
-`preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Los dos
-presets usan el estado compartido relativo `{project_name}-workspace/mode-state`
-y comprueban que su sesión se abrió desde el padre común que contiene producto y
-workspace. No crean sesiones descendientes, subagentes ni workflows.
+`preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Cada
+`agent.cordis.yml` monta exactamente las filas operativas necesarias: persona
+`@deepseek-ai/dsh-persona`, bash `@deepseek-ai/dsh-tool-bash`, filesystem
+`@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search`, proveedor
+`@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
+incluyas filas de delegación, workflows, herramientas web/red ni plugin-manager.
+Los dos presets usan el estado compartido relativo
+`{project_name}-workspace/mode-state` y comprueban que su sesión se abrió desde el
+padre común que contiene producto y workspace. No crean sesiones descendientes,
+subagentes ni workflows.
 
-Más skills específicas justificadas con procedimiento recurrente, evidencia,
-fronteras y prueba."""
+Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
+frontmatter YAML mínimo válido, con `name: <name>` idéntico al directorio y
+`description` no vacía. Más skills específicas justificadas con procedimiento
+recurrente, evidencia, fronteras y prueba."""
 
     elif prompt_type == "material_change_regeneration":
         objective = f"""## Objetivo — Regeneración por cambio material

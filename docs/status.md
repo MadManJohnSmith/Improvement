@@ -97,6 +97,7 @@ Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el 
 | Transacción con veredicto Host | HECHO | `install` exige `host-verdict.json` ACTIVE ligado a la misma generación antes de activar |
 | Aceptación Host aislada del Creator | HECHO | harness de aceptación del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa exigida y actores correlacionados con turnos reales de DSH; aceptación previa determinista (`READY_FOR_INSTALL`), sin afirmación de evaluación dinámica |
 | Instalación de modos como presets DSH | HECHO | modos con `mode.json`/`preset.yml`/`agent.cordis.yml`/`SKILL.md`; el Host prepara `mode-state`, instala un bundle `@deepseek-ai/dsh-agent-preset` mediante `pluginManager/installBundle` y exige roster verificado vía `agentPresets/list` antes de `ACTIVE` |
+| Gate operativo y skills bundle-local | HECHO | composiciones fail-closed con las seis filas operativas y sin delegación/workflow/web/plugin-manager; frontmatter mínimo de modos/skills; copia completa y segura a `bundle/skills`, `includeDefaultRoots: false`, root absoluto del bundle y ambos IDs en recibo |
 | Piloto tardis (Syncify) | EN CURSO | cada salida del piloto se convierte en cambio de flujo y regresión; la generación completa con paquete aceptado sigue siendo la salida pendiente |
 
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

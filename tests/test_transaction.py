@@ -14,6 +14,21 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
 
 
+MODE_COMPOSITION = """- id: persona
+  name: '@deepseek-ai/dsh-persona'
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+"""
+
+
 class Client:
     def __init__(self, ids=("project-auditor", "project-continuous-repair"), broken=None):
         self.ids = ids
@@ -53,6 +68,13 @@ class TransactionTests(unittest.TestCase):
     def _package(self, root, marker="one"):
         root.mkdir()
         (root / "generation-manifest.json").write_text("{}\n")
+        skill = root / "skills" / "project-check"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: project-check\ndescription: Project check\n---\n# Check\n")
+        resources = skill / "resources"
+        resources.mkdir()
+        (resources / "guide.txt").write_text("guide\n")
         for role in ("auditor", "continuous-repair"):
             preset_id = f"project-{role}"
             mode = root / "modes" / preset_id
@@ -60,8 +82,10 @@ class TransactionTests(unittest.TestCase):
             (mode / "mode.json").write_text(json.dumps({
                 "preset_id": preset_id, "role": role}) + "\n")
             (mode / "preset.yml").write_text(f"name: {preset_id}\n")
-            (mode / "agent.cordis.yml").write_text(f"# {marker}\n")
-            (mode / "SKILL.md").write_text(f"# {preset_id}\n")
+            (mode / "agent.cordis.yml").write_text(
+                f"# {marker}\n" + MODE_COMPOSITION)
+            (mode / "SKILL.md").write_text(
+                f"---\nname: {preset_id}\ndescription: {role} mode\n---\n# {preset_id}\n")
         return root
 
     def install(self, generated=None, generation="gen-1", client=None, **kwargs):
@@ -97,11 +121,57 @@ class TransactionTests(unittest.TestCase):
         patch = (bundle / "cordis.patch.yml").read_text()
         self.assertIn("preset-project-auditor", patch)
         self.assertIn("preset-project-continuous-repair", patch)
+        for plugin in (
+                "dsh-persona", "dsh-tool-bash", "dsh-tool-fs",
+                "dsh-tool-fs-search", "dsh-skill-filesystem", "dsh-tool-skill"):
+            self.assertEqual(
+                patch.count(f"name: '@deepseek-ai/{plugin}'"), 2)
+        self.assertEqual(patch.count("includeDefaultRoots: false"), 2)
+        skill_root = bundle / "skills"
+        self.assertEqual(patch.count(str(skill_root.resolve())), 2)
+        self.assertEqual(receipt["preset_ids"], [
+            "project-auditor", "project-continuous-repair"])
+        for name in ("project-auditor", "project-continuous-repair", "project-check"):
+            self.assertTrue((skill_root / name / "SKILL.md").is_file())
+        self.assertEqual(
+            (skill_root / "project-check" / "resources" / "guide.txt").read_text(),
+            "guide\n")
         self.assertEqual(self.client.installed, [bundle])
         descriptor = json.loads((self.workspace / "mode-state" / "project.json").read_text())
         self.assertEqual(descriptor["product_root"], "project")
         self.assertEqual(descriptor["state_root"], "project-workspace/mode-state")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
+
+    def test_direct_transaction_rejects_incomplete_composition(self):
+        composition = self.generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(
+            "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n")
+        with self.assertRaisesRegex(tx.TransactionError, "exactly once"):
+            self.install()
+        self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+    def test_direct_transaction_rejects_prohibited_composition(self):
+        composition = self.generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION +
+            "- id: workflow\n  name: '@deepseek-ai/dsh-tool-workflow'\n")
+        with self.assertRaisesRegex(tx.TransactionError, "prohibited plugin rows"):
+            self.install()
+        self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+    def test_bundle_rejects_skill_collision_with_mode(self):
+        collision = self.generated / "skills" / "project-auditor"
+        collision.mkdir()
+        (collision / "SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: Collision\n---\n")
+        with self.assertRaisesRegex(tx.TransactionError, "Colisión de skill"):
+            self.install()
+
+    def test_bundle_rejects_symlink_in_skill_resources(self):
+        resource = self.generated / "skills/project-check/resources/guide.txt"
+        resource.unlink()
+        resource.symlink_to(self.generated / "generation-manifest.json")
+        with self.assertRaisesRegex(ValueError, "Symlink"):
+            self.install()
 
     def test_roster_failure_rolls_back_both_presets_and_no_active_pointer(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):

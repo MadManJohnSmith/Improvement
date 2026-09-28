@@ -67,11 +67,20 @@ queda activa al terminar.
 
 Creator genera exactamente dos presets seleccionables: `<proyecto>-auditor` y
 `<proyecto>-continuous-repair`. Cada modo contiene `mode.json`, `preset.yml`,
-`agent.cordis.yml` y `SKILL.md`. El Host materializa un bundle de declaraciones
-`@deepseek-ai/dsh-agent-preset`, lo instala mediante `pluginManager/installBundle`,
-consulta `agentPresets/list` y solo considera la instalación activa cuando ambos
-aparecen sin diagnóstico `broken`. El runtime vigente ya no lee la ruta legacy
-`$DSH_HOME/.agent-presets`.
+`agent.cordis.yml` y `SKILL.md`. Su composición debe montar persona, bash, fs,
+fs-search, skill-filesystem y tool-skill; el Host retiene una composición incompleta
+o con filas de subagente/delegación, workflow, web/red o plugin-manager. Cada
+`SKILL.md` de modo o skill lleva `name` idéntico al directorio y `description` no
+vacía.
+
+El Host materializa un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`,
+copia todas las skills y recursos generados y cada skill de modo bajo
+`bundle/skills/<name>`, y reconfigura cada `dsh-skill-filesystem` con
+`includeDefaultRoots: false` y `customSkillDirs` apuntando al root absoluto del
+bundle. Colisiones, symlinks y entradas no regulares bloquean la instalación. Luego
+instala mediante `pluginManager/installBundle`, consulta `agentPresets/list` y solo
+considera la instalación activa cuando ambos IDs del recibo aparecen sin diagnóstico
+`broken`. El runtime vigente ya no lee la ruta legacy `$DSH_HOME/.agent-presets`.
 
 Los dos modos comparten exclusivamente `<Proyecto>-workspace/mode-state`; las
 rutas persistidas son relativas al padre común. El producto no recibe estado del

@@ -17,8 +17,11 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from composition_contract import validate_operational_composition
+
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
+SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
 def _now_iso():
@@ -73,11 +76,13 @@ def _replace_json(path, value):
 
 def _safe_tree(root):
     root = Path(root)
-    if not root.is_dir():
-        raise ValueError(f"Directorio ausente: {root}")
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError(f"Directorio ausente o peligroso: {root}")
     for p in root.rglob("*"):
         if p.is_symlink():
             raise ValueError(f"Symlink ajeno: {p}")
+        if not p.is_dir() and not p.is_file():
+            raise ValueError(f"Entrada no regular: {p}")
         if p.is_file() and p.stat().st_nlink != 1:
             raise ValueError(f"Hardlink no permitido: {p}")
 
@@ -236,21 +241,35 @@ class Transaction:
         return doc
 
     def _mode_presets(self, generated):
+        modes_root = generated / "modes"
+        if not modes_root.is_dir() or modes_root.is_symlink():
+            raise TransactionError("generated/modes debe ser un directorio regular")
         modes = []
-        for mode_dir in sorted((generated / "modes").glob("*")):
-            if not mode_dir.is_dir():
-                continue
-            mode = _json(mode_dir / "mode.json")
+        for mode_dir in sorted(modes_root.iterdir()):
+            if not mode_dir.is_dir() or mode_dir.is_symlink():
+                raise TransactionError(f"Entrada de modo peligrosa: {mode_dir}")
+            try:
+                mode = _json(mode_dir / "mode.json")
+            except (OSError, ValueError) as error:
+                raise TransactionError(f"Preset de modo inválido: {mode_dir}") from error
             preset_id = mode.get("preset_id")
             role = mode.get("role")
             required = ("mode.json", "preset.yml", "agent.cordis.yml", "SKILL.md")
-            if (preset_id != mode_dir.name or role not in
+            if (preset_id != mode_dir.name or not SAFE_NAME.fullmatch(
+                    preset_id or "") or role not in
                     ("auditor", "continuous-repair") or
-                    any(not (mode_dir / name).is_file() for name in required)):
+                    any(not (mode_dir / name).is_file() or
+                        (mode_dir / name).is_symlink() for name in required)):
                 raise TransactionError(f"Preset de modo inválido: {mode_dir}")
+            try:
+                validate_operational_composition(mode_dir / "agent.cordis.yml")
+            except ValueError as error:
+                raise TransactionError(
+                    f"Composición operativa inválida: {mode_dir}: {error}") from error
             modes.append((preset_id, role, mode_dir))
-        if len(modes) != 2 or {role for _, role, _ in modes} != {
-                "auditor", "continuous-repair"}:
+        if (len(modes) != 2 or len({preset_id for preset_id, _, _ in modes}) != 2 or
+                {role for _, role, _ in modes} != {
+                    "auditor", "continuous-repair"}):
             raise TransactionError("Se requieren exactamente dos presets finales")
         return modes
 
@@ -295,7 +314,74 @@ class Transaction:
     def _yaml_scalar(value):
         return json.dumps(str(value), ensure_ascii=False)
 
-    def _build_preset_bundle(self, modes, generation_id):
+    @staticmethod
+    def _composition_with_skill_root(source, skill_root):
+        """Replace the generated skill provider with the bundle-local root."""
+        try:
+            rows = validate_operational_composition(source)
+        except ValueError as error:
+            raise TransactionError(
+                f"Composición operativa inválida: {source}: {error}") from error
+        result = []
+        for row in rows:
+            if row["name"] == "@deepseek-ai/dsh-skill-filesystem":
+                result.extend([
+                    f"- id: {row['id']}",
+                    "  name: '@deepseek-ai/dsh-skill-filesystem'",
+                    "  config:",
+                    "    includeDefaultRoots: false",
+                    "    customSkillDirs:",
+                    f"      - {Transaction._yaml_scalar(skill_root.resolve())}",
+                ])
+            else:
+                result.extend(row["lines"])
+        return result
+
+    def _bundle_skills(self, generated, modes, bundle):
+        skill_root = bundle / "skills"
+        skill_root.mkdir(mode=0o700)
+        sources = []
+        generated_skills = generated / "skills"
+        if generated_skills.exists():
+            if not generated_skills.is_dir() or generated_skills.is_symlink():
+                raise TransactionError("generated/skills debe ser un directorio regular")
+            for source in sorted(generated_skills.iterdir()):
+                if (not source.is_dir() or source.is_symlink() or
+                        not re.fullmatch(r"[a-z0-9][a-z0-9-]*", source.name)):
+                    raise TransactionError(f"Entrada de skill peligrosa: {source}")
+                sources.append((source.name, source))
+        for preset_id, _role, mode_dir in modes:
+            sources.append((preset_id, mode_dir))
+        seen = set()
+        for name, source in sources:
+            if name in seen:
+                raise TransactionError(f"Colisión de skill en bundle: {name}")
+            seen.add(name)
+            target = skill_root / name
+            if source.name == name and source.parent.name == "skills":
+                _copy_tree(source, target)
+            else:
+                _safe_tree(source)
+                target.mkdir(mode=0o700)
+                excluded = {"mode.json", "preset.yml", "agent.cordis.yml"}
+                for item in source.iterdir():
+                    if item.name in excluded:
+                        continue
+                    destination = target / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, destination, symlinks=False)
+                    elif item.is_file():
+                        shutil.copy2(item, destination)
+                    else:
+                        raise TransactionError(f"Recurso de modo peligroso: {item}")
+                _safe_tree(target)
+            entrypoint = target / "SKILL.md"
+            if (not entrypoint.is_file() or entrypoint.is_symlink() or
+                    entrypoint.stat().st_nlink != 1):
+                raise TransactionError(f"SKILL.md inseguro o ausente en bundle: {name}")
+        return skill_root
+
+    def _build_preset_bundle(self, generated, modes, generation_id):
         project_id = _json(self.workspace / "project.json")["name"]
         safe_project = re.sub(r"[^a-z0-9._-]+", "-", project_id.lower()).strip("-")
         bundle_name = f"@improvement/{safe_project}-presets"
@@ -313,6 +399,7 @@ class Transaction:
         (bundle / "package.json").write_text(
             json.dumps(package, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
+        skill_root = self._bundle_skills(generated, modes, bundle)
         rows = []
         for preset_id, _role, source in modes:
             metadata = {}
@@ -324,8 +411,8 @@ class Transaction:
                 order = int(metadata.get("order", "100"))
             except ValueError as exc:
                 raise TransactionError(f"order inválido en preset {preset_id}") from exc
-            plugins = (source / "agent.cordis.yml").read_text(
-                encoding="utf-8").rstrip().splitlines()
+            plugins = self._composition_with_skill_root(
+                source / "agent.cordis.yml", skill_root)
             rows.extend([
                 "- insert:",
                 f"    - id: preset-{preset_id}",
@@ -342,10 +429,11 @@ class Transaction:
             "\n".join(rows) + "\n", encoding="utf-8")
         return bundle_name, bundle
 
-    def _publish_presets(self, modes, generation_id):
+    def _publish_presets(self, generated, modes, generation_id):
         if self.client is None:
             raise TransactionError("Cliente DSH requerido para verificar agentPresets/list")
-        bundle_name, bundle = self._build_preset_bundle(modes, generation_id)
+        bundle_name, bundle = self._build_preset_bundle(
+            generated, modes, generation_id)
         installed = False
         try:
             self.client.install_bundle(bundle)
@@ -437,13 +525,15 @@ class Transaction:
         if not backup_manifest_path.exists():
             _write_new(backup_manifest_path, backup_manifest)
 
-        # Atomic rename staging → generations
+        # Atomic rename staging → generations, then re-validate the exact bytes
+        # that publication will consume.
         stage.rename(target)
+        modes = self._mode_presets(target)
 
         try:
             # Operational state is shared by both modes and remains outside product.
             self._prepare_mode_state()
-            published = self._publish_presets(modes, generation_id)
+            published = self._publish_presets(target, modes, generation_id)
 
             # Atomic pointer update: temp file + os.replace
             pointer_tmp = self.install_root / f".ACTIVE.{generation_id}.tmp"

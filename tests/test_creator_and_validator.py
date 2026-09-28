@@ -22,6 +22,25 @@ import generation_contracts as gc
 import host_validator as hv
 
 
+MODE_COMPOSITION = """- id: persona
+  name: '@deepseek-ai/dsh-persona'
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+"""
+
+
+def skill_markdown(name, description="Generated project skill"):
+    return f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n"
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -39,7 +58,8 @@ class Base(unittest.TestCase):
         generated = self.run_dir / "generated"
         skill = generated / "skills" / "project-auditor"
         skill.mkdir(parents=True)
-        (skill / "SKILL.md").write_text("# Auditor\n")
+        skill_content = skill_markdown("project-auditor")
+        (skill / "SKILL.md").write_text(skill_content)
         mode_artifacts = []
         for role, suffix in (("auditor", "auditor"),
                              ("continuous-repair", "continuous-repair")):
@@ -63,8 +83,8 @@ class Base(unittest.TestCase):
             files = {
                 "mode.json": json.dumps(mode, indent=2) + "\n",
                 "preset.yml": f"name: {preset_id}\n",
-                "agent.cordis.yml": "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n",
-                "SKILL.md": f"# {preset_id}\n",
+                "agent.cordis.yml": MODE_COMPOSITION,
+                "SKILL.md": skill_markdown(preset_id, f"Generated {role} mode"),
             }
             for name, content in files.items():
                 (mode_dir / name).write_text(content)
@@ -112,7 +132,7 @@ class Base(unittest.TestCase):
         artifacts = mode_artifacts + [{
             "path": "skills/project-auditor/SKILL.md",
             "type": "skill-entrypoint",
-            "sha256": cc._digest_bytes(b"# Auditor\n"),
+            "sha256": cc._digest_bytes(skill_content.encode()),
         }, {
             "path": "capabilities.json",
             "type": "manifest",
@@ -850,6 +870,13 @@ class CreatorTests(Base):
         self.assertIn('`kind: "mode"`', prompt)
         self.assertIn('`kind: "skill"`', prompt)
         self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
+        for plugin in (
+                "@deepseek-ai/dsh-persona", "@deepseek-ai/dsh-tool-bash",
+                "@deepseek-ai/dsh-tool-fs", "@deepseek-ai/dsh-tool-fs-search",
+                "@deepseek-ai/dsh-skill-filesystem", "@deepseek-ai/dsh-tool-skill"):
+            self.assertIn(plugin, prompt)
+        self.assertIn("frontmatter YAML mínimo válido", prompt)
+        self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
         self.assertIn("Antes de emitir `status: GENERATED`", prompt)
 
@@ -1747,6 +1774,94 @@ class ValidatorTests(Base):
         self.assertTrue(report.passed)
         self.assertEqual(report.verdict, "READY_FOR_ACCEPTANCE")
         self.assertEqual(len(report.layers), 10)
+
+    def test_persona_only_mode_composition_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(
+            "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("must occur exactly once", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_malformed_mode_composition_line_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION + "this is not yaml\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("expected top-level '- id:' row", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_duplicate_required_mode_plugin_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION +
+            "- id: persona-copy\n  name: '@deepseek-ai/dsh-persona'\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("duplicate plugin names", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_nested_plugin_config_is_accepted(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION.replace(
+            "  name: '@deepseek-ai/dsh-tool-bash'\n",
+            "  name: '@deepseek-ai/dsh-tool-bash'\n"
+            "  config:\n    environment:\n      SAFE: true\n"))
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"])
+
+    def test_prohibited_mode_plugin_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION +
+            "- id: tool-workflow\n  name: '@deepseek-ai/dsh-tool-workflow'\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("prohibited plugin rows", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_invalid_skill_frontmatter_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text("# Missing\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("missing YAML frontmatter", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_mode_skill_frontmatter_name_must_match_directory(self):
+        generated, _ = self.make_package()
+        (generated / "modes/project-auditor/SKILL.md").write_text(
+            skill_markdown("wrong-name"))
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("name must equal directory name", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_skill_frontmatter_description_must_be_nonempty(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: ''\n---\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("description must be non-empty", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_web_and_subagent_plugin_rows_are_prohibited(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(
+            MODE_COMPOSITION +
+            "- id: subagent\n  name: '@vendor/subagent'\n"
+            "- id: browser\n  name: '@vendor/web-browser'\n")
+        report = hv.validate_package(generated)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("subagent=@vendor/subagent", details)
+        self.assertIn("browser=@vendor/web-browser", details)
 
     def test_bad_status_retained(self):
         generated, _ = self.make_package(status="ACTIVE")

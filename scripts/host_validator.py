@@ -20,9 +20,45 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 import generation_contracts as gc
+from composition_contract import validate_operational_composition
 from onboard import checked
 
 SCHEMA_VERSION = 1
+
+
+def _yaml_scalar(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1]
+    return value
+
+
+def _skill_frontmatter_issue(path, expected_name):
+    """Validate minimal DSH frontmatter without accepting general YAML."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        return str(error)
+    if not lines or lines[0].strip() != "---":
+        return "missing YAML frontmatter"
+    try:
+        end = next(index for index, line in enumerate(lines[1:], 1)
+                   if line.strip() == "---")
+    except StopIteration:
+        return "unterminated YAML frontmatter"
+    values = {}
+    for line in lines[1:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*", line)
+        if not match:
+            return "invalid minimal YAML frontmatter"
+        values[match.group(1)] = _yaml_scalar(match.group(2))
+    if values.get("name") != expected_name:
+        return f"frontmatter name must equal directory name {expected_name!r}"
+    if not values.get("description", "").strip():
+        return "frontmatter description must be non-empty"
+    return None
 
 
 def _digest_file(path):
@@ -446,8 +482,37 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
             issues.append(f"Duplicate preset_id: {preset_id}")
         preset_ids.add(preset_id)
         roles.add(role)
+
+        skill_issue = _skill_frontmatter_issue(mode_dir / "SKILL.md", mode_dir.name)
+        if skill_issue:
+            issues.append(f"{mode_dir.relative_to(generated)}/SKILL.md: {skill_issue}")
+        try:
+            validate_operational_composition(mode_dir / "agent.cordis.yml")
+        except ValueError as error:
+            issues.append(
+                f"{mode_dir.relative_to(generated)}/agent.cordis.yml invalid "
+                f"operational composition: {error}")
     if roles != {"auditor", "continuous-repair"}:
         issues.append("Final modes must contain auditor and continuous-repair roles")
+
+    skills_root = generated / "skills"
+    if skills_root.exists() and (not skills_root.is_dir() or skills_root.is_symlink()):
+        issues.append("generated/skills must be a regular directory")
+    elif skills_root.is_dir():
+        for skill_dir in sorted(skills_root.iterdir()):
+            if not skill_dir.is_dir() or skill_dir.is_symlink():
+                issues.append(
+                    f"{skill_dir.relative_to(generated)} must be a regular directory")
+                continue
+            entrypoint = skill_dir / "SKILL.md"
+            if not entrypoint.is_file() or entrypoint.is_symlink():
+                issues.append(
+                    f"{skill_dir.relative_to(generated)} missing regular SKILL.md")
+                continue
+            skill_issue = _skill_frontmatter_issue(entrypoint, skill_dir.name)
+            if skill_issue:
+                issues.append(
+                    f"{entrypoint.relative_to(generated)}: {skill_issue}")
 
     # Check provenance entries
     for prov in manifest.get("license_provenance", []):
