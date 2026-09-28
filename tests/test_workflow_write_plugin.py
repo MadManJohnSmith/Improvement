@@ -16,6 +16,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
+from transaction import Transaction
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 PLUGIN = FRAMEWORK / 'scripts/dsh-plugins/workflow-write.mjs'
@@ -25,19 +26,35 @@ description: Regression fixture only; grants nothing outside this test.
 order: 9
 """
 
-ROW = """- id: tool-bash
+ROW = """- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: Improvement runtime regression.
+- id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
-- id: workflow-write
-  name: '/inputs/plugins/workflow-write.mjs'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    customSkillDirs:
+      - /inputs/presets/skills
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
 - id: anti-escalation
-  name: './anti-escalation.mjs'
+  name: '/inputs/presets/anti-escalation.mjs'
 """
 
 CHECK = r'''
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import yaml from '/inputs/node_modules/yaml/dist/index.js';
-import {runProfile} from '/inputs/node_modules/@deepseek-ai/dsh/lib/profile-boot-BP_C0vpU.js';
+import {runProfile} from '/inputs/node_modules/@deepseek-ai/dsh/lib/profile-boot.js';
 import {loadLayeredEnv} from '/inputs/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js';
 process.stdout.write = () => true;
 const report = {};
@@ -82,7 +99,12 @@ try {
   const text = r => String(r.error?.message || (r.content || []).map(p => p.text).join(' ') || '').slice(0, 220);
   const preset = await rpc('agentPresets/read', {agentPreset: 'write-fixture'});
   const content = String(preset.value?.content || '');
-  report.composition = {guard: content.includes('anti-escalation'), workflow: content.includes('workflow-write')};
+  const expectedRows = ['persona', 'tool-bash', 'tool-fs', 'tool-fs-search',
+    'skill-filesystem', 'tool-skill', 'anti-escalation'];
+  report.composition = {guard: content.includes('/inputs/presets/anti-escalation.mjs'),
+    workflowOutsidePreset: !content.includes('- id: workflow-write'),
+    exactRows: expectedRows.every(id => content.includes(`- id: ${id}`)) &&
+      (content.match(/^\s*- id: /gm) || []).length === expectedRows.length};
 
   const r1 = await call({file_path: '/state/ws/probe1.txt', content: 'ordinary'});
   report.ordinary = {isError: r1.isError, err: text(r1), written: fs.existsSync('/state/ws/probe1.txt')};
@@ -101,7 +123,8 @@ try {
   const r4 = await call({file_path: '/inputs/node_modules/evil.txt', content: 'no'});
   report.outside = {isError: r4.isError, err: text(r4)};
 
-  report.ok = report.composition.guard && report.composition.workflow &&
+  report.ok = report.composition.guard && report.composition.workflowOutsidePreset &&
+    report.composition.exactRows &&
     !r1.isError && report.ordinary.written && !r2.isError && report.sameMode.written &&
     !r3.isError && report['bash_workspace-write'].isError && report['bash_danger-full-access'].isError &&
     /RETAINED with no retry/.test(report['bash_workspace-write'].err) &&
@@ -125,16 +148,33 @@ class WorkflowWritePluginTest(unittest.TestCase):
         base = presets / 'write-fixture'
         base.mkdir(parents=True)
         (base / 'preset.yml').write_text(PRESET_YML)
-        (base / 'agent.cordis.yml').write_text(ROW)
+        source = base / 'agent.cordis.yml'
+        source.write_text(ROW.replace(
+            "'/inputs/presets/anti-escalation.mjs'", "'./anti-escalation.mjs'"))
         shutil.copy2(FRAMEWORK / 'scripts/dsh-plugins/anti-escalation.mjs',
-                     base / 'anti-escalation.mjs')
+                     presets / 'anti-escalation.mjs')
+        skill = presets / 'skills' / 'write-fixture'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_text(
+            '---\nname: write-fixture\ndescription: Runtime fixture\n---\nFixture.\n')
         check = root / 'check'
         check.mkdir()
         (root / 'runs').mkdir(mode=0o700)
         (check / 'probe-write.mjs').write_text(CHECK)
+        published = Transaction._composition_with_skill_root(
+            source, presets / 'skills')
+        guard = str((presets / 'anti-escalation.mjs').resolve())
+        self.assertIn(f'  name: "{guard}"', published)
+        # host_launcher exposes this external bundle at /inputs/presets.
+        mounted = [line.replace(guard, '/inputs/presets/anti-escalation.mjs')
+                   for line in published]
+        plugins = ''.join('          ' + line + '\n' for line in mounted)
         (check / 'patch.yml').write_text(
-            '- id: agent-presets\n  config:\n    default: standard\n    roots:\n'
-            '      - path: /inputs/presets\n        trust: system\n')
+            '- insert:\n'
+            "    - id: workflow-write\n      name: '/inputs/plugins/workflow-write.mjs'\n"
+            "    - id: preset-write-fixture\n      name: '@deepseek-ai/dsh-agent-preset'\n"
+            '      config:\n        id: write-fixture\n        name: workflow-write fixture\n'
+            '        plugins:\n' + plugins)
         state, code = launch(reads={'node_modules': Path(runtime), 'presets': presets,
                                     'check': check,
                                     'plugins': FRAMEWORK / 'scripts/dsh-plugins'},
@@ -150,7 +190,8 @@ class WorkflowWritePluginTest(unittest.TestCase):
         self.assertTrue(report['bash_workspace-write']['isError'])
         self.assertTrue(report['bash_danger-full-access']['isError'])
         self.assertTrue(report['composition']['guard'])
-        self.assertTrue(report['composition']['workflow'])
+        self.assertTrue(report['composition']['workflowOutsidePreset'])
+        self.assertTrue(report['composition']['exactRows'])
         self.assertTrue(report['outside']['isError'], 'outside the writable area must be denied')
 
 

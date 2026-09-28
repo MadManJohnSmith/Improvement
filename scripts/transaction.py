@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from composition_contract import validate_operational_composition
+from composition_contract import ANTI_ESCALATION_PLUGIN, validate_operational_composition
 from layout_contract import layout_from_paths, validate_mode_layout
 from mode_lifecycle import initialize_state
 
@@ -315,6 +315,7 @@ class Transaction:
         if not hasattr(self.client, "read_agent_preset"):
             return False
         expected_root = str(skill_root.resolve())
+        guard = skill_root.parent / "anti-escalation.mjs"
         for preset_id, _role, source in modes:
             try:
                 document = self._rpc_value(self.client.read_agent_preset(preset_id))
@@ -326,11 +327,14 @@ class Transaction:
             if not isinstance(content, str) or expected_root not in content:
                 return False
             expected = validate_operational_composition(source / "agent.cordis.yml")
+            expected_names = [
+                str(guard.resolve()) if row["name"] == ANTI_ESCALATION_PLUGIN
+                else row["name"] for row in expected]
             actual = re.findall(
                 r"(?m)^\s*-\s+id:\s*['\"]?([^'\"\s]+)['\"]?\s*$"
                 r"\n\s+name:\s*['\"]?([^'\"\s]+)['\"]?\s*$",
                 content)
-            if actual != [(row["id"], row["name"]) for row in expected]:
+            if actual != [(row["id"], name) for row, name in zip(expected, expected_names)]:
                 return False
         return True
 
@@ -356,6 +360,11 @@ class Transaction:
                     "    includeDefaultRoots: false",
                     "    customSkillDirs:",
                     f"      - {Transaction._yaml_scalar(skill_root.resolve())}",
+                ])
+            elif row["name"] == ANTI_ESCALATION_PLUGIN:
+                result.extend([
+                    f"- id: {row['id']}",
+                    f"  name: {Transaction._yaml_scalar(skill_root.parent / 'anti-escalation.mjs')}",
                 ])
             else:
                 result.extend(row["lines"])

@@ -64,9 +64,12 @@ class Client:
     def read_agent_preset(self, preset_id):
         if self.active_bundle is None:
             raise ValueError("preset not active")
+        content = mode_composition(preset_id).replace(
+            "'./anti-escalation.mjs'",
+            str((self.active_bundle / "anti-escalation.mjs").resolve()))
         return {"value": {
             "agentPreset": preset_id,
-            "content": mode_composition(preset_id) + "    customSkillDirs:\n      - " +
+            "content": content + "    customSkillDirs:\n      - " +
                        str((self.active_bundle / "skills").resolve()) + "\n",
         }}
 
@@ -255,7 +258,8 @@ class TransactionTests(unittest.TestCase):
         plugin = self.client.active_bundle / "anti-escalation.mjs"
         self.assertTrue(plugin.is_file())
         patch = (self.client.active_bundle / "cordis.patch.yml").read_text()
-        self.assertEqual(patch.count("name: './anti-escalation.mjs'"), 2)
+        self.assertEqual(patch.count(str(plugin.resolve())), 2)
+        self.assertNotIn("name: './anti-escalation.mjs'", patch)
 
     def test_bundle_rejects_skill_collision_with_mode(self):
         collision = self.generated / "skills" / "project-auditor"
