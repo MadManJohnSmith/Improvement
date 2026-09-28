@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from composition_contract import validate_operational_composition
+from layout_contract import layout_from_paths, validate_mode_layout
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -261,11 +262,14 @@ class Transaction:
                     any(not (mode_dir / name).is_file() or
                         (mode_dir / name).is_symlink() for name in required)):
                 raise TransactionError(f"Preset de modo inválido: {mode_dir}")
+            product = Path(_json(self.workspace / "project.json")["project"])
             try:
+                validate_mode_layout(
+                    mode_dir, layout_from_paths(product, self.workspace))
                 validate_operational_composition(mode_dir / "agent.cordis.yml")
-            except ValueError as error:
+            except (OSError, ValueError, KeyError, TypeError) as error:
                 raise TransactionError(
-                    f"Composición operativa inválida: {mode_dir}: {error}") from error
+                    f"Contrato de modo inválido: {mode_dir}: {error}") from error
             modes.append((preset_id, role, mode_dir))
         if (len(modes) != 2 or len({preset_id for preset_id, _, _ in modes}) != 2 or
                 {role for _, role, _ in modes} != {
@@ -281,11 +285,12 @@ class Transaction:
             raise TransactionError("Producto y workspace deben ser hijos del padre común")
         state = self.workspace / "mode-state"
         state.mkdir(mode=0o700, exist_ok=True)
+        layout = layout_from_paths(project, self.workspace)
         descriptor = {
             "schema_version": 1,
             "project_id": product_doc["name"],
-            "product_root": project.name,
-            "state_root": f"{self.workspace.name}/mode-state",
+            "product_root": layout["product_root"],
+            "state_root": layout["state_root"],
         }
         descriptor_path = state / "project.json"
         if descriptor_path.is_file() and _json(descriptor_path) != descriptor:

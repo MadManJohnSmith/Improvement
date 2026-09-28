@@ -30,6 +30,7 @@ from pathlib import Path
 FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
+from layout_contract import layout_from_paths
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -212,7 +213,13 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     gen_id = run_doc["generation_id"]
     project_name = run_doc["project"]["name"]
     framework_rev = run_doc.get("framework_revision", "unknown")
-    workspace = _run_workspace(run_dir)
+    request = _read_json(Path(run_dir) / "inputs" / "bootstrap-request.json")
+    product = Path(request["project"])
+    workspace = Path(request["workspace"])
+    layout = layout_from_paths(product, workspace)
+    product_root = layout["product_root"]
+    workspace_root = layout["workspace_root"]
+    state_root = layout["state_root"]
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -222,6 +229,9 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Scenario:** {prompt_type}
 **Framework revision:** {framework_rev}
 **Project:** {project_name}
+**Product directory (exact basename):** `{product_root}`
+**Workspace directory (exact basename):** `{workspace_root}`
+**Mode-state path from their common parent (exact):** `{state_root}`
 **Base revision:** {base_rev}
 """
 
@@ -242,10 +252,16 @@ Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `config.sampleOverCapGlobResults: false`, proveedor
 `@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
 incluyas filas de delegación, workflows, herramientas web/red ni plugin-manager.
-Los dos presets usan el estado compartido relativo
-`{project_name}-workspace/mode-state` y comprueban que su sesión se abrió desde el
-padre común que contiene producto y workspace. No crean sesiones descendientes,
-subagentes ni workflows.
+Los dos presets usan exclusivamente los nombres sibling autoritativos, exactos y
+case-sensitive: producto `{product_root}`, workspace `{workspace_root}` y estado
+relativo al padre común `{state_root}`. No sintetices estas rutas desde el ID
+`{project_name}`. Cada `mode.json` incluye `{product_root}` en `reads` y
+`{state_root}` en `writes`. Cada `SKILL.md` de modo contiene exactamente este bloque
+estructurado y además instruye comprobar que la sesión se abrió desde el padre común:
+```json mode-layout
+{{"product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
+```
+No crean sesiones descendientes, subagentes ni workflows.
 
 Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
 frontmatter YAML mínimo válido, con `name: <name>` idéntico al directorio y
@@ -317,6 +333,17 @@ Ejecuta las capacidades internas en orden:
 - generation-repair (debug): reparar si necesario
 - drift-analyzer (sync): analizar drift si aplica
 
+## Identidad de layout obligatoria
+
+En ambos modos usa los nombres sibling autoritativos exactos y case-sensitive:
+producto `{product_root}`, workspace `{workspace_root}` y mode-state `{state_root}`.
+Nunca derives esos nombres de `{project_name}`. Cada `mode.json` contiene
+`{product_root}` en `reads` y `{state_root}` en `writes`; cada `SKILL.md` de modo
+contiene exactamente este bloque y describe el acceso desde el padre común:
+```json mode-layout
+{{"product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
+```
+
 ## Salida obligatoria
 
 Escribe bajo `{run_dir}/generated/`:
@@ -369,7 +396,7 @@ usar artifact `type: "skill-entrypoint"`.
 Antes de emitir `status: GENERATED`, ejecuta la prevalidación Host read-only:
 ```bash
 python3 -B {FRAMEWORK}/scripts/host_validator.py \
-  --generated {run_dir}/generated
+  --generated {run_dir}/generated --run-dir {run_dir}
 ```
 Corrige todos los errores de schema, contracts y manifest que reporte; solo
 entonces deja el manifest en estado GENERATED y solicita aceptación.

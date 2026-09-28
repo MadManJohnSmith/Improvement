@@ -40,6 +40,9 @@ class AcceptanceTests(unittest.TestCase):
         plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
         (gen / "acceptance-plan.json").write_bytes(plan_bytes)
         artifacts = []
+        layout = {"product_root": "project",
+                  "workspace_root": "project-workspace",
+                  "state_root": "project-workspace/mode-state"}
         for role in ("auditor", "continuous-repair"):
             preset_id = f"project-{role}"
             mode_dir = gen / "modes" / preset_id
@@ -48,8 +51,9 @@ class AcceptanceTests(unittest.TestCase):
                 "schema_version": 1, "kind": "mode", "name": preset_id,
                 "preset_id": preset_id, "role": role, "purpose": role,
                 "reuse_source": "composition", "triggers": [role],
-                "anti_triggers": [], "inputs": [], "reads": ["project"],
-                "writes": ["mode-state"], "required_capabilities": [],
+                "anti_triggers": [], "inputs": [],
+                "reads": [layout["product_root"]],
+                "writes": [layout["state_root"]], "required_capabilities": [],
                 "forbidden_capabilities": [], "invariants": ["shared state"],
                 "anti_goals": [], "state_machine": {"states": ["READY"],
                     "transitions": [], "initial": "READY", "terminal": ["READY"]},
@@ -76,7 +80,9 @@ class AcceptanceTests(unittest.TestCase):
 """,
                      "SKILL.md": (f"---\nname: {preset_id}\n"
                                   f"description: {role} mode\n---\n"
-                                  f"# {preset_id}\n")}
+                                  f"# {preset_id}\n```json mode-layout\n"
+                                  f"{json.dumps(layout, separators=(',', ':'))}\n"
+                                  "```\n")}
             for name, text in files.items():
                 (mode_dir / name).write_text(text)
                 artifacts.append({"path": f"modes/{preset_id}/{name}",

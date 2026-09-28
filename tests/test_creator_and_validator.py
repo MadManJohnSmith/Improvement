@@ -39,8 +39,12 @@ MODE_COMPOSITION = """- id: persona
 """
 
 
-def skill_markdown(name, description="Generated project skill"):
-    return f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n"
+def skill_markdown(name, description="Generated project skill", layout=None):
+    text = f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n"
+    if layout:
+        text += ("```json mode-layout\n" +
+                 json.dumps(layout, separators=(",", ":")) + "\n```\n")
+    return text
 
 
 class Base(unittest.TestCase):
@@ -63,6 +67,11 @@ class Base(unittest.TestCase):
         skill_content = skill_markdown("project-auditor")
         (skill / "SKILL.md").write_text(skill_content)
         mode_artifacts = []
+        layout = {
+            "product_root": self.project.name,
+            "workspace_root": self.workspace.name,
+            "state_root": f"{self.workspace.name}/mode-state",
+        }
         for role, suffix in (("auditor", "auditor"),
                              ("continuous-repair", "continuous-repair")):
             preset_id = f"project-{suffix}"
@@ -73,7 +82,8 @@ class Base(unittest.TestCase):
                 "preset_id": preset_id, "role": role,
                 "purpose": role, "reuse_source": "composition",
                 "triggers": [role], "anti_triggers": [], "inputs": [],
-                "reads": ["project"], "writes": ["mode-state"],
+                "reads": [layout["product_root"]],
+                "writes": [layout["state_root"]],
                 "required_capabilities": [], "forbidden_capabilities": [],
                 "invariants": ["Use shared mode-state"], "anti_goals": [],
                 "state_machine": {"states": ["READY"], "transitions": [],
@@ -86,7 +96,8 @@ class Base(unittest.TestCase):
                 "mode.json": json.dumps(mode, indent=2) + "\n",
                 "preset.yml": f"name: {preset_id}\n",
                 "agent.cordis.yml": MODE_COMPOSITION,
-                "SKILL.md": skill_markdown(preset_id, f"Generated {role} mode"),
+                "SKILL.md": skill_markdown(
+                    preset_id, f"Generated {role} mode", layout),
             }
             for name, content in files.items():
                 (mode_dir / name).write_text(content)
@@ -856,6 +867,22 @@ class CreatorTests(Base):
         self.assertIn("workflow_write", prompt)
         self.assertIn("subagentes", prompt)
         self.assertIn("bootstrap.py accept", prompt)
+
+    def test_prompt_uses_authoritative_mixed_case_layout(self):
+        request_path = self.run_dir / "inputs" / "bootstrap-request.json"
+        request = json.loads(request_path.read_text())
+        request["project"] = str(self.root / "Syncify")
+        request["workspace"] = str(self.root / "Syncify-workspace")
+        request_path.write_text(json.dumps(request) + "\n")
+
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+
+        self.assertIn("`Syncify`", prompt)
+        self.assertIn("`Syncify-workspace`", prompt)
+        self.assertIn("`Syncify-workspace/mode-state`", prompt)
+        self.assertNotIn("`project-workspace/mode-state`", prompt)
+        self.assertIn("--run-dir", prompt)
 
     def test_prompt_exposes_exact_generation_contracts_and_prevalidation(self):
         cc.CreatorSession(self.run_dir).prepare()
@@ -1886,6 +1913,25 @@ class ValidatorTests(Base):
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("subagent=@vendor/subagent", details)
         self.assertIn("browser=@vendor/web-browser", details)
+
+    def test_wrong_cased_generated_layout_is_retained(self):
+        generated, manifest = self.make_package()
+        mode_dir = generated / "modes/project-auditor"
+        skill_path = mode_dir / "SKILL.md"
+        wrong = skill_path.read_text().replace("workspace/mode-state", "Workspace/mode-state")
+        skill_path.write_text(wrong)
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-auditor/SKILL.md":
+                artifact["sha256"] = cc._digest_bytes(wrong.encode())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+
+        self.assertFalse(report.passed)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertIn("authoritative layout invalid", details)
+        self.assertIn("workspace/mode-state", details)
 
     def test_bad_status_retained(self):
         generated, _ = self.make_package(status="ACTIVE")

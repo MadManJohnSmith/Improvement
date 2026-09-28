@@ -1,5 +1,9 @@
 # Cambios
 
+## Identidad exacta de layout en modos generados — 2026-09-27
+
+- Hallazgo del piloto Syncify: Creator sintetizaba `syncify-workspace/mode-state` desde el ID normalizado aunque el sibling real era `Syncify-workspace`; Linux cargaba tools correctamente, pero el auditor terminaba `RETAINED` al no encontrar el estado. El prompt toma ahora los paths autoritativos de `bootstrap-request.json`, exige en ambos modos una identidad estructurada y case-sensitive de producto/workspace/mode-state, y la prevalidación recibe el run. Host y transacción contrastan exactamente esa identidad con el contexto antes de aceptar o instalar; el descriptor existente de `mode-state/project.json` conserva los mismos nombres efectivos. Regresiones cubren layout mixto `Syncify`/`Syncify-workspace` y rechazo de casing incorrecto.
+
 ## Configuración obligatoria de fs-search — 2026-09-27
 
 - Hallazgo en DSH real: un preset con `@deepseek-ai/dsh-tool-fs-search` sin `config.sampleOverCapGlobResults: false` es inválido. El prompt Creator y el contrato compartido exigen ahora exactamente ese valor; fixtures y publicación lo preservan. Regresiones cubren configuración ausente y valor incorrecto.

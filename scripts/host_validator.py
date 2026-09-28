@@ -21,6 +21,7 @@ sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 import generation_contracts as gc
 from composition_contract import validate_operational_composition
+from layout_contract import layout_from_paths, validate_mode_layout
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -374,9 +375,24 @@ def _contract_kind(doc, rel):
         "a recognized legacy mode or skill location")
 
 
+def _authoritative_layout(run_dir):
+    if run_dir is None:
+        return None
+    request_path = Path(run_dir) / "inputs" / "bootstrap-request.json"
+    if not request_path.is_file() or request_path.is_symlink():
+        raise ValueError("bootstrap-request.json requerido para validar layout")
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    return layout_from_paths(request["project"], request["workspace"])
+
+
 def _validate_layer_contracts(report, manifest, generated, run_dir=None):
     """Layer 4: Contracts, requirements, source provenance, reuse resolution."""
     issues = []
+    try:
+        layout = _authoritative_layout(run_dir)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        issues.append(f"Layout autoritativo del run inválido: {error}")
+        layout = None
 
     # Check that contracts directory exists if referenced
     contracts_dir = generated / "contracts"
@@ -486,6 +502,13 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
         skill_issue = _skill_frontmatter_issue(mode_dir / "SKILL.md", mode_dir.name)
         if skill_issue:
             issues.append(f"{mode_dir.relative_to(generated)}/SKILL.md: {skill_issue}")
+        if layout is not None:
+            try:
+                validate_mode_layout(mode_dir, layout)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                issues.append(
+                    f"{mode_dir.relative_to(generated)} authoritative layout invalid: "
+                    f"{error}")
         try:
             validate_operational_composition(mode_dir / "agent.cordis.yml")
         except ValueError as error:
@@ -797,7 +820,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        report = validate_package(args.generated)
+        report = validate_package(args.generated, run_dir=args.run_dir)
         result = report.to_dict()
 
         if args.run_dir:

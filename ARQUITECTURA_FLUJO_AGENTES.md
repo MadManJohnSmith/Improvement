@@ -563,7 +563,7 @@ El backup cubre la carpeta completa y archivos auxiliares, no solo `SKILL.md`.
 
 ## 10. Instalación transaccional
 
-La unidad de activación es el conjunto de dos modos + skills específicas + adapters + manifest. No se activan componentes por separado.
+La unidad de activación es el conjunto de dos modos + skills específicas + adapters + manifest. No se activan componentes por separado. El run conserva los paths autoritativos de producto y workspace; Creator usa sus basenames reales, con casing exacto, y nunca deriva el workspace del ID normalizado del proyecto. Ambos contratos de modo declaran estructuradamente `product_root`, `workspace_root` y `<workspace_root>/mode-state`; el Host los contrasta con el run antes de aceptar o instalar y el descriptor transaccional persiste el nombre real del producto y la ruta de estado que incorpora el workspace real.
 
 Secuencia:
 

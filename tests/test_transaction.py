@@ -74,11 +74,11 @@ class TransactionTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.workspace = self.root / "project-workspace"
+        self.workspace = self.root / "Syncify-workspace"
         self.workspace.mkdir()
         (self.workspace / "project.json").write_text(json.dumps({
-            "schema": 1, "name": "project", "project": str(self.root / "project")}) + "\n")
-        (self.root / "project").mkdir()
+            "schema": 1, "name": "project", "project": str(self.root / "Syncify")}) + "\n")
+        (self.root / "Syncify").mkdir()
         self.home = self.root / "dsh-home"
         self.generated = self._package(self.root / "generated")
 
@@ -96,13 +96,22 @@ class TransactionTests(unittest.TestCase):
             preset_id = f"project-{role}"
             mode = root / "modes" / preset_id
             mode.mkdir(parents=True)
+            layout = {
+                "product_root": "Syncify",
+                "workspace_root": "Syncify-workspace",
+                "state_root": "Syncify-workspace/mode-state",
+            }
             (mode / "mode.json").write_text(json.dumps({
-                "preset_id": preset_id, "role": role}) + "\n")
+                "preset_id": preset_id, "role": role,
+                "reads": [layout["product_root"]],
+                "writes": [layout["state_root"]]}) + "\n")
             (mode / "preset.yml").write_text(f"name: {preset_id}\n")
             (mode / "agent.cordis.yml").write_text(
                 f"# {marker}\n" + MODE_COMPOSITION)
             (mode / "SKILL.md").write_text(
-                f"---\nname: {preset_id}\ndescription: {role} mode\n---\n# {preset_id}\n")
+                f"---\nname: {preset_id}\ndescription: {role} mode\n---\n"
+                f"# {preset_id}\n```json mode-layout\n"
+                f"{json.dumps(layout, separators=(',', ':'))}\n```\n")
         return root
 
     def install(self, generated=None, generation="gen-1", client=None, **kwargs):
@@ -156,9 +165,17 @@ class TransactionTests(unittest.TestCase):
             "guide\n")
         self.assertEqual(self.client.installed, [bundle])
         descriptor = json.loads((self.workspace / "mode-state" / "project.json").read_text())
-        self.assertEqual(descriptor["product_root"], "project")
-        self.assertEqual(descriptor["state_root"], "project-workspace/mode-state")
+        self.assertEqual(descriptor["product_root"], "Syncify")
+        self.assertEqual(descriptor["state_root"], "Syncify-workspace/mode-state")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
+
+    def test_direct_transaction_rejects_wrong_cased_layout(self):
+        skill = self.generated / "modes/project-auditor/SKILL.md"
+        skill.write_text(skill.read_text().replace(
+            "Syncify-workspace/mode-state", "syncify-workspace/mode-state"))
+        with self.assertRaisesRegex(tx.TransactionError, "mode-layout must equal"):
+            self.install()
+        self.assertFalse((self.workspace / ".dsh-managed").exists())
 
     def test_direct_transaction_rejects_incomplete_composition(self):
         composition = self.generated / "modes/project-auditor/agent.cordis.yml"
