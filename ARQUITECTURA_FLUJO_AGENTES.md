@@ -134,7 +134,7 @@ El usuario no copia prompts, rutas, JSON, IDs, receipts, plugins o modelos; tamp
 
 Auditoría completa:
 
-> Audita completamente este proyecto.
+> Audita completamente este proyecto; no modifiques ni publiques.
 
 Auditoría dirigida:
 
@@ -144,7 +144,7 @@ Auditoría dirigida:
 
 Reparación completa:
 
-> Repara la cola autorizada en la rama de prueba.
+> Repara los hallazgos de la auditoría; no publiques.
 
 Reparación dirigida:
 
@@ -152,7 +152,9 @@ Reparación dirigida:
 
 > Repara solo el flujo de pagos.
 
-El Host gestiona internamente unidades, escritor, candidatos, QA, reauditoría, commits, archivo y continuidad.
+El usuario no aporta paths ni crea worktrees. Auditor lee el `mode-state` vigente y, antes de responder, reemplaza mediante `workflow_write` una memoria acotada: hallazgos deduplicados por `(finding_id, base_revision)`, work items y handoff; su cierre declara ruta, conteo y el prompt simple de reparación. Continuous Repair interpreta la solicitud simple de IDs persistidos o de todos los hallazgos como autorización para crear/reusar mediante Git un worktree sibling determinista, solo tras comprobar checkout canónico limpio y revisión base coincidente. Registra candidato, modifica y prueba únicamente ese árbol y puede commitear allí; nunca mergea, hace push, publica ni escribe el checkout canónico. Colisiones incompatibles o checkout sucio quedan `RETAINED` con una acción concreta. El resultado entrega path, branch, commit y pruebas listo para Host o una integración posterior autorizada por el usuario.
+
+Host gestiona activación de los modos del framework, pero la promoción/integración del candidato de producto permanece user-authorized.
 
 ---
 
@@ -164,8 +166,8 @@ El Host gestiona internamente unidades, escritor, candidatos, QA, reauditoría, 
 | Bootstrap | Descubrir; preparar workspace; llamar DSH/Creator; validar; respaldar; staging; instalar; activar/rollback | Inventar autorización; leer credenciales de proveedor; modificar producto |
 | Creator | Analizar proyecto; generar paquete candidato; crear skills específicas; invocar `bootstrap accept`; corregir errores mecánicos dentro de límites | Instalar directamente; modificar validadores; rebajar controles; declararse ACCEPTED |
 | Host | Validar schema/capabilities/hashes; presupuesto; backup; instalación transaccional; aceptación; activación/rollback | Delegar autoridad al modelo; aceptar manifiestos declarativos como permiso |
-| Auditor generado | Leer alcance; inventariar; delegar revisión; emitir cola/evidencia | Modificar producto; publicar; ampliar roots |
-| Reparación generada | Trabajar en candidato/rama autorizada; ejecutar pruebas permitidas; coordinar QA | Escribir fuera del cambio autorizado; publicar sin mandato |
+| Auditor generado | Leer alcance; inventariar; persistir cola/evidencia/handoff acotados antes del cierre | Modificar producto; publicar; ampliar roots; responder sin handoff durable |
+| Reparación generada | Autoprovisionar candidato sibling desde un prompt simple; reparar/probar/commitear allí; persistir verificación | Escribir checkout canónico; pedir path derivable; merge/push/publicar; integrar sin mandato |
 | QA | Revisar candidato exacto; ejecutar criterios; aceptar/rechazar | Ser el mismo autor presentado con otra etiqueta |
 | Auditor posterior | Reauditar semánticamente candidato aceptado | Sustituirse por la QA previa |
 
@@ -563,7 +565,7 @@ El backup cubre la carpeta completa y archivos auxiliares, no solo `SKILL.md`.
 
 ## 10. Instalación transaccional
 
-La unidad de activación es el conjunto de dos modos + skills específicas + adapters + manifest. No se activan componentes por separado. El run conserva los paths autoritativos de producto y workspace; Creator usa sus basenames reales, con casing exacto, y nunca deriva el workspace del ID normalizado del proyecto. Ambos contratos de modo declaran estructuradamente `product_root`, `workspace_root` y `<workspace_root>/mode-state`; el Host los contrasta con el run antes de aceptar o instalar y el descriptor transaccional persiste el nombre real del producto y la ruta de estado que incorpora el workspace real.
+La unidad de activación es el conjunto de dos modos + skills específicas + adapters + manifest. No se activan componentes por separado. El run conserva los paths autoritativos de producto y workspace; Creator usa sus basenames reales, con casing exacto, y nunca deriva el workspace del ID normalizado del proyecto. Ambos contratos de modo declaran estructuradamente `product_root`, `workspace_root` y `<workspace_root>/mode-state`; el Host los contrasta con el run antes de aceptar o instalar y el descriptor transaccional persiste el nombre real del producto y la ruta de estado que incorpora el workspace real. Además, `mode.json` y `SKILL.md` contienen el mismo bloque `mode-lifecycle` exacto por rol; Host y transacción fallan cerrado si falta o diverge. La transacción inicializa `state-schema.json` v1, tres JSONL vacíos y `work-items.json` con `candidate: null`, sin siembra manual. Los límites vigentes son 200 findings, 50 handoffs, 200 work items y 200 verification results; como `workflow_write` reemplaza el archivo completo, cada modo lee, deduplica/compacta y reescribe atómicamente.
 
 Secuencia:
 

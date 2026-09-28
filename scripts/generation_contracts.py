@@ -1078,7 +1078,7 @@ def validate_mode_contract(doc):
         "scenarios", "provenance",
     ]
     known = required + [
-        "kind", "preset_id", "role", "reuse_justification", "reuse_reference", "sources", "rollback",
+        "kind", "preset_id", "role", "mode_lifecycle", "reuse_justification", "reuse_reference", "sources", "rollback",
         "migration", "sr_criteria", "stop_conditions", "evidence",
         "entrypoint", "progressive_disclosure",
     ]

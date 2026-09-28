@@ -1,32 +1,23 @@
 # {{PROJECT_NAME}}-continuous-repair
 
 Mode: `{{PROJECT_NAME}}-continuous-repair`
-Purpose: Minimal bounded repair on candidate branches for `{{PROJECT_NAME}}`.
+Purpose: provision and repair a managed candidate for `{{PROJECT_NAME}}`.
 
-## Boundaries and Immutable Invariants
+## Boundaries
 
-1. Operates only on designated candidate worktrees or authorized branches.
-2. Modifies only files within the authorized finding change scope.
-3. Every repair must be proven green by existing automated tests.
-4. Maximum two repair attempts per finding before retaining.
-5. Emits candidate patches for independent Host QA; never self-approves.
-
-## Triggers
-
-- Explicit command: "Repara la cola autorizada", "Repara este hallazgo"
-- Finding queue handoff from `{{PROJECT_NAME}}-auditor`
-- Reaudit regression repair loop
-
-## Inputs and Sources
-
-- Finding specification from external `repair-queue.json`
-- Source code in candidate worktree
-- Documented test commands from `AGENTS.md`
+- A simple repair prompt authorizes candidate creation/reuse and a tested candidate commit only.
+- Never write the canonical checkout; never merge, push, or publish.
+- Write operational state only to exact `{{STATE_ROOT}}` through `workflow_write`.
 
 ## Procedure
 
-1. Isolate the candidate finding and reproduce failure (red state).
-2. Apply the smallest verifiable change to address root cause.
-3. Rerun the documented test command to verify green state.
-4. If green, commit candidate receipt and request independent QA review.
-5. If failure persists after second attempt, mark finding `RETAINED`.
+1. Accept `Repara los hallazgos de la auditoría; no publiques.` or named persisted IDs without asking for paths.
+2. Read `state-schema.json`, findings, work items, verification results, and handoffs.
+3. Verify canonical Git checkout is clean and its revision matches the finding base. Otherwise retain with one concrete action.
+4. Derive sibling `{{PRODUCT_ROOT}}-repair-<base12>` and branch `dsh/repair-<base12>`; create or safely reuse it using `git worktree add` via bash. Retain incompatible collisions.
+5. Persist candidate identity in `work-items.json`, patch only that candidate, run documented tests, and optionally commit there.
+6. Compact and replace full state files with `workflow_write`. Report candidate path, branch, commit, tests, and readiness for Host/user-authorized integration.
+
+```json mode-lifecycle
+{"schema_version":1,"role":"continuous-repair","state_root":"{{STATE_ROOT}}","state_schema":"state-schema.json","read_before_write":true,"write_method":"workflow_write-full-replacement","bounds":{"findings.jsonl":200,"handoffs.jsonl":50,"work-items.json":200,"verification-results.jsonl":200},"repair_candidate":{"simple_prompt_authorizes":["named-persisted","all-persisted"],"canonical_preconditions":["git-clean","base-revision-matches"],"candidate_location":"sibling","directory_template":"{{PRODUCT_ROOT}}-repair-<base12>","branch_template":"dsh/repair-<base12>","provision":"git-worktree-add-or-reuse","collision_policy":"retain-with-action","patch_root":"candidate-only","commit":"allowed-after-tests","forbidden":["canonical-product-write","merge","push","publish"],"writes":["work-items.json","verification-results.jsonl","handoffs.jsonl"],"final_fields":["candidate_path","candidate_branch","candidate_commit","tests","integration_status"],"integration_status":"ready-for-host-or-user-authorized-integration"}}
+```

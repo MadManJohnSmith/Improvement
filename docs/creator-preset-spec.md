@@ -7,6 +7,8 @@ El contrato vigente define una generación completa; cualquier composición ante
 
 ## Entrada Host
 
+La experiencia generada debe aceptar literalmente prompts novatos como `Audita completamente este proyecto; no modifiques ni publiques.` y después `Repara los hallazgos de la auditoría; no publiques.` sin solicitar paths, JSON, worktrees ni configuración.
+
 Creator recibe referencias a:
 
 - `run.json`, snapshot e inventario;
@@ -112,7 +114,7 @@ preset.
 3. Skills específicas solo con procedimiento recurrente, evidencia, fronteras y prueba.
 4. Perfil guarda datos variables; skills guardan procedimientos.
 5. Auditor sin escritura del producto.
-6. Reparación solo en candidato/rama autorizada.
+6. Auditor persiste hallazgos/handoff acotados antes de responder; Repair autoprovisiona un worktree candidato sibling tras comprobar Git limpio/base coincidente, puede commitear allí por el prompt de reparación y nunca escribe canónico, mergea, hace push o publica.
 7. QA y Auditor posterior observables.
 8. Máximo dos intentos por unidad.
 9. Sin publicación/red/instalación implícitas.

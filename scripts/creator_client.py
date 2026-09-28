@@ -344,6 +344,48 @@ contiene exactamente este bloque y describe el acceso desde el padre común:
 {{"product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
 ```
 
+## Ciclo operativo obligatorio y experiencia novata
+
+Los dos `mode.json` y sus `SKILL.md` deben repetir exactamente un bloque estructurado
+`json mode-lifecycle`; el Host compara el JSON por rol, no acepta promesas narrativas.
+Usa `schema_version: 1`, `state_root: "{state_root}"`, `state_schema:
+"state-schema.json"`, `read_before_write: true`, `write_method:
+"workflow_write-full-replacement"` y estos límites exactos en ambos:
+`findings.jsonl: 200`, `handoffs.jsonl: 50`, `work-items.json: 200`,
+`verification-results.jsonl: 200`.
+
+Auditor debe incluir `audit_handoff` con `required_before_final: true`, dedupe
+`["finding_id","base_revision"]`, writes `findings.jsonl`, `handoffs.jsonl`,
+`work-items.json`, final_fields `persisted_path`, `persisted_count`, `next_prompt` y
+next_prompt exacto `Repara los hallazgos de la auditoría; no publiques.`. Su
+procedimiento lee primero el estado actual, deduplica por finding/base, conserva
+solo los 200 hallazgos y 50 handoffs más recientes, y reemplaza cada archivo
+completo con `workflow_write`; no responde finalmente hasta persistir y reportar
+ruta/conteo. Debe funcionar con `Audita completamente este proyecto; no modifiques
+ni publiques.`.
+
+Continuous Repair debe incluir `repair_candidate`: prompts simples de hallazgos
+persistidos nombrados o todos autorizan crear/reusar candidato; precondiciones
+`git-clean` y `base-revision-matches`; location `sibling`; directory_template
+`{product_root}-repair-<base12>`; branch_template `dsh/repair-<base12>`; provision
+`git-worktree-add-or-reuse`; collision_policy `retain-with-action`; patch_root
+`candidate-only`; commit `allowed-after-tests`; forbidden exactos
+`canonical-product-write`, `merge`, `push`, `publish`; writes `work-items.json`,
+`verification-results.jsonl`, `handoffs.jsonl`; final_fields `candidate_path`,
+`candidate_branch`, `candidate_commit`, `tests`, `integration_status`; status
+`ready-for-host-or-user-authorized-integration`.
+
+Su procedimiento lee findings/estado, comprueba con git que el checkout canónico
+está limpio y en la revisión base, deriva el sibling/branch determinista, crea o
+reutiliza el worktree mediante bash sin escribir producto canónico, registra la
+identidad en `work-items.json`, modifica solo candidato, prueba y puede hacer commit
+en candidato porque el prompt de reparación lo autoriza. Nunca merge/push/publish.
+Una colisión incompatible o checkout sucio queda RETAINED con una acción concreta;
+no pide path si el default es seguro. Persiste verificación/handoff por reemplazo
+acotado antes de responder y entrega branch/commit/tests listo para Host o posterior
+integración autorizada. Debe funcionar con `Repara los hallazgos de la auditoría;
+no publiques.` sin JSON, paths ni configuración del usuario.
+
 ## Salida obligatoria
 
 Escribe bajo `{run_dir}/generated/`:

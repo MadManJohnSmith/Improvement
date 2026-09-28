@@ -47,9 +47,10 @@ Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación
 
 - Auditar completo: «Audita completamente este proyecto; no modifiques ni publiques.»
 - Auditar un área: «Audita este flujo, característica o componente.»
-- Reparar: «Repara la cola autorizada en la rama o copia de prueba.» / «Repara solo este hallazgo.»
+- Reparar todo lo persistido: «Repara los hallazgos de la auditoría; no publiques.»
+- Reparar IDs: «Repara A-01 y M-02; no publiques.»
 
-El usuario no transporta recibos ni pide la siguiente unidad. Si falta capacidad/permiso/evidencia, el modo conserva `RETAINED` con causa y siguiente acción.
+Auditor persiste primero un handoff acotado en `<Proyecto>-workspace/mode-state` y responde con ruta/conteo y el prompt siguiente. Repair lee ese estado y crea o reutiliza automáticamente un worktree hermano determinista; el usuario no aporta paths, JSON ni ramas. Repair solo modifica/prueba ese candidato y puede commitear allí por autorización del prompt, pero nunca modifica el checkout canónico, mergea, hace push o publica. Su cierre entrega candidato, branch, commit y tests para que Host o el usuario integren posteriormente con autorización explícita. Si el checkout canónico está sucio, la revisión base cambió o existe una colisión incompatible, conserva `RETAINED` con una acción concreta.
 
 ## Herramientas de mantenimiento (capa MVP)
 

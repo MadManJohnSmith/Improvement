@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from mode_lifecycle import validate_mode_lifecycle
+
 
 _LAYOUT_BLOCK = re.compile(
     r"(?ms)^```json mode-layout\s*\n(?P<body>.*?)\n```\s*$")
@@ -46,3 +48,4 @@ def validate_mode_layout(mode_dir, expected):
             "workspace_root, and state_root")
     if layout != expected:
         raise ValueError(f"SKILL.md mode-layout must equal {expected!r}")
+    validate_mode_lifecycle(mode_dir, expected)

@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
+from mode_lifecycle import expected_lifecycle
 
 
 MODE_COMPOSITION = """- id: persona
@@ -101,17 +102,21 @@ class TransactionTests(unittest.TestCase):
                 "workspace_root": "Syncify-workspace",
                 "state_root": "Syncify-workspace/mode-state",
             }
+            lifecycle = expected_lifecycle(role, layout)
             (mode / "mode.json").write_text(json.dumps({
                 "preset_id": preset_id, "role": role,
                 "reads": [layout["product_root"]],
-                "writes": [layout["state_root"]]}) + "\n")
+                "writes": [layout["state_root"]],
+                "mode_lifecycle": lifecycle}) + "\n")
             (mode / "preset.yml").write_text(f"name: {preset_id}\n")
             (mode / "agent.cordis.yml").write_text(
                 f"# {marker}\n" + MODE_COMPOSITION)
             (mode / "SKILL.md").write_text(
                 f"---\nname: {preset_id}\ndescription: {role} mode\n---\n"
                 f"# {preset_id}\n```json mode-layout\n"
-                f"{json.dumps(layout, separators=(',', ':'))}\n```\n")
+                f"{json.dumps(layout, separators=(',', ':'))}\n```\n"
+                f"```json mode-lifecycle\n"
+                f"{json.dumps(lifecycle, separators=(',', ':'))}\n```\n")
         return root
 
     def install(self, generated=None, generation="gen-1", client=None, **kwargs):
@@ -167,6 +172,13 @@ class TransactionTests(unittest.TestCase):
         descriptor = json.loads((self.workspace / "mode-state" / "project.json").read_text())
         self.assertEqual(descriptor["product_root"], "Syncify")
         self.assertEqual(descriptor["state_root"], "Syncify-workspace/mode-state")
+        state_schema = json.loads(
+            (self.workspace / "mode-state" / "state-schema.json").read_text())
+        self.assertEqual(state_schema["files"]["findings.jsonl"]["limit"], 200)
+        work_items = json.loads(
+            (self.workspace / "mode-state" / "work-items.json").read_text())
+        self.assertEqual(work_items, {
+            "schema_version": 1, "candidate": None, "items": []})
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
 
     def test_direct_transaction_rejects_wrong_cased_layout(self):
@@ -174,6 +186,15 @@ class TransactionTests(unittest.TestCase):
         skill.write_text(skill.read_text().replace(
             "Syncify-workspace/mode-state", "syncify-workspace/mode-state"))
         with self.assertRaisesRegex(tx.TransactionError, "mode-layout must equal"):
+            self.install()
+        self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+    def test_direct_transaction_rejects_missing_lifecycle(self):
+        mode_path = self.generated / "modes/project-auditor/mode.json"
+        mode = json.loads(mode_path.read_text())
+        del mode["mode_lifecycle"]
+        mode_path.write_text(json.dumps(mode) + "\n")
+        with self.assertRaisesRegex(tx.TransactionError, "mode_lifecycle"):
             self.install()
         self.assertFalse((self.workspace / ".dsh-managed").exists())
 
@@ -307,6 +328,13 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(relaunched.installed, [])
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(),
                          "gen-2")
+
+    def test_idempotent_result_keeps_both_published_presets(self):
+        first = self.install()
+        second = self.install(client=self.client)
+        self.assertEqual(first["published_presets"], second["published_presets"])
+        self.assertEqual(second["result"], "NO_OP")
+        self.assertEqual(len(second["published_presets"]), 2)
 
     def test_retry_after_roster_failure_republishes_incomplete_generation(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):

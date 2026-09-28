@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import acceptance
 import bootstrap
+from mode_lifecycle import expected_lifecycle
 
 
 class AcceptanceTests(unittest.TestCase):
@@ -55,6 +56,7 @@ class AcceptanceTests(unittest.TestCase):
                 "reads": [layout["product_root"]],
                 "writes": [layout["state_root"]], "required_capabilities": [],
                 "forbidden_capabilities": [], "invariants": ["shared state"],
+                "mode_lifecycle": expected_lifecycle(role, layout),
                 "anti_goals": [], "state_machine": {"states": ["READY"],
                     "transitions": [], "initial": "READY", "terminal": ["READY"]},
                 "handoffs": [], "failure_modes": {"retries": 0,
@@ -82,6 +84,8 @@ class AcceptanceTests(unittest.TestCase):
                                   f"description: {role} mode\n---\n"
                                   f"# {preset_id}\n```json mode-layout\n"
                                   f"{json.dumps(layout, separators=(',', ':'))}\n"
+                                  "```\n```json mode-lifecycle\n"
+                                  f"{json.dumps(expected_lifecycle(role, layout), separators=(',', ':'))}\n"
                                   "```\n")}
             for name, text in files.items():
                 (mode_dir / name).write_text(text)

@@ -51,6 +51,10 @@
       "enum": ["auditor", "continuous-repair"],
       "description": "Final operational role exposed by the preset."
     },
+    "mode_lifecycle": {
+      "type": "object",
+      "description": "Exact role-specific durable handoff and candidate lifecycle contract validated by Host."
+    },
     "purpose": {
       "type": "string",
       "minLength": 1

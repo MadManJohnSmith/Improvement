@@ -19,6 +19,7 @@ from pathlib import Path
 
 from composition_contract import validate_operational_composition
 from layout_contract import layout_from_paths, validate_mode_layout
+from mode_lifecycle import initialize_state
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -292,21 +293,10 @@ class Transaction:
             "product_root": layout["product_root"],
             "state_root": layout["state_root"],
         }
-        descriptor_path = state / "project.json"
-        if descriptor_path.is_file() and _json(descriptor_path) != descriptor:
-            raise TransactionError("mode-state/project.json entra en conflicto")
-        if not descriptor_path.exists():
-            _write_new(descriptor_path, descriptor)
-        defaults = {
-            "findings.jsonl": "", "work-items.json": "[]\n",
-            "handoffs.jsonl": "", "verification-results.jsonl": "",
-        }
-        for name, content in defaults.items():
-            path = state / name
-            if not path.exists():
-                path.write_text(content, encoding="utf-8")
-                path.chmod(0o600)
-        return state
+        try:
+            return initialize_state(state, descriptor)
+        except (OSError, ValueError) as error:
+            raise TransactionError(f"mode-state inválido: {error}") from error
 
     @staticmethod
     def _roster_items(value):
@@ -549,14 +539,17 @@ class Transaction:
                 receipt_generation = receipt.get("generation_id")
                 receipt_ids = set(receipt.get("preset_ids", []))
                 receipt_bundle = Path(receipt.get("bundle_path", ""))
+                expected_ids = [preset_id for preset_id, _role, _source in modes]
                 if (receipt_generation == generation_id and
-                        all(preset_id in receipt_ids
-                            and by_id.get(preset_id)
+                        receipt_ids == set(expected_ids) and
+                        all(by_id.get(preset_id)
                             and by_id[preset_id].get("broken") is not True
-                            for preset_id, _role, _source in modes) and
+                            for preset_id in expected_ids) and
                         self._active_presets_match(
                             modes, receipt_bundle / "skills")):
-                    return {"result": "NO_OP", "generation_id": generation_id}
+                    return {"result": "NO_OP", "generation_id": generation_id,
+                            "published_presets": expected_ids,
+                            "mode_state": str(self.workspace / "mode-state")}
             shutil.rmtree(target)
 
         stage = self.staging / generation_id
@@ -593,6 +586,10 @@ class Transaction:
                         "reinicio; relanza DSH y repite bootstrap install"),
                 }
             published = publication["preset_ids"]
+            expected_ids = [preset_id for preset_id, _role, _source in modes]
+            if published != expected_ids:
+                raise TransactionError(
+                    "Publicación devolvió cardinalidad/orden de presets inconsistente")
 
             # Atomic pointer update: temp file + os.replace
             pointer_tmp = self.install_root / f".ACTIVE.{generation_id}.tmp"

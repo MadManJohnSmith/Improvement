@@ -82,9 +82,14 @@ instala mediante `pluginManager/installBundle`, consulta `agentPresets/list` y s
 considera la instalación activa cuando ambos IDs del recibo aparecen sin diagnóstico
 `broken`. El runtime vigente ya no lee la ruta legacy `$DSH_HOME/.agent-presets`.
 
-Los dos modos comparten exclusivamente `<Proyecto>-workspace/mode-state`; las
-rutas persistidas son relativas al padre común. El producto no recibe estado del
-flujo. La aceptación es determinista y veraz: valida paquete, plan, hashes y
+Los dos modos comparten exclusivamente `<Proyecto>-workspace/mode-state`; Host
+inicializa `state-schema.json` v1, findings/handoffs/verification JSONL y
+`work-items.json` con un slot de candidato. Los contratos estructurados obligan a
+leer antes de reemplazar archivos completos con `workflow_write`, deduplicar y
+compactar con límites. Auditor no termina sin handoff durable; Repair deriva y crea
+su worktree sibling sin pedir paths, nunca escribe el checkout canónico ni hace
+merge/push/publicación. Las rutas persistidas son relativas al padre común. El
+producto no recibe estado del flujo. La aceptación es determinista y veraz: valida paquete, plan, hashes y
 política, pero no crea sesiones evaluator/reviewer ni afirma holdouts dinámicos.
 `READY_FOR_INSTALL` autoriza la publicación; `ACTIVE` se escribe únicamente tras
 publicación y roster verificados. Para pruebas e integración se debe usar siempre

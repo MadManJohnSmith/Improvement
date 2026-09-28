@@ -20,6 +20,7 @@ import bootstrap
 import creator_client as cc
 import generation_contracts as gc
 import host_validator as hv
+from mode_lifecycle import expected_lifecycle
 
 
 MODE_COMPOSITION = """- id: persona
@@ -39,11 +40,14 @@ MODE_COMPOSITION = """- id: persona
 """
 
 
-def skill_markdown(name, description="Generated project skill", layout=None):
+def skill_markdown(name, description="Generated project skill", layout=None, role=None):
     text = f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n"
     if layout:
         text += ("```json mode-layout\n" +
                  json.dumps(layout, separators=(",", ":")) + "\n```\n")
+    if role:
+        text += ("```json mode-lifecycle\n" + json.dumps(
+            expected_lifecycle(role, layout), separators=(",", ":")) + "\n```\n")
     return text
 
 
@@ -86,6 +90,7 @@ class Base(unittest.TestCase):
                 "writes": [layout["state_root"]],
                 "required_capabilities": [], "forbidden_capabilities": [],
                 "invariants": ["Use shared mode-state"], "anti_goals": [],
+                "mode_lifecycle": expected_lifecycle(role, layout),
                 "state_machine": {"states": ["READY"], "transitions": [],
                                   "initial": "READY", "terminal": ["READY"]},
                 "handoffs": [], "failure_modes": {"retries": 0,
@@ -97,7 +102,7 @@ class Base(unittest.TestCase):
                 "preset.yml": f"name: {preset_id}\n",
                 "agent.cordis.yml": MODE_COMPOSITION,
                 "SKILL.md": skill_markdown(
-                    preset_id, f"Generated {role} mode", layout),
+                    preset_id, f"Generated {role} mode", layout, role),
             }
             for name, content in files.items():
                 (mode_dir / name).write_text(content)
@@ -907,6 +912,11 @@ class CreatorTests(Base):
         self.assertIn("`config.sampleOverCapGlobResults: false`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
+        self.assertIn("json mode-lifecycle", prompt)
+        self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
+        self.assertIn("git-worktree-add-or-reuse", prompt)
+        self.assertIn("canonical-product-write`, `merge`, `push`, `publish", prompt)
+        self.assertIn("candidate_commit", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
         self.assertIn("Antes de emitir `status: GENERATED`", prompt)
 
@@ -1804,6 +1814,52 @@ class ValidatorTests(Base):
         self.assertTrue(report.passed)
         self.assertEqual(report.verdict, "READY_FOR_ACCEPTANCE")
         self.assertEqual(len(report.layers), 10)
+
+    def test_missing_mode_lifecycle_is_retained(self):
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-auditor/mode.json"
+        mode = json.loads(mode_path.read_text())
+        del mode["mode_lifecycle"]
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-auditor/mode.json":
+                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("mode_lifecycle", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_repair_lifecycle_forbids_merge_push_publish_and_canonical_write(self):
+        generated, _ = self.make_package()
+        mode = json.loads((generated /
+            "modes/project-continuous-repair/mode.json").read_text())
+        contract = mode["mode_lifecycle"]["repair_candidate"]
+        self.assertEqual(contract["forbidden"], [
+            "canonical-product-write", "merge", "push", "publish"])
+        self.assertEqual(contract["provision"], "git-worktree-add-or-reuse")
+        self.assertIn("candidate_commit", contract["final_fields"])
+
+    def test_wrong_role_lifecycle_is_retained(self):
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-continuous-repair/mode.json"
+        mode = json.loads(mode_path.read_text())
+        mode["mode_lifecycle"] = expected_lifecycle("auditor", {
+            "product_root": self.project.name,
+            "workspace_root": self.workspace.name,
+            "state_root": f"{self.workspace.name}/mode-state",
+        })
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-continuous-repair/mode.json":
+                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("role contract", " ".join(
+            report.layers["contracts"]["details"]))
 
     def test_persona_only_mode_composition_retained(self):
         generated, _ = self.make_package()

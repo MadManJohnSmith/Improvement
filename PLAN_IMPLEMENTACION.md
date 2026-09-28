@@ -59,6 +59,7 @@ Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en
 | P8 | Instalación de modos como presets DSH | HECHO | bundle de declaraciones `@deepseek-ai/dsh-agent-preset` instalado por `pluginManager/installBundle`, con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
 | P9 | Gate operativo y ruta real de skills | HECHO | cada modo exige persona+bash+fs+fs-search (`sampleOverCapGlobResults: false`)+skill-filesystem+tool-skill y rechaza delegación/workflow/web/plugin-manager; frontmatter mínimo validado; bundle copia skills/recursos y skills de modo, con root local exclusivo y recibo de ambos presets |
 | P10 | Piloto tardis (Syncify) con DSH real | EN CURSO | cada salida del piloto produce cambio de flujo y regresión; paquete aceptado de extremo a extremo pendiente |
+| P11 | Handoff durable y reparación sin operador | HECHO | lifecycle JSON exacto, memoria acotada inicializada, auditor obligado a persistir y Repair obligado a autoprovisionar candidato sibling sin escribir canónico/merge/push/publicar; promoción de producto sigue autorizada por usuario |
 
 Suite de regresión vigente: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
 
