@@ -22,6 +22,8 @@ MODE_COMPOSITION = """- id: persona
   name: '@deepseek-ai/dsh-tool-fs'
 - id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill
@@ -141,6 +143,7 @@ class TransactionTests(unittest.TestCase):
                 "dsh-tool-fs-search", "dsh-skill-filesystem", "dsh-tool-skill"):
             self.assertEqual(
                 patch.count(f"name: '@deepseek-ai/{plugin}'"), 2)
+        self.assertEqual(patch.count("sampleOverCapGlobResults: false"), 2)
         self.assertEqual(patch.count("includeDefaultRoots: false"), 2)
         skill_root = bundle / "skills"
         self.assertEqual(patch.count(str(skill_root.resolve())), 2)

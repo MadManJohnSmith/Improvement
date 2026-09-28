@@ -238,7 +238,8 @@ Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Cada
 `agent.cordis.yml` monta exactamente las filas operativas necesarias: persona
 `@deepseek-ai/dsh-persona`, bash `@deepseek-ai/dsh-tool-bash`, filesystem
-`@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search`, proveedor
+`@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search` con
+`config.sampleOverCapGlobResults: false`, proveedor
 `@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
 incluyas filas de delegación, workflows, herramientas web/red ni plugin-manager.
 Los dos presets usan el estado compartido relativo

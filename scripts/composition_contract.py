@@ -17,6 +17,8 @@ PROHIBITED_MODE_PLUGIN_TERMS = (
     "delegat", "subagent", "workflow", "web", "plugin-manager",
     "plugin_manager", "pluginmanager",
 )
+FS_SEARCH_PLUGIN = "@deepseek-ai/dsh-tool-fs-search"
+FS_SEARCH_REQUIRED_CONFIG = "sampleOverCapGlobResults"
 _KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 
@@ -110,6 +112,28 @@ def parse_composition(path):
     return rows
 
 
+def _validate_fs_search_config(row):
+    configs = 0
+    values = []
+    in_config = False
+    for raw in row["lines"][1:]:
+        indent = len(raw) - len(raw.lstrip(" "))
+        text = raw[indent:]
+        if indent == 2:
+            key, value = text.split(":", 1)
+            in_config = key.strip() == "config" and not value.strip()
+            configs += in_config
+        elif in_config and indent == 4 and ":" in text:
+            key, value = text.split(":", 1)
+            if key.strip() == FS_SEARCH_REQUIRED_CONFIG:
+                values.append(value.strip())
+    setting = f"config.{FS_SEARCH_REQUIRED_CONFIG}"
+    if configs != 1 or len(values) != 1:
+        raise ValueError(f"plugin {FS_SEARCH_PLUGIN!r} requires {setting}: false")
+    if values[0] != "false":
+        raise ValueError(f"plugin {FS_SEARCH_PLUGIN!r} requires {setting} to be false")
+
+
 def validate_operational_composition(path):
     rows = parse_composition(path)
     ids = Counter(row["id"] for row in rows)
@@ -126,6 +150,8 @@ def validate_operational_composition(path):
     if invalid_counts:
         raise ValueError(
             f"operational plugins must occur exactly once: {invalid_counts}")
+    _validate_fs_search_config(next(
+        row for row in rows if row["name"] == FS_SEARCH_PLUGIN))
     prohibited = sorted(
         f"{row['id']}={row['name']}" for row in rows
         if any(term in row["id"].lower() or term in row["name"].lower()

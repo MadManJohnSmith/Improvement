@@ -67,6 +67,8 @@ class AcceptanceTests(unittest.TestCase):
   name: '@deepseek-ai/dsh-tool-fs'
 - id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill

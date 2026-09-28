@@ -1,5 +1,9 @@
 # Cambios
 
+## Configuración obligatoria de fs-search — 2026-09-27
+
+- Hallazgo en DSH real: un preset con `@deepseek-ai/dsh-tool-fs-search` sin `config.sampleOverCapGlobResults: false` es inválido. El prompt Creator y el contrato compartido exigen ahora exactamente ese valor; fixtures y publicación lo preservan. Regresiones cubren configuración ausente y valor incorrecto.
+
 ## Actualización de bundle estable fail-closed — 2026-09-27
 
 - Hallazgo en vivo tras instalar `gen-2c08df3a24cb`: `pluginManager/installBundle` persiste el nuevo enlace pero devuelve `application: restart-required` cuando el nombre del bundle ya estaba instalado; la transacción ignoraba ese campo y los IDs todavía presentes en `agentPresets/list` pertenecían a la composición anterior, por lo que movía el puntero y el run a `ACTIVE` falsamente. La publicación exige ahora `applied` en instalaciones frescas y verifica por `agentPresets/read` las seis filas operativas y la raíz de skills exacta del candidato. `restart-required` no hace rollback deshonesto ni mueve recibo, puntero o run; devuelve un estado recuperable. Tras relanzar DSH, repetir `bootstrap install` reconoce la composición candidata cargada y completa la misma generación sin redespachar Creator ni reinstalar el nombre estable. Regresiones: instalación fresca aplicada, actualización con roster stale no activa y reanudación posterior al reinicio.

@@ -30,6 +30,8 @@ MODE_COMPOSITION = """- id: persona
   name: '@deepseek-ai/dsh-tool-fs'
 - id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill
@@ -875,6 +877,7 @@ class CreatorTests(Base):
                 "@deepseek-ai/dsh-tool-fs", "@deepseek-ai/dsh-tool-fs-search",
                 "@deepseek-ai/dsh-skill-filesystem", "@deepseek-ai/dsh-tool-skill"):
             self.assertIn(plugin, prompt)
+        self.assertIn("`config.sampleOverCapGlobResults: false`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
@@ -1813,6 +1816,27 @@ class ValidatorTests(Base):
             "  config:\n    environment:\n      SAFE: true\n"))
         report = hv.validate_package(generated)
         self.assertTrue(report.layers["contracts"]["passed"])
+
+    def test_fs_search_missing_required_config_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION.replace(
+            "  config:\n    sampleOverCapGlobResults: false\n", ""))
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("requires config.sampleOverCapGlobResults: false", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_fs_search_wrong_required_config_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(MODE_COMPOSITION.replace(
+            "sampleOverCapGlobResults: false",
+            "sampleOverCapGlobResults: true"))
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("requires config.sampleOverCapGlobResults to be false", " ".join(
+            report.layers["contracts"]["details"]))
 
     def test_prohibited_mode_plugin_retained(self):
         generated, _ = self.make_package()
