@@ -396,22 +396,25 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     if not project_name:
         raise ValueError("No se puede derivar nombre del proyecto")
 
-    # Create workspace if needed (idempotent)
+    # Create workspace if needed (idempotent). A pre-existing empty
+    # directory (or one left by a partial failure) is completed with its
+    # identity instead of failing later during Host finalization.
     if workspace.exists():
         if not workspace.is_dir():
             raise ValueError(f"Workspace en conflicto: {workspace}")
-        identity_file = workspace / "project.json"
-        if identity_file.is_file():
-            existing = _read_json(identity_file)
-            if existing.get("name") != project_name:
-                raise ValueError(
-                    f"Workspace existente con identidad diferente: "
-                    f"{existing.get('name')} != {project_name}"
-                )
     else:
         workspace.mkdir(mode=0o700)
+    identity_file = workspace / "project.json"
+    if identity_file.is_file():
+        existing = _read_json(identity_file)
+        if existing.get("name") != project_name:
+            raise ValueError(
+                f"Workspace existente con identidad diferente: "
+                f"{existing.get('name')} != {project_name}"
+            )
+    else:
         identity = {"schema": 1, "name": project_name, "project": str(project)}
-        _write_json(workspace / "project.json", identity)
+        _write_json(identity_file, identity)
 
     # Check for existing active generation (idempotent)
     runs_dir = workspace / RUN_DIR_NAME

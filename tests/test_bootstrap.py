@@ -192,6 +192,18 @@ class TestInstallIdempotency(_BootstrapTestBase):
         mtime_after = self.workspace.stat().st_mtime
         self.assertEqual(mtime_before, mtime_after)
 
+    def test_preexisting_empty_workspace_gets_identity(self):
+        # Hallazgo de piloto: un workspace pre-creado vacío dejaba la
+        # finalización Host sin project.json (FileNotFoundError tras una
+        # generación completa). Install debe completar la identidad.
+        self.workspace.mkdir(mode=0o700)
+        r = bs.install(self.project, self.workspace)
+        self.assertIn(r["result"], ("CREATED", "EXISTING"))
+        identity = json.loads(
+            (self.workspace / "project.json").read_text())
+        self.assertEqual(identity["name"], "my-project")
+        self.assertEqual(identity["project"], str(self.project))
+
 
 # ===========================================================================
 # Product and global config unchanged
