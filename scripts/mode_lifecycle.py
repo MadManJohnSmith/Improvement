@@ -42,23 +42,37 @@ def startup_check(layout):
 
 
 def repair_provision_command(layout):
-    """Return the exact session-cwd worktree command with validated-value slots."""
+    """Return the exact target-scoped create/reuse command with validated-value slots."""
     product = shlex.quote("./" + layout["product_root"])
     candidate_prefix = shlex.quote(layout["product_root"] + "-repair-")
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
-        f"candidate_name={candidate_prefix}\"$digest16\"; "
-        "expected=\"$PWD/$candidate_name\"; candidate=\"$expected\"; "
+        f"product={product}; candidate_name={candidate_prefix}\"$digest16\"; "
+        "branch=\"dsh/repair-$digest16\"; expected=\"$PWD/$candidate_name\"; "
+        "candidate=\"$expected\"; test -d \"$product\" -a ! -L \"$product\"; "
+        "test \"$(git -C \"$product\" rev-parse HEAD)\" = \"$full_base\"; "
+        "test -z \"$(git -C \"$product\" status --porcelain=v1)\"; "
         "test \"$(realpath -m -- \"$candidate\")\" = \"$expected\"; "
-        "test ! -e \"$candidate\" -a ! -L \"$candidate\"; "
-        f"if git -C {product} show-ref --verify --quiet "
-        "\"refs/heads/dsh/repair-$digest16\"; then exit 1; fi; "
-        f"git -C {product} worktree add -b \"dsh/repair-$digest16\" "
-        "\"$candidate\" \"$full_base\"; "
+        "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
+        "path_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :); "
+        "branch_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :); "
+        "if test ! -e \"$candidate\" -a ! -L \"$candidate\" && "
+        "! git -C \"$product\" show-ref --verify --quiet \"refs/heads/$branch\"; then "
+        "test \"$path_count\" = 0 -a \"$branch_count\" = 0; "
+        "git -C \"$product\" worktree add -b \"$branch\" \"$candidate\" \"$full_base\"; "
+        "else test -d \"$candidate\" -a ! -L \"$candidate\"; "
+        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
         "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
         "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        f"git -C {product} worktree list --porcelain | "
-        "grep -Fx -- \"worktree $expected\" >/dev/null")
+        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
+        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
+        "test -z \"$(git -C \"$candidate\" status --porcelain=v1)\"; fi; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
+        "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
+        "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :)\" = 1; "
+        "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :)\" = 1")
 
 
 def persona_prefix(preset_id, role=None):
@@ -88,10 +102,13 @@ def persona_prefix(preset_id, role=None):
             "workdir (never use '.' as a code-changing workdir) and run the exact centrally "
             "generated provision_command after substituting only validated digest16 and full_base. "
             "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
-            "After provisioning, verify its realpath and registered worktree path equal that exact "
-            "sibling. Every later code-changing bash call MUST use workdir exactly equal to the "
-            "candidate_workdir relative to session cwd, never '.'. Any collision, mismatch, nested "
-            "candidate, or other pwd drift is RETAINED with no further action.")
+            "The command may inspect the full worktree list only to match that target path and target "
+            "branch. Never validate assumptions about, modify, delete, or let unrelated candidates "
+            "block provisioning; unrelated_candidates is ignore-preserve. After provisioning, verify "
+            "the target realpath and registered worktree path equal that exact sibling. Every later "
+            "code-changing bash call MUST use workdir exactly equal to the candidate_workdir relative "
+            "to session cwd, never '.'. Any target collision, mismatch, nested candidate, or other pwd "
+            "drift is RETAINED with no further action.")
     raise ValueError(f"unsupported mode role: {role!r}")
 
 
@@ -156,13 +173,16 @@ def expected_lifecycle(role, layout):
             "provision_command": repair_provision_command(layout),
             "provision_checks": [
                 "canonical-real-directory-not-symlink", "canonical-git-clean",
-                "full-base-revision-matches", "candidate-path-absent-or-real-directory-not-symlink",
-                "candidate-listed-worktree-if-present", "branch-absent-or-head-equals-full-base",
-                "candidate-head-equals-full-base-on-reuse", "candidate-clean-on-reuse",
-                "no-stale-prunable-worktree", "no-path-branch-worktree-collision",
+                "full-base-revision-matches", "target-path-absent-or-real-directory-not-symlink",
+                "target-path-listed-worktree-if-present", "target-branch-absent-or-target-reuse",
+                "target-path-and-branch-identify-same-worktree-on-reuse",
+                "target-head-equals-full-base-on-reuse", "target-clean-on-reuse",
+                "no-target-path-branch-worktree-collision",
             ],
+            "unrelated_candidates": "ignore-preserve",
+            "worktree_list_scope": "target-path-and-target-branch-only",
             "provision": "git-worktree-add-or-exact-safe-reuse",
-            "collision_policy": "retain-with-action-no-improvisation",
+            "collision_policy": "retain-target-collision-no-improvisation",
             "patch_root": "candidate-only",
             "candidate_diff_check": "git-diff-from-full-base-candidate-only",
             "commit": "forbidden-without-separate-explicit-user-prompt",

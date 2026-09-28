@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -79,6 +80,9 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(candidate["provision_workdir"], "omitted-session-cwd")
         self.assertEqual(candidate["provision_command"],
                          repair_provision_command(layout))
+        self.assertEqual(candidate["unrelated_candidates"], "ignore-preserve")
+        self.assertEqual(candidate["worktree_list_scope"],
+                         "target-path-and-target-branch-only")
 
     def _provision_fixture(self, root):
         session = root / "common-parent"
@@ -128,6 +132,66 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(product), "status", "--porcelain=v1"],
                 text=True), "")
+
+    def test_repair_provision_command_reuses_only_exact_clean_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "1122334455667788"
+            first = self._run_provision(session, layout, base, digest)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            candidate = session / f"Product-repair-{digest}"
+            inode = candidate.stat().st_ino
+            second = self._run_provision(session, layout, base, digest)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(candidate.stat().st_ino, inode)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(candidate), "status", "--porcelain=v1"],
+                text=True), "")
+
+    def test_repair_provision_ignores_and_preserves_unrelated_worktrees(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            unrelated = {}
+            for kind in ("clean", "dirty", "stale"):
+                path = session / f"Product-repair-unrelated-{kind}"
+                branch = f"dsh/repair-unrelated-{kind}"
+                subprocess.run([
+                    "git", "-C", str(product), "worktree", "add", "-b", branch,
+                    str(path), base,
+                ], check=True, capture_output=True)
+                unrelated[kind] = (path, branch)
+            dirty_path, _ = unrelated["dirty"]
+            (dirty_path / "tracked.txt").write_text("unrelated dirty bytes\n")
+            stale_path, _ = unrelated["stale"]
+            shutil.rmtree(stale_path)
+            before_list = subprocess.check_output([
+                "git", "-C", str(product), "worktree", "list", "--porcelain",
+            ], text=True)
+            before_refs = {
+                branch: subprocess.check_output([
+                    "git", "-C", str(product), "rev-parse", branch,
+                ], text=True).strip()
+                for _, branch in unrelated.values()
+            }
+
+            result = self._run_provision(session, layout, base, "dfd0123456789abc")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            target = session / "Product-repair-dfd0123456789abc"
+            self.assertTrue(target.is_dir())
+            after_list = subprocess.check_output([
+                "git", "-C", str(product), "worktree", "list", "--porcelain",
+            ], text=True)
+            for path, branch in unrelated.values():
+                self.assertIn(f"worktree {path.resolve()}\n", before_list)
+                self.assertIn(f"worktree {path.resolve()}\n", after_list)
+                self.assertIn(f"branch refs/heads/{branch}\n", after_list)
+                self.assertEqual(subprocess.check_output([
+                    "git", "-C", str(product), "rev-parse", branch,
+                ], text=True).strip(), before_refs[branch])
+            self.assertEqual((dirty_path / "tracked.txt").read_text(),
+                             "unrelated dirty bytes\n")
+            self.assertFalse(stale_path.exists())
+            self.assertIn(f"worktree {target.resolve()}\n", after_list)
 
     def test_repair_provision_command_rejects_path_and_branch_collisions(self):
         for collision in ("path", "branch"):

@@ -432,11 +432,15 @@ El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
 destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
 `$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
 `./{product_root}/...`.
-Antes de crear/reusar valida literalmente todos los `provision_checks` del contrato:
-raíces/path reales y no symlink, canonical limpio y full base coincidente, ausencia o
-pertenencia a `git worktree list`, branch ausente o en full base, HEAD/base y limpieza
-al reutilizar, ningún worktree stale/prunable y ninguna colisión path/branch/worktree.
-No improvisa: cualquier incompatibilidad queda RETAINED con una acción concreta. Las
+Antes de crear/reusar ejecuta literalmente el `provision_command` central, cuyos
+`provision_checks` se limitan a invariantes canónicos y a la identidad target: path y
+branch target ausentes o reutilizables como el mismo worktree, HEAD/base y limpieza del
+target al reutilizar, sin colisión del target. Puede leer el `git worktree list` completo
+solo para comparar el path target y la branch target. El contrato declara
+`unrelated_candidates: ignore-preserve`: está expresamente prohibido validar supuestos
+sobre candidatas ajenas o bloquear, modificar o borrar una por estar dirty, clean, stale
+o en otra base. No improvisa: solo una incompatibilidad del target queda RETAINED con
+una acción concreta. Las
 llamadas bash posteriores que modifican o prueban código usan `workdir` exactamente
 `{product_root}-repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica y
 prueba solo candidato; lo deja sucio o produce patch. `candidate_commit` es null salvo

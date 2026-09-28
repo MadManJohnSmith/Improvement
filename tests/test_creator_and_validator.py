@@ -937,7 +937,8 @@ class CreatorTests(Base):
         self.assertIn(f"basename `{self.root.name}`", prompt)
         self.assertNotIn("session_root\":\"/", prompt)
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
-        self.assertIn("ninguna colisión path/branch/worktree", prompt)
+        self.assertIn("`unrelated_candidates: ignore-preserve`", prompt)
+        self.assertIn("prohibido validar supuestos\nsobre candidatas ajenas", prompt)
         self.assertIn("`candidate_root` exacto\n`${session-cwd}/<candidate-name>`", prompt)
         self.assertIn("`provision_workdir: omitted-session-cwd`", prompt)
         self.assertIn("Provisiona desde el cwd de sesión con `workdir` omitido", prompt)
@@ -1884,7 +1885,12 @@ class ValidatorTests(Base):
                          "project-repair-<digest16>")
         self.assertEqual(contract["provision_workdir"], "omitted-session-cwd")
         self.assertIn('candidate="$expected"', contract["provision_command"])
-        self.assertIn("git -C ./project worktree add", contract["provision_command"])
+        self.assertIn('git -C "$product" worktree add', contract["provision_command"])
+        self.assertEqual(contract["unrelated_candidates"], "ignore-preserve")
+        self.assertEqual(contract["worktree_list_scope"],
+                         "target-path-and-target-branch-only")
+        self.assertEqual(contract["collision_policy"],
+                         "retain-target-collision-no-improvisation")
         self.assertEqual(contract["commit"],
                          "forbidden-without-separate-explicit-user-prompt")
         self.assertTrue(contract["candidate_commit_nullable"])

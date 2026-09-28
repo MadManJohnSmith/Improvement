@@ -119,6 +119,8 @@
                   "provision_workdir",
                   "provision_command",
                   "provision_checks",
+                  "unrelated_candidates",
+                  "worktree_list_scope",
                   "provision",
                   "collision_policy"
                 ]
@@ -256,11 +258,17 @@
                 "type": "string"
               }
             },
+            "unrelated_candidates": {
+              "const": "ignore-preserve"
+            },
+            "worktree_list_scope": {
+              "const": "target-path-and-target-branch-only"
+            },
             "provision": {
               "const": "git-worktree-add-or-exact-safe-reuse"
             },
             "collision_policy": {
-              "const": "retain-with-action-no-improvisation"
+              "const": "retain-target-collision-no-improvisation"
             }
           }
         }
