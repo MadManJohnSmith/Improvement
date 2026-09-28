@@ -1,5 +1,9 @@
 # Cambios
 
+## Caps de archivo ajustados a evidencia DSH real — 2026-09-27
+
+- Un reintento real produjo `candidate-repair.patch` de 4.005.660 bytes y `m02-fmt-red.txt` de 5.776.531 bytes, por encima del cap inicial. La migración preserva ahora evidencia legacy regular hasta 8 MiB por archivo y 32 MiB totales: suficiente para el caso observado, todavía acotado y sin incorporar esos artefactos al estado activo. Regresiones de frontera aceptan exactamente ambos caps y rechazan un byte por encima.
+
 ## Migración conservadora de evidencia legacy de mode-state — 2026-09-27
 
 - La finalización Host archiva entradas legacy inesperadas antes de inicializar el `mode-state` estricto: preflight de nombre/tipo/symlink/hardlink y caps de 2 MiB por archivo/8 MiB totales; copia byte a byte en `.dsh-managed/mode-state-legacy/<digest>/` con inventario y recibo verificados; retirada posterior con rollback de originales y reintento idempotente que reutiliza el archivo sano. La evidencia queda fuera de la memoria activa pero localizable por recibo. Regresiones cubren éxito, bytes, recibo, reintento, rechazos y fallo inyectado sin pérdida. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` a falta de prueba DSH real.

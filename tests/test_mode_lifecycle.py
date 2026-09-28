@@ -10,8 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import mode_lifecycle
-from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT, LIMITS,
-                            compact_records, initialize_state)
+from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
+                            LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
+                            initialize_state)
 
 
 class ModeLifecycleTests(unittest.TestCase):
@@ -186,6 +187,48 @@ class ModeLifecycleTests(unittest.TestCase):
             initialize_state(state, descriptor, archive_root)
             self.assertFalse(evidence.exists())
             self.assertEqual(len(list(archive_root.iterdir())), 1)
+
+    def test_legacy_archive_accepts_exact_file_and_total_caps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            archive_root = root / "archive"
+            state.mkdir()
+            for index in range(LEGACY_TOTAL_BYTE_LIMIT // LEGACY_FILE_BYTE_LIMIT):
+                (state / f"evidence-{index}.bin").write_bytes(
+                    bytes([index]) * LEGACY_FILE_BYTE_LIMIT)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            initialize_state(state, descriptor, archive_root)
+
+            generation, = archive_root.iterdir()
+            receipt = json.loads((generation / "receipt.json").read_text())
+            self.assertEqual(receipt["total_bytes"], LEGACY_TOTAL_BYTE_LIMIT)
+            self.assertEqual(receipt["limits"], {
+                "per_file_bytes": LEGACY_FILE_BYTE_LIMIT,
+                "total_bytes": LEGACY_TOTAL_BYTE_LIMIT,
+            })
+            self.assertTrue(all(item["size"] == LEGACY_FILE_BYTE_LIMIT
+                                for item in receipt["files"]))
+
+    def test_legacy_archive_rejects_one_byte_over_total_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            for index in range(LEGACY_TOTAL_BYTE_LIMIT // LEGACY_FILE_BYTE_LIMIT):
+                (state / f"evidence-{index}.bin").write_bytes(
+                    bytes([index]) * LEGACY_FILE_BYTE_LIMIT)
+            (state / "overflow.bin").write_bytes(b"x")
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            with self.assertRaisesRegex(ValueError, "exceeds total cap"):
+                initialize_state(state, descriptor, root / "archive")
+            self.assertFalse((root / "archive").exists())
 
     def test_legacy_preflight_rejects_symlink_hardlink_and_oversize(self):
         descriptor = {"schema_version": 1, "project_id": "project",
