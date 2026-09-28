@@ -285,7 +285,6 @@ class Transaction:
         if project.parent != common or self.workspace.parent != common:
             raise TransactionError("Producto y workspace deben ser hijos del padre común")
         state = self.workspace / "mode-state"
-        state.mkdir(mode=0o700, exist_ok=True)
         layout = layout_from_paths(project, self.workspace)
         descriptor = {
             "schema_version": 1,
@@ -294,7 +293,9 @@ class Transaction:
             "state_root": layout["state_root"],
         }
         try:
-            return initialize_state(state, descriptor)
+            return initialize_state(
+                state, descriptor,
+                self.install_root / "mode-state-legacy")
         except (OSError, ValueError) as error:
             raise TransactionError(f"mode-state inválido: {error}") from error
 

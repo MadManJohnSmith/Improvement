@@ -1,7 +1,10 @@
 """Versioned lifecycle contract and bounded shared state for generated modes."""
 
+import hashlib
 import json
 import os
+import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -22,6 +25,9 @@ BYTE_LIMITS = {
     "verification-results.jsonl": 262_144,
 }
 RECORD_BYTE_LIMIT = 4_096
+LEGACY_FILE_BYTE_LIMIT = 2 * 1024 * 1024
+LEGACY_TOTAL_BYTE_LIMIT = 8 * 1024 * 1024
+LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _LIFECYCLE_FENCE = "mode-lifecycle"
 
 
@@ -291,23 +297,108 @@ def _replace_bytes(path, encoded):
         raise
 
 
-def initialize_state(state, descriptor):
-    """Preflight all existing state, then compact/migrate it without partial validation writes."""
+def _legacy_inventory(entries):
+    return [{"name": name, "sha256": hashlib.sha256(data).hexdigest(),
+             "size": len(data)} for name, data in sorted(entries.items())]
+
+
+def _verified_legacy_archive(root, digest, inventory, descriptor):
+    destination = root / digest
+    if not destination.is_dir() or destination.is_symlink():
+        return False
+    try:
+        receipt = json.loads((destination / "receipt.json").read_bytes())
+        recorded = json.loads((destination / "inventory.json").read_bytes())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if (recorded != inventory or receipt.get("schema_version") != 1 or
+            receipt.get("set_sha256") != digest or receipt.get("files") != inventory or
+            receipt.get("state_root") != descriptor.get("state_root")):
+        return False
+    files = destination / "files"
+    if not files.is_dir() or files.is_symlink():
+        return False
+    try:
+        return ({entry.name for entry in files.iterdir()} ==
+                {item["name"] for item in inventory} and
+                all(hashlib.sha256(_preflight_file(
+                    files / item["name"], LEGACY_FILE_BYTE_LIMIT)).hexdigest() ==
+                    item["sha256"] for item in inventory))
+    except (OSError, ValueError):
+        return False
+
+
+def _archive_legacy(entries, descriptor, archive_root):
+    inventory = _legacy_inventory(entries)
+    digest = hashlib.sha256(_encode_json(inventory)).hexdigest()
+    root = Path(archive_root)
+    if root.exists() and (not root.is_dir() or root.is_symlink()):
+        raise ValueError(f"unsafe legacy mode-state archive root: {root}")
+    destination = root / digest
+    if destination.exists():
+        if not _verified_legacy_archive(root, digest, inventory, descriptor):
+            raise ValueError(f"legacy mode-state archive conflicts or is damaged: {destination}")
+        return destination
+
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{digest}.", dir=root))
+    published = False
+    try:
+        files = stage / "files"
+        files.mkdir(mode=0o700)
+        for name, data in entries.items():
+            _replace_bytes(files / name, data)
+        _replace_bytes(stage / "inventory.json", _encode_json(inventory))
+        _replace_bytes(stage / "receipt.json", _encode_json({
+            "schema_version": 1,
+            "set_sha256": digest,
+            "state_root": descriptor.get("state_root"),
+            "files": inventory,
+            "file_count": len(inventory),
+            "total_bytes": sum(item["size"] for item in inventory),
+            "limits": {"per_file_bytes": LEGACY_FILE_BYTE_LIMIT,
+                       "total_bytes": LEGACY_TOTAL_BYTE_LIMIT},
+        }))
+        stage.rename(destination)
+        published = True
+        if not _verified_legacy_archive(root, digest, inventory, descriptor):
+            raise ValueError(f"legacy mode-state archive verification failed: {destination}")
+    except BaseException:
+        cleanup = destination if published else stage
+        if cleanup.exists():
+            shutil.rmtree(cleanup)
+        raise
+    return destination
+
+
+def initialize_state(state, descriptor, archive_root=None):
+    """Preflight state, archive bounded legacy evidence, then migrate strict files."""
     state = Path(state)
     if state.exists():
         if not state.is_dir() or state.is_symlink():
             raise ValueError(f"unsafe mode-state root: {state}")
     allowed = {"project.json", "state-schema.json", *LIMITS}
     existing = set()
+    legacy = {}
     if state.exists():
         existing = {entry.name for entry in state.iterdir()}
-        if existing - allowed:
-            raise ValueError(f"unexpected mode-state entries: {sorted(existing - allowed)}")
+        total = 0
+        for name in existing - allowed:
+            if not LEGACY_NAME.fullmatch(name):
+                raise ValueError(f"unsafe legacy mode-state name: {name!r}")
+            data = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
+            total += len(data)
+            if total > LEGACY_TOTAL_BYTE_LIMIT:
+                raise ValueError(
+                    f"legacy mode-state evidence exceeds total cap of {LEGACY_TOTAL_BYTE_LIMIT} bytes")
+            legacy[name] = data
 
     schema = state_schema()
     staged = {"project.json": _encode_json(descriptor), "state-schema.json": _encode_json(schema)}
-    for name in existing:
+    originals = {}
+    for name in existing & allowed:
         data = _preflight_file(state / name, BYTE_LIMITS[name])
+        originals[name] = data
         if name == "project.json" and json.loads(data) != descriptor:
             raise ValueError(f"mode-state file conflicts with descriptor: {state / name}")
         if name == "state-schema.json" and json.loads(data) not in (schema, _legacy_state_schema()):
@@ -339,7 +430,31 @@ def initialize_state(state, descriptor):
                             if name == "work-items.json" else b"")
         if len(staged[name]) > BYTE_LIMITS[name]:
             raise ValueError(f"compacted mode-state file remains oversized: {name}")
+
+    if legacy:
+        if archive_root is None:
+            raise ValueError("unexpected mode-state entries require a managed archive root")
+        _archive_legacy(legacy, descriptor, archive_root)
     state.mkdir(mode=0o700, exist_ok=True)
-    for name, encoded in staged.items():
-        _replace_bytes(state / name, encoded)
+    removed = []
+    try:
+        for name, data in legacy.items():
+            path = state / name
+            if _preflight_file(path, LEGACY_FILE_BYTE_LIMIT) != data:
+                raise ValueError(f"legacy mode-state file changed during migration: {path}")
+            path.unlink()
+            removed.append((path, data))
+        for name, encoded in staged.items():
+            _replace_bytes(state / name, encoded)
+    except BaseException:
+        for name in staged:
+            path = state / name
+            if name in originals:
+                _replace_bytes(path, originals[name])
+            elif path.exists():
+                path.unlink()
+        for path, data in removed:
+            if not path.exists():
+                _replace_bytes(path, data)
+        raise
     return state

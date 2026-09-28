@@ -1,13 +1,17 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from mode_lifecycle import BYTE_LIMITS, LIMITS, compact_records, initialize_state
+import mode_lifecycle
+from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT, LIMITS,
+                            compact_records, initialize_state)
 
 
 class ModeLifecycleTests(unittest.TestCase):
@@ -127,6 +131,109 @@ class ModeLifecycleTests(unittest.TestCase):
             migrated = json.loads(path.read_text())
             self.assertEqual(len(migrated["items"]), LIMITS["work-items.json"])
             self.assertEqual(migrated["items"][0]["work_item_id"], "W-1")
+
+    def test_archives_legacy_evidence_with_receipt_and_idempotent_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            archive_root = root / ".dsh-managed" / "mode-state-legacy"
+            state.mkdir()
+            evidence = {"a01-check-red.txt": b"red\x00evidence\n",
+                        "candidate-repair.patch": b"diff --git a/a b/a\n"}
+            for name, data in evidence.items():
+                (state / name).write_bytes(data)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            initialize_state(state, descriptor, archive_root)
+
+            generations = list(archive_root.iterdir())
+            self.assertEqual(len(generations), 1)
+            receipt = json.loads((generations[0] / "receipt.json").read_text())
+            inventory = json.loads((generations[0] / "inventory.json").read_text())
+            self.assertEqual(receipt["files"], inventory)
+            self.assertEqual({item["name"] for item in inventory}, set(evidence))
+            for name, data in evidence.items():
+                self.assertFalse((state / name).exists())
+                self.assertEqual((generations[0] / "files" / name).read_bytes(), data)
+
+            initialize_state(state, descriptor, archive_root)
+            self.assertEqual(list(archive_root.iterdir()), generations)
+
+    def test_retry_reuses_verified_archive_after_interrupted_removal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            archive_root = root / "archive"
+            state.mkdir()
+            evidence = state / "m02-fmt-red.txt"
+            evidence.write_bytes(b"format failed\n")
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            real_unlink = Path.unlink
+            with unittest.mock.patch.object(
+                    Path, "unlink", autospec=True,
+                    side_effect=lambda path, *args, **kwargs:
+                    (_ for _ in ()).throw(OSError("injected"))
+                    if path == evidence else real_unlink(path, *args, **kwargs)):
+                with self.assertRaisesRegex(OSError, "injected"):
+                    initialize_state(state, descriptor, archive_root)
+            self.assertEqual(evidence.read_bytes(), b"format failed\n")
+            self.assertEqual(len(list(archive_root.iterdir())), 1)
+
+            initialize_state(state, descriptor, archive_root)
+            self.assertFalse(evidence.exists())
+            self.assertEqual(len(list(archive_root.iterdir())), 1)
+
+    def test_legacy_preflight_rejects_symlink_hardlink_and_oversize(self):
+        descriptor = {"schema_version": 1, "project_id": "project",
+                      "product_root": "Project",
+                      "state_root": "Project-workspace/mode-state"}
+        for kind in ("symlink", "hardlink", "oversize"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                state = root / "mode-state"
+                state.mkdir()
+                legacy = state / "legacy.txt"
+                target = root / "target"
+                target.write_bytes(b"evidence")
+                if kind == "symlink":
+                    legacy.symlink_to(target)
+                elif kind == "hardlink":
+                    os.link(target, legacy)
+                else:
+                    legacy.write_bytes(b"x" * (LEGACY_FILE_BYTE_LIMIT + 1))
+                with self.assertRaisesRegex(ValueError, "unsafe|oversized"):
+                    initialize_state(state, descriptor, root / "archive")
+                self.assertTrue(legacy.exists())
+                self.assertFalse((root / "archive").exists())
+
+    def test_failure_after_removal_rolls_back_original_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            legacy = state / "pre-repair-candidate.patch"
+            original = b"candidate bytes\x00\n"
+            legacy.write_bytes(original)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            real_replace = mode_lifecycle._replace_bytes
+
+            def fail_state_write(path, data):
+                if path.name == "project.json":
+                    raise OSError("injected state write failure")
+                return real_replace(path, data)
+
+            with unittest.mock.patch("mode_lifecycle._replace_bytes",
+                                     side_effect=fail_state_write):
+                with self.assertRaisesRegex(OSError, "injected state write failure"):
+                    initialize_state(state, descriptor, root / "archive")
+            self.assertEqual(legacy.read_bytes(), original)
+            self.assertFalse((state / "project.json").exists())
 
 
 if __name__ == "__main__":

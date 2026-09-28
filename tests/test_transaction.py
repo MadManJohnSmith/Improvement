@@ -184,6 +184,27 @@ class TransactionTests(unittest.TestCase):
             "schema_version": 1, "candidate": None, "items": []})
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
 
+    def test_install_archives_legacy_mode_evidence_outside_active_state(self):
+        state = self.workspace / "mode-state"
+        state.mkdir()
+        original = b"legacy check output\x00\n"
+        (state / "a01-check-red.txt").write_bytes(original)
+
+        self.install()
+
+        archives = list((self.workspace / ".dsh-managed" /
+                         "mode-state-legacy").iterdir())
+        self.assertEqual(len(archives), 1)
+        self.assertEqual((archives[0] / "files" /
+                          "a01-check-red.txt").read_bytes(), original)
+        receipt = json.loads((archives[0] / "receipt.json").read_text())
+        self.assertEqual(receipt["state_root"],
+                         "Syncify-workspace/mode-state")
+        self.assertEqual(receipt["files"][0]["name"],
+                         "a01-check-red.txt")
+        self.assertFalse((state / "a01-check-red.txt").exists())
+        self.assertTrue((state / "project.json").is_file())
+
     def test_direct_transaction_rejects_wrong_cased_layout(self):
         skill = self.generated / "modes/project-auditor/SKILL.md"
         skill.write_text(skill.read_text().replace(

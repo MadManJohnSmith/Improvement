@@ -1,5 +1,9 @@
 # Cambios
 
+## Migración conservadora de evidencia legacy de mode-state — 2026-09-27
+
+- La finalización Host archiva entradas legacy inesperadas antes de inicializar el `mode-state` estricto: preflight de nombre/tipo/symlink/hardlink y caps de 2 MiB por archivo/8 MiB totales; copia byte a byte en `.dsh-managed/mode-state-legacy/<digest>/` con inventario y recibo verificados; retirada posterior con rollback de originales y reintento idempotente que reutiliza el archivo sano. La evidencia queda fuera de la memoria activa pero localizable por recibo. Regresiones cubren éxito, bytes, recibo, reintento, rechazos y fallo inyectado sin pérdida. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` a falta de prueba DSH real.
+
 ## Hardening adversarial previo al siguiente piloto — 2026-09-27
 
 - El lifecycle generado pasa a `EN CURSO/IMPLEMENTED_NOT_VERIFIED`: persona con bootstrap exacto del skill homónimo, policy de tools por rol, invariantes HEAD/status canónicas y diff candidato, provisioning determinista con digest de full base+IDs y checks cerrados, y eliminación de autorización implícita de commit (`candidate_commit` nullable; árbol sucio o patch). Host/transacción comparten validación de lifecycle/persona y el schema público exige lifecycle por rol. `mode-state` añade schemas de registros, ejemplos, caps de archivo/registro, preflight integral de entradas/symlinks/hardlinks/JSON antes de escribir y migración/compactación acotada. No se afirma aislamiento de bash, atomicidad multiarchivo ni seguridad concurrente: CAS/lease/tool Host dedicado y prueba DSH real siguen pendientes. Regresiones cubren bootstrap divergente, schema público, malformed/oversized/legacy y CLI con `/usr/bin/python3`.
