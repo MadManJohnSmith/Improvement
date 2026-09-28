@@ -311,6 +311,34 @@ class Transaction:
         return value if isinstance(value, list) else []
 
     @staticmethod
+    def _rpc_value(value):
+        return value.get("value", value) if isinstance(value, dict) else value
+
+    def _active_presets_match(self, modes, skill_root):
+        """Prove the running declarations came from this generation's bundle."""
+        if not hasattr(self.client, "read_agent_preset"):
+            return False
+        expected_root = str(skill_root.resolve())
+        for preset_id, _role, source in modes:
+            try:
+                document = self._rpc_value(self.client.read_agent_preset(preset_id))
+            except Exception:
+                return False
+            if not isinstance(document, dict) or document.get("agentPreset") != preset_id:
+                return False
+            content = document.get("content")
+            if not isinstance(content, str) or expected_root not in content:
+                return False
+            expected = validate_operational_composition(source / "agent.cordis.yml")
+            actual = re.findall(
+                r"(?m)^\s*-\s+id:\s*['\"]?([^'\"\s]+)['\"]?\s*$"
+                r"\n\s+name:\s*['\"]?([^'\"\s]+)['\"]?\s*$",
+                content)
+            if actual != [(row["id"], row["name"]) for row in expected]:
+                return False
+        return True
+
+    @staticmethod
     def _yaml_scalar(value):
         return json.dumps(str(value), ensure_ascii=False)
 
@@ -434,18 +462,31 @@ class Transaction:
             raise TransactionError("Cliente DSH requerido para verificar agentPresets/list")
         bundle_name, bundle = self._build_preset_bundle(
             generated, modes, generation_id)
-        installed = False
+        preset_ids = [preset_id for preset_id, _role, _source in modes]
+
+        # A retry after relaunch first proves that DSH loaded this exact candidate.
+        # Reinstalling the stable package name would itself report restart-required.
+        already_active = self._active_presets_match(modes, bundle / "skills")
+        if not already_active:
+            outcome = self._rpc_value(self.client.install_bundle(bundle))
+            application = outcome.get("application") if isinstance(outcome, dict) else None
+            if application == "restart-required":
+                return {"result": "RESTART_REQUIRED", "preset_ids": preset_ids}
+            if application != "applied":
+                raise TransactionError(
+                    f"pluginManager/installBundle no aplicó el bundle: {application!r}")
+
         try:
-            self.client.install_bundle(bundle)
-            installed = True
             roster = self._roster_items(self.client.list_agent_presets())
             by_id = {item.get("id"): item for item in roster if isinstance(item, dict)}
-            preset_ids = [preset_id for preset_id, _role, _source in modes]
             for preset_id in preset_ids:
                 item = by_id.get(preset_id)
                 if not item or item.get("broken") is True:
                     raise TransactionError(
                         f"agentPresets/list no confirmó preset sano: {preset_id}")
+            if not self._active_presets_match(modes, bundle / "skills"):
+                raise TransactionError(
+                    "agentPresets/read no confirmó la composición activa candidata")
             receipt = {
                 "schema_version": 2,
                 "generation_id": generation_id,
@@ -459,9 +500,9 @@ class Transaction:
             if receipt_path.exists():
                 receipt_path.unlink()
             _write_new(receipt_path, receipt)
-            return preset_ids
+            return {"result": "APPLIED", "preset_ids": preset_ids}
         except BaseException:
-            if installed:
+            if not already_active:
                 try:
                     self.client.remove_bundle(bundle_name)
                 except BaseException:
@@ -502,11 +543,14 @@ class Transaction:
                 by_id = {item.get("id"): item for item in roster if isinstance(item, dict)}
                 receipt_generation = receipt.get("generation_id")
                 receipt_ids = set(receipt.get("preset_ids", []))
+                receipt_bundle = Path(receipt.get("bundle_path", ""))
                 if (receipt_generation == generation_id and
                         all(preset_id in receipt_ids
                             and by_id.get(preset_id)
                             and by_id[preset_id].get("broken") is not True
-                            for preset_id, _role, _source in modes)):
+                            for preset_id, _role, _source in modes) and
+                        self._active_presets_match(
+                            modes, receipt_bundle / "skills")):
                     return {"result": "NO_OP", "generation_id": generation_id}
             shutil.rmtree(target)
 
@@ -533,7 +577,17 @@ class Transaction:
         try:
             # Operational state is shared by both modes and remains outside product.
             self._prepare_mode_state()
-            published = self._publish_presets(target, modes, generation_id)
+            publication = self._publish_presets(target, modes, generation_id)
+            if publication["result"] == "RESTART_REQUIRED":
+                return {
+                    "result": "RESTART_REQUIRED",
+                    "generation_id": generation_id,
+                    "previous_generation_id": backup_manifest["previous_generation_id"],
+                    "message": (
+                        "DSH guardó la actualización del bundle pero requiere "
+                        "reinicio; relanza DSH y repite bootstrap install"),
+                }
+            published = publication["preset_ids"]
 
             # Atomic pointer update: temp file + os.replace
             pointer_tmp = self.install_root / f".ACTIVE.{generation_id}.tmp"

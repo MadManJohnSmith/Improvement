@@ -148,6 +148,27 @@ class FinalizeTests(unittest.TestCase):
         self.assertFalse(checkpoint["resumable"])
         self.assertEqual(checkpoint["pending_phases"], [])
 
+    def test_restart_required_keeps_run_resumable_and_not_active(self):
+        verdict = self._verdict("READY_FOR_INSTALL")
+        verdict_path = self.run_dir / "acceptance" / "host-verdict.json"
+        verdict_path.write_text(json.dumps(verdict) + "\n")
+        client = unittest.mock.Mock()
+        client.resolved_dsh_home = Path(self.tmp.name) / "resolved-dsh-home"
+        with unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict), \
+             unittest.mock.patch("creator_client.acquire_dsh_client",
+                                 return_value=(client, "test")), \
+             unittest.mock.patch("transaction.install", return_value={
+                 "result": "RESTART_REQUIRED", "generation_id": "gen-test",
+                 "message": "reinicia DSH",
+             }):
+            result = bootstrap.finalize(self.workspace, "gen-test")
+
+        self.assertEqual(result["result"], "RESTART_REQUIRED")
+        self.assertFalse(result["is_active_deployment"])
+        self.assertEqual(json.loads((self.run_dir / "run.json").read_text())["status"],
+                         "READY_FOR_INSTALL")
+        self.assertEqual((self.run_dir / "checkpoint.json").read_text(), "{}\n")
+
     def test_existing_verdict_is_reused_without_rerunning_acceptance(self):
         verdict = self._verdict("READY_FOR_INSTALL")
         verdict_path = self.run_dir / "acceptance" / "host-verdict.json"

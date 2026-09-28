@@ -425,8 +425,8 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                 status = existing_run.get("status")
                 if status in ("CREATED", "DISCOVERING", "DESIGNING",
                               "GENERATING", "GENERATED", "VALIDATING",
-                              "BACKED_UP", "STAGED", "ACCEPTING",
-                              "REPAIRING"):
+                              "READY_FOR_INSTALL", "BACKED_UP", "STAGED",
+                              "ACCEPTING", "REPAIRING"):
                     result = {
                         "result": "EXISTING",
                         "generation_id": existing_run.get("generation_id"),
@@ -439,10 +439,11 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                         # dispatching others would wrongly retain the run.
                         _dispatch_creator_chain(
                             result, run_path, launch_dsh, finalize_host)
-                    elif finalize_host and status == "GENERATED":
+                    elif finalize_host and status in (
+                            "GENERATED", "READY_FOR_INSTALL"):
                         # Reanudar la finalización Host sin re-despachar:
-                        # un run GENERATED con aceptación ausente o fallida
-                        # se recupera repitiendo el mismo comando install.
+                        # GENERATED cubre aceptación ausente/fallida y
+                        # READY_FOR_INSTALL una publicación pendiente de reinicio.
                         try:
                             result["host"] = finalize(
                                 workspace,
@@ -1079,6 +1080,20 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
     activation = transaction.install(
         workspace, generated, gen_id, host_verdict=verdict_path,
         dsh_home=resolved_dsh_home, client=client)
+    if activation.get("result") == "RESTART_REQUIRED":
+        run_path = run_dir / "run.json"
+        current = _read_json(run_path)
+        current["status"] = "READY_FOR_INSTALL"
+        current["updated_at"] = _now_iso()
+        run_path.unlink()
+        _write_json(run_path, current)
+        return {
+            "result": "RESTART_REQUIRED",
+            "generation_id": gen_id,
+            "activation": activation,
+            "is_active_deployment": False,
+            "message": activation["message"],
+        }
 
     run_path = run_dir / "run.json"
     current = _read_json(run_path)

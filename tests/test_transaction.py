@@ -30,22 +30,37 @@ MODE_COMPOSITION = """- id: persona
 
 
 class Client:
-    def __init__(self, ids=("project-auditor", "project-continuous-repair"), broken=None):
+    def __init__(self, ids=("project-auditor", "project-continuous-repair"), broken=None,
+                 application="applied", active_bundle=None):
         self.ids = ids
         self.broken = broken
+        self.application = application
+        self.active_bundle = Path(active_bundle) if active_bundle else None
         self.authenticated = True
         self.installed = []
         self.removed = []
     def install_bundle(self, path):
-        self.installed.append(Path(path))
-        return {"value": {"application": "applied"}}
+        path = Path(path)
+        self.installed.append(path)
+        if self.application == "applied":
+            self.active_bundle = path
+        return {"value": {"application": self.application}}
     def remove_bundle(self, name):
         self.removed.append(name)
+        self.active_bundle = None
         return {"value": {"application": "applied"}}
     def list_agent_presets(self):
         return {"value": {"presets": [
             {"id": value, "broken": value == self.broken}
             for value in self.ids]}}
+    def read_agent_preset(self, preset_id):
+        if self.active_bundle is None:
+            raise ValueError("preset not active")
+        return {"value": {
+            "agentPreset": preset_id,
+            "content": MODE_COMPOSITION + "    customSkillDirs:\n      - " +
+                       str((self.active_bundle / "skills").resolve()) + "\n",
+        }}
 
 
 def verdict(generation="gen-1", value="READY_FOR_INSTALL"):
@@ -237,6 +252,41 @@ class TransactionTests(unittest.TestCase):
                               client=Client())
         self.assertEqual(result["result"], "ACTIVE")
         self.assertEqual(manifest.read_bytes(), manifest_before)
+
+    def test_update_restart_required_with_stale_roster_does_not_activate(self):
+        self.install()
+        old_receipt = json.loads((self.workspace / ".dsh-managed" /
+                                  "published-presets.json").read_text())
+        generated = self._package(self.root / "generated-two", marker="two")
+        client = Client(application="restart-required",
+                        active_bundle=old_receipt["bundle_path"])
+
+        result = self.install(generated=generated, generation="gen-2", client=client)
+
+        self.assertEqual(result["result"], "RESTART_REQUIRED")
+        self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(),
+                         "gen-1")
+        self.assertEqual(json.loads((self.workspace / ".dsh-managed" /
+                                    "published-presets.json").read_text()), old_receipt)
+        self.assertEqual(client.removed, [])
+
+    def test_update_resumes_after_restart_without_reinstalling(self):
+        self.install()
+        generated = self._package(self.root / "generated-two", marker="two")
+        waiting = Client(application="restart-required")
+        first = self.install(generated=generated, generation="gen-2", client=waiting)
+        candidate_bundle = waiting.installed[0]
+        relaunched = Client(application="restart-required",
+                            active_bundle=candidate_bundle)
+
+        result = self.install(generated=generated, generation="gen-2",
+                              client=relaunched)
+
+        self.assertEqual(first["result"], "RESTART_REQUIRED")
+        self.assertEqual(result["result"], "ACTIVE")
+        self.assertEqual(relaunched.installed, [])
+        self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(),
+                         "gen-2")
 
     def test_retry_after_roster_failure_republishes_incomplete_generation(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):

@@ -541,6 +541,10 @@ class DshLocalClient:
         """Return the authoritative DSH agent-preset roster."""
         return self.rpc("agentPresets/list", {})
 
+    def read_agent_preset(self, preset_id):
+        """Return one active preset's authoritative declared composition."""
+        return self.rpc("agentPresets/read", {"agentPreset": preset_id})
+
     def install_bundle(self, path):
         """Install and enable a local DSH profile bundle."""
         return self.rpc(
