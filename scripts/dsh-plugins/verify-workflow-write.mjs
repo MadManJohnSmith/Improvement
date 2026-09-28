@@ -74,7 +74,7 @@ const guard = guards[0];
 const exec = (name, args) => ({ name, arguments: args, agent: undefined });
 
 const gSame = guard(exec('bash', { command: 'ls', description: 'Lista', sandbox_permissions: 'workspace-write', justification: 'necesito escribir' }));
-check('bash + mismo modo -> denegado con mensaje correctivo', typeof gSame === 'string' && gSame.includes('no es una escalada'), String(gSame).slice(0, 90));
+check('bash + mismo modo -> denegado sin guía de reintento', typeof gSame === 'string' && gSame.includes('RETAINED with no retry'), String(gSame).slice(0, 90));
 
 const gJust = guard(exec('bash', { command: 'ls', description: 'Lista', justification: 'x' }));
 check('bash + justification a secas -> denegado', typeof gJust === 'string');
@@ -86,7 +86,7 @@ const gNarrow = guard(exec('bash', { command: 'ls', description: 'Lista', sandbo
 check('(sanidad) misma combinación evaluada contra policy workspace-write', typeof gNarrow === 'string');
 
 const gWider = guard(exec('bash', { command: 'ls', description: 'Lista', sandbox_permissions: 'danger-full-access', justification: 'x' }));
-check('bash + modo estrictamente mayor -> pasa a aprobación de upstream', gWider === undefined);
+check('bash + modo estrictamente mayor -> denegado antes de aprobación', typeof gWider === 'string' && gWider.includes('RETAINED with no retry'));
 
 const gClean = guard(exec('bash', { command: 'ls', description: 'Lista' }));
 check('bash limpio -> no denegado', gClean === undefined);

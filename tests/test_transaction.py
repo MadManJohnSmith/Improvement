@@ -32,6 +32,8 @@ def mode_composition(preset_id):
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+- id: anti-escalation
+  name: './anti-escalation.mjs'
 """
 
 
@@ -247,6 +249,13 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(tx.TransactionError, "prohibited plugin rows"):
             self.install()
         self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+    def test_bundle_contains_scoped_anti_escalation_plugin(self):
+        self.install()
+        plugin = self.client.active_bundle / "anti-escalation.mjs"
+        self.assertTrue(plugin.is_file())
+        patch = (self.client.active_bundle / "cordis.patch.yml").read_text()
+        self.assertEqual(patch.count("name: './anti-escalation.mjs'"), 2)
 
     def test_bundle_rejects_skill_collision_with_mode(self):
         collision = self.generated / "skills" / "project-auditor"

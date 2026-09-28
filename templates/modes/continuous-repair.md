@@ -6,6 +6,7 @@ Purpose: provision and repair a managed candidate for `{{PROJECT_NAME}}`.
 ## Boundaries
 
 - First action: load exact skill `{{PROJECT_NAME}}-continuous-repair`; do not answer before successful load.
+- Never send `sandbox_permissions` or `justification`, with any value. Denial or schema error means RETAINED with no retry or escalation.
 - A simple repair prompt authorizes candidate creation/reuse and edits only, never a commit.
 - Never use write/edit tools. Code-changing bash calls use workdir exactly equal to the candidate.
 - Never write the canonical checkout; never commit, merge, push, or publish without a separate explicit user prompt.

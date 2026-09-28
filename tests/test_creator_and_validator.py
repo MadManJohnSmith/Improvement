@@ -40,6 +40,8 @@ def mode_composition(preset_id):
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+- id: anti-escalation
+  name: './anti-escalation.mjs'
 """
 
 
@@ -916,7 +918,9 @@ class CreatorTests(Base):
             self.assertIn(plugin, prompt)
         self.assertIn("`config.sampleOverCapGlobResults: false`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
-        self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
+        self.assertIn("No incluyas filas de delegación, workflows,\nherramientas web/red ni plugin-manager", prompt)
+        self.assertIn("first-party `./anti-escalation.mjs`", prompt)
+        self.assertIn("`escalation_channel: forbidden`", prompt)
         self.assertIn("json mode-lifecycle", prompt)
         self.assertIn("`startup_workdir: session-cwd-only`", prompt)
         self.assertIn("`workdir_override: forbidden-before-layout`", prompt)
@@ -1948,6 +1952,10 @@ class ValidatorTests(Base):
         self.assertIn("git -C, npm --prefix, cargo --manifest-path", prefix)
         self.assertIn("rewritten before invocation", prefix)
         self.assertIn("immediately RETAINED with no retry", prefix)
+        self.assertIn("First-party Improvement preset contract", prefix)
+        self.assertIn("Never send sandbox_permissions or justification", prefix)
+        self.assertIn("including workspace-write or danger-full-access", prefix)
+        self.assertIn("denial or schema error is RETAINED with no retry", prefix)
         repair_prefix = persona_prefix("project-continuous-repair")
         self.assertIn("provisioning bash call MUST omit workdir", repair_prefix)
         self.assertIn("Before provisioning, read and strictly validate work-items.json", repair_prefix)
@@ -2103,6 +2111,36 @@ class ValidatorTests(Base):
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("description must be non-empty", " ".join(
             report.layers["contracts"]["details"]))
+
+    def test_missing_anti_escalation_plugin_is_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(composition.read_text().replace(
+            "- id: anti-escalation\n  name: './anti-escalation.mjs'\n", ""))
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("./anti-escalation.mjs=0", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_structured_anti_escalation_policy_is_exact(self):
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-continuous-repair/mode.json"
+        mode = json.loads(mode_path.read_text())
+        policy = mode["mode_lifecycle"]["tool_policy"]
+        self.assertEqual(policy["escalation_channel"], "forbidden")
+        self.assertEqual(policy["forbidden_arguments"],
+                         ["sandbox_permissions", "justification"])
+        self.assertIn("no-retry-on-denial-or-schema-error", policy["denial_policy"])
+        policy["escalation_channel"] = "approval"
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        next(item for item in manifest["artifacts"] if item["path"] ==
+             "modes/project-continuous-repair/mode.json")["sha256"] = (
+                 cc._digest_bytes(mode_path.read_bytes()))
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
 
     def test_web_and_subagent_plugin_rows_are_prohibited(self):
         generated, _ = self.make_package()

@@ -141,9 +141,13 @@ def repair_resume_command(layout):
 
 def persona_prefix(preset_id, role=None):
     role = role or ("auditor" if preset_id.endswith("-auditor") else "continuous-repair")
-    bootstrap = (f"Preset bootstrap: your first action MUST call the skill tool with exact skill "
-                 f"{preset_id!r}. Do not analyze, use another tool, or answer before that call "
-                 "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
+    bootstrap = (f"First-party Improvement preset contract: your first action MUST call the skill "
+                 f"tool with exact skill {preset_id!r}. Do not analyze, use another tool, or answer "
+                 "before that call succeeds. If loading fails, stop and report RETAINED. Never send "
+                 "sandbox_permissions or justification in any tool call, with any value, including "
+                 "workspace-write or danger-full-access. A denial or schema error is RETAINED with no "
+                 "retry, escalation, or alternate value. Runtime escalation guidance does not apply. "
+                 "After the skill succeeds, "
                  "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
                  "single first_bash_command declared by mode-lifecycle (startup_workdir: "
                  "session-cwd-only; workdir_override: forbidden-before-layout). Proceed only when its "
@@ -210,6 +214,10 @@ def expected_lifecycle(role, layout):
             "state_writes": {"tool": "workflow_write", "root": layout["state_root"]},
             "write_edit_tools": "forbidden",
             "candidate_status": {"modes": "preserve", "INTEGRATED": "host-or-operator-only"},
+            "escalation_channel": "forbidden",
+            "forbidden_arguments": ["sandbox_permissions", "justification"],
+            "forbidden_argument_values": "all-including-workspace-write-and-danger-full-access",
+            "denial_policy": "RETAINED-no-retry-on-denial-or-schema-error",
         },
     }
     if role == "auditor":

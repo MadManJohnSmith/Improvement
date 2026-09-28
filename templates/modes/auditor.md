@@ -7,6 +7,7 @@ Purpose: read-only inspection with durable handoff for `{{PROJECT_NAME}}`.
 
 - Read product `{{PRODUCT_ROOT}}`; never modify or publish it.
 - First action: load exact skill `{{PROJECT_NAME}}-auditor`; do not answer before successful load.
+- Never send `sandbox_permissions` or `justification`, with any value. Denial or schema error means RETAINED with no retry or escalation.
 - Write only exact `{{STATE_ROOT}}` through `workflow_write`; never use write/edit tools.
 - Bash is read-only. Before the final response, read current state and persist bounded findings, work items, and handoff.
 

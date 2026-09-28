@@ -1,10 +1,10 @@
 """Regression for the workflow-write DSH plugin (M7).
 
-Mechanical, no models: a disposable preset mounts the plugin by absolute path
-(the loader resolves absolute row names), a real session is created, and the
-tool is driven through ctx.tools.execute. Asserts the M7 fix (a same-mode
-sandbox_permissions writes instead of failing "not strictly wider"), the
-ordinary path, and the fail-closed denial outside the writable area.
+Mechanical, no models: a disposable preset mounts workflow_write and the same
+relative anti-escalation row used by generated bundles, a real session is created,
+and tools are driven through ctx.tools.execute. Asserts ordinary Bash works while
+workspace-write and danger-full-access arguments are rejected before approval,
+plus the M7 workflow_write compatibility path and filesystem denial.
 
 DSH_MODULE_ROOT=/absolute/node_modules python3 -B -m unittest discover -s tests
 """
@@ -25,8 +25,12 @@ description: Regression fixture only; grants nothing outside this test.
 order: 9
 """
 
-ROW = """- id: workflow-write
+ROW = """- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+- id: workflow-write
   name: '/inputs/plugins/workflow-write.mjs'
+- id: anti-escalation
+  name: './anti-escalation.mjs'
 """
 
 CHECK = r'''
@@ -72,9 +76,13 @@ try {
   const created = await rpc('session/create', {request: {cwd: '/state/ws', agentPreset: 'write-fixture'}});
   if (!created.ok) throw new Error('session: ' + JSON.stringify(created.error));
   const agent = boot.ctx.agents.get(created.value.sessionId);
-  const call = args => boot.ctx.tools.execute({callId: 'probe-' + (seq++), name: 'workflow_write',
+  const callTool = (name, args) => boot.ctx.tools.execute({callId: 'probe-' + (seq++), name,
     arguments: args, agent, signal: AbortSignal.timeout(20000)});
+  const call = args => callTool('workflow_write', args);
   const text = r => String(r.error?.message || (r.content || []).map(p => p.text).join(' ') || '').slice(0, 220);
+  const preset = await rpc('agentPresets/read', {agentPreset: 'write-fixture'});
+  const content = String(preset.value?.content || '');
+  report.composition = {guard: content.includes('anti-escalation'), workflow: content.includes('workflow-write')};
 
   const r1 = await call({file_path: '/state/ws/probe1.txt', content: 'ordinary'});
   report.ordinary = {isError: r1.isError, err: text(r1), written: fs.existsSync('/state/ws/probe1.txt')};
@@ -83,10 +91,21 @@ try {
     sandbox_permissions: 'workspace-write', justification: 'same mode'});
   report.sameMode = {isError: r2.isError, err: text(r2), written: fs.existsSync('/state/ws/probe2.txt')};
 
+  const r3 = await callTool('bash', {command: 'printf ordinary', description: 'ordinary'});
+  report.bashOrdinary = {isError: r3.isError, err: text(r3)};
+  for (const mode of ['workspace-write', 'danger-full-access']) {
+    const result = await callTool('bash', {command: 'printf forbidden', description: 'forbidden',
+      sandbox_permissions: mode, justification: 'schema retry'});
+    report['bash_' + mode] = {isError: result.isError, err: text(result)};
+  }
   const r4 = await call({file_path: '/inputs/node_modules/evil.txt', content: 'no'});
   report.outside = {isError: r4.isError, err: text(r4)};
 
-  report.ok = !r1.isError && report.ordinary.written && !r2.isError && report.sameMode.written && r4.isError;
+  report.ok = report.composition.guard && report.composition.workflow &&
+    !r1.isError && report.ordinary.written && !r2.isError && report.sameMode.written &&
+    !r3.isError && report['bash_workspace-write'].isError && report['bash_danger-full-access'].isError &&
+    /RETAINED with no retry/.test(report['bash_workspace-write'].err) &&
+    /RETAINED with no retry/.test(report['bash_danger-full-access'].err) && r4.isError;
 } catch (error) {
   report.fatal = String(error && error.stack || error).slice(0, 1200);
   report.ok = false;
@@ -107,6 +126,8 @@ class WorkflowWritePluginTest(unittest.TestCase):
         base.mkdir(parents=True)
         (base / 'preset.yml').write_text(PRESET_YML)
         (base / 'agent.cordis.yml').write_text(ROW)
+        shutil.copy2(FRAMEWORK / 'scripts/dsh-plugins/anti-escalation.mjs',
+                     base / 'anti-escalation.mjs')
         check = root / 'check'
         check.mkdir()
         (root / 'runs').mkdir(mode=0o700)
@@ -124,7 +145,12 @@ class WorkflowWritePluginTest(unittest.TestCase):
         report = json.loads((state / 'probe.json').read_text())
         self.assertTrue(report['ok'], report)
         self.assertFalse(report['ordinary']['isError'])
-        self.assertFalse(report['sameMode']['isError'], 'M7: same-mode must write, not fail closed')
+        self.assertFalse(report['sameMode']['isError'], 'M7: workflow_write same-mode remains compatible')
+        self.assertFalse(report['bashOrdinary']['isError'])
+        self.assertTrue(report['bash_workspace-write']['isError'])
+        self.assertTrue(report['bash_danger-full-access']['isError'])
+        self.assertTrue(report['composition']['guard'])
+        self.assertTrue(report['composition']['workflow'])
         self.assertTrue(report['outside']['isError'], 'outside the writable area must be denied')
 
 

@@ -5,6 +5,7 @@ import re
 from collections import Counter
 
 
+ANTI_ESCALATION_PLUGIN = "./anti-escalation.mjs"
 REQUIRED_MODE_PLUGINS = frozenset({
     "@deepseek-ai/dsh-persona",
     "@deepseek-ai/dsh-tool-bash",
@@ -12,6 +13,7 @@ REQUIRED_MODE_PLUGINS = frozenset({
     "@deepseek-ai/dsh-tool-fs-search",
     "@deepseek-ai/dsh-skill-filesystem",
     "@deepseek-ai/dsh-tool-skill",
+    ANTI_ESCALATION_PLUGIN,
 })
 PROHIBITED_MODE_PLUGIN_TERMS = (
     "delegat", "subagent", "workflow", "web", "plugin-manager",

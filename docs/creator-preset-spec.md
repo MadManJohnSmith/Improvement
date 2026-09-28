@@ -94,9 +94,9 @@ Fuera de `generated/`, el run conserva discovery/design/tests/validation/checkpo
 Cada `agent.cordis.yml` de modo incluye exactamente la base operativa necesaria:
 `@deepseek-ai/dsh-persona`, `@deepseek-ai/dsh-tool-bash`,
 `@deepseek-ai/dsh-tool-fs`, `@deepseek-ai/dsh-tool-fs-search`,
-`@deepseek-ai/dsh-skill-filesystem` y `@deepseek-ai/dsh-tool-skill`. El Host falla
-cerrado si falta una fila o aparece subagente/delegación, workflow, web/red o
-plugin-manager. Cada plugin requerido aparece una sola vez, sin nombres ni IDs
+`@deepseek-ai/dsh-skill-filesystem`, `@deepseek-ai/dsh-tool-skill` y el guard
+first-party `./anti-escalation.mjs`. El Host falla cerrado si falta una fila o aparece
+subagente/delegación, workflow, web/red o plugin-manager. Cada plugin requerido aparece una sola vez, sin nombres ni IDs
 duplicados, y cualquier YAML no reconocido invalida la composición. Cada `SKILL.md` bajo `generated/skills/<name>` y
 `generated/modes/<name>` lleva frontmatter YAML mínimo con `name: <name>` exacto y
 `description` no vacía.
@@ -114,7 +114,7 @@ preset.
 3. Skills específicas solo con procedimiento recurrente, evidencia, fronteras y prueba.
 4. Perfil guarda datos variables; skills guardan procedimientos.
 5. Auditor sin escritura del producto.
-6. La persona carga primero el skill exacto. Auditor persiste estado con schemas/caps estrictos; Repair deriva candidato por digest de full base+IDs, aplica checks cerrados e invariantes canónicas y solo cambia código por bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch (`candidate_commit` nullable). Nunca usa write/edit para producto, mergea, push o publica. Concurrencia/CAS y confinamiento mecánico siguen pendientes de prueba/implementación.
+6. La persona first-party carga primero el skill exacto y, junto al lifecycle, prohíbe `sandbox_permissions`/`justification` para todos los valores; denegación o error de schema queda RETAINED sin retry. El guard scoped lo rechaza antes de aprobación. Auditor persiste estado con schemas/caps estrictos; Repair deriva candidato por digest de full base+IDs, aplica checks cerrados e invariantes canónicas y solo cambia código por bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch (`candidate_commit` nullable). Nunca usa write/edit para producto, mergea, push o publica. Concurrencia/CAS y confinamiento mecánico siguen pendientes de prueba/implementación.
 7. QA y Auditor posterior observables.
 8. Máximo dos intentos por unidad.
 9. Sin publicación/red/instalación implícitas.

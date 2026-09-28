@@ -423,6 +423,8 @@ class Transaction:
         (bundle / "package.json").write_text(
             json.dumps(package, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8")
+        shutil.copy2(Path(__file__).resolve().parent / "dsh-plugins" /
+                     "anti-escalation.mjs", bundle / "anti-escalation.mjs")
         skill_root = self._bundle_skills(generated, modes, bundle)
         rows = []
         for preset_id, _role, source in modes:

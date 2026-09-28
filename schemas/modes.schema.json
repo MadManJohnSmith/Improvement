@@ -219,10 +219,28 @@
         },
         "tool_policy": {
           "type": "object",
+          "required": [
+            "escalation_channel",
+            "forbidden_arguments",
+            "forbidden_argument_values",
+            "denial_policy"
+          ],
           "properties": {
             "bash_workdir": {
               "const": "session-cwd-only-all-calls",
               "description": "Required by the auditor role; every bash call keeps the session cwd."
+            },
+            "escalation_channel": {
+              "const": "forbidden"
+            },
+            "forbidden_arguments": {
+              "const": ["sandbox_permissions", "justification"]
+            },
+            "forbidden_argument_values": {
+              "const": "all-including-workspace-write-and-danger-full-access"
+            },
+            "denial_policy": {
+              "const": "RETAINED-no-retry-on-denial-or-schema-error"
             }
           }
         },

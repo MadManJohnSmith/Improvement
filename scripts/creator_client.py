@@ -262,8 +262,13 @@ nombre es exactamente el preset; no analizar ni responder antes del éxito; RETA
 si falla), bash `@deepseek-ai/dsh-tool-bash`, filesystem
 `@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search` con
 `config.sampleOverCapGlobResults: false`, proveedor
-`@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
-incluyas filas de delegación, workflows, herramientas web/red ni plugin-manager.
+`@deepseek-ai/dsh-skill-filesystem`, loader `@deepseek-ai/dsh-tool-skill` y guard
+first-party `./anti-escalation.mjs`. No incluyas filas de delegación, workflows,
+herramientas web/red ni plugin-manager. El lifecycle estructurado y la persona de ambos
+modos fijan `escalation_channel: forbidden`: jamás envían `sandbox_permissions` ni
+`justification`, con ningún valor (incluidos `workspace-write` y `danger-full-access`),
+incluso como reintento tras denegación o error de schema; cualquiera de esos fallos deja
+`RETAINED` sin reintento. La guía de escalada del runtime no aplica.
 Los dos presets usan exclusivamente la identidad sibling autoritativa, exacta y
 case-sensitive derivada al generar: cwd esperado por basename `{session_root}`, producto
 `{product_root}`, workspace `{workspace_root}` y estado relativo `{state_root}`. No

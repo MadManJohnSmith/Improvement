@@ -37,11 +37,9 @@
  *     vigente (no es escalada); estrictamente mayor -> aprobación fail-closed
  *     del servicio `approval`; más estrecho -> política vigente.
  *  3. Guard global en tools/pre-execute: si bash/pwsh llegan con
- *     sandbox_permissions/justification defectuosas (justificación ausente o
- *     vacía, modo igual al vigente o más estrecho), se deniegan ANTES del
- *     dispatch con un mensaje correctivo, cortando el bucle de reintentos
- *     observado el 2026-09-19. Una escalada estrictamente mayor con
- *     justificación válida sigue su curso normal hacia la aprobación.
+ *     sandbox_permissions/justification, se deniegan todos los valores ANTES
+ *     del dispatch o la aprobación y sin sugerir reintento, cortando los bucles
+ *     observados el 2026-09-19 y 2026-09-27.
  *  4. execute replica la tool write de upstream: ctx.fs.resolve con opciones de
  *     sesión (cwd = raíz de la política o cwd de la sesión, señal de aborto),
  *     waterfall fs/write-intent, writeText con la política resuelta y emisión
@@ -88,28 +86,7 @@ export function apply(ctx, config) {
     const requested = args?.sandbox_permissions;
     const justification = args?.justification;
     if (requested === undefined && justification === undefined) return undefined;
-    const corrective = 'Estos parámetros ya no forman parte del esquema de la herramienta en este despliegue: reenvía exactamente el mismo comando sin sandbox_permissions ni justification; el modo vigente ya cubre el workspace de la sesión, y una denegación real de sandbox se informa como [sandbox: ...], nunca escalando.';
-    if (requested === undefined) {
-      return `invalid escalation: justification solo es válida junto a sandbox_permissions. ${corrective}`;
-    }
-    if (justification === undefined || String(justification).trim().length === 0) {
-      return `invalid escalation: sandbox_permissions requiere justification. ${corrective}`;
-    }
-    let policy;
-    try {
-      const service = policyService();
-      policy = service?.resolve(exec?.agent?.session ? { session: exec.agent.session } : {});
-    } catch {
-      return undefined;
-    }
-    if (policy?.mode === undefined) return undefined;
-    if (requested === policy.mode) {
-      return `sandbox escalation to "${requested}" no es una escalada: ya es el modo vigente (defecto M7 de upstream). ${corrective}`;
-    }
-    if (requested === 'workspace-write' && policy.mode === 'danger-full-access') {
-      return `sandbox escalation to "${requested}" es más estrecha que el modo vigente "${policy.mode}" y no concede nada. ${corrective}`;
-    }
-    return undefined; // estrictamente mayor: prosigue hacia la aprobación de upstream
+    return 'forbidden escalation channel: sandbox_permissions and justification are not accepted in this deployment; RETAINED with no retry after denial or schema error.';
   });
 
   // Corrección M9: barrer las definiciones ya registradas y retirar del

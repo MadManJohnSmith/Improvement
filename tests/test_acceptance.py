@@ -81,6 +81,8 @@ class AcceptanceTests(unittest.TestCase):
   name: '@deepseek-ai/dsh-skill-filesystem'
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+- id: anti-escalation
+  name: './anti-escalation.mjs'
 """,
                      "SKILL.md": (f"---\nname: {preset_id}\n"
                                   f"description: {role} mode\n---\n"
