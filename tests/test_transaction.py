@@ -183,6 +183,11 @@ class TransactionTests(unittest.TestCase):
             (self.workspace / "mode-state" / "work-items.json").read_text())
         self.assertEqual(work_items, {
             "schema_version": 1, "candidate": None, "items": []})
+        lifecycle = json.loads((self.generated / "modes/project-auditor/mode.json").read_text())["mode_lifecycle"]
+        self.assertEqual(
+            lifecycle["startup"]["first_bash_command"],
+            'set -eu; pwd; test "$(basename "$PWD")" = '
+            f'{self.root.name} -a -d ./Syncify -a -d ./Syncify-workspace')
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
 
     def test_install_archives_legacy_mode_evidence_outside_active_state(self):

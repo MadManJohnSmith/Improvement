@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,10 +14,69 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
-                            initialize_state)
+                            initialize_state, startup_check)
 
 
 class ModeLifecycleTests(unittest.TestCase):
+    def test_startup_check_is_exact_and_fails_closed_as_one_test(self):
+        layout = {"session_root": "Syncify", "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace"}
+        command = startup_check(layout)
+        self.assertEqual(
+            command,
+            'set -eu; pwd; test "$(basename "$PWD")" = Syncify '
+            '-a -d ./Syncify -a -d ./Syncify-workspace')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = root / "Syncify"
+            wrong = root / "wrong"
+            session.mkdir()
+            wrong.mkdir()
+            for cwd in (wrong, session):
+                (cwd / "Syncify").mkdir()
+                (cwd / "Syncify-workspace").mkdir()
+            wrong_cwd = subprocess.run(command, cwd=wrong, shell=True,
+                                       capture_output=True, text=True)
+            self.assertNotEqual(wrong_cwd.returncode, 0)
+            (session / "Syncify").rmdir()
+            missing_product = subprocess.run(command, cwd=session, shell=True,
+                                             capture_output=True, text=True)
+            self.assertNotEqual(missing_product.returncode, 0)
+            (session / "Syncify").mkdir()
+            (session / "Syncify-workspace").rmdir()
+            missing_workspace = subprocess.run(command, cwd=session, shell=True,
+                                               capture_output=True, text=True)
+            self.assertNotEqual(missing_workspace.returncode, 0)
+            (session / "Syncify-workspace").mkdir()
+            result = subprocess.run(command, cwd=session, shell=True,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), str(session))
+
+    def test_integrated_candidate_survives_state_initialization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            candidate = {
+                "base_revision": "a" * 40,
+                "finding_ids_digest": "b" * 64,
+                "path": "Syncify-repair-bbbbbbbbbbbbbbbb",
+                "branch": "dsh/repair-bbbbbbbbbbbbbbbb",
+                "head": "c" * 40,
+                "status": "INTEGRATED",
+            }
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": candidate, "items": [],
+            }) + "\n")
+            descriptor = {"schema_version": 1, "project_id": "syncify",
+                          "product_root": "Syncify",
+                          "state_root": "Syncify-workspace/mode-state"}
+            initialize_state(state, descriptor, root / "archive")
+            current = json.loads((state / "work-items.json").read_text())
+            self.assertEqual(current["candidate"], candidate)
+            self.assertFalse((root / "archive").exists())
+
     def test_compaction_deduplicates_by_finding_and_base_keeping_newest(self):
         records = [
             {"finding_id": "A-01", "base_revision": "one", "value": 1},

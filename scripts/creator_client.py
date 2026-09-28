@@ -31,6 +31,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
+from mode_lifecycle import startup_check
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -221,6 +222,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     product_root = layout["product_root"]
     workspace_root = layout["workspace_root"]
     state_root = layout["state_root"]
+    first_bash_command = startup_check(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -267,11 +269,13 @@ Cada `SKILL.md` de modo contiene exactamente este bloque estructurado:
 {{"session_root":"{session_root}","product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
 ```
 Tras cargar el skill homónimo, la primera llamada bash no establece `workdir` (o usa
-exactamente `.`) y ejecuta en una sola llamada exactamente `pwd` más la comprobación
-del basename `{session_root}` y de los directorios relativos `./{product_root}` y
-`./{workspace_root}`. Nunca infiere, asciende, hace `cd` ni cambia el workdir para
-validar el layout. Todas las rutas relativas posteriores parten del cwd de sesión
-observado e inalterado; cualquier drift de `pwd` termina en `RETAINED`.
+exactamente `.`) y ejecuta sin alterarlo este único comando exacto generado por Host:
+`{first_bash_command}`. Debe inspeccionar su exit code antes de continuar: resultado
+no disponible o distinto de cero termina en `RETAINED` sin ninguna otra acción. Nunca
+separa, reescribe ni continúa tras un check fallido; tampoco infiere, asciende, hace
+`cd` ni cambia el workdir para validar el layout. Todas las rutas relativas posteriores
+parten del cwd de sesión observado e inalterado; cualquier drift de `pwd` termina en
+`RETAINED`.
 No crean sesiones descendientes, subagentes ni workflows.
 
 Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
@@ -357,8 +361,10 @@ modo contiene exactamente este bloque:
 ```
 El startup estructurado y la persona exigen `startup_workdir: session-cwd-only` y
 `workdir_override: forbidden-before-layout`: justo después del skill, la primera
-llamada bash omite `workdir` o usa `.`, ejecuta `pwd` y comprueba el basename
-`{session_root}` junto con `./{product_root}` y `./{workspace_root}`. Está prohibido
+llamada bash omite `workdir` o usa `.` y ejecuta sin alterarlo este único comando
+exacto generado por Host: `{first_bash_command}`. Debe inspeccionar su exit code antes
+de continuar; resultado no disponible o distinto de cero produce `RETAINED` sin otra
+acción. Está prohibido separar o reescribir el comando, continuar tras un check fallido,
 inferir, ascender, hacer `cd` o cambiar workdir para buscar el layout. Todas las rutas
 relativas posteriores se resuelven desde ese cwd observado e inalterado; cualquier
 drift de `pwd` produce `RETAINED`.

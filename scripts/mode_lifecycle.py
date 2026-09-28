@@ -33,10 +33,10 @@ _LIFECYCLE_FENCE = "mode-lifecycle"
 
 
 def startup_check(layout):
-    return ("pwd && test \"$(basename \"$PWD\")\" = "
+    return ("set -eu; pwd; test \"$(basename \"$PWD\")\" = "
             f"{shlex.quote(layout['session_root'])}"
-            f" && test -d ./{shlex.quote(layout['product_root'])}"
-            f" && test -d ./{shlex.quote(layout['workspace_root'])}")
+            f" -a -d {shlex.quote('./' + layout['product_root'])}"
+            f" -a -d {shlex.quote('./' + layout['workspace_root'])}")
 
 
 def persona_prefix(preset_id):
@@ -44,8 +44,10 @@ def persona_prefix(preset_id):
             f"{preset_id!r}. Do not analyze, use another tool, or answer before that call "
             "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
             "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
-            "pwd and relative layout checks declared by mode-lifecycle (startup_workdir: "
-            "session-cwd-only; workdir_override: forbidden-before-layout). Never infer, climb, "
+            "single first_bash_command declared by mode-lifecycle (startup_workdir: "
+            "session-cwd-only; workdir_override: forbidden-before-layout). Inspect its exit code "
+            "before proceeding; any nonzero or unavailable result is RETAINED and no other action "
+            "is allowed. Never split, rewrite, or continue past failed checks; never infer, climb, "
             "cd, or otherwise change workdir to validate layout. Resolve every later relative "
             "path from the observed unchanged session cwd; any pwd drift is RETAINED.")
 
@@ -75,6 +77,7 @@ def expected_lifecycle(role, layout):
             "session_workdir": "observed-unchanged-session-cwd",
             "state_writes": {"tool": "workflow_write", "root": layout["state_root"]},
             "write_edit_tools": "forbidden",
+            "candidate_status": {"modes": "preserve", "INTEGRATED": "host-or-operator-only"},
         },
     }
     if role == "auditor":
@@ -83,6 +86,7 @@ def expected_lifecycle(role, layout):
             "required_before_final": True,
             "dedupe_key": ["finding_id", "base_revision"],
             "writes": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
+            "candidate_state": "preserve-existing",
             "final_fields": ["persisted_path", "persisted_count", "next_prompt"],
             "next_prompt": "Repara los hallazgos de la auditoría; no publiques.",
         }
@@ -239,7 +243,7 @@ def state_schema():
                     {"work_item_id": text, "finding_id": text, "base_revision": revision, "status": {"enum": ["PENDING", "IN_PROGRESS", "VERIFIED", "RETAINED"]}},
                     {"work_item_id": "W-01", "finding_id": "A-01", "base_revision": "a" * 40, "status": "PENDING"}),
                 "candidate": {"type": ["object", "null"], "required": ["base_revision", "finding_ids_digest", "path", "branch", "head", "status"], "additionalProperties": False,
-                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["DIRTY", "PATCH_READY", "RETAINED"]}},
+                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}},
                     "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY"}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
                 "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head"],

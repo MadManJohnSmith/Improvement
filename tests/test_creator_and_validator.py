@@ -921,10 +921,11 @@ class CreatorTests(Base):
         self.assertIn("`startup_workdir: session-cwd-only`", prompt)
         self.assertIn("`workdir_override: forbidden-before-layout`", prompt)
         self.assertIn("primera\nllamada bash omite `workdir` o usa `.`", prompt)
-        self.assertIn("`pwd`", prompt)
-        self.assertIn("`./project`", prompt)
-        self.assertIn("`./workspace`", prompt)
-        self.assertIn("prohibido\ninferir, ascender, hacer `cd` o cambiar workdir", prompt)
+        self.assertIn(
+            f'`set -eu; pwd; test "$(basename "$PWD")" = {self.root.name} '
+            '-a -d ./project -a -d ./workspace`', prompt)
+        self.assertIn("Debe inspeccionar su exit code antes\nde continuar", prompt)
+        self.assertIn("prohibido separar o reescribir el comando", prompt)
         self.assertIn("drift de `pwd` produce `RETAINED`", prompt)
         self.assertIn(f"basename `{self.root.name}`", prompt)
         self.assertNotIn("session_root\":\"/", prompt)
@@ -1901,6 +1902,8 @@ class ValidatorTests(Base):
         prefix = persona_prefix("project-auditor")
         self.assertIn("startup_workdir: session-cwd-only", prefix)
         self.assertIn("workdir_override: forbidden-before-layout", prefix)
+        self.assertIn("Inspect its exit code before proceeding", prefix)
+        self.assertIn("Never split, rewrite, or continue past failed checks", prefix)
         composition.write_text(composition.read_text().replace(
             prefix, "Preset bootstrap: load the exact skill first, then find the project."))
         report = hv.validate_package(generated, run_dir=self.run_dir)
