@@ -1,5 +1,9 @@
 # Cambios
 
+## Reutilización de instancia DSH viva en la adquisición sin lanzamiento — 2026-09-27
+
+- Segundo hallazgo del piloto limpio: la vía de adquisición sin `--launch-dsh` verificaba cada candidato con `exchange_token()` — el canje del token de consola de un solo uso — que falla siempre contra una instancia ya autenticada; `finalize` no podía reutilizar una instancia DSH viva y sana jamás (el mensaje además enmascaraba el fallo real reportando solo el último candidato). La reutilización verifica ahora primero la cookie HMAC del home con un RPC barato (`list_sessions`), dejando el canje como respaldo para homes sin cookie vigente — el mismo orden que ya usaba la vía de lanzamiento; el error final incluye el home probado. Regresiones: `test_acquire_reuses_running_instance_without_token_exchange`; `test_acquire_dsh_client_fails_closed_without_session` aislado de los candidatos reales del mantenedor (dependía de que no hubiera instancia viva). Suite completa en verde.
+
 ## Identidad de workspace auto-reparada en install — 2026-09-27
 
 - Primer hallazgo del piloto limpio local (Syncify, instalación de principio a fin): con un directorio de workspace pre-creado vacío, `install` solo escribía `project.json` en la rama de creación, así que la finalización Host falló con `FileNotFoundError` crudo sobre la identidad **después** de que el Creator consumiera una generación completa — el run quedó recuperable pero el fallo llegó tarde y sin mensaje accionable. `install` completa ahora la identidad siempre que el workspace exista sin `project.json` (idempotente, con el mismo chequeo de conflicto de nombre), cubriendo directorios pre-creados y restos de fallos parciales. Regresión: `test_preexisting_empty_workspace_gets_identity`. Suite completa en verde.

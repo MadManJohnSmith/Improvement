@@ -287,10 +287,36 @@ class CreatorTests(Base):
 
     def test_acquire_dsh_client_fails_closed_without_session(self):
         with tempfile.TemporaryDirectory() as tmp, \
-                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}):
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.object(cc, "DSH_HOME_CANDIDATES", ()):
             client, origin = cc.acquire_dsh_client()
         self.assertIsNone(client)
         self.assertIn("dsh web", origin)
+
+    def test_acquire_reuses_running_instance_without_token_exchange(self):
+        # Hallazgo de piloto: la vía de reutilización canjeaba el token de
+        # consola (un solo uso) contra una instancia ya autenticada y
+        # fallaba siempre; la cookie HMAC debe verificarse primero.
+        calls = []
+
+        class FakeClient:
+            def list_sessions(self):
+                calls.append("list")
+                return {"ok": True, "value": {"items": []}}
+
+            def exchange_token(self):
+                calls.append("exchange")
+                raise RuntimeError("HTTP 401")
+
+        fake = FakeClient()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    unittest.mock.MagicMock(return_value=fake)):
+            client, origin = cc.acquire_dsh_client()
+        self.assertIsNotNone(client)
+        self.assertEqual(calls, ["list"])
 
     def test_run_creator_acquires_client_when_asked(self):
         class MockClient:

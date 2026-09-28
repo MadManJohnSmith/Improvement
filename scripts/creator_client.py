@@ -1466,9 +1466,16 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
     for home in candidates:
         try:
             client = DshLocalClient.from_dsh_home(home)
-            client.exchange_token()
+            try:
+                # La cookie HMAC del home ya autenticada es la vía normal de
+                # reutilización; exchange_token consume un token de consola
+                # de un solo uso y falla siempre contra una instancia viva
+                # (hallazgo de piloto: finalize nunca reutilizaba DSH).
+                client.list_sessions()
+            except Exception:
+                client.exchange_token()
         except Exception as e:
-            last_error = str(e)
+            last_error = f"{home}: {e}"
             continue
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
