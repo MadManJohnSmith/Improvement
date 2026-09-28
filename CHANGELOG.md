@@ -1,5 +1,9 @@
 # Cambios
 
+## Cookie y puerta de proveedor independientes de settings.yaml (migración del runtime) — 2026-09-27
+
+- Quinto hallazgo del piloto, revelado por el diagnóstico de doble vía: el runtime DSH migró el home (settings.yaml renombrado a settings.yaml.imported, configuración efectiva en profiles/web/cordis.yml) y el guardia de la verificación de cookie exigía settings.yaml existente — «sin intento de cookie» — cayendo siempre al canje, que el navegador auto-abierto consume (401). La verificación de cookie depende ahora de .credentials.yaml (el archivo que de verdad usa), el chequeo post-autenticación acepta settings.yaml o settings.yaml.imported como evidencia de home, y la puerta de proveedor lee el home migrado como respaldo con la misma estructura (nombres de variables, nunca valores). Regresiones: verificación de cookie en home sin settings.yaml; dsh_provider_status sobre settings.yaml.imported. Suite completa en verde (481).
+
 ## Reanudación de la finalización Host repitiendo install — 2026-09-27
 
 - Cuarto hallazgo del piloto limpio: la finalización standalone (`finalize`) no completa la identidad del workspace, así que un run GENERATED que llegó con la identidad ausente quedaba atrapado — `install` no re-finalizaba runs GENERATED y `finalize` fallaba con el `FileNotFoundError` crudo; el usuario no tenía un comando de recuperación único. `install` reanuda ahora la finalización Host cuando el run está en GENERATED (sin re-despachar al Creator, idempotente, con el mismo reporte `Host: <estado>` de la cadena de despacho); como la escritura de identidad es previa al escaneo de runs, repetir el mismo comando `bootstrap install` recupera el run de punta a punta. Regresiones: reanudación llama a finalize una vez y reporta ACTIVE; el fallo de finalize se reporta como FINALIZATION_FAILED recuperable. Suite completa en verde.

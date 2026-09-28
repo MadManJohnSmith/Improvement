@@ -1111,7 +1111,16 @@ def _read_settings_structure(dsh_home):
     Structure only: provider names, apiKeyEnv NAMES and model counts.
     API key values are never read, stored or logged.
     """
-    path = Path(dsh_home) / "settings.yaml"
+    path = None
+    # La migración del runtime puede renombrar settings.yaml a
+    # settings.yaml.imported; la estructura de proveedores es equivalente.
+    for name in ("settings.yaml", "settings.yaml.imported"):
+        candidate = Path(dsh_home) / name
+        if candidate.is_file():
+            path = candidate
+            break
+    if path is None:
+        path = Path(dsh_home) / "settings.yaml"
     lines = path.read_text(encoding="utf-8").splitlines()
 
     def block_after(header_regex):
@@ -1451,7 +1460,9 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
         exchange_error = "sin intento de canje"
         deadline = time.monotonic() + DSH_AUTH_SETTLE_SECONDS
         while True:
-            if (home / "settings.yaml").is_file():
+            # La cookie dura depende de .credentials.yaml; settings.yaml ya
+            # no es requisito (migraciones del runtime pueden renombrarlo).
+            if (home / ".credentials.yaml").is_file():
                 try:
                     home_client = DshLocalClient.from_dsh_home(home, port=port)
                     home_client.list_sessions()
@@ -1476,9 +1487,12 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
                 _terminate_process(process)
                 return None, (f"DSH no quedó autenticado tras el arranque: "
                               f"{cookie_error}; {exchange_error}")
-        if not (home / "settings.yaml").is_file():
+        home_evidence = ((home / "settings.yaml").is_file()
+                         or (home / "settings.yaml.imported").is_file())
+        if not home_evidence:
             _terminate_process(process)
-            return None, (f"no se encontró settings.yaml en el home lanzado {home}; "
+            return None, (f"el home lanzado {home} no parece de DSH "
+                          "(sin settings.yaml ni settings.yaml.imported); "
                           "define DSH_HOME o configura ~/.dsh")
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):

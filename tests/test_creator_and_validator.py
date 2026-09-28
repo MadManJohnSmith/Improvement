@@ -1275,6 +1275,54 @@ class DshLifecycleTests(unittest.TestCase):
         cc._terminate_process(proc)
         self.assertIsNotNone(proc.poll())
 
+    def test_launch_cookie_does_not_require_settings_yaml(self):
+        """Hallazgo de piloto: la migración del runtime renombra
+        settings.yaml a settings.yaml.imported; la cookie dura depende de
+        .credentials.yaml y debe verificarse igual."""
+        fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_process = unittest.mock.Mock()
+        fake_home_client = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    return_value=fake_home_client), \
+                unittest.mock.patch.object(cc, "dsh_provider_status",
+                                           return_value={"ok": True,
+                                                         "provider": "p"}):
+            home = Path(tmp)
+            home.joinpath(".credentials.yaml").write_text("records: {}\n")
+            client, _origin = cc.acquire_dsh_client(launch=True)
+        self.assertIs(client, fake_home_client)
+        fake_client.exchange_token.assert_not_called()
+
+    def test_provider_status_reads_imported_settings(self):
+        """La puerta de proveedor acepta el home migrado
+        (settings.yaml.imported) con la misma estructura."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
+            home = Path(tmp)
+            home.joinpath("settings.yaml.imported").write_text(
+                "agent-default-model:\n"
+                "  provider: testprov\n"
+                "  model: m1\n"
+                "providers:\n"
+                "  testprov:\n"
+                "    apiKeyEnv: TEST_PROV_KEY\n"
+                "    models:\n"
+                "      - id: m1\n"
+                "      - id: m2\n")
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "testprov")
+
 
 class _FakeProcess:
     """Popen fake backed by a selectable OS pipe."""
