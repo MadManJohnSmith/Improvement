@@ -104,6 +104,7 @@
             "first_post_skill_tool",
             "first_bash_workdir",
             "first_bash_command",
+            "success_sentinel",
             "expected_cwd_basename",
             "relative_layout_checks",
             "path_resolution",
@@ -126,6 +127,9 @@
             "first_bash_command": {
               "type": "string",
               "minLength": 1
+            },
+            "success_sentinel": {
+              "const": "__IMPROVEMENT_LAYOUT_OK__"
             },
             "expected_cwd_basename": {
               "type": "string",

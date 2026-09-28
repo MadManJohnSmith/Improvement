@@ -187,7 +187,11 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(
             lifecycle["startup"]["first_bash_command"],
             'set -eu; pwd; test "$(basename "$PWD")" = '
-            f'{self.root.name} -a -d ./Syncify -a -d ./Syncify-workspace')
+            f'{self.root.name} -a -d ./Syncify -a -d ./Syncify-workspace; '
+            "printf '__IMPROVEMENT_LAYOUT_OK__\\n'")
+        self.assertEqual(
+            lifecycle["startup"]["success_sentinel"],
+            "__IMPROVEMENT_LAYOUT_OK__")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
 
     def test_install_archives_legacy_mode_evidence_outside_active_state(self):

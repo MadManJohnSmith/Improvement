@@ -923,8 +923,10 @@ class CreatorTests(Base):
         self.assertIn("primera\nllamada bash omite `workdir` o usa `.`", prompt)
         self.assertIn(
             f'`set -eu; pwd; test "$(basename "$PWD")" = {self.root.name} '
-            '-a -d ./project -a -d ./workspace`', prompt)
-        self.assertIn("Debe inspeccionar su exit code antes\nde continuar", prompt)
+            "-a -d ./project -a -d ./workspace; printf "
+            "'__IMPROVEMENT_LAYOUT_OK__\\n'`", prompt)
+        self.assertIn("`success_sentinel` exacto `__IMPROVEMENT_LAYOUT_OK__`", prompt)
+        self.assertIn("No exige marcador de exit code 0", prompt)
         self.assertIn("prohibido separar o reescribir el comando", prompt)
         self.assertIn("drift de `pwd` produce `RETAINED`", prompt)
         self.assertIn(f"basename `{self.root.name}`", prompt)
@@ -1902,7 +1904,8 @@ class ValidatorTests(Base):
         prefix = persona_prefix("project-auditor")
         self.assertIn("startup_workdir: session-cwd-only", prefix)
         self.assertIn("workdir_override: forbidden-before-layout", prefix)
-        self.assertIn("Inspect its exit code before proceeding", prefix)
+        self.assertIn("exact declared success_sentinel", prefix)
+        self.assertIn("Do not require an exit-code-zero marker", prefix)
         self.assertIn("Never split, rewrite, or continue past failed checks", prefix)
         composition.write_text(composition.read_text().replace(
             prefix, "Preset bootstrap: load the exact skill first, then find the project."))
@@ -1916,6 +1919,21 @@ class ValidatorTests(Base):
         mode_path = generated / "modes/project-auditor/mode.json"
         mode = json.loads(mode_path.read_text())
         del mode["mode_lifecycle"]["startup"]
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-auditor/mode.json":
+                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
+
+    def test_lifecycle_without_success_sentinel_retained(self):
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-auditor/mode.json"
+        mode = json.loads(mode_path.read_text())
+        del mode["mode_lifecycle"]["startup"]["success_sentinel"]
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
         for artifact in manifest["artifacts"]:
             if artifact["path"] == "modes/project-auditor/mode.json":

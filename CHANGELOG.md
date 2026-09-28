@@ -1,5 +1,9 @@
 # Cambios
 
+## Startup exitoso reconocido por sentinel DSH — 2026-09-27
+
+- DSH devuelve stdout en bash y solo añade `[exit code: N]` cuando `N` es distinto de cero; exigir una marca explícita de exit code retenía falsamente una validación exitosa. El `first_bash_command` exacto conserva `set -eu`, `pwd` y el único `test` de layout, y añade `printf '__IMPROVEMENT_LAYOUT_OK__\n'` únicamente después de que todos pasen. El contrato estructurado incorpora `success_sentinel`; lifecycle, persona y prompt solo permiten continuar si el resultado contiene ese valor exacto, retienen si falta o no hay resultado y prohíben exigir una marca de exit code 0. Regresiones ejecutan el comando real: éxito contiene el sentinel y cada fallo carece de él. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` hasta repetir la prueba DSH real.
+
 ## Startup fail-closed con comando Host exacto — 2026-09-27
 
 - El comando inicial generado centralmente comienza por `set -eu`, imprime `pwd` y reúne basename/product root/workspace root en un único `test`, evitando que un shell continúe después de una comprobación fallida. Lifecycle y prompt incorporan literalmente el mismo `first_bash_command`; la persona debe inspeccionar su exit code y ante fallo o resultado ausente terminar `RETAINED` sin separar, reescribir ni continuar. El cwd esperado se confirma como basename del padre común real de producto y workspace. La inicialización conserva además candidatas válidas con estado `INTEGRATED`; Auditor no las borra y solo Host/operador puede registrar ese estado. Regresiones ejecutan el comando con un root ausente/presente, fijan su texto exacto y preservan la candidata integrada. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` hasta repetir la prueba DSH real.

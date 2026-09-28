@@ -25,7 +25,8 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(
             command,
             'set -eu; pwd; test "$(basename "$PWD")" = Syncify '
-            '-a -d ./Syncify -a -d ./Syncify-workspace')
+            '-a -d ./Syncify -a -d ./Syncify-workspace; '
+            "printf '__IMPROVEMENT_LAYOUT_OK__\\n'")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             session = root / "Syncify"
@@ -38,20 +39,24 @@ class ModeLifecycleTests(unittest.TestCase):
             wrong_cwd = subprocess.run(command, cwd=wrong, shell=True,
                                        capture_output=True, text=True)
             self.assertNotEqual(wrong_cwd.returncode, 0)
+            self.assertNotIn(mode_lifecycle.SUCCESS_SENTINEL, wrong_cwd.stdout)
             (session / "Syncify").rmdir()
             missing_product = subprocess.run(command, cwd=session, shell=True,
                                              capture_output=True, text=True)
             self.assertNotEqual(missing_product.returncode, 0)
+            self.assertNotIn(mode_lifecycle.SUCCESS_SENTINEL, missing_product.stdout)
             (session / "Syncify").mkdir()
             (session / "Syncify-workspace").rmdir()
             missing_workspace = subprocess.run(command, cwd=session, shell=True,
                                                capture_output=True, text=True)
             self.assertNotEqual(missing_workspace.returncode, 0)
+            self.assertNotIn(mode_lifecycle.SUCCESS_SENTINEL, missing_workspace.stdout)
             (session / "Syncify-workspace").mkdir()
             result = subprocess.run(command, cwd=session, shell=True,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(result.stdout.strip(), str(session))
+            self.assertEqual(result.stdout.splitlines(), [
+                str(session), mode_lifecycle.SUCCESS_SENTINEL])
 
     def test_integrated_candidate_survives_state_initialization(self):
         with tempfile.TemporaryDirectory() as tmp:

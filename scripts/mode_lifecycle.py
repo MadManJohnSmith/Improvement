@@ -30,13 +30,15 @@ LEGACY_FILE_BYTE_LIMIT = 8 * 1024 * 1024
 LEGACY_TOTAL_BYTE_LIMIT = 32 * 1024 * 1024
 LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _LIFECYCLE_FENCE = "mode-lifecycle"
+SUCCESS_SENTINEL = "__IMPROVEMENT_LAYOUT_OK__"
 
 
 def startup_check(layout):
     return ("set -eu; pwd; test \"$(basename \"$PWD\")\" = "
             f"{shlex.quote(layout['session_root'])}"
             f" -a -d {shlex.quote('./' + layout['product_root'])}"
-            f" -a -d {shlex.quote('./' + layout['workspace_root'])}")
+            f" -a -d {shlex.quote('./' + layout['workspace_root'])}; "
+            f"printf '{SUCCESS_SENTINEL}\\n'")
 
 
 def persona_prefix(preset_id):
@@ -45,9 +47,11 @@ def persona_prefix(preset_id):
             "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
             "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
             "single first_bash_command declared by mode-lifecycle (startup_workdir: "
-            "session-cwd-only; workdir_override: forbidden-before-layout). Inspect its exit code "
-            "before proceeding; any nonzero or unavailable result is RETAINED and no other action "
-            "is allowed. Never split, rewrite, or continue past failed checks; never infer, climb, "
+            "session-cwd-only; workdir_override: forbidden-before-layout). Proceed only when its "
+            "result contains the exact declared success_sentinel; its absence or an unavailable "
+            "result is RETAINED and no other action is allowed. Do not require an exit-code-zero "
+            "marker: successful DSH bash results omit it. Never split, rewrite, or continue past "
+            "failed checks; never infer, climb, "
             "cd, or otherwise change workdir to validate layout. Resolve every later relative "
             "path from the observed unchanged session cwd; any pwd drift is RETAINED.")
 
@@ -67,6 +71,7 @@ def expected_lifecycle(role, layout):
             "first_post_skill_tool": "bash",
             "first_bash_workdir": "omitted-or-dot",
             "first_bash_command": startup_check(layout),
+            "success_sentinel": SUCCESS_SENTINEL,
             "expected_cwd_basename": layout["session_root"],
             "relative_layout_checks": [
                 f"./{layout['product_root']}", f"./{layout['workspace_root']}"],

@@ -270,9 +270,11 @@ Cada `SKILL.md` de modo contiene exactamente este bloque estructurado:
 ```
 Tras cargar el skill homónimo, la primera llamada bash no establece `workdir` (o usa
 exactamente `.`) y ejecuta sin alterarlo este único comando exacto generado por Host:
-`{first_bash_command}`. Debe inspeccionar su exit code antes de continuar: resultado
-no disponible o distinto de cero termina en `RETAINED` sin ninguna otra acción. Nunca
-separa, reescribe ni continúa tras un check fallido; tampoco infiere, asciende, hace
+`{first_bash_command}`. Solo continúa si el resultado contiene el `success_sentinel`
+exacto `__IMPROVEMENT_LAYOUT_OK__`; si falta o el resultado no está disponible termina
+en `RETAINED` sin ninguna otra acción. No exige marcador de exit code 0: DSH lo omite
+en resultados exitosos. Nunca separa, reescribe ni continúa tras un check fallido;
+tampoco infiere, asciende, hace
 `cd` ni cambia el workdir para validar el layout. Todas las rutas relativas posteriores
 parten del cwd de sesión observado e inalterado; cualquier drift de `pwd` termina en
 `RETAINED`.
@@ -362,9 +364,11 @@ modo contiene exactamente este bloque:
 El startup estructurado y la persona exigen `startup_workdir: session-cwd-only` y
 `workdir_override: forbidden-before-layout`: justo después del skill, la primera
 llamada bash omite `workdir` o usa `.` y ejecuta sin alterarlo este único comando
-exacto generado por Host: `{first_bash_command}`. Debe inspeccionar su exit code antes
-de continuar; resultado no disponible o distinto de cero produce `RETAINED` sin otra
-acción. Está prohibido separar o reescribir el comando, continuar tras un check fallido,
+exacto generado por Host: `{first_bash_command}`. Solo continúa si el resultado contiene
+el `success_sentinel` exacto `__IMPROVEMENT_LAYOUT_OK__`; su ausencia o un resultado no
+disponible produce `RETAINED` sin otra acción. No exige marcador de exit code 0, ausente
+en resultados DSH exitosos. Está prohibido separar o reescribir el comando, continuar
+tras un check fallido,
 inferir, ascender, hacer `cd` o cambiar workdir para buscar el layout. Todas las rutas
 relativas posteriores se resuelven desde ese cwd observado e inalterado; cualquier
 drift de `pwd` produce `RETAINED`.
