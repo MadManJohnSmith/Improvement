@@ -439,6 +439,30 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                         # dispatching others would wrongly retain the run.
                         _dispatch_creator_chain(
                             result, run_path, launch_dsh, finalize_host)
+                    elif finalize_host and status == "GENERATED":
+                        # Reanudar la finalización Host sin re-despachar:
+                        # un run GENERATED con aceptación ausente o fallida
+                        # se recupera repitiendo el mismo comando install.
+                        try:
+                            result["host"] = finalize(
+                                workspace,
+                                generation_id=existing_run.get("generation_id"),
+                                launch_dsh=launch_dsh)
+                        except Exception as e:
+                            result["host"] = {
+                                "result": "FINALIZATION_FAILED",
+                                "generation_id":
+                                    existing_run.get("generation_id"),
+                                "error": str(e),
+                                "message":
+                                    "Finalización Host falló; run recuperable",
+                            }
+                        host_state = result["host"].get("result")
+                        host_detail = (result["host"].get("message")
+                                       or result["host"].get("error"))
+                        result["message"] += f"; Host: {host_state}"
+                        if host_detail:
+                            result["message"] += f" ({host_detail})"
                     return result
                 if status == "ACTIVE":
                     project_git = _git_info(project)

@@ -422,6 +422,51 @@ class TestInstallDispatch(_BootstrapTestBase):
         self.assertEqual(result["result"], "EXISTING")
         self.assertNotIn("creator", result)
 
+    def test_existing_generated_run_resumes_host_finalization(self):
+        """Hallazgo de piloto: un run GENERATED con finalización fallida se
+        recupera repitiendo install; el mismo comando reanuda el Host sin
+        re-despachar al Creator."""
+        first = bs.install(self.project, self.workspace)
+        run_dir = Path(first["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "GENERATED"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+
+        import creator_client as cc
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                side_effect=AssertionError("must not dispatch")), \
+                unittest.mock.patch.object(
+                    bs, "finalize",
+                    return_value={"result": "ACTIVE"}) as mocked_finalize:
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        mocked_finalize.assert_called_once()
+        self.assertEqual(result["result"], "EXISTING")
+        self.assertEqual(result["host"]["result"], "ACTIVE")
+        self.assertIn("Host: ACTIVE", result["message"])
+
+    def test_existing_generated_run_reports_finalize_failure(self):
+        first = bs.install(self.project, self.workspace)
+        run_dir = Path(first["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "GENERATED"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+
+        import creator_client as cc
+        with unittest.mock.patch.object(
+                cc, "run_creator",
+                side_effect=AssertionError("must not dispatch")), \
+                unittest.mock.patch.object(
+                    bs, "finalize",
+                    side_effect=RuntimeError("boom")):
+            result = bs.install(self.project, self.workspace,
+                                dispatch_creator=True)
+        self.assertEqual(result["host"]["result"], "FINALIZATION_FAILED")
+        self.assertIn("boom", result["host"]["error"])
+
 
 class TestUpdate(_BootstrapTestBase):
     """Update detecta base cambiada o devuelve no-op."""
