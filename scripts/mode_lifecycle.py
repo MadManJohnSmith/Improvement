@@ -41,19 +41,33 @@ def startup_check(layout):
             f"printf '{SUCCESS_SENTINEL}\\n'")
 
 
-def persona_prefix(preset_id):
-    return (f"Preset bootstrap: your first action MUST call the skill tool with exact skill "
-            f"{preset_id!r}. Do not analyze, use another tool, or answer before that call "
-            "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
-            "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
-            "single first_bash_command declared by mode-lifecycle (startup_workdir: "
-            "session-cwd-only; workdir_override: forbidden-before-layout). Proceed only when its "
-            "result contains the exact declared success_sentinel; its absence or an unavailable "
-            "result is RETAINED and no other action is allowed. Do not require an exit-code-zero "
-            "marker: successful DSH bash results omit it. Never split, rewrite, or continue past "
-            "failed checks; never infer, climb, "
-            "cd, or otherwise change workdir to validate layout. Resolve every later relative "
-            "path from the observed unchanged session cwd; any pwd drift is RETAINED.")
+def persona_prefix(preset_id, role=None):
+    role = role or ("auditor" if preset_id.endswith("-auditor") else "continuous-repair")
+    bootstrap = (f"Preset bootstrap: your first action MUST call the skill tool with exact skill "
+                 f"{preset_id!r}. Do not analyze, use another tool, or answer before that call "
+                 "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
+                 "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
+                 "single first_bash_command declared by mode-lifecycle (startup_workdir: "
+                 "session-cwd-only; workdir_override: forbidden-before-layout). Proceed only when its "
+                 "result contains the exact declared success_sentinel; its absence or an unavailable "
+                 "result is RETAINED and no other action is allowed. Do not require an exit-code-zero "
+                 "marker: successful DSH bash results omit it. Never split, rewrite, or continue past "
+                 "failed checks; never infer, climb, cd, or otherwise change workdir to validate "
+                 "layout. ")
+    if role == "auditor":
+        return bootstrap + (
+            "For every bash call throughout this turn, omit workdir or use exactly '.' "
+            "(bash_workdir: session-cwd-only-all-calls). A planned command that would require "
+            "another workdir MUST be rewritten before invocation to target the product with "
+            "git -C, npm --prefix, cargo --manifest-path, or an equivalent command option; never "
+            "use cd or a subdirectory workdir. Any accidental workdir override or pwd drift is "
+            "immediately RETAINED with no retry or further action.")
+    if role == "continuous-repair":
+        return bootstrap + (
+            "Resolve paths from the observed session cwd until candidate provisioning; "
+            "code-changing bash calls then require workdir exactly equal to the candidate, as "
+            "declared by mode-lifecycle. Any other pwd drift is RETAINED.")
+    raise ValueError(f"unsupported mode role: {role!r}")
 
 
 def expected_lifecycle(role, layout):
@@ -87,6 +101,7 @@ def expected_lifecycle(role, layout):
     }
     if role == "auditor":
         common["tool_policy"]["bash"] = "read-only"
+        common["tool_policy"]["bash_workdir"] = "session-cwd-only-all-calls"
         common["audit_handoff"] = {
             "required_before_final": True,
             "dedupe_key": ["finding_id", "base_revision"],

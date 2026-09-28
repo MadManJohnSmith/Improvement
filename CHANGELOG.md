@@ -1,5 +1,9 @@
 # Cambios
 
+## Workdir inmutable durante todo el turno Auditor — 2026-09-27
+
+- Una auditoría DSH real superó correctamente el startup con sentinel, pero una llamada bash posterior fijó `workdir: Syncify/ui`; el reintento con `npm --prefix` no reparó el drift ya observado y el resultado quedó correctamente `RETAINED`. El lifecycle declara ahora para Auditor `bash_workdir: session-cwd-only-all-calls`: toda bash omite workdir o usa exactamente `.`, y cualquier comando planeado para otro directorio se reescribe **antes** de invocarlo mediante `git -C`, `npm --prefix`, `cargo --manifest-path` o equivalente; `cd` y workdirs de subdirectorio están prohibidos, y cualquier override accidental retiene inmediatamente sin reintento. Persona, prompt, schema/contratos, arquitectura y regresiones fijan la regla; Continuous Repair conserva el permiso distinto de usar el workdir candidato exacto para comandos que cambian código. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` hasta repetir la prueba DSH real.
+
 ## Startup exitoso reconocido por sentinel DSH — 2026-09-27
 
 - DSH devuelve stdout en bash y solo añade `[exit code: N]` cuando `N` es distinto de cero; exigir una marca explícita de exit code retenía falsamente una validación exitosa. El `first_bash_command` exacto conserva `set -eu`, `pwd` y el único `test` de layout, y añade `printf '__IMPROVEMENT_LAYOUT_OK__\n'` únicamente después de que todos pasen. El contrato estructurado incorpora `success_sentinel`; lifecycle, persona y prompt solo permiten continuar si el resultado contiene ese valor exacto, retienen si falta o no hay resultado y prohíben exigir una marca de exit code 0. Regresiones ejecutan el comando real: éxito contiene el sentinel y cada fallo carece de él. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` hasta repetir la prueba DSH real.

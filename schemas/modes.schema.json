@@ -70,6 +70,29 @@
         "tool_policy"
       ],
       "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "auditor"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tool_policy": {
+                "required": [
+                  "bash_workdir"
+                ]
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "schema_version": {
           "const": 1
@@ -154,7 +177,13 @@
           }
         },
         "tool_policy": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "bash_workdir": {
+              "const": "session-cwd-only-all-calls",
+              "description": "Required by the auditor role; every bash call keeps the session cwd."
+            }
+          }
         }
       }
     },

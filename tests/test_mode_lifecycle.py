@@ -58,6 +58,19 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(result.stdout.splitlines(), [
                 str(session), mode_lifecycle.SUCCESS_SENTINEL])
 
+    def test_auditor_expected_lifecycle_keeps_session_cwd_for_all_bash_calls(self):
+        layout = {"session_root": "parent", "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace",
+                  "state_root": "Syncify-workspace/mode-state"}
+        auditor = mode_lifecycle.expected_lifecycle("auditor", layout)
+        repair = mode_lifecycle.expected_lifecycle("continuous-repair", layout)
+        self.assertEqual(auditor["tool_policy"]["bash_workdir"],
+                         "session-cwd-only-all-calls")
+        self.assertEqual(auditor["tool_policy"]["bash"], "read-only")
+        self.assertNotIn("bash_workdir", repair["tool_policy"])
+        self.assertEqual(repair["tool_policy"]["bash"],
+                         "code-changes-require-workdir-exact-candidate")
+
     def test_integrated_candidate_survives_state_initialization(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

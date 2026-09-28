@@ -140,14 +140,14 @@ def _validate_fs_search_config(row):
         raise ValueError(f"plugin {FS_SEARCH_PLUGIN!r} requires {setting} to be false")
 
 
-def validate_persona_bootstrap(path, preset_id):
+def validate_persona_bootstrap(path, preset_id, role=None):
     row = next((row for row in parse_composition(path)
                 if row["name"] == PERSONA_PLUGIN), None)
     if row is None:
         raise ValueError("persona plugin missing")
     configs, values = _config_values(row, "prefix")
     from mode_lifecycle import persona_prefix
-    if configs != 1 or values != [persona_prefix(preset_id)]:
+    if configs != 1 or values != [persona_prefix(preset_id, role)]:
         raise ValueError("persona config.prefix must equal exact preset bootstrap contract")
 
 

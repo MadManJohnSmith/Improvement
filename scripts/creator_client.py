@@ -276,8 +276,14 @@ en `RETAINED` sin ninguna otra acción. No exige marcador de exit code 0: DSH lo
 en resultados exitosos. Nunca separa, reescribe ni continúa tras un check fallido;
 tampoco infiere, asciende, hace
 `cd` ni cambia el workdir para validar el layout. Todas las rutas relativas posteriores
-parten del cwd de sesión observado e inalterado; cualquier drift de `pwd` termina en
-`RETAINED`.
+parten del cwd de sesión observado e inalterado. En Auditor, todas las llamadas bash del
+turno omiten `workdir` o usan exactamente `.` (`bash_workdir:
+session-cwd-only-all-calls`): cualquier comando planeado que requiera otro workdir se
+reescribe antes de invocarlo con `git -C <product>`, `npm --prefix <product>/ui`,
+`cargo --manifest-path <product>/Cargo.toml` o la opción equivalente. Nunca usa `cd` ni
+un workdir de subdirectorio; cualquier override accidental o drift de `pwd` produce
+`RETAINED` inmediatamente, sin reintento ni más acciones. Repair conserva su permiso
+distinto: los comandos que cambian código usan el workdir candidato exacto.
 No crean sesiones descendientes, subagentes ni workflows.
 
 Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
@@ -370,8 +376,15 @@ disponible produce `RETAINED` sin otra acción. No exige marcador de exit code 0
 en resultados DSH exitosos. Está prohibido separar o reescribir el comando, continuar
 tras un check fallido,
 inferir, ascender, hacer `cd` o cambiar workdir para buscar el layout. Todas las rutas
-relativas posteriores se resuelven desde ese cwd observado e inalterado; cualquier
-drift de `pwd` produce `RETAINED`.
+relativas posteriores se resuelven desde ese cwd observado e inalterado. En Auditor,
+toda llamada bash del turno omite `workdir` o usa exactamente `.` (`bash_workdir:
+session-cwd-only-all-calls`); un comando planeado que requiera otro workdir se reescribe
+antes de invocarlo con `git -C <product>`, `npm --prefix <product>/ui`,
+`cargo --manifest-path <product>/Cargo.toml` o una opción equivalente. Nunca usa `cd` ni
+workdir de subdirectorio: cualquier override accidental o drift de `pwd` produce
+inmediatamente `RETAINED`, sin reintento ni más acciones. Esta regla no elimina el
+permiso distinto de Repair para usar el workdir candidato exacto en comandos que cambian
+código.
 
 ## Ciclo operativo obligatorio y experiencia novata
 
@@ -394,10 +407,11 @@ ruta/conteo. Debe funcionar con `Audita completamente este proyecto; no modifiqu
 ni publiques.`.
 
 Ambos lifecycle incluyen `startup` con el comando inicial exacto y `tool_policy` con
-`session_workdir: observed-unchanged-session-cwd`; Auditor solo usa bash read-only y
-`workflow_write` para estado; Repair jamás usa tools write/edit,
-y cualquier comando que cambie código usa bash con workdir exactamente igual al
-candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
+`session_workdir: observed-unchanged-session-cwd`; Auditor declara además
+`bash_workdir: session-cwd-only-all-calls`, solo usa bash read-only y `workflow_write`
+para estado, y retiene inmediatamente ante cualquier override; Repair jamás usa tools
+write/edit, y cualquier comando que cambie código usa bash con workdir exactamente igual
+al candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
 los vuelve a comprobar tras cada fase y ante cualquier drift queda RETAINED sin más
 acciones. Comprueba además que el diff pertenece solo al candidato.
 

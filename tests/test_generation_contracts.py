@@ -1072,6 +1072,21 @@ class TestNegativeCorpus(unittest.TestCase):
         with self.assertRaisesRegex(gc.ContractError, "mode_lifecycle"):
             gc.validate("mode-contract", doc)
 
+    def test_auditor_lifecycle_without_all_call_bash_workdir_is_rejected(self):
+        doc = _golden_mode_contract()
+        del doc["mode_lifecycle"]["tool_policy"]["bash_workdir"]
+        with self.assertRaisesRegex(gc.ContractError, "mode_lifecycle"):
+            gc.validate("mode-contract", doc)
+
+    def test_modes_schema_declares_auditor_all_call_bash_workdir(self):
+        schema = json.loads((ROOT / "schemas/modes.schema.json").read_text())
+        lifecycle = schema["properties"]["mode_lifecycle"]
+        bash_workdir = lifecycle["properties"]["tool_policy"]["properties"][
+            "bash_workdir"]
+        self.assertEqual(bash_workdir["const"], "session-cwd-only-all-calls")
+        self.assertIn("bash_workdir", lifecycle["allOf"][0]["then"]["properties"][
+            "tool_policy"]["required"])
+
     # -- Skill contract: empty files ----------------------------------------
 
     def test_skill_empty_files(self):

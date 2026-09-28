@@ -51,4 +51,5 @@ def validate_mode_layout(mode_dir, expected):
     if layout != expected:
         raise ValueError(f"SKILL.md mode-layout must equal {expected!r}")
     validate_mode_lifecycle(mode_dir, expected)
-    validate_persona_bootstrap(mode_dir / "agent.cordis.yml", mode_dir.name)
+    validate_persona_bootstrap(
+        mode_dir / "agent.cordis.yml", mode_dir.name, mode.get("role"))
