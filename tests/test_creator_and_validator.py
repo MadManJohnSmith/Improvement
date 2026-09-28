@@ -1032,6 +1032,7 @@ class DshLifecycleTests(unittest.TestCase):
                                             return_value=(fake_process, fake_client)) as launch, \
                  unittest.mock.patch.object(cc.DshLocalClient, "from_dsh_home",
                                             side_effect=ValueError("no durable cookie")), \
+                 unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0), \
                  unittest.mock.patch.object(cc, "dsh_provider_status",
                                             return_value={"ok": True, "provider": "p"}):
                 client, _origin = cc.acquire_dsh_client(launch=True)
@@ -1063,6 +1064,7 @@ class DshLifecycleTests(unittest.TestCase):
                     side_effect=lambda home, **kwargs: (
                         legacy_client if Path(home) == legacy else
                         (_ for _ in ()).throw(ValueError("no durable cookie")))), \
+                 unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0), \
                  unittest.mock.patch.object(
                     cc, "dsh_provider_status",
                     return_value={"ok": True, "provider": "p"}):
@@ -1089,7 +1091,8 @@ class DshLifecycleTests(unittest.TestCase):
                                            return_value=[]), \
                 unittest.mock.patch.object(cc, "launch_dsh_web",
                                            return_value=(fake_process,
-                                                         fake_client)):
+                                                         fake_client)), \
+                unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
         fake_client.exchange_token.assert_called_once()
@@ -1108,7 +1111,8 @@ class DshLifecycleTests(unittest.TestCase):
                                          {"TEST_PROV_KEY": "x"}), \
                 unittest.mock.patch.object(cc, "launch_dsh_web",
                                            return_value=(fake_process,
-                                                         fake_client)):
+                                                         fake_client)), \
+                unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
         self.assertIsNotNone(client)
@@ -1133,7 +1137,8 @@ class DshLifecycleTests(unittest.TestCase):
                     side_effect=lambda pids, **k: stopped.extend(pids)), \
                 unittest.mock.patch.object(cc, "launch_dsh_web",
                                            return_value=(fake_process,
-                                                         fake_client)):
+                                                         fake_client)), \
+                unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0):
             _write_dsh_home(tmp)
             client, origin = cc.acquire_dsh_client(launch=True)
         self.assertEqual(stopped, [])
@@ -1193,6 +1198,83 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertIsNone(client)
         self.assertIn("ningún proveedor utilizable", origin)
         fake_process.kill.assert_not_called()
+
+    def test_launch_cookie_verified_after_settle_retries(self):
+        """Hallazgo de piloto: la URL se imprime antes de que el listener
+        RPC acepte; la cookie dura se verifica con ventana de reintento en
+        lugar de caer de inmediato al canje de un solo uso."""
+        fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_client.authenticated = False
+        fake_process = unittest.mock.Mock()
+        fake_home_client = unittest.mock.Mock()
+        attempts = {"n": 0}
+
+        def flaky_from_dsh_home(home, **kwargs):
+            attempts["n"] += 1
+            if attempts["n"] < 3:
+                raise ValueError("listener aún no acepta")
+            return fake_home_client
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    side_effect=flaky_from_dsh_home), \
+                unittest.mock.patch.object(
+                    cc, "dsh_provider_status",
+                    return_value={"ok": True, "provider": "p"}):
+            _write_dsh_home(tmp)
+            client, _origin = cc.acquire_dsh_client(launch=True)
+        self.assertIs(client, fake_home_client)
+        self.assertEqual(attempts["n"], 3)
+        fake_client.exchange_token.assert_not_called()
+
+    def test_launch_auth_failure_terminates_process_tree(self):
+        """Si ninguna vía autentica, el lanzador muere por completo
+        (grupo de procesos), no solo el wrapper npx."""
+        fake_client = unittest.mock.Mock()
+        fake_client.base_url = "http://127.0.0.1:3080"
+        fake_client.exchange_token.side_effect = RuntimeError("HTTP 401")
+        fake_process = unittest.mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"DSH_HOME": tmp}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]), \
+                unittest.mock.patch.object(cc, "launch_dsh_web",
+                                           return_value=(fake_process,
+                                                         fake_client)), \
+                unittest.mock.patch.object(
+                    cc.DshLocalClient, "from_dsh_home",
+                    side_effect=ValueError("no durable cookie")), \
+                unittest.mock.patch.object(cc, "DSH_AUTH_SETTLE_SECONDS", 0), \
+                unittest.mock.patch.object(
+                    cc, "_terminate_process") as terminate:
+            _write_dsh_home(tmp)
+            _client, origin = cc.acquire_dsh_client(launch=True)
+        self.assertIsNone(_client)
+        self.assertIn("no quedó autenticado", origin)
+        terminate.assert_called_once_with(fake_process)
+
+    def test_terminate_process_kills_detached_group(self):
+        """El hijo lanzado con start_new_session lidera su grupo: el kill
+        del grupo alcanza al nodo real, no solo al wrapper."""
+        import subprocess
+        import time as time_mod
+        proc = subprocess.Popen(
+            ["sh", "-c", "sleep 30 & wait"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        self.addCleanup(proc.kill)
+        time_mod.sleep(0.1)
+        cc._terminate_process(proc)
+        self.assertIsNotNone(proc.poll())
+
 
 class _FakeProcess:
     """Popen fake backed by a selectable OS pipe."""

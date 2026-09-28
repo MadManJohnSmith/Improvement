@@ -17,6 +17,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import selectors
 import subprocess
 import sys
@@ -1002,9 +1003,18 @@ def _patched_launch_command(command):
 def _terminate_process(process, *, wait_timeout=5):
     """Kill, reap, and close captured output for a failed launch."""
     try:
-        process.kill()
-    except OSError:
-        pass
+        # With start_new_session the child leads its own process group and
+        # npx spawns a node grandchild inside it; killing the group reaches
+        # both, while process.kill() would orphan the grandchild.
+        if os.getpgid(process.pid) == process.pid:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
     wait = getattr(process, "wait", None)
     if wait is not None:
         try:
@@ -1037,6 +1047,7 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
         _patched_launch_command(command), stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True,
         bufsize=1, env=child_env, cwd=str(cwd) if cwd is not None else None,
+        start_new_session=True,
     )
     captured = []
     deadline = time.monotonic() + spawn_timeout
@@ -1079,6 +1090,11 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
 
 
 DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
+
+# Seconds the launch path polls the durable cookie before falling back to
+# the single-use console token: the web server may print its URL before the
+# RPC listener accepts connections.
+DSH_AUTH_SETTLE_SECONDS = 45
 
 
 def _official_dsh_home():
@@ -1425,40 +1441,47 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
 
         # Auth preference: the durable HMAC cookie from the DSH home. The
         # console token is single-use and races with the browser dsh web
-        # auto-opens, which surfaces as HTTP 401 on exchange.
+        # auto-opens, which surfaces as HTTP 401 on exchange. The URL can
+        # print before the RPC listener accepts, so the cookie check gets
+        # a settle window instead of failing over instantly.
         port = int(client.base_url.rsplit(":", 1)[1])
         home = launch_home
         verified = False
-        if (home / "settings.yaml").is_file():
-            try:
-                home_client = DshLocalClient.from_dsh_home(home, port=port)
-                home_client.list_sessions()
-                client = home_client
-                verified = True
-            except Exception:
-                verified = False
+        last_error = "sin intento de cookie"
+        deadline = time.monotonic() + DSH_AUTH_SETTLE_SECONDS
+        while True:
+            if (home / "settings.yaml").is_file():
+                try:
+                    home_client = DshLocalClient.from_dsh_home(home, port=port)
+                    home_client.list_sessions()
+                    client = home_client
+                    verified = True
+                    break
+                except Exception as e:
+                    last_error = f"cookie: {e}"
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
         if not verified:
-            last_error = "sin intento de canje"
             for _attempt in range(3):
                 try:
                     client.exchange_token()
                     verified = True
                     break
                 except Exception as e:
-                    last_error = str(e)
+                    last_error = f"canje: {e}"
                     time.sleep(1)
             if not verified:
-                if process is not None:
-                    process.kill()
+                _terminate_process(process)
                 return None, (f"DSH no quedó autenticado tras el arranque: "
                               f"{last_error}")
         if not (home / "settings.yaml").is_file():
-            process.kill()
+            _terminate_process(process)
             return None, (f"no se encontró settings.yaml en el home lanzado {home}; "
                           "define DSH_HOME o configura ~/.dsh")
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
-            process.kill()
+            _terminate_process(process)
             return None, status["reason"]
         return _bind_resolved_dsh_home(client, home), _provider_gate_origin(status)
 
