@@ -1447,7 +1447,8 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
         port = int(client.base_url.rsplit(":", 1)[1])
         home = launch_home
         verified = False
-        last_error = "sin intento de cookie"
+        cookie_error = "sin intento de cookie"
+        exchange_error = "sin intento de canje"
         deadline = time.monotonic() + DSH_AUTH_SETTLE_SECONDS
         while True:
             if (home / "settings.yaml").is_file():
@@ -1458,7 +1459,7 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
                     verified = True
                     break
                 except Exception as e:
-                    last_error = f"cookie: {e}"
+                    cookie_error = f"cookie: {e}"
             if time.monotonic() >= deadline:
                 break
             time.sleep(0.5)
@@ -1469,12 +1470,12 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
                     verified = True
                     break
                 except Exception as e:
-                    last_error = f"canje: {e}"
+                    exchange_error = f"canje: {e}"
                     time.sleep(1)
             if not verified:
                 _terminate_process(process)
                 return None, (f"DSH no quedó autenticado tras el arranque: "
-                              f"{last_error}")
+                              f"{cookie_error}; {exchange_error}")
         if not (home / "settings.yaml").is_file():
             _terminate_process(process)
             return None, (f"no se encontró settings.yaml en el home lanzado {home}; "
