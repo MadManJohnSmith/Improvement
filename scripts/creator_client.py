@@ -530,8 +530,20 @@ class DshLocalClient:
         return self.rpc("session/list", {"_request": {}})
 
     def list_agent_presets(self):
-        """Return the authoritative DSH user-preset roster."""
+        """Return the authoritative DSH agent-preset roster."""
         return self.rpc("agentPresets/list", {})
+
+    def install_bundle(self, path):
+        """Install and enable a local DSH profile bundle."""
+        return self.rpc(
+            "pluginManager/installBundle",
+            {"spec": str(Path(path).resolve()), "options": {"enabled": True}},
+            timeout=180,
+        )
+
+    def remove_bundle(self, name):
+        """Remove a managed DSH profile bundle by package name."""
+        return self.rpc("pluginManager/removeBundle", {"name": name}, timeout=180)
 
     def create_workspace(self, path):
         """Register (or look up) ``path`` in the workspace registry.

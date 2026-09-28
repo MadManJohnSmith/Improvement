@@ -67,9 +67,11 @@ queda activa al terminar.
 
 Creator genera exactamente dos presets seleccionables: `<proyecto>-auditor` y
 `<proyecto>-continuous-repair`. Cada modo contiene `mode.json`, `preset.yml`,
-`agent.cordis.yml` y `SKILL.md`. El Host publica ambos bajo
-`$DSH_HOME/.agent-presets`, consulta `agentPresets/list` y solo considera la
-instalación activa cuando ambos aparecen con `trust: user` y sin `broken`.
+`agent.cordis.yml` y `SKILL.md`. El Host materializa un bundle de declaraciones
+`@deepseek-ai/dsh-agent-preset`, lo instala mediante `pluginManager/installBundle`,
+consulta `agentPresets/list` y solo considera la instalación activa cuando ambos
+aparecen sin diagnóstico `broken`. El runtime vigente ya no lee la ruta legacy
+`$DSH_HOME/.agent-presets`.
 
 Los dos modos comparten exclusivamente `<Proyecto>-workspace/mode-state`; las
 rutas persistidas son relativas al padre común. El producto no recibe estado del

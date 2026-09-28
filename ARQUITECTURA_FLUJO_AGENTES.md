@@ -462,7 +462,7 @@ Creator puede corregir errores mecánicos dentro del límite de intentos, pero n
 14. Colisiones/precedencia y ownership.
 15. Licencias/procedencia.
 
-Todo rechazo ocurre antes de tocar destinos activos. La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación publica los dos modos como presets de usuario (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en `$DSH_HOME/.agent-presets` y solo considera el conjunto activo cuando `agentPresets/list` confirma ambos con `trust: user` y sin `broken`.
+Todo rechazo ocurre antes de tocar destinos activos. La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación transforma los dos modos (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`, lo instala mediante `pluginManager/installBundle` y solo considera el conjunto activo cuando `agentPresets/list` confirma ambos sin diagnóstico `broken`. La ruta legacy `$DSH_HOME/.agent-presets` no se usa: el runtime vigente ya no la lee.
 
 ---
 

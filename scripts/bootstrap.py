@@ -1206,7 +1206,7 @@ def uninstall(project, workspace):
         if resolved_dsh_home is None:
             raise ValueError("Cliente DSH adquirido sin home resuelto autoritativo")
         tx_result = transaction.uninstall(
-            workspace, dsh_home=resolved_dsh_home)
+            workspace, dsh_home=resolved_dsh_home, client=client)
     else:
         # Legacy workspaces predate preset publication receipts. There is no
         # authoritative DSH-owned state to remove, so do not probe or default to

@@ -570,7 +570,7 @@ class TestUninstall(_BootstrapTestBase):
              }) as uninstall:
             bs.uninstall(self.project, self.workspace)
         uninstall.assert_called_once_with(
-            self.workspace, dsh_home=authoritative)
+            self.workspace, dsh_home=authoritative, client=client)
 
 
 # ===========================================================================

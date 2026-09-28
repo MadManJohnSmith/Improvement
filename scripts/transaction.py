@@ -13,6 +13,7 @@ import secrets
 import shutil
 import sys
 import tempfile
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -290,63 +291,93 @@ class Transaction:
             return value.get("items", value.get("presets", []))
         return value if isinstance(value, list) else []
 
+    @staticmethod
+    def _yaml_scalar(value):
+        return json.dumps(str(value), ensure_ascii=False)
+
+    def _build_preset_bundle(self, modes, generation_id):
+        project_id = _json(self.workspace / "project.json")["name"]
+        safe_project = re.sub(r"[^a-z0-9._-]+", "-", project_id.lower()).strip("-")
+        bundle_name = f"@improvement/{safe_project}-presets"
+        bundle = self.install_root / "bundles" / generation_id
+        if bundle.exists():
+            shutil.rmtree(bundle)
+        bundle.mkdir(mode=0o700, parents=True)
+        package = {
+            "name": bundle_name,
+            "version": "1.0.0",
+            "private": True,
+            "type": "module",
+            "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
+        }
+        (bundle / "package.json").write_text(
+            json.dumps(package, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        rows = []
+        for preset_id, _role, source in modes:
+            metadata = {}
+            for line in (source / "preset.yml").read_text(encoding="utf-8").splitlines():
+                if ":" in line and not line.startswith((" ", "\t")):
+                    key, value = line.split(":", 1)
+                    metadata[key.strip()] = value.strip().strip("'\"")
+            try:
+                order = int(metadata.get("order", "100"))
+            except ValueError as exc:
+                raise TransactionError(f"order inválido en preset {preset_id}") from exc
+            plugins = (source / "agent.cordis.yml").read_text(
+                encoding="utf-8").rstrip().splitlines()
+            rows.extend([
+                "- insert:",
+                f"    - id: preset-{preset_id}",
+                "      name: '@deepseek-ai/dsh-agent-preset'",
+                "      config:",
+                f"        id: {self._yaml_scalar(preset_id)}",
+                f"        name: {self._yaml_scalar(metadata.get('name', preset_id))}",
+                f"        description: {self._yaml_scalar(metadata.get('description', ''))}",
+                f"        order: {order}",
+                "        plugins:",
+                *["          " + line for line in plugins],
+            ])
+        (bundle / "cordis.patch.yml").write_text(
+            "\n".join(rows) + "\n", encoding="utf-8")
+        return bundle_name, bundle
+
     def _publish_presets(self, modes, generation_id):
         if self.client is None:
             raise TransactionError("Cliente DSH requerido para verificar agentPresets/list")
-        root = self.dsh_home / ".agent-presets"
-        root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        backup_root = self.backups / generation_id / "agent-presets"
-        published = []
+        bundle_name, bundle = self._build_preset_bundle(modes, generation_id)
+        installed = False
         try:
-            for preset_id, _role, source in modes:
-                target = root / preset_id
-                if target.exists():
-                    receipt = self.install_root / "published-presets.json"
-                    managed = _json(receipt) if receipt.is_file() else {}
-                    if preset_id not in managed:
-                        raise TransactionError(f"Preset ajeno en conflicto: {preset_id}")
-                    backup_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    preset_backup = backup_root / preset_id
-                    if preset_backup.exists():
-                        # A failed publication rollback preserves the original
-                        # previous-generation bytes.  On retry, verify rather than
-                        # overwrite that durable backup with the restored live copy.
-                        if (not preset_backup.is_dir() or preset_backup.is_symlink() or
-                                _inventory(preset_backup) != _inventory(target)):
-                            raise TransactionError(
-                                f"Backup de preset no coincide en reintento: {preset_id}")
-                    else:
-                        shutil.copytree(target, preset_backup)
-                    shutil.rmtree(target)
-                stage = root / f".{preset_id}.{generation_id}.staging"
-                if stage.exists():
-                    shutil.rmtree(stage)
-                _copy_tree(source, stage)
-                stage.rename(target)
-                published.append((preset_id, target))
+            self.client.install_bundle(bundle)
+            installed = True
             roster = self._roster_items(self.client.list_agent_presets())
             by_id = {item.get("id"): item for item in roster if isinstance(item, dict)}
-            for preset_id, _target in published:
+            preset_ids = [preset_id for preset_id, _role, _source in modes]
+            for preset_id in preset_ids:
                 item = by_id.get(preset_id)
-                if not item or item.get("broken") or item.get("trust") != "user":
+                if not item or item.get("broken") is True:
                     raise TransactionError(
-                        f"agentPresets/list no confirmó preset user sano: {preset_id}")
-            receipt = {preset_id: {"generation_id": generation_id,
-                                   "sha256": hashlib.sha256(json.dumps(
-                                       _inventory(target), sort_keys=True).encode()).hexdigest()}
-                       for preset_id, target in published}
+                        f"agentPresets/list no confirmó preset sano: {preset_id}")
+            receipt = {
+                "schema_version": 2,
+                "generation_id": generation_id,
+                "bundle_name": bundle_name,
+                "bundle_path": str(bundle),
+                "sha256": hashlib.sha256(json.dumps(
+                    _inventory(bundle), sort_keys=True).encode()).hexdigest(),
+                "preset_ids": preset_ids,
+            }
             receipt_path = self.install_root / "published-presets.json"
             if receipt_path.exists():
                 receipt_path.unlink()
             _write_new(receipt_path, receipt)
-            return [preset_id for preset_id, _ in published]
+            return preset_ids
         except BaseException:
-            for preset_id, target in reversed(published):
-                if target.exists():
-                    shutil.rmtree(target)
-                backup = backup_root / preset_id
-                if backup.is_dir():
-                    shutil.copytree(backup, target)
+            if installed:
+                try:
+                    self.client.remove_bundle(bundle_name)
+                except BaseException:
+                    pass
             raise
 
     def install(self, generated_dir, generation_id, *, host_verdict=None):
@@ -381,11 +412,13 @@ class Transaction:
                 receipt = _json(receipt_path) if receipt_path.is_file() else {}
                 roster = self._roster_items(self.client.list_agent_presets()) if self.client else []
                 by_id = {item.get("id"): item for item in roster if isinstance(item, dict)}
-                if all(receipt.get(preset_id, {}).get("generation_id") == generation_id
-                       and by_id.get(preset_id)
-                       and not by_id[preset_id].get("broken")
-                       and by_id[preset_id].get("trust") == "user"
-                       for preset_id, _role, _source in modes):
+                receipt_generation = receipt.get("generation_id")
+                receipt_ids = set(receipt.get("preset_ids", []))
+                if (receipt_generation == generation_id and
+                        all(preset_id in receipt_ids
+                            and by_id.get(preset_id)
+                            and by_id[preset_id].get("broken") is not True
+                            for preset_id, _role, _source in modes)):
                     return {"result": "NO_OP", "generation_id": generation_id}
             shutil.rmtree(target)
 
@@ -438,6 +471,15 @@ class Transaction:
 
     def rollback(self, generation_id):
         """Restore previous active generation and verify hashes."""
+        receipt_path = self.install_root / "published-presets.json"
+        if receipt_path.is_file() and self.client is not None:
+            receipt = _json(receipt_path)
+            bundle_name = receipt.get("bundle_name")
+            if bundle_name:
+                try:
+                    self.client.remove_bundle(bundle_name)
+                except BaseException:
+                    pass
         backup_manifest_path = self.backups / f"{generation_id}.json"
         if not backup_manifest_path.is_file():
             raise TransactionError(f"Backup ausente: {generation_id}")
@@ -464,6 +506,10 @@ class Transaction:
             receipt_path.unlink()
         if previous_receipt is not None:
             _write_new(receipt_path, previous_receipt)
+            if (self.client is not None and
+                    previous_receipt.get("schema_version") == 2 and
+                    previous_receipt.get("bundle_path")):
+                self.client.install_bundle(previous_receipt["bundle_path"])
 
         if previous_id:
             previous = self.generations / previous_id
@@ -559,11 +605,37 @@ def uninstall_unpublished(workspace):
     }
 
 
-def uninstall(workspace, *, dsh_home=None):
-    """Atomically retire managed presets and deterministically recover retries."""
-    transaction = Transaction(workspace, dsh_home=dsh_home)
+def uninstall(workspace, *, dsh_home=None, client=None):
+    """Retire the managed DSH bundle and preserve workspace history/state."""
+    transaction = Transaction(workspace, dsh_home=dsh_home, client=client)
     marker_path = transaction.install_root / UNINSTALL_RECOVERY_FILE
     marker = uninstall_recovery(workspace)
+
+    receipt = transaction.install_root / "published-presets.json"
+    if marker is None and receipt.is_file():
+        managed = _json(receipt)
+        if managed.get("schema_version") == 2 and managed.get("bundle_name"):
+            if transaction.client is None:
+                transaction.client = _acquire_direct_install_client(
+                    transaction.dsh_home)
+            bundle_path = Path(managed.get("bundle_path", ""))
+            if not bundle_path.is_dir() or bundle_path.is_symlink():
+                raise TransactionError("Bundle gestionado ausente o inválido")
+            digest = hashlib.sha256(json.dumps(
+                _inventory(bundle_path), sort_keys=True).encode()).hexdigest()
+            if digest != managed.get("sha256"):
+                raise TransactionError("Bundle gestionado modificado; no se retira")
+            transaction.client.remove_bundle(managed["bundle_name"])
+            receipt.unlink()
+            if transaction.active_pointer.exists():
+                transaction.active_pointer.unlink()
+            return {
+                "result": "UNINSTALLED",
+                "previous_generation_id": managed.get("generation_id"),
+                "removed_presets": managed.get("preset_ids", []),
+                "preserved": ["backups", "generations", "product",
+                              "foreign-config", "mode-state"],
+            }
 
     if marker is not None:
         if Path(marker["dsh_home"]).resolve() != transaction.dsh_home:

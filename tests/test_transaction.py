@@ -19,9 +19,17 @@ class Client:
         self.ids = ids
         self.broken = broken
         self.authenticated = True
+        self.installed = []
+        self.removed = []
+    def install_bundle(self, path):
+        self.installed.append(Path(path))
+        return {"value": {"application": "applied"}}
+    def remove_bundle(self, name):
+        self.removed.append(name)
+        return {"value": {"application": "applied"}}
     def list_agent_presets(self):
-        return {"value": {"items": [
-            {"id": value, "trust": "user", "broken": value == self.broken}
+        return {"value": {"presets": [
+            {"id": value, "broken": value == self.broken}
             for value in self.ids]}}
 
 
@@ -57,9 +65,14 @@ class TransactionTests(unittest.TestCase):
         return root
 
     def install(self, generated=None, generation="gen-1", client=None, **kwargs):
+        self.client = client or getattr(self, "client", None) or Client()
         return tx.install(self.workspace, generated or self.generated, generation,
                           host_verdict=kwargs.pop("host_verdict", verdict(generation)),
-                          dsh_home=self.home, client=client or Client(), **kwargs)
+                          dsh_home=self.home, client=self.client, **kwargs)
+
+    def uninstall(self):
+        return tx.uninstall(self.workspace, dsh_home=self.home,
+                            client=self.client)
 
     def test_requires_host_verdict(self):
         with self.assertRaisesRegex(tx.TransactionError, "Veredicto Host"):
@@ -75,8 +88,16 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(result["result"], "ACTIVE")
         self.assertEqual(set(result["published_presets"]), {
             "project-auditor", "project-continuous-repair"})
-        for preset_id in result["published_presets"]:
-            self.assertTrue((self.home / ".agent-presets" / preset_id).is_dir())
+        receipt = json.loads((self.workspace / ".dsh-managed" /
+                              "published-presets.json").read_text())
+        self.assertEqual(receipt["schema_version"], 2)
+        self.assertEqual(receipt["bundle_name"], "@improvement/project-presets")
+        bundle = Path(receipt["bundle_path"])
+        self.assertTrue((bundle / "package.json").is_file())
+        patch = (bundle / "cordis.patch.yml").read_text()
+        self.assertIn("preset-project-auditor", patch)
+        self.assertIn("preset-project-continuous-repair", patch)
+        self.assertEqual(self.client.installed, [bundle])
         descriptor = json.loads((self.workspace / "mode-state" / "project.json").read_text())
         self.assertEqual(descriptor["product_root"], "project")
         self.assertEqual(descriptor["state_root"], "project-workspace/mode-state")
@@ -85,170 +106,43 @@ class TransactionTests(unittest.TestCase):
     def test_roster_failure_rolls_back_both_presets_and_no_active_pointer(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):
             self.install(client=Client(ids=("project-auditor",)))
-        root = self.home / ".agent-presets"
-        self.assertFalse((root / "project-auditor").exists())
-        self.assertFalse((root / "project-continuous-repair").exists())
+        self.assertIn("@improvement/project-presets", self.client.removed)
         self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
 
     def test_broken_roster_entry_rolls_back(self):
         with self.assertRaisesRegex(tx.TransactionError, "sano"):
             self.install(client=Client(broken="project-continuous-repair"))
 
-    def test_foreign_preset_is_preserved_and_blocks_install(self):
-        foreign = self.home / ".agent-presets" / "project-auditor"
-        foreign.mkdir(parents=True)
-        (foreign / "foreign").write_text("keep")
-        with self.assertRaisesRegex(tx.TransactionError, "ajeno"):
-            self.install()
-        self.assertEqual((foreign / "foreign").read_text(), "keep")
-
     def test_uninstall_removes_unmodified_managed_presets_preserves_state(self):
         self.install()
-        result = tx.uninstall(self.workspace, dsh_home=self.home)
+        result = self.uninstall()
         self.assertEqual(set(result["removed_presets"]), {
             "project-auditor", "project-continuous-repair"})
         self.assertTrue((self.workspace / "mode-state" / "project.json").is_file())
         self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
 
-    def test_uninstall_refuses_modified_managed_preset(self):
+    def test_uninstall_refuses_modified_managed_bundle(self):
         self.install()
-        preset = self.home / ".agent-presets" / "project-auditor" / "SKILL.md"
-        preset.write_text("modified\n")
+        receipt = json.loads((self.workspace / ".dsh-managed" /
+                              "published-presets.json").read_text())
+        bundle = Path(receipt["bundle_path"])
+        (bundle / "cordis.patch.yml").write_text("modified\n")
         with self.assertRaisesRegex(tx.TransactionError, "modificado"):
-            tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertTrue(preset.is_file())
+            self.uninstall()
+        self.assertTrue((bundle / "cordis.patch.yml").is_file())
+        self.assertEqual(self.client.removed, [])
 
-    def test_uninstall_prevalidates_second_preset_before_deleting_first(self):
+    def test_rollback_after_publication_restores_previous_bundle_and_receipt(self):
         self.install()
-        root = self.home / ".agent-presets"
-        second = root / "project-continuous-repair" / "SKILL.md"
-        second.write_text("modified\n")
-        with self.assertRaisesRegex(tx.TransactionError, "modificado"):
-            tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertTrue((root / "project-auditor").is_dir())
-        self.assertTrue((root / "project-continuous-repair").is_dir())
-        self.assertTrue((self.workspace / ".dsh-managed" /
-                         "published-presets.json").is_file())
-
-    def _uninstall_state(self):
-        root = self.home / ".agent-presets"
-        managed = self.workspace / ".dsh-managed"
-        return {
-            "presets": {name: tx._inventory(root / name) for name in
-                        ("project-auditor", "project-continuous-repair")},
-            "receipt": (managed / "published-presets.json").read_bytes(),
-            "active": (managed / "ACTIVE").read_bytes(),
-            "tombstones": sorted(str(path) for path in self.root.rglob("*.tombstone")),
-        }
-
-    def test_uninstall_failure_after_first_preset_move_restores_exact_state(self):
-        self.install()
-        before = self._uninstall_state()
-        original_rename = Path.rename
-        calls = {"count": 0}
-
-        def fail_second_move(path, target):
-            if ".uninstall-" in Path(target).name:
-                calls["count"] += 1
-                if calls["count"] == 2:
-                    raise OSError("injected second preset move failure")
-            return original_rename(path, target)
-
-        with unittest.mock.patch.object(Path, "rename", autospec=True,
-                                        side_effect=fail_second_move):
-            with self.assertRaisesRegex(tx.TransactionError, "estado original restaurado"):
-                tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(self._uninstall_state(), before)
-
-    def test_uninstall_failure_moving_receipt_restores_presets_and_active(self):
-        self.install()
-        before = self._uninstall_state()
-        original_rename = Path.rename
-
-        def fail_receipt(path, target):
-            if Path(path).name == "published-presets.json":
-                raise OSError("injected receipt transition failure")
-            return original_rename(path, target)
-
-        with unittest.mock.patch.object(Path, "rename", autospec=True,
-                                        side_effect=fail_receipt):
-            with self.assertRaisesRegex(tx.TransactionError, "estado original restaurado"):
-                tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(self._uninstall_state(), before)
-
-    def test_uninstall_failure_moving_active_restores_receipt_and_presets(self):
-        self.install()
-        before = self._uninstall_state()
-        original_rename = Path.rename
-
-        def fail_active(path, target):
-            if Path(path).name == "ACTIVE":
-                raise OSError("injected ACTIVE transition failure")
-            return original_rename(path, target)
-
-        with unittest.mock.patch.object(Path, "rename", autospec=True,
-                                        side_effect=fail_active):
-            with self.assertRaisesRegex(tx.TransactionError, "estado original restaurado"):
-                tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(self._uninstall_state(), before)
-
-    def test_uninstall_cleanup_failure_reports_recovery_required_after_commit(self):
-        self.install()
-        original_rmtree = tx.shutil.rmtree
-
-        def fail_tombstone_cleanup(path, *args, **kwargs):
-            if ".uninstall-" in Path(path).name:
-                raise OSError("injected cleanup failure")
-            return original_rmtree(path, *args, **kwargs)
-
-        with unittest.mock.patch("transaction.shutil.rmtree",
-                                 side_effect=fail_tombstone_cleanup):
-            result = tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(result["result"], "RECOVERY_REQUIRED")
-        self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
-        self.assertFalse((self.workspace / ".dsh-managed" /
-                          "published-presets.json").exists())
-        self.assertTrue(any(self.root.rglob("*.tombstone")))
-
-    def test_cleanup_failure_retry_uses_marker_and_finishes_uninstall(self):
-        self.install()
-        original_rmtree = tx.shutil.rmtree
-
-        def fail_tombstone_cleanup(path, *args, **kwargs):
-            if ".uninstall-" in Path(path).name:
-                raise OSError("injected cleanup failure")
-            return original_rmtree(path, *args, **kwargs)
-
-        with unittest.mock.patch("transaction.shutil.rmtree",
-                                 side_effect=fail_tombstone_cleanup):
-            first = tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(first["result"], "RECOVERY_REQUIRED")
-        marker = self.workspace / ".dsh-managed" / tx.UNINSTALL_RECOVERY_FILE
-        self.assertTrue(marker.is_file())
-        with self.assertRaisesRegex(tx.TransactionError, "RECOVERY_REQUIRED"):
-            tx.uninstall_unpublished(self.workspace)
-        second = tx.uninstall(self.workspace, dsh_home=self.home)
-        self.assertEqual(second["result"], "UNINSTALLED")
-        self.assertFalse(marker.exists())
-        self.assertFalse(any(self.root.rglob("*.tombstone")))
-
-    def test_rollback_after_publication_restores_presets_and_receipt(self):
-        self.install()
-        root = self.home / ".agent-presets"
         receipt_path = self.workspace / ".dsh-managed" / "published-presets.json"
-        old_receipt = receipt_path.read_text()
-        old_files = {preset_id: (root / preset_id / "agent.cordis.yml").read_text()
-                     for preset_id in ("project-auditor", "project-continuous-repair")}
+        old_receipt = json.loads(receipt_path.read_text())
         generated = self._package(self.root / "generated-two", marker="two")
         original_inventory = tx._inventory
-        calls = {"target": 0}
 
         def fail_post_publication(path):
             result = original_inventory(path)
             if Path(path) == self.workspace / ".dsh-managed" / "generations" / "gen-2":
-                calls["target"] += 1
-                if calls["target"] >= 1:
-                    return {**result, "tampered": {"sha256": "bad", "size_bytes": 0}}
+                return {**result, "tampered": {"sha256": "bad", "size_bytes": 0}}
             return result
 
         with unittest.mock.patch("transaction._inventory", side_effect=fail_post_publication):
@@ -256,31 +150,23 @@ class TransactionTests(unittest.TestCase):
                 self.install(generated=generated, generation="gen-2")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(),
                          "gen-1")
-        self.assertEqual(receipt_path.read_text(), old_receipt)
-        for preset_id, content in old_files.items():
-            self.assertEqual((root / preset_id / "agent.cordis.yml").read_text(), content)
+        restored = json.loads(receipt_path.read_text())
+        self.assertEqual(restored, old_receipt)
+        self.assertIn(old_receipt["bundle_name"], self.client.removed)
+        self.assertIn(Path(old_receipt["bundle_path"]), self.client.installed)
 
-    def test_update_rollback_then_same_generation_retry_reuses_original_backup(self):
+    def test_update_rollback_then_same_generation_retry_reuses_manifest(self):
         self.install()
-        root = self.home / ".agent-presets"
         generated = self._package(self.root / "generated-two", marker="two")
-        old_bytes = {preset_id: (root / preset_id / "agent.cordis.yml").read_bytes()
-                     for preset_id in ("project-auditor", "project-continuous-repair")}
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):
             self.install(generated=generated, generation="gen-2",
                          client=Client(ids=("project-auditor",)))
-        backup = self.workspace / ".dsh-managed" / "backups" / "gen-2"
         manifest = self.workspace / ".dsh-managed" / "backups" / "gen-2.json"
-        backup_before = tx._inventory(backup)
         manifest_before = manifest.read_bytes()
-
-        result = self.install(generated=generated, generation="gen-2")
+        result = self.install(generated=generated, generation="gen-2",
+                              client=Client())
         self.assertEqual(result["result"], "ACTIVE")
-        self.assertEqual(tx._inventory(backup), backup_before)
         self.assertEqual(manifest.read_bytes(), manifest_before)
-        for preset_id, content in old_bytes.items():
-            self.assertEqual((backup / "agent-presets" / preset_id /
-                              "agent.cordis.yml").read_bytes(), content)
 
     def test_retry_after_roster_failure_republishes_incomplete_generation(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):

@@ -56,7 +56,7 @@ Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en
 | P5 | Política anti-escalada de sandbox | HECHO | plugin del framework: campos de escalada fuera de los schemas de tools, escalada de bash guardada, mismo-modo corregido en `workflow_write` (overlay `dsh web --patch`); prompt prohíbe el canal completo |
 | P6 | Transacción con veredicto Host | HECHO | `install` exige veredicto ACTIVE explícito de la misma generación antes de activar |
 | P7 | Aceptación Host aislada del Creator | HECHO | harness del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa, actores correlacionados con turnos DSH reales |
-| P8 | Instalación de modos como presets DSH | HECHO | publicación en `$DSH_HOME/.agent-presets` con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
+| P8 | Instalación de modos como presets DSH | HECHO | bundle de declaraciones `@deepseek-ai/dsh-agent-preset` instalado por `pluginManager/installBundle`, con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
 | P9 | Piloto tardis (Syncify) con DSH real | EN CURSO | cada salida del piloto produce cambio de flujo y regresión; paquete aceptado de extremo a extremo pendiente |
 
 Suite de regresión vigente: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
