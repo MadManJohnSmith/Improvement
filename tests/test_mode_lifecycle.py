@@ -14,7 +14,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
-                            initialize_state, startup_check)
+                            initialize_state, repair_provision_command,
+                            startup_check)
 
 
 class ModeLifecycleTests(unittest.TestCase):
@@ -70,6 +71,83 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertNotIn("bash_workdir", repair["tool_policy"])
         self.assertEqual(repair["tool_policy"]["bash"],
                          "code-changes-require-workdir-exact-candidate")
+        candidate = repair["repair_candidate"]
+        self.assertEqual(candidate["candidate_root"],
+                         "${session-cwd}/<candidate-name>")
+        self.assertEqual(candidate["candidate_workdir"],
+                         "Syncify-repair-<digest16>")
+        self.assertEqual(candidate["provision_workdir"], "omitted-session-cwd")
+        self.assertEqual(candidate["provision_command"],
+                         repair_provision_command(layout))
+
+    def _provision_fixture(self, root):
+        session = root / "common-parent"
+        product = session / "Product"
+        workspace = session / "Product-workspace"
+        product.mkdir(parents=True)
+        workspace.mkdir()
+        subprocess.run(["git", "init", "-q", str(product)], check=True)
+        (product / "tracked.txt").write_text("base\n")
+        subprocess.run(["git", "-C", str(product), "add", "tracked.txt"], check=True)
+        subprocess.run([
+            "git", "-C", str(product), "-c", "user.name=Test",
+            "-c", "user.email=test@example.invalid", "commit", "-qm", "base",
+        ], check=True)
+        base = subprocess.check_output(
+            ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
+        layout = {"session_root": session.name, "product_root": product.name,
+                  "workspace_root": workspace.name,
+                  "state_root": f"{workspace.name}/mode-state"}
+        return session, product, layout, base
+
+    def _run_provision(self, session, layout, base, digest="0123456789abcdef"):
+        command = repair_provision_command(layout).replace(
+            "<digest16>", digest).replace("<full-base>", base)
+        return subprocess.run(command, cwd=session, shell=True,
+                              capture_output=True, text=True)
+
+    def test_repair_provision_command_creates_registered_sibling_and_keeps_canonical_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            result = self._run_provision(session, layout, base)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            candidate = session / "Product-repair-0123456789abcdef"
+            self.assertTrue(candidate.is_dir())
+            self.assertFalse((product / candidate.name).exists())
+            self.assertEqual(candidate.resolve(), session.resolve() / candidate.name)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(candidate), "rev-parse", "HEAD"],
+                text=True).strip(), base)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(candidate), "branch", "--show-current"],
+                text=True).strip(), "dsh/repair-0123456789abcdef")
+            worktrees = subprocess.check_output(
+                ["git", "-C", str(product), "worktree", "list", "--porcelain"],
+                text=True)
+            self.assertIn(f"worktree {candidate.resolve()}\n", worktrees)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"],
+                text=True), "")
+
+    def test_repair_provision_command_rejects_path_and_branch_collisions(self):
+        for collision in ("path", "branch"):
+            with self.subTest(collision=collision), tempfile.TemporaryDirectory() as tmp:
+                session, product, layout, base = self._provision_fixture(Path(tmp))
+                digest = "fedcba9876543210"
+                candidate = session / f"Product-repair-{digest}"
+                if collision == "path":
+                    candidate.mkdir()
+                else:
+                    subprocess.run([
+                        "git", "-C", str(product), "branch",
+                        f"dsh/repair-{digest}", base,
+                    ], check=True)
+                result = self._run_provision(session, layout, base, digest)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((product / candidate.name).exists())
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", str(product), "status", "--porcelain=v1"],
+                    text=True), "")
 
     def test_integrated_candidate_survives_state_initialization(self):
         with tempfile.TemporaryDirectory() as tmp:

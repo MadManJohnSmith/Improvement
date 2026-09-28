@@ -1087,6 +1087,36 @@ class TestNegativeCorpus(unittest.TestCase):
         self.assertIn("bash_workdir", lifecycle["allOf"][0]["then"]["properties"][
             "tool_policy"]["required"])
 
+    def test_modes_schema_requires_exact_repair_provision_fields(self):
+        schema = json.loads((ROOT / "schemas/modes.schema.json").read_text())
+        lifecycle = schema["properties"]["mode_lifecycle"]
+        conditional = lifecycle["allOf"][1]
+        self.assertEqual(conditional["if"]["properties"]["role"]["const"],
+                         "continuous-repair")
+        required = conditional["then"]["properties"]["repair_candidate"]["required"]
+        for field in ("candidate_root", "forbidden_candidate_location",
+                      "candidate_workdir", "provision_workdir", "provision_command"):
+            self.assertIn(field, required)
+        repair = lifecycle["properties"]["repair_candidate"]["properties"]
+        self.assertEqual(repair["candidate_root"]["const"],
+                         "${session-cwd}/<candidate-name>")
+        self.assertEqual(repair["forbidden_candidate_location"]["const"],
+                         "under-product-root")
+        self.assertEqual(repair["provision_workdir"]["const"],
+                         "omitted-session-cwd")
+
+    def test_repair_lifecycle_missing_provision_field_is_rejected(self):
+        doc = _golden_mode_contract()
+        doc["role"] = "continuous-repair"
+        doc["mode_lifecycle"] = expected_lifecycle("continuous-repair", {
+            "session_root": "parent", "product_root": "TestProject",
+            "workspace_root": "TestProject-workspace",
+            "state_root": "TestProject-workspace/mode-state",
+        })
+        del doc["mode_lifecycle"]["repair_candidate"]["provision_command"]
+        with self.assertRaisesRegex(gc.ContractError, "mode_lifecycle"):
+            gc.validate("mode-contract", doc)
+
     # -- Skill contract: empty files ----------------------------------------
 
     def test_skill_empty_files(self):

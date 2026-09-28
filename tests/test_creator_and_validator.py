@@ -938,7 +938,14 @@ class CreatorTests(Base):
         self.assertNotIn("session_root\":\"/", prompt)
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
         self.assertIn("ninguna colisión path/branch/worktree", prompt)
-        self.assertIn("Nunca merge/push/publish", prompt)
+        self.assertIn("`candidate_root` exacto\n`${session-cwd}/<candidate-name>`", prompt)
+        self.assertIn("`provision_workdir: omitted-session-cwd`", prompt)
+        self.assertIn("Provisiona desde el cwd de sesión con `workdir` omitido", prompt)
+        self.assertIn('candidate="$PWD/<candidate-name>"', prompt)
+        self.assertIn("porque `git -C` cambiaría la resolución", prompt)
+        self.assertIn("prohibido crear o aceptar una candidata bajo\n`./project/...`", prompt)
+        self.assertIn("`project-repair-<digest16>` relativo al cwd de sesión, nunca `.`", prompt)
+        self.assertIn("Nunca\nmerge/push/publish", prompt)
         self.assertIn("candidate_commit", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
         self.assertIn("Antes de emitir `status: GENERATED`", prompt)
@@ -1867,6 +1874,17 @@ class ValidatorTests(Base):
         self.assertEqual(contract["forbidden"], [
             "canonical-product-write", "write-tool", "edit-tool", "merge", "push", "publish"])
         self.assertEqual(contract["provision"], "git-worktree-add-or-exact-safe-reuse")
+        self.assertEqual(contract["candidate_location"],
+                         "sibling-of-product-from-session-cwd")
+        self.assertEqual(contract["candidate_root"],
+                         "${session-cwd}/<candidate-name>")
+        self.assertEqual(contract["forbidden_candidate_location"],
+                         "under-product-root")
+        self.assertEqual(contract["candidate_workdir"],
+                         "project-repair-<digest16>")
+        self.assertEqual(contract["provision_workdir"], "omitted-session-cwd")
+        self.assertIn('candidate="$expected"', contract["provision_command"])
+        self.assertIn("git -C ./project worktree add", contract["provision_command"])
         self.assertEqual(contract["commit"],
                          "forbidden-without-separate-explicit-user-prompt")
         self.assertTrue(contract["candidate_commit_nullable"])
@@ -1916,6 +1934,11 @@ class ValidatorTests(Base):
         self.assertIn("git -C, npm --prefix, cargo --manifest-path", prefix)
         self.assertIn("rewritten before invocation", prefix)
         self.assertIn("immediately RETAINED with no retry", prefix)
+        repair_prefix = persona_prefix("project-continuous-repair")
+        self.assertIn("provisioning bash call MUST omit workdir", repair_prefix)
+        self.assertIn("candidate_root is ${session-cwd}/<candidate-name>", repair_prefix)
+        self.assertIn("workdir exactly equal to the candidate_workdir", repair_prefix)
+        self.assertIn("never '.'", repair_prefix)
         composition.write_text(composition.read_text().replace(
             prefix, "Preset bootstrap: load the exact skill first, then find the project."))
         report = hv.validate_package(generated, run_dir=self.run_dir)

@@ -91,6 +91,40 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "continuous-repair"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "required": [
+              "repair_candidate"
+            ],
+            "properties": {
+              "repair_candidate": {
+                "required": [
+                  "candidate_location",
+                  "directory_template",
+                  "branch_template",
+                  "candidate_root",
+                  "forbidden_candidate_location",
+                  "candidate_workdir",
+                  "provision_workdir",
+                  "provision_command",
+                  "provision_checks",
+                  "provision",
+                  "collision_policy"
+                ]
+              }
+            }
+          }
         }
       ],
       "properties": {
@@ -182,6 +216,51 @@
             "bash_workdir": {
               "const": "session-cwd-only-all-calls",
               "description": "Required by the auditor role; every bash call keeps the session cwd."
+            }
+          }
+        },
+        "repair_candidate": {
+          "type": "object",
+          "properties": {
+            "candidate_location": {
+              "const": "sibling-of-product-from-session-cwd"
+            },
+            "directory_template": {
+              "type": "string",
+              "pattern": "^[^/]+-repair-<digest16>$"
+            },
+            "branch_template": {
+              "const": "dsh/repair-<digest16>"
+            },
+            "candidate_root": {
+              "const": "${session-cwd}/<candidate-name>"
+            },
+            "forbidden_candidate_location": {
+              "const": "under-product-root"
+            },
+            "candidate_workdir": {
+              "type": "string",
+              "pattern": "^[^/]+-repair-<digest16>$"
+            },
+            "provision_workdir": {
+              "const": "omitted-session-cwd"
+            },
+            "provision_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provision_checks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "provision": {
+              "const": "git-worktree-add-or-exact-safe-reuse"
+            },
+            "collision_policy": {
+              "const": "retain-with-action-no-improvisation"
             }
           }
         }

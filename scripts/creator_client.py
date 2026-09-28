@@ -31,7 +31,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
-from mode_lifecycle import startup_check
+from mode_lifecycle import repair_provision_command, startup_check
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -223,6 +223,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     workspace_root = layout["workspace_root"]
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
+    repair_command = repair_provision_command(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -419,14 +420,28 @@ Continuous Repair incluye el procedimiento exacto de `expected_lifecycle`: el pr
 simple autoriza crear/reusar y editar el candidato, no commit/merge/push/publicación.
 La identidad es SHA-256 de `full-base + LF + IDs seleccionados únicos ordenados`; usa
 los primeros 16 hex en `{product_root}-repair-<digest16>` y
-`dsh/repair-<digest16>`. Antes de crear/reusar valida literalmente todos los
-`provision_checks` del contrato: raíces/path reales y no symlink, canonical limpio y
-full base coincidente, ausencia o pertenencia a `git worktree list`, branch ausente
-o en full base, HEAD/base y limpieza al reutilizar, ningún worktree stale/prunable
-y ninguna colisión path/branch/worktree. No improvisa: cualquier incompatibilidad
-queda RETAINED con una acción concreta. Modifica y prueba solo candidato; lo deja
-sucio o produce patch. `candidate_commit` es null salvo una solicitud de usuario
-separada y explícita que autorice commit. Nunca merge/push/publish.
+`dsh/repair-<digest16>`. El contrato declara `candidate_root` exacto
+`${{session-cwd}}/<candidate-name>`, `candidate_workdir` relativo
+`{product_root}-repair-<digest16>` y `provision_workdir: omitted-session-cwd`.
+Provisiona desde el cwd de sesión con `workdir` omitido — nunca `.` para esta llamada
+que cambia Git — ejecutando el `provision_command` central exacto, sustituyendo solo
+`<digest16>` y `<full-base>` ya validados:
+`{repair_command}`.
+El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
+`git -C ./{product_root} worktree add`, porque `git -C` cambiaría la resolución de un
+destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
+`$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
+`./{product_root}/...`.
+Antes de crear/reusar valida literalmente todos los `provision_checks` del contrato:
+raíces/path reales y no symlink, canonical limpio y full base coincidente, ausencia o
+pertenencia a `git worktree list`, branch ausente o en full base, HEAD/base y limpieza
+al reutilizar, ningún worktree stale/prunable y ninguna colisión path/branch/worktree.
+No improvisa: cualquier incompatibilidad queda RETAINED con una acción concreta. Las
+llamadas bash posteriores que modifican o prueban código usan `workdir` exactamente
+`{product_root}-repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica y
+prueba solo candidato; lo deja sucio o produce patch. `candidate_commit` es null salvo
+una solicitud de usuario separada y explícita que autorice commit. Nunca
+merge/push/publish.
 
 El estado tiene schemas estrictos y caps de archivo/registro. `workflow_write` hace
 reemplazos completos por archivo, no una transacción multiarchivo ni control de

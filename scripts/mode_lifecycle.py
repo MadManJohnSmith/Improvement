@@ -41,6 +41,26 @@ def startup_check(layout):
             f"printf '{SUCCESS_SENTINEL}\\n'")
 
 
+def repair_provision_command(layout):
+    """Return the exact session-cwd worktree command with validated-value slots."""
+    product = shlex.quote("./" + layout["product_root"])
+    candidate_prefix = shlex.quote(layout["product_root"] + "-repair-")
+    return (
+        "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
+        f"candidate_name={candidate_prefix}\"$digest16\"; "
+        "expected=\"$PWD/$candidate_name\"; candidate=\"$expected\"; "
+        "test \"$(realpath -m -- \"$candidate\")\" = \"$expected\"; "
+        "test ! -e \"$candidate\" -a ! -L \"$candidate\"; "
+        f"if git -C {product} show-ref --verify --quiet "
+        "\"refs/heads/dsh/repair-$digest16\"; then exit 1; fi; "
+        f"git -C {product} worktree add -b \"dsh/repair-$digest16\" "
+        "\"$candidate\" \"$full_base\"; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
+        f"git -C {product} worktree list --porcelain | "
+        "grep -Fx -- \"worktree $expected\" >/dev/null")
+
+
 def persona_prefix(preset_id, role=None):
     role = role or ("auditor" if preset_id.endswith("-auditor") else "continuous-repair")
     bootstrap = (f"Preset bootstrap: your first action MUST call the skill tool with exact skill "
@@ -64,9 +84,14 @@ def persona_prefix(preset_id, role=None):
             "immediately RETAINED with no retry or further action.")
     if role == "continuous-repair":
         return bootstrap + (
-            "Resolve paths from the observed session cwd until candidate provisioning; "
-            "code-changing bash calls then require workdir exactly equal to the candidate, as "
-            "declared by mode-lifecycle. Any other pwd drift is RETAINED.")
+            "Provision only from the unchanged session cwd: the provisioning bash call MUST omit "
+            "workdir (never use '.' as a code-changing workdir) and run the exact centrally "
+            "generated provision_command after substituting only validated digest16 and full_base. "
+            "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
+            "After provisioning, verify its realpath and registered worktree path equal that exact "
+            "sibling. Every later code-changing bash call MUST use workdir exactly equal to the "
+            "candidate_workdir relative to session cwd, never '.'. Any collision, mismatch, nested "
+            "candidate, or other pwd drift is RETAINED with no further action.")
     raise ValueError(f"unsupported mode role: {role!r}")
 
 
@@ -120,10 +145,15 @@ def expected_lifecycle(role, layout):
                 "verify_after_each_phase": True,
                 "on_drift": "RETAINED-no-further-action",
             },
-            "candidate_location": "sibling",
+            "candidate_location": "sibling-of-product-from-session-cwd",
             "identity": "sha256(full-base-lf-sorted-unique-finding-ids)",
             "directory_template": f"{layout['product_root']}-repair-<digest16>",
             "branch_template": "dsh/repair-<digest16>",
+            "candidate_root": "${session-cwd}/<candidate-name>",
+            "forbidden_candidate_location": "under-product-root",
+            "candidate_workdir": f"{layout['product_root']}-repair-<digest16>",
+            "provision_workdir": "omitted-session-cwd",
+            "provision_command": repair_provision_command(layout),
             "provision_checks": [
                 "canonical-real-directory-not-symlink", "canonical-git-clean",
                 "full-base-revision-matches", "candidate-path-absent-or-real-directory-not-symlink",
