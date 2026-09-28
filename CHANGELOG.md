@@ -1,5 +1,9 @@
 # Cambios
 
+## Migración segura de archivos esperados legacy — 2026-09-27
+
+- El preflight ya no pierde ni bloquea evidencia DSH antigua dentro de nombres estrictos: archiva junto con la evidencia inesperada el archivo esperado original completo, con source path, motivo y SHA-256, y activa solo registros schema-valid o el mapeo inequívoco `findings.id` → `finding_id`; formas anidadas red/green, resúmenes sin identidad y work-items incompatibles se conservan sin inventar datos. Descriptores legacy equivalentes se normalizan conservando bytes. Escritura, retirada y rollback siguen siendo transaccionales e idempotentes bajo los caps existentes. Regresiones cubren mezcla válida/incompatible, JSONL completo, work-items list/dict, descriptor y fallo tras retirada. Lifecycle permanece `EN CURSO/IMPLEMENTED_NOT_VERIFIED`.
+
 ## Caps de archivo ajustados a evidencia DSH real — 2026-09-27
 
 - Un reintento real produjo `candidate-repair.patch` de 4.005.660 bytes y `m02-fmt-red.txt` de 5.776.531 bytes, por encima del cap inicial. La migración preserva ahora evidencia legacy regular hasta 8 MiB por archivo y 32 MiB totales: suficiente para el caso observado, todavía acotado y sin incorporar esos artefactos al estado activo. Regresiones de frontera aceptan exactamente ambos caps y rechazan un byte por encima.

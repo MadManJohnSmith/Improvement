@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -57,9 +58,13 @@ class ModeLifecycleTests(unittest.TestCase):
             descriptor = {"schema_version": 1, "project_id": "project",
                           "product_root": "Project",
                           "state_root": "Project-workspace/mode-state"}
-            initialize_state(state, descriptor)
+            archive = Path(tmp) / "archive"
+            initialize_state(state, descriptor, archive)
             self.assertIsNone(json.loads(
                 (state / "work-items.json").read_text())["candidate"])
+            generation, = archive.iterdir()
+            self.assertEqual((generation / "files" /
+                              "active-work-items.json").read_bytes(), b"[]\n")
 
     def test_initialize_state_migrates_legacy_schema_after_full_preflight(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,19 +87,21 @@ class ModeLifecycleTests(unittest.TestCase):
             initialize_state(state, descriptor)
             self.assertIn("record_max_bytes", json.loads(schema_path.read_text()))
 
-    def test_initialize_state_rejects_malformed_without_partial_changes(self):
+    def test_initialize_state_archives_malformed_expected_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            state = Path(tmp) / "mode-state"
+            root = Path(tmp)
+            state = root / "mode-state"
             state.mkdir()
             bad = state / "findings.jsonl"
             bad.write_text("not-json\n")
             descriptor = {"schema_version": 1, "project_id": "project",
                           "product_root": "Project",
                           "state_root": "Project-workspace/mode-state"}
-            with self.assertRaisesRegex(ValueError, "malformed JSON"):
-                initialize_state(state, descriptor)
-            self.assertEqual(bad.read_text(), "not-json\n")
-            self.assertFalse((state / "project.json").exists())
+            initialize_state(state, descriptor, root / "archive")
+            self.assertEqual(bad.read_bytes(), b"")
+            generation, = (root / "archive").iterdir()
+            self.assertEqual((generation / "files" /
+                              "active-findings.jsonl").read_bytes(), b"not-json\n")
 
     def test_initialize_state_rejects_oversized_and_unsafe_files(self):
         descriptor = {"schema_version": 1, "project_id": "project",
@@ -105,8 +112,13 @@ class ModeLifecycleTests(unittest.TestCase):
             state.mkdir()
             (state / "findings.jsonl").write_bytes(
                 b"x" * (BYTE_LIMITS["findings.jsonl"] + 1))
-            with self.assertRaisesRegex(ValueError, "oversized"):
-                initialize_state(state, descriptor)
+            archive = Path(tmp) / "archive"
+            initialize_state(state, descriptor, archive)
+            self.assertEqual((state / "findings.jsonl").read_bytes(), b"")
+            generation, = archive.iterdir()
+            self.assertEqual((generation / "files" /
+                              "active-findings.jsonl").stat().st_size,
+                             BYTE_LIMITS["findings.jsonl"] + 1)
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "mode-state"
             state.mkdir()
@@ -128,10 +140,105 @@ class ModeLifecycleTests(unittest.TestCase):
             descriptor = {"schema_version": 1, "project_id": "project",
                           "product_root": "Project",
                           "state_root": "Project-workspace/mode-state"}
-            initialize_state(state, descriptor)
+            archive = Path(tmp) / "archive"
+            original = path.read_bytes()
+            initialize_state(state, descriptor, archive)
             migrated = json.loads(path.read_text())
             self.assertEqual(len(migrated["items"]), LIMITS["work-items.json"])
             self.assertEqual(migrated["items"][0]["work_item_id"], "W-1")
+            generation, = archive.iterdir()
+            self.assertEqual((generation / "files" /
+                              "active-work-items.json").read_bytes(), original)
+
+    def test_mixed_records_preserve_whole_original_and_migrate_only_safe_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            revision = "a" * 40
+            findings = [
+                {"finding_id": "A-01", "base_revision": revision,
+                 "severity": "HIGH", "summary": "current", "status": "OPEN"},
+                {"id": "A-02", "base_revision": revision,
+                 "severity": "MEDIUM", "summary": "legacy", "status": "OPEN"},
+                {"summary": "candidate summary without identity"},
+            ]
+            verification = [
+                {"finding_id": "A-01", "candidate_head": revision,
+                 "result": "PASS", "command": "pytest"},
+                {"finding_id": "A-02", "candidate_commit": revision,
+                 "red": {"command": "pytest", "result": "FAIL"},
+                 "green": {"command": "pytest", "result": "PASS"}},
+                {"summary": "candidate passed"},
+            ]
+            finding_bytes = b"".join(json.dumps(item).encode() + b"\n" for item in findings)
+            verification_bytes = b"".join(json.dumps(item).encode() + b"\n" for item in verification)
+            (state / "findings.jsonl").write_bytes(finding_bytes)
+            (state / "verification-results.jsonl").write_bytes(verification_bytes)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            initialize_state(state, descriptor, root / "archive")
+
+            active_findings = [json.loads(line) for line in
+                               (state / "findings.jsonl").read_text().splitlines()]
+            self.assertEqual([item["finding_id"] for item in active_findings],
+                             ["A-01", "A-02"])
+            active_verification = [json.loads(line) for line in
+                                   (state / "verification-results.jsonl").read_text().splitlines()]
+            self.assertEqual(active_verification, [verification[0]])
+            generation, = (root / "archive").iterdir()
+            self.assertEqual((generation / "files" / "active-findings.jsonl").read_bytes(),
+                             finding_bytes)
+            self.assertEqual((generation / "files" /
+                              "active-verification-results.jsonl").read_bytes(),
+                             verification_bytes)
+            receipt = json.loads((generation / "receipt.json").read_text())
+            by_source = {item["source_path"]: item for item in receipt["files"]}
+            self.assertEqual(by_source["findings.jsonl"]["reason"],
+                             "incompatible-records")
+            self.assertEqual(by_source["findings.jsonl"]["sha256"],
+                             hashlib.sha256(finding_bytes).hexdigest())
+
+    def test_old_work_items_shapes_preserve_original_and_keep_only_valid_items(self):
+        descriptor = {"schema_version": 1, "project_id": "project",
+                      "product_root": "Project",
+                      "state_root": "Project-workspace/mode-state"}
+        revision = "a" * 40
+        valid = {"work_item_id": "W-01", "finding_id": "A-01",
+                 "base_revision": revision, "status": "PENDING"}
+        for value, expected in (([valid, {"summary": "old"}], [valid]),
+                                ({"items": [valid], "candidate": {"path": "old"}}, [valid])):
+            with self.subTest(shape=type(value).__name__), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                state = root / "mode-state"
+                state.mkdir()
+                original = (json.dumps(value) + "\n").encode()
+                (state / "work-items.json").write_bytes(original)
+                initialize_state(state, descriptor, root / "archive")
+                self.assertEqual(json.loads((state / "work-items.json").read_text())["items"],
+                                 expected)
+                generation, = (root / "archive").iterdir()
+                self.assertEqual((generation / "files" /
+                                  "active-work-items.json").read_bytes(), original)
+
+    def test_equivalent_legacy_project_descriptor_is_migrated_and_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            old = {**descriptor, "workspace_root": "Project-workspace"}
+            original = (json.dumps(old) + "\n").encode()
+            (state / "project.json").write_bytes(original)
+            initialize_state(state, descriptor, root / "archive")
+            self.assertEqual(json.loads((state / "project.json").read_text()), descriptor)
+            generation, = (root / "archive").iterdir()
+            self.assertEqual((generation / "files" /
+                              "active-project.json").read_bytes(), original)
 
     def test_archives_legacy_evidence_with_receipt_and_idempotent_retry(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -252,6 +359,31 @@ class ModeLifecycleTests(unittest.TestCase):
                     initialize_state(state, descriptor, root / "archive")
                 self.assertTrue(legacy.exists())
                 self.assertFalse((root / "archive").exists())
+
+    def test_expected_file_write_failure_rolls_back_original_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            original = b'{"summary":"legacy candidate"}\n'
+            path = state / "verification-results.jsonl"
+            path.write_bytes(original)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            real_replace = mode_lifecycle._replace_bytes
+
+            def fail_state_write(target, data):
+                if target.name == "project.json":
+                    raise OSError("injected state write failure")
+                return real_replace(target, data)
+
+            with unittest.mock.patch("mode_lifecycle._replace_bytes",
+                                     side_effect=fail_state_write):
+                with self.assertRaisesRegex(OSError, "injected state write failure"):
+                    initialize_state(state, descriptor, root / "archive")
+            self.assertEqual(path.read_bytes(), original)
+            self.assertFalse((state / "project.json").exists())
 
     def test_failure_after_removal_rolls_back_original_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:

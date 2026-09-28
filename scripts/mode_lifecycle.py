@@ -263,21 +263,48 @@ def _preflight_file(path, max_bytes):
     return path.read_bytes()
 
 
+def _is_valid(value, schema, label):
+    try:
+        _valid(value, schema, label)
+        return True
+    except ValueError:
+        return False
+
+
+def _adapt_record(record, spec, label):
+    if _is_valid(record, spec["record"], label):
+        return record, False
+    if (label.startswith("findings.jsonl:") and isinstance(record, dict) and
+            "finding_id" not in record and set(record) == {
+                "id", "base_revision", "severity", "summary", "status"}):
+        adapted = {"finding_id": record["id"], **{
+            key: value for key, value in record.items() if key != "id"}}
+        if _is_valid(adapted, spec["record"], label):
+            return adapted, True
+    return None, True
+
+
 def _jsonl(data, spec, label):
     records = []
+    incompatible = False
     for number, raw in enumerate(data.splitlines(), 1):
         if not raw.strip():
             continue
         if len(raw) > RECORD_BYTE_LIMIT:
-            raise ValueError(f"{label}:{number} record is oversized")
+            incompatible = True
+            continue
         try:
             record = json.loads(raw)
-        except json.JSONDecodeError as error:
-            raise ValueError(f"{label}:{number} malformed JSON") from error
-        _valid(record, spec["record"], f"{label}:{number}")
-        records.append(record)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            incompatible = True
+            continue
+        record, changed = _adapt_record(record, spec, f"{label}:{number}")
+        incompatible |= changed
+        if record is not None:
+            records.append(record)
     compacted = compact_records(records, spec["dedupe_key"], spec["limit"])
-    return b"".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n" for record in compacted)
+    encoded = b"".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n" for record in compacted)
+    return encoded, incompatible
 
 
 def _replace_bytes(path, encoded):
@@ -297,9 +324,10 @@ def _replace_bytes(path, encoded):
         raise
 
 
-def _legacy_inventory(entries):
-    return [{"name": name, "sha256": hashlib.sha256(data).hexdigest(),
-             "size": len(data)} for name, data in sorted(entries.items())]
+def _legacy_inventory(entries, metadata):
+    return [{"name": name, **metadata[name],
+             "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+            for name, data in sorted(entries.items())]
 
 
 def _verified_legacy_archive(root, digest, inventory, descriptor):
@@ -328,8 +356,8 @@ def _verified_legacy_archive(root, digest, inventory, descriptor):
         return False
 
 
-def _archive_legacy(entries, descriptor, archive_root):
-    inventory = _legacy_inventory(entries)
+def _archive_legacy(entries, metadata, descriptor, archive_root):
+    inventory = _legacy_inventory(entries, metadata)
     digest = hashlib.sha256(_encode_json(inventory)).hexdigest()
     root = Path(archive_root)
     if root.exists() and (not root.is_dir() or root.is_symlink()):
@@ -380,49 +408,87 @@ def initialize_state(state, descriptor, archive_root=None):
     allowed = {"project.json", "state-schema.json", *LIMITS}
     existing = set()
     legacy = {}
+    legacy_metadata = {}
     if state.exists():
         existing = {entry.name for entry in state.iterdir()}
-        total = 0
         for name in existing - allowed:
             if not LEGACY_NAME.fullmatch(name):
                 raise ValueError(f"unsafe legacy mode-state name: {name!r}")
-            data = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
-            total += len(data)
-            if total > LEGACY_TOTAL_BYTE_LIMIT:
-                raise ValueError(
-                    f"legacy mode-state evidence exceeds total cap of {LEGACY_TOTAL_BYTE_LIMIT} bytes")
-            legacy[name] = data
+            legacy[name] = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
+            legacy_metadata[name] = {"source_path": name, "reason": "unexpected-evidence"}
 
     schema = state_schema()
     staged = {"project.json": _encode_json(descriptor), "state-schema.json": _encode_json(schema)}
     originals = {}
+
+    def preserve_expected(name, data, reason):
+        archive_name = f"active-{name}"
+        if archive_name in legacy:
+            archive_name = f"active-{hashlib.sha256(name.encode()).hexdigest()[:16]}-{name}"
+        legacy[archive_name] = data
+        legacy_metadata[archive_name] = {"source_path": name, "reason": reason}
     for name in existing & allowed:
-        data = _preflight_file(state / name, BYTE_LIMITS[name])
+        data = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
         originals[name] = data
-        if name == "project.json" and json.loads(data) != descriptor:
-            raise ValueError(f"mode-state file conflicts with descriptor: {state / name}")
-        if name == "state-schema.json" and json.loads(data) not in (schema, _legacy_state_schema()):
-            raise ValueError(f"mode-state file conflicts with schema: {state / name}")
+        if name == "project.json":
+            try:
+                project = json.loads(data)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                project = None
+            if project != descriptor:
+                if (isinstance(project, dict) and
+                        {key: project.get(key) for key in descriptor} == descriptor):
+                    preserve_expected(name, data, "legacy-equivalent-descriptor")
+                else:
+                    raise ValueError(f"mode-state file conflicts with descriptor: {state / name}")
+        if len(data) > BYTE_LIMITS[name]:
+            preserve_expected(name, data, "oversized-incompatible-expected-file")
+            continue
+        if name == "state-schema.json":
+            try:
+                stored_schema = json.loads(data)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                stored_schema = None
+            if stored_schema not in (schema, _legacy_state_schema()):
+                preserve_expected(name, data, "incompatible-expected-file")
         if name.endswith(".jsonl"):
-            staged[name] = _jsonl(data, schema["files"][name], name)
+            staged[name], incompatible = _jsonl(data, schema["files"][name], name)
+            if incompatible:
+                preserve_expected(name, data, "incompatible-records")
         if name == "work-items.json":
+            incompatible = False
             try:
                 current = json.loads(data)
-            except json.JSONDecodeError as error:
-                raise ValueError("mode-state/work-items.json malformed JSON") from error
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                current = None
+                incompatible = True
             if isinstance(current, list):
                 current = {"schema_version": SCHEMA_VERSION, "candidate": None, "items": current}
+                incompatible = True
+            elif isinstance(current, dict) and set(current) == {"candidate", "items"}:
+                current = {"schema_version": SCHEMA_VERSION, **current}
+                incompatible = True
             if not (isinstance(current, dict) and set(current) == {"schema_version", "candidate", "items"}
                     and current["schema_version"] == SCHEMA_VERSION and isinstance(current["items"], list)):
-                raise ValueError("mode-state/work-items.json has an unsupported shape")
-            item_spec = schema["files"][name]["item"]
-            for index, item in enumerate(current["items"]):
-                if len(json.dumps(item, ensure_ascii=False).encode()) > RECORD_BYTE_LIMIT:
-                    raise ValueError(f"work-items.json item {index} is oversized")
-                _valid(item, item_spec, f"work-items.json.items[{index}]")
-            _valid(current["candidate"], schema["files"][name]["candidate"], "work-items.json.candidate")
-            current["items"] = compact_records(current["items"], ("work_item_id", "base_revision"), LIMITS[name])
+                current = {"schema_version": SCHEMA_VERSION, "candidate": None, "items": []}
+                incompatible = True
+            else:
+                item_spec = schema["files"][name]["item"]
+                items = []
+                for index, item in enumerate(current["items"]):
+                    if (len(json.dumps(item, ensure_ascii=False).encode()) <= RECORD_BYTE_LIMIT and
+                            _is_valid(item, item_spec, f"work-items.json.items[{index}]")):
+                        items.append(item)
+                    else:
+                        incompatible = True
+                candidate_spec = schema["files"][name]["candidate"]
+                if not _is_valid(current["candidate"], candidate_spec, "work-items.json.candidate"):
+                    current["candidate"] = None
+                    incompatible = True
+                current["items"] = compact_records(items, ("work_item_id", "base_revision"), LIMITS[name])
             staged[name] = _encode_json(current)
+            if incompatible:
+                preserve_expected(name, data, "legacy-or-incompatible-work-items")
 
     for name in LIMITS:
         if name not in staged:
@@ -431,14 +497,20 @@ def initialize_state(state, descriptor, archive_root=None):
         if len(staged[name]) > BYTE_LIMITS[name]:
             raise ValueError(f"compacted mode-state file remains oversized: {name}")
 
+    legacy_total = sum(map(len, legacy.values()))
+    if legacy_total > LEGACY_TOTAL_BYTE_LIMIT:
+        raise ValueError(
+            f"legacy mode-state evidence exceeds total cap of {LEGACY_TOTAL_BYTE_LIMIT} bytes")
     if legacy:
         if archive_root is None:
-            raise ValueError("unexpected mode-state entries require a managed archive root")
-        _archive_legacy(legacy, descriptor, archive_root)
+            raise ValueError("legacy mode-state evidence requires a managed archive root")
+        _archive_legacy(legacy, legacy_metadata, descriptor, archive_root)
     state.mkdir(mode=0o700, exist_ok=True)
     removed = []
     try:
-        for name, data in legacy.items():
+        removals = {metadata["source_path"]: originals.get(metadata["source_path"], legacy[name])
+                    for name, metadata in legacy_metadata.items()}
+        for name, data in removals.items():
             path = state / name
             if _preflight_file(path, LEGACY_FILE_BYTE_LIMIT) != data:
                 raise ValueError(f"legacy mode-state file changed during migration: {path}")
