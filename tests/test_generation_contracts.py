@@ -1095,7 +1095,9 @@ class TestNegativeCorpus(unittest.TestCase):
                          "continuous-repair")
         required = conditional["then"]["properties"]["repair_candidate"]["required"]
         for field in ("candidate_root", "forbidden_candidate_location",
-                      "candidate_workdir", "provision_workdir", "provision_command"):
+                      "candidate_workdir", "provision_workdir", "provision_command",
+                      "candidate_diff_command", "resume_command", "resume_policy",
+                      "resume_statuses", "resume_required_checks"):
             self.assertIn(field, required)
         repair = lifecycle["properties"]["repair_candidate"]["properties"]
         self.assertEqual(repair["candidate_root"]["const"],
@@ -1104,6 +1106,10 @@ class TestNegativeCorpus(unittest.TestCase):
                          "under-product-root")
         self.assertEqual(repair["provision_workdir"]["const"],
                          "omitted-session-cwd")
+        self.assertEqual(repair["resume_policy"]["const"],
+                         "exact-recorded-dirty-only")
+        self.assertEqual(repair["resume_statuses"]["const"],
+                         ["DIRTY", "RETAINED-pending-verification"])
 
     def test_repair_lifecycle_missing_provision_field_is_rejected(self):
         doc = _golden_mode_contract()

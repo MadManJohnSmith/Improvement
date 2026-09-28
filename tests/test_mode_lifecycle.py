@@ -15,7 +15,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
-                            initialize_state, repair_provision_command,
+                            initialize_state, repair_candidate_diff_command,
+                            repair_provision_command, repair_resume_command,
                             startup_check)
 
 
@@ -83,6 +84,13 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(candidate["unrelated_candidates"], "ignore-preserve")
         self.assertEqual(candidate["worktree_list_scope"],
                          "target-path-and-target-branch-only")
+        self.assertEqual(candidate["resume_policy"],
+                         "exact-recorded-dirty-only")
+        self.assertEqual(candidate["resume_statuses"],
+                         ["DIRTY", "RETAINED-pending-verification"])
+        self.assertEqual(candidate["candidate_diff_command"],
+                         repair_candidate_diff_command(layout))
+        self.assertEqual(candidate["resume_command"], repair_resume_command(layout))
 
     def _provision_fixture(self, root):
         session = root / "common-parent"
@@ -104,11 +112,29 @@ class ModeLifecycleTests(unittest.TestCase):
                   "state_root": f"{workspace.name}/mode-state"}
         return session, product, layout, base
 
-    def _run_provision(self, session, layout, base, digest="0123456789abcdef"):
-        command = repair_provision_command(layout).replace(
+    def _run_command(self, template, session, layout, base,
+                     digest="0123456789abcdef", diff_digest=None):
+        command = template(layout).replace(
             "<digest16>", digest).replace("<full-base>", base)
+        if diff_digest is not None:
+            command = command.replace("<candidate-diff-digest>", diff_digest)
         return subprocess.run(command, cwd=session, shell=True,
                               capture_output=True, text=True)
+
+    def _run_provision(self, session, layout, base, digest="0123456789abcdef"):
+        return self._run_command(repair_provision_command, session, layout, base, digest)
+
+    def _capture_diff(self, session, layout, base, digest):
+        result = self._run_command(
+            repair_candidate_diff_command, session, layout, base, digest)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        marker, digest_value, paths = result.stdout.strip().split(" ", 2)
+        self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
+        return digest_value, json.loads(paths)
+
+    def _run_resume(self, session, layout, base, digest, diff_digest):
+        return self._run_command(
+            repair_resume_command, session, layout, base, digest, diff_digest)
 
     def test_repair_provision_command_creates_registered_sibling_and_keeps_canonical_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -147,6 +173,122 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(candidate), "status", "--porcelain=v1"],
                 text=True), "")
+
+    def test_repair_dirty_candidate_resumes_on_second_turn_without_changing_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "aabbccddeeff0011"
+            self.assertEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
+            candidate = session / f"Product-repair-{digest}"
+            changed = candidate / "tracked.txt"
+            changed.write_bytes(b"candidate repair bytes\n")
+            diff_digest, paths = self._capture_diff(session, layout, base, digest)
+            self.assertEqual(paths, ["tracked.txt"])
+            record = {
+                "base_revision": base,
+                "finding_ids_digest": digest + "0" * 48,
+                "path": candidate.name,
+                "branch": f"dsh/repair-{digest}",
+                "head": base,
+                "status": "DIRTY",
+                "candidate_diff_digest": diff_digest,
+                "changed_paths": paths,
+            }
+            state = session / "Product-workspace/mode-state"
+            state.mkdir()
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": record, "items": [],
+            }) + "\n")
+            before = changed.read_bytes()
+
+            resumed = self._run_resume(
+                session, layout, base, digest, record["candidate_diff_digest"])
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            self.assertIn("__IMPROVEMENT_DIRTY_RESUME_OK__", resumed.stdout)
+            self.assertEqual(changed.read_bytes(), before)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"],
+                text=True), "")
+
+    def test_repair_dirty_resume_rejects_unrecorded_or_mismatched_identity(self):
+        mutations = ("unrecorded", "digest", "path", "base", "status")
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                session, product, layout, base = self._provision_fixture(Path(tmp))
+                digest = "1020304050607080"
+                self.assertEqual(self._run_provision(
+                    session, layout, base, digest).returncode, 0)
+                candidate = session / f"Product-repair-{digest}"
+                (candidate / "tracked.txt").write_bytes(b"dirty target\n")
+                diff_digest, paths = self._capture_diff(session, layout, base, digest)
+                record = {
+                    "base_revision": base,
+                    "finding_ids_digest": digest + "0" * 48,
+                    "path": candidate.name,
+                    "branch": f"dsh/repair-{digest}",
+                    "head": base,
+                    "status": "DIRTY",
+                    "candidate_diff_digest": diff_digest,
+                    "changed_paths": paths,
+                }
+                if mutation == "unrecorded":
+                    record = None
+                elif mutation == "digest":
+                    record["candidate_diff_digest"] = "0" * 64
+                elif mutation == "path":
+                    record["path"] = "Product-repair-ffffffffffffffff"
+                elif mutation == "base":
+                    record["base_revision"] = "0" * 40
+                else:
+                    record["status"] = "PATCH_READY"
+                exact_record = (record is not None and
+                    record["path"] == candidate.name and
+                    record["branch"] == f"dsh/repair-{digest}" and
+                    record["base_revision"] == base and
+                    record["finding_ids_digest"] == digest + "0" * 48 and
+                    record["status"] in ("DIRTY", "RETAINED"))
+                if exact_record:
+                    result = self._run_resume(
+                        session, layout, base, digest,
+                        record["candidate_diff_digest"])
+                else:
+                    result = self._run_provision(session, layout, base, digest)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual((candidate / "tracked.txt").read_bytes(),
+                                 b"dirty target\n")
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", str(product), "status", "--porcelain=v1"],
+                    text=True), "")
+
+    def test_repair_dirty_resume_rejects_symlink_and_submodule_paths(self):
+        for unsafe in ("symlink", "submodule"):
+            with self.subTest(unsafe=unsafe), tempfile.TemporaryDirectory() as tmp:
+                session, product, layout, base = self._provision_fixture(Path(tmp))
+                digest = "9080706050403020"
+                self.assertEqual(self._run_provision(
+                    session, layout, base, digest).returncode, 0)
+                candidate = session / f"Product-repair-{digest}"
+                if unsafe == "symlink":
+                    (candidate / "unsafe").symlink_to("tracked.txt")
+                else:
+                    nested = candidate / "nested"
+                    subprocess.run(["git", "init", "-q", str(nested)], check=True)
+                    (nested / "file.txt").write_text("nested\n")
+                    subprocess.run(["git", "-C", str(nested), "add", "file.txt"],
+                                   check=True)
+                    subprocess.run([
+                        "git", "-C", str(nested), "-c", "user.name=Test",
+                        "-c", "user.email=test@example.invalid", "commit", "-qm", "nested",
+                    ], check=True)
+                    subprocess.run(["git", "-C", str(candidate), "add", "nested"],
+                                   check=True, capture_output=True)
+                result = self._run_command(
+                    repair_candidate_diff_command, session, layout, base, digest)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", str(product), "status", "--porcelain=v1"],
+                    text=True), "")
 
     def test_repair_provision_ignores_and_preserves_unrelated_worktrees(self):
         with tempfile.TemporaryDirectory() as tmp:

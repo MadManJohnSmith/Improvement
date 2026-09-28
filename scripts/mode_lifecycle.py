@@ -1,5 +1,6 @@
 """Versioned lifecycle contract and bounded shared state for generated modes."""
 
+import base64
 import hashlib
 import json
 import os
@@ -41,12 +42,10 @@ def startup_check(layout):
             f"printf '{SUCCESS_SENTINEL}\\n'")
 
 
-def repair_provision_command(layout):
-    """Return the exact target-scoped create/reuse command with validated-value slots."""
+def _repair_target(layout):
     product = shlex.quote("./" + layout["product_root"])
     candidate_prefix = shlex.quote(layout["product_root"] + "-repair-")
     return (
-        "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
         f"product={product}; candidate_name={candidate_prefix}\"$digest16\"; "
         "branch=\"dsh/repair-$digest16\"; expected=\"$PWD/$candidate_name\"; "
         "candidate=\"$expected\"; test -d \"$product\" -a ! -L \"$product\"; "
@@ -55,7 +54,14 @@ def repair_provision_command(layout):
         "test \"$(realpath -m -- \"$candidate\")\" = \"$expected\"; "
         "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
         "path_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :); "
-        "branch_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :); "
+        "branch_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :); ")
+
+
+def repair_provision_command(layout):
+    """Return the exact target-scoped clean create/reuse command."""
+    return (
+        "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
+        + _repair_target(layout) +
         "if test ! -e \"$candidate\" -a ! -L \"$candidate\" && "
         "! git -C \"$product\" show-ref --verify --quiet \"refs/heads/$branch\"; then "
         "test \"$path_count\" = 0 -a \"$branch_count\" = 0; "
@@ -73,6 +79,64 @@ def repair_provision_command(layout):
         "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
         "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :)\" = 1; "
         "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :)\" = 1")
+
+
+_CANDIDATE_DIFF_SCRIPT = r'''import hashlib,json,os,stat,subprocess,sys
+root,expected=sys.argv[1:]
+raw=subprocess.check_output(["git","-C",root,"status","--porcelain=v1","-z","--untracked-files=all"])
+entries=raw.split(b"\0"); paths=[]; i=0
+while i < len(entries) and entries[i]:
+    entry=entries[i]; status_code=entry[:2]; paths.append(entry[3:]); i += 1
+    if status_code[:1] in (b"R",b"C"):
+        if i >= len(entries) or not entries[i]: raise SystemExit(1)
+        paths.append(entries[i]); i += 1
+if not paths: raise SystemExit(1)
+paths=sorted(set(paths)); digest=hashlib.sha256()
+for raw_path in paths:
+    path=os.fsdecode(raw_path)
+    if not path or os.path.isabs(path) or "\0" in path or ".." in path.split("/"): raise SystemExit(1)
+    index=subprocess.run(["git","-C",root,"ls-files","-s","--",path],capture_output=True,text=True,check=True).stdout
+    if any(line.startswith("160000 ") or line.startswith("120000 ") for line in index.splitlines()): raise SystemExit(1)
+    target=os.path.join(root,path); digest.update(len(raw_path).to_bytes(8,"big")); digest.update(raw_path)
+    try: mode=os.lstat(target).st_mode
+    except FileNotFoundError: digest.update(b"D"); continue
+    if not stat.S_ISREG(mode): raise SystemExit(1)
+    data=open(target,"rb").read(); digest.update(b"F"); digest.update(len(data).to_bytes(8,"big")); digest.update(data)
+actual=digest.hexdigest()
+if expected != "-" and actual != expected: raise SystemExit(1)
+print("__IMPROVEMENT_CANDIDATE_DIFF__ "+actual+" "+json.dumps([os.fsdecode(p) for p in paths],ensure_ascii=True,separators=(",",":")))
+'''
+
+
+def _candidate_diff_invocation(expected):
+    encoded = base64.b64encode(_CANDIDATE_DIFF_SCRIPT.encode()).decode()
+    return ("python3 -c 'import base64;exec(base64.b64decode(\"" + encoded +
+            "\"))' \"$candidate\" " + expected)
+
+
+def repair_candidate_diff_command(layout):
+    """Capture the dirty candidate digest and complete safe changed-path list."""
+    return ("set -eu; digest16='<digest16>'; full_base='<full-base>'; " +
+            _repair_target(layout) +
+            "test -d \"$candidate\" -a ! -L \"$candidate\"; "
+            "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
+            "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; " +
+            _candidate_diff_invocation("-"))
+
+
+def repair_resume_command(layout):
+    """Return the exact command for an already authorized dirty target."""
+    return (
+        "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
+        "expected_diff_digest='<candidate-diff-digest>'; " + _repair_target(layout) +
+        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
+        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
+        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; " +
+        _candidate_diff_invocation('"$expected_diff_digest"') + "; "
+        "printf '__IMPROVEMENT_DIRTY_RESUME_OK__\\n'")
 
 
 def persona_prefix(preset_id, role=None):
@@ -98,8 +162,15 @@ def persona_prefix(preset_id, role=None):
             "immediately RETAINED with no retry or further action.")
     if role == "continuous-repair":
         return bootstrap + (
-            "Provision only from the unchanged session cwd: the provisioning bash call MUST omit "
-            "workdir (never use '.' as a code-changing workdir) and run the exact centrally "
+            "Before provisioning, read and strictly validate work-items.json candidate. Use the exact "
+            "centrally generated resume_command only when that record exactly matches target path, "
+            "branch, base, finding digest, stored candidate_diff_digest, and status DIRTY or RETAINED; "
+            "otherwise dirty target collision is RETAINED. Never adopt an unrecorded dirty worktree. "
+            "The resume command must prove registered identity, HEAD at base, canonical unchanged and "
+            "clean, a nonempty byte-identical candidate diff, safe regular changed paths, and no "
+            "submodule or symlink. Capture candidate diff digest and changed paths before persisting "
+            "DIRTY/RETAINED. Provision only from the unchanged session cwd: the provisioning bash call "
+            "MUST omit workdir (never use '.' as a code-changing workdir) and run the exact centrally "
             "generated provision_command after substituting only validated digest16 and full_base. "
             "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
             "The command may inspect the full worktree list only to match that target path and target "
@@ -171,12 +242,24 @@ def expected_lifecycle(role, layout):
             "candidate_workdir": f"{layout['product_root']}-repair-<digest16>",
             "provision_workdir": "omitted-session-cwd",
             "provision_command": repair_provision_command(layout),
+            "candidate_diff_command": repair_candidate_diff_command(layout),
+            "resume_command": repair_resume_command(layout),
+            "resume_policy": "exact-recorded-dirty-only",
+            "resume_statuses": ["DIRTY", "RETAINED-pending-verification"],
+            "resume_required_checks": [
+                "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
+                "stored-candidate-diff-digest", "registered-worktree-exact-identity",
+                "target-head-equals-full-base", "canonical-head-and-clean-unchanged",
+                "candidate-diff-nonempty-and-digest-matches", "changed-path-list-complete",
+                "changed-paths-candidate-confined-regular-no-symlink", "no-submodules",
+            ],
             "provision_checks": [
                 "canonical-real-directory-not-symlink", "canonical-git-clean",
                 "full-base-revision-matches", "target-path-absent-or-real-directory-not-symlink",
                 "target-path-listed-worktree-if-present", "target-branch-absent-or-target-reuse",
                 "target-path-and-branch-identify-same-worktree-on-reuse",
-                "target-head-equals-full-base-on-reuse", "target-clean-on-reuse",
+                "target-head-equals-full-base-on-clean-reuse", "target-clean-on-clean-reuse",
+                "dirty-reuse-exact-recorded-resume-command-only",
                 "no-target-path-branch-worktree-collision",
             ],
             "unrelated_candidates": "ignore-preserve",
@@ -313,8 +396,8 @@ def state_schema():
                     {"work_item_id": text, "finding_id": text, "base_revision": revision, "status": {"enum": ["PENDING", "IN_PROGRESS", "VERIFIED", "RETAINED"]}},
                     {"work_item_id": "W-01", "finding_id": "A-01", "base_revision": "a" * 40, "status": "PENDING"}),
                 "candidate": {"type": ["object", "null"], "required": ["base_revision", "finding_ids_digest", "path", "branch", "head", "status"], "additionalProperties": False,
-                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}},
-                    "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY"}}},
+                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
+                    "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
                 "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head"],
                 "record": _record_schema(["finding_id", "candidate_head", "result", "command"],
@@ -352,6 +435,9 @@ def _valid(value, schema, label):
             raise ValueError(f"{label} has unknown fields")
         for key, item in value.items():
             _valid(item, schema.get("properties", {}).get(key, {}), f"{label}.{key}")
+        if label.endswith(".candidate") and value.get("status") in ("DIRTY", "RETAINED"):
+            if "candidate_diff_digest" not in value or "changed_paths" not in value:
+                raise ValueError(f"{label} dirty resume evidence missing")
 
 
 def _encode_json(value):

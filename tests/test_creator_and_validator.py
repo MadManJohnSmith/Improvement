@@ -1891,6 +1891,14 @@ class ValidatorTests(Base):
                          "target-path-and-target-branch-only")
         self.assertEqual(contract["collision_policy"],
                          "retain-target-collision-no-improvisation")
+        self.assertEqual(contract["resume_policy"],
+                         "exact-recorded-dirty-only")
+        self.assertEqual(contract["resume_statuses"],
+                         ["DIRTY", "RETAINED-pending-verification"])
+        self.assertIn("candidate_diff_command", contract)
+        self.assertIn("resume_command", contract)
+        self.assertIn("strict-work-items-candidate",
+                      contract["resume_required_checks"])
         self.assertEqual(contract["commit"],
                          "forbidden-without-separate-explicit-user-prompt")
         self.assertTrue(contract["candidate_commit_nullable"])
@@ -1942,6 +1950,9 @@ class ValidatorTests(Base):
         self.assertIn("immediately RETAINED with no retry", prefix)
         repair_prefix = persona_prefix("project-continuous-repair")
         self.assertIn("provisioning bash call MUST omit workdir", repair_prefix)
+        self.assertIn("Before provisioning, read and strictly validate work-items.json", repair_prefix)
+        self.assertIn("Never adopt an unrecorded dirty worktree", repair_prefix)
+        self.assertIn("candidate diff digest and changed paths", repair_prefix)
         self.assertIn("candidate_root is ${session-cwd}/<candidate-name>", repair_prefix)
         self.assertIn("workdir exactly equal to the candidate_workdir", repair_prefix)
         self.assertIn("never '.'", repair_prefix)

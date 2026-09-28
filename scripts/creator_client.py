@@ -31,7 +31,9 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
-from mode_lifecycle import repair_provision_command, startup_check
+from mode_lifecycle import (repair_candidate_diff_command,
+                            repair_provision_command, repair_resume_command,
+                            startup_check)
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -224,6 +226,8 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
     repair_command = repair_provision_command(layout)
+    repair_diff_command = repair_candidate_diff_command(layout)
+    repair_resume = repair_resume_command(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -432,9 +436,19 @@ El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
 destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
 `$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
 `./{product_root}/...`.
-Antes de crear/reusar ejecuta literalmente el `provision_command` central, cuyos
-`provision_checks` se limitan a invariantes canónicos y a la identidad target: path y
-branch target ausentes o reutilizables como el mismo worktree, HEAD/base y limpieza del
+Antes de crear/reusar lee y valida estrictamente `work-items.json.candidate`. Si el target
+está sucio, solo permite `resume_policy: exact-recorded-dirty-only`: mismo path, branch,
+base y digest de hallazgos, estado `DIRTY` o `RETAINED` pendiente de verificación, y
+evidencia `candidate_diff_digest` + `changed_paths`. Captura esa evidencia con el comando
+central `{repair_diff_command}`. Reanuda sin cambiar bytes únicamente con el comando
+central `{repair_resume}`, sustituyendo sus tres slots por valores ya validados. Este
+recomprueba worktree registrado exacto, HEAD base, canonical limpio/inalterado, diff no
+vacío y byte-idéntico, paths completos confinados a archivos regulares sin symlinks y
+ausencia de submódulos. Registro ausente o discrepancia de digest/path/base/status deja
+la colisión `RETAINED`; nunca adopta un worktree sucio arbitrario.
+Para creación o reutilización limpia ejecuta literalmente el `provision_command` central,
+cuyos `provision_checks` se limitan a invariantes canónicos y a la identidad target: path
+y branch target ausentes o reutilizables como el mismo worktree, HEAD/base y limpieza del
 target al reutilizar, sin colisión del target. Puede leer el `git worktree list` completo
 solo para comparar el path target y la branch target. El contrato declara
 `unrelated_candidates: ignore-preserve`: está expresamente prohibido validar supuestos

@@ -118,6 +118,11 @@
                   "candidate_workdir",
                   "provision_workdir",
                   "provision_command",
+                  "candidate_diff_command",
+                  "resume_command",
+                  "resume_policy",
+                  "resume_statuses",
+                  "resume_required_checks",
                   "provision_checks",
                   "unrelated_candidates",
                   "worktree_list_scope",
@@ -250,6 +255,30 @@
             "provision_command": {
               "type": "string",
               "minLength": 1
+            },
+            "candidate_diff_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resume_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resume_policy": {
+              "const": "exact-recorded-dirty-only"
+            },
+            "resume_statuses": {
+              "const": [
+                "DIRTY",
+                "RETAINED-pending-verification"
+              ]
+            },
+            "resume_required_checks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
             },
             "provision_checks": {
               "type": "array",
