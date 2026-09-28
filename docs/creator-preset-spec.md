@@ -114,7 +114,7 @@ preset.
 3. Skills específicas solo con procedimiento recurrente, evidencia, fronteras y prueba.
 4. Perfil guarda datos variables; skills guardan procedimientos.
 5. Auditor sin escritura del producto.
-6. Auditor persiste hallazgos/handoff acotados antes de responder; Repair autoprovisiona un worktree candidato sibling tras comprobar Git limpio/base coincidente, puede commitear allí por el prompt de reparación y nunca escribe canónico, mergea, hace push o publica.
+6. La persona carga primero el skill exacto. Auditor persiste estado con schemas/caps estrictos; Repair deriva candidato por digest de full base+IDs, aplica checks cerrados e invariantes canónicas y solo cambia código por bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch (`candidate_commit` nullable). Nunca usa write/edit para producto, mergea, push o publica. Concurrencia/CAS y confinamiento mecánico siguen pendientes de prueba/implementación.
 7. QA y Auditor posterior observables.
 8. Máximo dos intentos por unidad.
 9. Sin publicación/red/instalación implícitas.

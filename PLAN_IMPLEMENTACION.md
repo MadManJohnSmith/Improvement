@@ -1,6 +1,6 @@
 # Plan de implementación y progreso
 
-**Estado:** arquitectura 3.0 implementada: C0–C7 completados y verificados; hardening sobre piloto real en curso (ver «Post-C7»).
+**Estado:** C0–C7 conservan verificación histórica; hardening y lifecycle operativo `IMPLEMENTED_NOT_VERIFIED`/`EN CURSO` hasta nuevo piloto DSH real (ver «Post-C7»).
 **Actualización:** 2026-09-27
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
@@ -59,7 +59,7 @@ Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en
 | P8 | Instalación de modos como presets DSH | HECHO | bundle de declaraciones `@deepseek-ai/dsh-agent-preset` instalado por `pluginManager/installBundle`, con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
 | P9 | Gate operativo y ruta real de skills | HECHO | cada modo exige persona+bash+fs+fs-search (`sampleOverCapGlobResults: false`)+skill-filesystem+tool-skill y rechaza delegación/workflow/web/plugin-manager; frontmatter mínimo validado; bundle copia skills/recursos y skills de modo, con root local exclusivo y recibo de ambos presets |
 | P10 | Piloto tardis (Syncify) con DSH real | EN CURSO | cada salida del piloto produce cambio de flujo y regresión; paquete aceptado de extremo a extremo pendiente |
-| P11 | Handoff durable y reparación sin operador | HECHO | lifecycle JSON exacto, memoria acotada inicializada, auditor obligado a persistir y Repair obligado a autoprovisionar candidato sibling sin escribir canónico/merge/push/publicar; promoción de producto sigue autorizada por usuario |
+| P11 | Handoff durable y reparación acotada | EN CURSO / IMPLEMENTED_NOT_VERIFIED | bootstrap exacto de skill, schemas/caps y migración preflight, candidato determinista, commit no implícito e invariantes canónicas implementados con regresiones; falta piloto DSH real y sigue sin existir confinamiento mecánico de bash ni CAS/lease multiarchivo |
 
 Suite de regresión vigente: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
 

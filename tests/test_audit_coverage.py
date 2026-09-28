@@ -152,7 +152,7 @@ class AuditCoverageTest(unittest.TestCase):
                 audit.validate_units(self.product, units)
 
     def test_real_cli_inventory_and_consolidation(self):
-        command = [sys.executable, '-B', str(ROOT / 'scripts/audit.py')]
+        command = ['/usr/bin/python3', '-B', str(ROOT / 'scripts/audit.py')]
         result = subprocess.run(command + ['inventory', '--product', str(self.product)],
                                 capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), self.snapshot)

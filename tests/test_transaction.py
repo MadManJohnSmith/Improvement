@@ -12,11 +12,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
-from mode_lifecycle import expected_lifecycle
+from mode_lifecycle import expected_lifecycle, persona_prefix
 
 
-MODE_COMPOSITION = """- id: persona
+def mode_composition(preset_id):
+    return f"""- id: persona
   name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: {json.dumps(persona_prefix(preset_id))}
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
 - id: tool-fs
@@ -61,7 +64,7 @@ class Client:
             raise ValueError("preset not active")
         return {"value": {
             "agentPreset": preset_id,
-            "content": MODE_COMPOSITION + "    customSkillDirs:\n      - " +
+            "content": mode_composition(preset_id) + "    customSkillDirs:\n      - " +
                        str((self.active_bundle / "skills").resolve()) + "\n",
         }}
 
@@ -110,7 +113,7 @@ class TransactionTests(unittest.TestCase):
                 "mode_lifecycle": lifecycle}) + "\n")
             (mode / "preset.yml").write_text(f"name: {preset_id}\n")
             (mode / "agent.cordis.yml").write_text(
-                f"# {marker}\n" + MODE_COMPOSITION)
+                f"# {marker}\n" + mode_composition(preset_id))
             (mode / "SKILL.md").write_text(
                 f"---\nname: {preset_id}\ndescription: {role} mode\n---\n"
                 f"# {preset_id}\n```json mode-layout\n"
@@ -202,13 +205,13 @@ class TransactionTests(unittest.TestCase):
         composition = self.generated / "modes/project-auditor/agent.cordis.yml"
         composition.write_text(
             "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n")
-        with self.assertRaisesRegex(tx.TransactionError, "exactly once"):
+        with self.assertRaisesRegex(tx.TransactionError, "preset bootstrap contract"):
             self.install()
         self.assertFalse((self.workspace / ".dsh-managed").exists())
 
     def test_direct_transaction_rejects_prohibited_composition(self):
         composition = self.generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION +
+        composition.write_text(mode_composition("project-auditor") +
             "- id: workflow\n  name: '@deepseek-ai/dsh-tool-workflow'\n")
         with self.assertRaisesRegex(tx.TransactionError, "prohibited plugin rows"):
             self.install()
@@ -350,7 +353,7 @@ class TransactionTests(unittest.TestCase):
 
     def test_direct_install_cli_requires_dsh_home(self):
         result = subprocess.run([
-            sys.executable, "-B", str(ROOT / "scripts" / "transaction.py"),
+            "/usr/bin/python3", "-B", str(ROOT / "scripts" / "transaction.py"),
             "install", "--workspace", str(self.workspace), "--generated",
             str(self.generated), "--generation-id", "gen-1",
             "--host-verdict", str(self.root / "verdict.json")],

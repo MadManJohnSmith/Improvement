@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import generation_contracts as gc
+from mode_lifecycle import expected_lifecycle
 
 # ---------------------------------------------------------------------------
 # Golden fixture helpers
@@ -309,6 +310,8 @@ def _golden_mode_contract():
         "schema_version": 1,
         "kind": "mode",
         "name": "TestProject-auditor",
+        "preset_id": "testproject-auditor",
+        "role": "auditor",
         "purpose": "Audit TestProject for defects",
         "reuse_source": "base-library",
         "reuse_reference": "systematic-debugging",
@@ -321,6 +324,8 @@ def _golden_mode_contract():
         "forbidden_capabilities": ["product_write", "network"],
         "invariants": ["Never writes to product", "Max two attempts per unit"],
         "anti_goals": ["Do not modify source code"],
+        "mode_lifecycle": expected_lifecycle("auditor", {
+            "product_root": "TestProject", "state_root": "TestProject-workspace/mode-state"}),
         "state_machine": {
             "states": ["READY", "AUDITING", "COMPLETE", "FAILED"],
             "transitions": [

@@ -50,7 +50,7 @@ Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación
 - Reparar todo lo persistido: «Repara los hallazgos de la auditoría; no publiques.»
 - Reparar IDs: «Repara A-01 y M-02; no publiques.»
 
-Auditor persiste primero un handoff acotado en `<Proyecto>-workspace/mode-state` y responde con ruta/conteo y el prompt siguiente. Repair lee ese estado y crea o reutiliza automáticamente un worktree hermano determinista; el usuario no aporta paths, JSON ni ramas. Repair solo modifica/prueba ese candidato y puede commitear allí por autorización del prompt, pero nunca modifica el checkout canónico, mergea, hace push o publica. Su cierre entrega candidato, branch, commit y tests para que Host o el usuario integren posteriormente con autorización explícita. Si el checkout canónico está sucio, la revisión base cambió o existe una colisión incompatible, conserva `RETAINED` con una acción concreta.
+Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair deriva un worktree hermano mediante digest de revisión base completa e IDs seleccionados, ejecuta checks cerrados de path/symlink/worktree/branch/HEAD/dirty/stale/collision y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch y `candidate_commit: null`; un commit requiere otro prompt explícito. Drift de HEAD/status canónicos o diff fuera del candidato produce `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; falta piloto DSH real y no hay CAS/lease multiarchivo.
 
 ## Herramientas de mantenimiento (capa MVP)
 

@@ -82,13 +82,14 @@ instala mediante `pluginManager/installBundle`, consulta `agentPresets/list` y s
 considera la instalación activa cuando ambos IDs del recibo aparecen sin diagnóstico
 `broken`. El runtime vigente ya no lee la ruta legacy `$DSH_HOME/.agent-presets`.
 
-Los dos modos comparten exclusivamente `<Proyecto>-workspace/mode-state`; Host
-inicializa `state-schema.json` v1, findings/handoffs/verification JSONL y
-`work-items.json` con un slot de candidato. Los contratos estructurados obligan a
-leer antes de reemplazar archivos completos con `workflow_write`, deduplicar y
-compactar con límites. Auditor no termina sin handoff durable; Repair deriva y crea
-su worktree sibling sin pedir paths, nunca escribe el checkout canónico ni hace
-merge/push/publicación. Las rutas persistidas son relativas al padre común. El
+Los dos modos comparten `<Proyecto>-workspace/mode-state`; Host preflightea e
+inicializa schemas estrictos, caps de archivo/registro y slot candidato. La persona
+obliga a cargar primero el skill homónimo. Auditor solo usa `workflow_write` para
+estado. Repair no usa write/edit; cambia código por bash con workdir candidato,
+deriva identidad con full base+IDs, verifica invariantes canónicas pre/post y no
+commitea por un prompt simple. Los reemplazos son por archivo, no transacción
+multiarchivo; no existe CAS/lease ni confinamiento mecánico de bash, por lo que el
+lifecycle sigue EN CURSO hasta piloto DSH real. Las rutas son relativas al padre. El
 producto no recibe estado del flujo. La aceptación es determinista y veraz: valida paquete, plan, hashes y
 política, pero no crea sesiones evaluator/reviewer ni afirma holdouts dinámicos.
 `READY_FOR_INSTALL` autoriza la publicación; `ACTIVE` se escribe únicamente tras

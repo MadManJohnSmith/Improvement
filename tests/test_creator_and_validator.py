@@ -20,11 +20,14 @@ import bootstrap
 import creator_client as cc
 import generation_contracts as gc
 import host_validator as hv
-from mode_lifecycle import expected_lifecycle
+from mode_lifecycle import expected_lifecycle, persona_prefix
 
 
-MODE_COMPOSITION = """- id: persona
+def mode_composition(preset_id):
+    return f"""- id: persona
   name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: {json.dumps(persona_prefix(preset_id))}
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
 - id: tool-fs
@@ -100,7 +103,7 @@ class Base(unittest.TestCase):
             files = {
                 "mode.json": json.dumps(mode, indent=2) + "\n",
                 "preset.yml": f"name: {preset_id}\n",
-                "agent.cordis.yml": MODE_COMPOSITION,
+                "agent.cordis.yml": mode_composition(preset_id),
                 "SKILL.md": skill_markdown(
                     preset_id, f"Generated {role} mode", layout, role),
             }
@@ -914,8 +917,8 @@ class CreatorTests(Base):
         self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
         self.assertIn("json mode-lifecycle", prompt)
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
-        self.assertIn("git-worktree-add-or-reuse", prompt)
-        self.assertIn("canonical-product-write`, `merge`, `push`, `publish", prompt)
+        self.assertIn("ninguna colisión path/branch/worktree", prompt)
+        self.assertIn("Nunca merge/push/publish", prompt)
         self.assertIn("candidate_commit", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
         self.assertIn("Antes de emitir `status: GENERATED`", prompt)
@@ -1691,7 +1694,7 @@ class ValidatorTests(Base):
 
         for value, expected in (
             ("ad-hoc", "contract.kind must be 'mode' or 'skill'"),
-            ("mode", "mode-contract: missing required field 'purpose'"),
+            ("mode", "mode-contract: missing required field 'preset_id'"),
         ):
             with self.subTest(kind=value):
                 contract = dict(original, kind=value)
@@ -1726,6 +1729,8 @@ class ValidatorTests(Base):
         mode = {
             "schema_version": 1,
             "name": "tauri-ipc",
+            "preset_id": "tauri-ipc",
+            "role": "auditor",
             "purpose": "Validate IPC boundaries",
             "reuse_source": "base-library",
             "reuse_reference": "systematic-debugging",
@@ -1738,6 +1743,8 @@ class ValidatorTests(Base):
             "forbidden_capabilities": ["product_write"],
             "invariants": ["Arguments match"],
             "anti_goals": ["Do not mutate commands"],
+            "mode_lifecycle": expected_lifecycle("auditor", {
+                "product_root": "product", "state_root": "workspace/mode-state"}),
             "state_machine": {
                 "states": ["READY"], "transitions": [],
                 "initial": "READY", "terminal": ["READY"],
@@ -1837,9 +1844,12 @@ class ValidatorTests(Base):
             "modes/project-continuous-repair/mode.json").read_text())
         contract = mode["mode_lifecycle"]["repair_candidate"]
         self.assertEqual(contract["forbidden"], [
-            "canonical-product-write", "merge", "push", "publish"])
-        self.assertEqual(contract["provision"], "git-worktree-add-or-reuse")
-        self.assertIn("candidate_commit", contract["final_fields"])
+            "canonical-product-write", "write-tool", "edit-tool", "merge", "push", "publish"])
+        self.assertEqual(contract["provision"], "git-worktree-add-or-exact-safe-reuse")
+        self.assertEqual(contract["commit"],
+                         "forbidden-without-separate-explicit-user-prompt")
+        self.assertTrue(contract["candidate_commit_nullable"])
+        self.assertIn("full-base-revision-matches", contract["provision_checks"])
 
     def test_wrong_role_lifecycle_is_retained(self):
         generated, manifest = self.make_package()
@@ -1861,6 +1871,16 @@ class ValidatorTests(Base):
         self.assertIn("role contract", " ".join(
             report.layers["contracts"]["details"]))
 
+    def test_wrong_persona_bootstrap_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        composition.write_text(composition.read_text().replace(
+            persona_prefix("project-auditor"), "Load something eventually"))
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("exact preset bootstrap contract", " ".join(
+            report.layers["contracts"]["details"]))
+
     def test_persona_only_mode_composition_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
@@ -1874,7 +1894,7 @@ class ValidatorTests(Base):
     def test_malformed_mode_composition_line_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION + "this is not yaml\n")
+        composition.write_text(mode_composition("project-auditor") + "this is not yaml\n")
         report = hv.validate_package(generated)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("expected top-level '- id:' row", " ".join(
@@ -1883,7 +1903,7 @@ class ValidatorTests(Base):
     def test_duplicate_required_mode_plugin_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION +
+        composition.write_text(mode_composition("project-auditor") +
             "- id: persona-copy\n  name: '@deepseek-ai/dsh-persona'\n")
         report = hv.validate_package(generated)
         self.assertFalse(report.layers["contracts"]["passed"])
@@ -1893,7 +1913,7 @@ class ValidatorTests(Base):
     def test_nested_plugin_config_is_accepted(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION.replace(
+        composition.write_text(mode_composition("project-auditor").replace(
             "  name: '@deepseek-ai/dsh-tool-bash'\n",
             "  name: '@deepseek-ai/dsh-tool-bash'\n"
             "  config:\n    environment:\n      SAFE: true\n"))
@@ -1903,7 +1923,7 @@ class ValidatorTests(Base):
     def test_fs_search_missing_required_config_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION.replace(
+        composition.write_text(mode_composition("project-auditor").replace(
             "  config:\n    sampleOverCapGlobResults: false\n", ""))
         report = hv.validate_package(generated)
         self.assertFalse(report.layers["contracts"]["passed"])
@@ -1913,7 +1933,7 @@ class ValidatorTests(Base):
     def test_fs_search_wrong_required_config_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION.replace(
+        composition.write_text(mode_composition("project-auditor").replace(
             "sampleOverCapGlobResults: false",
             "sampleOverCapGlobResults: true"))
         report = hv.validate_package(generated)
@@ -1924,7 +1944,7 @@ class ValidatorTests(Base):
     def test_prohibited_mode_plugin_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
-        composition.write_text(MODE_COMPOSITION +
+        composition.write_text(mode_composition("project-auditor") +
             "- id: tool-workflow\n  name: '@deepseek-ai/dsh-tool-workflow'\n")
         report = hv.validate_package(generated)
         self.assertFalse(report.layers["contracts"]["passed"])
@@ -1961,7 +1981,7 @@ class ValidatorTests(Base):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
         composition.write_text(
-            MODE_COMPOSITION +
+            mode_composition("project-auditor") +
             "- id: subagent\n  name: '@vendor/subagent'\n"
             "- id: browser\n  name: '@vendor/web-browser'\n")
         report = hv.validate_package(generated)

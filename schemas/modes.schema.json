@@ -21,6 +21,7 @@
     "forbidden_capabilities",
     "invariants",
     "anti_goals",
+    "mode_lifecycle",
     "state_machine",
     "handoffs",
     "failure_modes",
@@ -48,12 +49,56 @@
     },
     "role": {
       "type": "string",
-      "enum": ["auditor", "continuous-repair"],
+      "enum": [
+        "auditor",
+        "continuous-repair"
+      ],
       "description": "Final operational role exposed by the preset."
     },
     "mode_lifecycle": {
       "type": "object",
-      "description": "Exact role-specific durable handoff and candidate lifecycle contract validated by Host."
+      "description": "Exact role-specific lifecycle; validated by the shared Host validator.",
+      "required": [
+        "schema_version",
+        "role",
+        "state_root",
+        "state_schema",
+        "read_before_write",
+        "write_method",
+        "bounds",
+        "tool_policy"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "role": {
+          "enum": [
+            "auditor",
+            "continuous-repair"
+          ]
+        },
+        "state_root": {
+          "type": "string",
+          "pattern": ".+/mode-state$"
+        },
+        "state_schema": {
+          "const": "state-schema.json"
+        },
+        "read_before_write": {
+          "const": true
+        },
+        "write_method": {
+          "const": "workflow_write-full-replacement-not-atomic"
+        },
+        "bounds": {
+          "type": "object"
+        },
+        "tool_policy": {
+          "type": "object"
+        }
+      }
     },
     "purpose": {
       "type": "string",

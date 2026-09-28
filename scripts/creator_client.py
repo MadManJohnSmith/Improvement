@@ -247,7 +247,10 @@ Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
 `preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Cada
 `agent.cordis.yml` monta exactamente las filas operativas necesarias: persona
-`@deepseek-ai/dsh-persona`, bash `@deepseek-ai/dsh-tool-bash`, filesystem
+`@deepseek-ai/dsh-persona` con `config.prefix` igual al bootstrap exacto exigido
+por el Host para ese preset (primera acción: cargar vía tool-skill el skill cuyo
+nombre es exactamente el preset; no analizar ni responder antes del éxito; RETAINED
+si falla), bash `@deepseek-ai/dsh-tool-bash`, filesystem
 `@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search` con
 `config.sampleOverCapGlobResults: false`, proveedor
 `@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
@@ -350,7 +353,7 @@ Los dos `mode.json` y sus `SKILL.md` deben repetir exactamente un bloque estruct
 `json mode-lifecycle`; el Host compara el JSON por rol, no acepta promesas narrativas.
 Usa `schema_version: 1`, `state_root: "{state_root}"`, `state_schema:
 "state-schema.json"`, `read_before_write: true`, `write_method:
-"workflow_write-full-replacement"` y estos límites exactos en ambos:
+"workflow_write-full-replacement-not-atomic"` y estos límites exactos en ambos:
 `findings.jsonl: 200`, `handoffs.jsonl: 50`, `work-items.json: 200`,
 `verification-results.jsonl: 200`.
 
@@ -364,27 +367,31 @@ completo con `workflow_write`; no responde finalmente hasta persistir y reportar
 ruta/conteo. Debe funcionar con `Audita completamente este proyecto; no modifiques
 ni publiques.`.
 
-Continuous Repair debe incluir `repair_candidate`: prompts simples de hallazgos
-persistidos nombrados o todos autorizan crear/reusar candidato; precondiciones
-`git-clean` y `base-revision-matches`; location `sibling`; directory_template
-`{product_root}-repair-<base12>`; branch_template `dsh/repair-<base12>`; provision
-`git-worktree-add-or-reuse`; collision_policy `retain-with-action`; patch_root
-`candidate-only`; commit `allowed-after-tests`; forbidden exactos
-`canonical-product-write`, `merge`, `push`, `publish`; writes `work-items.json`,
-`verification-results.jsonl`, `handoffs.jsonl`; final_fields `candidate_path`,
-`candidate_branch`, `candidate_commit`, `tests`, `integration_status`; status
-`ready-for-host-or-user-authorized-integration`.
+Ambos lifecycle incluyen `tool_policy`: sesión en el padre común; Auditor solo usa
+bash read-only y `workflow_write` para estado; Repair jamás usa tools write/edit,
+y cualquier comando que cambie código usa bash con workdir exactamente igual al
+candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
+los vuelve a comprobar tras cada fase y ante cualquier drift queda RETAINED sin más
+acciones. Comprueba además que el diff pertenece solo al candidato.
 
-Su procedimiento lee findings/estado, comprueba con git que el checkout canónico
-está limpio y en la revisión base, deriva el sibling/branch determinista, crea o
-reutiliza el worktree mediante bash sin escribir producto canónico, registra la
-identidad en `work-items.json`, modifica solo candidato, prueba y puede hacer commit
-en candidato porque el prompt de reparación lo autoriza. Nunca merge/push/publish.
-Una colisión incompatible o checkout sucio queda RETAINED con una acción concreta;
-no pide path si el default es seguro. Persiste verificación/handoff por reemplazo
-acotado antes de responder y entrega branch/commit/tests listo para Host o posterior
-integración autorizada. Debe funcionar con `Repara los hallazgos de la auditoría;
-no publiques.` sin JSON, paths ni configuración del usuario.
+Continuous Repair incluye el procedimiento exacto de `expected_lifecycle`: el prompt
+simple autoriza crear/reusar y editar el candidato, no commit/merge/push/publicación.
+La identidad es SHA-256 de `full-base + LF + IDs seleccionados únicos ordenados`; usa
+los primeros 16 hex en `{product_root}-repair-<digest16>` y
+`dsh/repair-<digest16>`. Antes de crear/reusar valida literalmente todos los
+`provision_checks` del contrato: raíces/path reales y no symlink, canonical limpio y
+full base coincidente, ausencia o pertenencia a `git worktree list`, branch ausente
+o en full base, HEAD/base y limpieza al reutilizar, ningún worktree stale/prunable
+y ninguna colisión path/branch/worktree. No improvisa: cualquier incompatibilidad
+queda RETAINED con una acción concreta. Modifica y prueba solo candidato; lo deja
+sucio o produce patch. `candidate_commit` es null salvo una solicitud de usuario
+separada y explícita que autorice commit. Nunca merge/push/publish.
+
+El estado tiene schemas estrictos y caps de archivo/registro. `workflow_write` hace
+reemplazos completos por archivo, no una transacción multiarchivo ni control de
+concurrencia; el lifecycle no se declara HECHO hasta que exista prueba real DSH y un
+protocolo de escritor único/lease o tool Host equivalente. Debe funcionar con
+`Repara los hallazgos de la auditoría; no publiques.` sin JSON, paths ni configuración.
 
 ## Salida obligatoria
 

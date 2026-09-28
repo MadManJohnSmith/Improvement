@@ -1,7 +1,7 @@
 # Estado comprobado del framework
 
 **Actualización:** 2026-09-27
-**Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (implementada)
+**Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (norma implementada; lifecycle operativo EN CURSO/IMPLEMENTED_NOT_VERIFIED)
 **Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md)
 
 Este documento registra únicamente el estado vigente. El detalle de iteraciones anteriores está en Git/`CHANGELOG.md`, no aquí.
@@ -98,7 +98,7 @@ Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el 
 | Aceptación Host aislada del Creator | HECHO | harness de aceptación del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa exigida y actores correlacionados con turnos reales de DSH; aceptación previa determinista (`READY_FOR_INSTALL`), sin afirmación de evaluación dinámica |
 | Instalación de modos como presets DSH | HECHO | modos con `mode.json`/`preset.yml`/`agent.cordis.yml`/`SKILL.md`; Creator recibe del run los basenames reales case-sensitive de producto/workspace y la ruta exacta de `mode-state`, y el Host contrasta esa identidad estructurada antes de aceptar/instalar; instala un bundle `@deepseek-ai/dsh-agent-preset`, exige `application=applied`, roster sano y composición/raíz candidatas vía `agentPresets/read`; una actualización `restart-required` queda recuperable hasta relanzar DSH y repetir `bootstrap install` |
 | Gate operativo y skills bundle-local | HECHO | composiciones fail-closed con las seis filas operativas, `dsh-tool-fs-search` configurado con `sampleOverCapGlobResults: false` y sin delegación/workflow/web/plugin-manager; frontmatter mínimo de modos/skills; copia completa y segura a `bundle/skills`, `includeDefaultRoots: false`, root absoluto del bundle y ambos IDs en recibo |
-| Handoff durable y candidato automático | HECHO | contrato `mode-lifecycle` exacto por rol validado por Host/transacción; estado v1 acotado inicializado sin siembra; auditor persiste antes del cierre; Repair deriva worktree/branch sibling, prueba/commitea solo candidato y prohíbe canonical write/merge/push/publish; resultado idempotente conserva ambos presets |
+| Handoff durable y candidato automático | EN CURSO / IMPLEMENTED_NOT_VERIFIED | contrato/bootstrap/persona, schemas/caps, preflight/migración, candidato digest y límites de commit implementados con regresiones; falta prueba DSH real. Bash conserva alcance de escritura del padre, y la actualización multiarchivo no tiene CAS/lease: no se afirma aislamiento ni atomicidad |
 | Piloto tardis (Syncify) | EN CURSO | cada salida del piloto se convierte en cambio de flujo y regresión; la generación completa con paquete aceptado sigue siendo la salida pendiente |
 
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

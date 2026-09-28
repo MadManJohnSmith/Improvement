@@ -1071,11 +1071,11 @@ def validate_mode_contract(doc):
     schema = "mode-contract"
     _require_type(doc, dict, schema)
     required = [
-        "schema_version", "name", "purpose", "reuse_source", "triggers",
-        "anti_triggers", "inputs", "reads", "writes",
-        "required_capabilities", "forbidden_capabilities", "invariants",
-        "anti_goals", "state_machine", "handoffs", "failure_modes",
-        "scenarios", "provenance",
+        "schema_version", "name", "preset_id", "role", "purpose",
+        "reuse_source", "triggers", "anti_triggers", "inputs", "reads",
+        "writes", "required_capabilities", "forbidden_capabilities",
+        "invariants", "anti_goals", "mode_lifecycle", "state_machine",
+        "handoffs", "failure_modes", "scenarios", "provenance",
     ]
     known = required + [
         "kind", "preset_id", "role", "mode_lifecycle", "reuse_justification", "reuse_reference", "sources", "rollback",
@@ -1094,9 +1094,13 @@ def validate_mode_contract(doc):
         _require(isinstance(doc["preset_id"], str) and
                  re.fullmatch(r"[a-z0-9][a-z0-9-]*", doc["preset_id"]),
                  f"{schema}.preset_id")
-    if "role" in doc:
-        _require_enum(doc["role"], {"auditor", "continuous-repair"},
-                      f"{schema}.role")
+    _require_enum(doc["role"], {"auditor", "continuous-repair"},
+                  f"{schema}.role")
+    try:
+        from mode_lifecycle import validate_lifecycle_contract
+        validate_lifecycle_contract(doc["mode_lifecycle"], doc["role"])
+    except ValueError as error:
+        raise ContractError(f"{schema}.mode_lifecycle: {error}") from error
     _require_enum(doc["reuse_source"], REUSE_SOURCES,
                   f"{schema}.reuse_source")
     _require_reuse_reference(doc, schema)

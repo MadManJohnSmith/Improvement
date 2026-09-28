@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from mode_lifecycle import validate_mode_lifecycle
+from composition_contract import validate_persona_bootstrap
 
 
 _LAYOUT_BLOCK = re.compile(
@@ -49,3 +50,4 @@ def validate_mode_layout(mode_dir, expected):
     if layout != expected:
         raise ValueError(f"SKILL.md mode-layout must equal {expected!r}")
     validate_mode_lifecycle(mode_dir, expected)
+    validate_persona_bootstrap(mode_dir / "agent.cordis.yml", mode_dir.name)

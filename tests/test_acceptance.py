@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import acceptance
 import bootstrap
-from mode_lifecycle import expected_lifecycle
+from mode_lifecycle import expected_lifecycle, persona_prefix
 
 
 class AcceptanceTests(unittest.TestCase):
@@ -65,8 +65,10 @@ class AcceptanceTests(unittest.TestCase):
             }
             files = {"mode.json": json.dumps(mode, indent=2) + "\n",
                      "preset.yml": f"name: {preset_id}\n",
-                     "agent.cordis.yml": """- id: persona
+                     "agent.cordis.yml": f"""- id: persona
   name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: {json.dumps(persona_prefix(preset_id))}
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
 - id: tool-fs

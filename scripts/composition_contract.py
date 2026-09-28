@@ -19,6 +19,7 @@ PROHIBITED_MODE_PLUGIN_TERMS = (
 )
 FS_SEARCH_PLUGIN = "@deepseek-ai/dsh-tool-fs-search"
 FS_SEARCH_REQUIRED_CONFIG = "sampleOverCapGlobResults"
+PERSONA_PLUGIN = "@deepseek-ai/dsh-persona"
 _KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 
@@ -112,7 +113,7 @@ def parse_composition(path):
     return rows
 
 
-def _validate_fs_search_config(row):
+def _config_values(row, wanted):
     configs = 0
     values = []
     in_config = False
@@ -125,13 +126,29 @@ def _validate_fs_search_config(row):
             configs += in_config
         elif in_config and indent == 4 and ":" in text:
             key, value = text.split(":", 1)
-            if key.strip() == FS_SEARCH_REQUIRED_CONFIG:
-                values.append(value.strip())
+            if key.strip() == wanted:
+                values.append(_scalar(value))
+    return configs, values
+
+
+def _validate_fs_search_config(row):
+    configs, values = _config_values(row, FS_SEARCH_REQUIRED_CONFIG)
     setting = f"config.{FS_SEARCH_REQUIRED_CONFIG}"
     if configs != 1 or len(values) != 1:
         raise ValueError(f"plugin {FS_SEARCH_PLUGIN!r} requires {setting}: false")
     if values[0] != "false":
         raise ValueError(f"plugin {FS_SEARCH_PLUGIN!r} requires {setting} to be false")
+
+
+def validate_persona_bootstrap(path, preset_id):
+    row = next((row for row in parse_composition(path)
+                if row["name"] == PERSONA_PLUGIN), None)
+    if row is None:
+        raise ValueError("persona plugin missing")
+    configs, values = _config_values(row, "prefix")
+    from mode_lifecycle import persona_prefix
+    if configs != 1 or values != [persona_prefix(preset_id)]:
+        raise ValueError("persona config.prefix must equal exact preset bootstrap contract")
 
 
 def validate_operational_composition(path):
