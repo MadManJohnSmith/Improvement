@@ -10,7 +10,7 @@ from composition_contract import validate_persona_bootstrap
 
 _LAYOUT_BLOCK = re.compile(
     r"(?ms)^```json mode-layout\s*\n(?P<body>.*?)\n```\s*$")
-_LAYOUT_KEYS = {"product_root", "workspace_root", "state_root"}
+_LAYOUT_KEYS = {"session_root", "product_root", "workspace_root", "state_root"}
 
 
 def layout_from_paths(product, workspace):
@@ -18,6 +18,7 @@ def layout_from_paths(product, workspace):
     if product.parent != workspace.parent:
         raise ValueError("product and workspace must be siblings")
     return {
+        "session_root": product.parent.name,
         "product_root": product.name,
         "workspace_root": workspace.name,
         "state_root": f"{workspace.name}/mode-state",
@@ -45,7 +46,7 @@ def validate_mode_layout(mode_dir, expected):
         raise ValueError(f"SKILL.md mode-layout is invalid JSON: {error}") from error
     if not isinstance(layout, dict) or set(layout) != _LAYOUT_KEYS:
         raise ValueError(
-            "SKILL.md mode-layout must contain exactly product_root, "
+            "SKILL.md mode-layout must contain exactly session_root, product_root, "
             "workspace_root, and state_root")
     if layout != expected:
         raise ValueError(f"SKILL.md mode-layout must equal {expected!r}")

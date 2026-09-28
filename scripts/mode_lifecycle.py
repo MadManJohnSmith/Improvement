@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import tempfile
 from pathlib import Path
@@ -31,10 +32,22 @@ LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _LIFECYCLE_FENCE = "mode-lifecycle"
 
 
+def startup_check(layout):
+    return ("pwd && test \"$(basename \"$PWD\")\" = "
+            f"{shlex.quote(layout['session_root'])}"
+            f" && test -d ./{shlex.quote(layout['product_root'])}"
+            f" && test -d ./{shlex.quote(layout['workspace_root'])}")
+
+
 def persona_prefix(preset_id):
     return (f"Preset bootstrap: your first action MUST call the skill tool with exact skill "
             f"{preset_id!r}. Do not analyze, use another tool, or answer before that call "
-            "succeeds. If loading fails, stop and report RETAINED.")
+            "succeeds. If loading fails, stop and report RETAINED. After the skill succeeds, "
+            "the first bash call MUST omit workdir (or use exactly '.') and run exactly the "
+            "pwd and relative layout checks declared by mode-lifecycle (startup_workdir: "
+            "session-cwd-only; workdir_override: forbidden-before-layout). Never infer, climb, "
+            "cd, or otherwise change workdir to validate layout. Resolve every later relative "
+            "path from the observed unchanged session cwd; any pwd drift is RETAINED.")
 
 
 def expected_lifecycle(role, layout):
@@ -46,8 +59,20 @@ def expected_lifecycle(role, layout):
         "read_before_write": True,
         "write_method": "workflow_write-full-replacement-not-atomic",
         "bounds": LIMITS,
+        "startup": {
+            "startup_workdir": "session-cwd-only",
+            "workdir_override": "forbidden-before-layout",
+            "first_post_skill_tool": "bash",
+            "first_bash_workdir": "omitted-or-dot",
+            "first_bash_command": startup_check(layout),
+            "expected_cwd_basename": layout["session_root"],
+            "relative_layout_checks": [
+                f"./{layout['product_root']}", f"./{layout['workspace_root']}"],
+            "path_resolution": "observed-unchanged-session-cwd",
+            "pwd_drift": "RETAINED",
+        },
         "tool_policy": {
-            "session_workdir": "common-parent",
+            "session_workdir": "observed-unchanged-session-cwd",
             "state_writes": {"tool": "workflow_write", "root": layout["state_root"]},
             "write_edit_tools": "forbidden",
         },
@@ -125,10 +150,15 @@ def validate_lifecycle_contract(value, role, layout=None):
         state_root = value.get("state_root")
         if not isinstance(state_root, str) or not state_root.endswith("/mode-state"):
             raise ValueError("mode_lifecycle state_root must end in /mode-state")
-        product_root = value.get("repair_candidate", {}).get("directory_template", "").split("-repair-", 1)[0]
-        if role == "auditor":
-            product_root = "<product>"
-        layout = {"state_root": state_root, "product_root": product_root}
+        startup = value.get("startup", {})
+        checks = startup.get("relative_layout_checks", [])
+        if not isinstance(checks, list) or len(checks) != 2:
+            raise ValueError("mode_lifecycle startup requires two relative layout checks")
+        product_root = checks[0][2:] if isinstance(checks[0], str) and checks[0].startswith("./") else None
+        workspace_root = state_root.rsplit("/mode-state", 1)[0]
+        session_root = startup.get("expected_cwd_basename")
+        layout = {"session_root": session_root, "state_root": state_root,
+                  "product_root": product_root, "workspace_root": workspace_root}
     expected = expected_lifecycle(role, layout)
     if value != expected:
         raise ValueError("mode_lifecycle does not match the role contract")

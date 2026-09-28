@@ -101,6 +101,7 @@ class TransactionTests(unittest.TestCase):
             mode = root / "modes" / preset_id
             mode.mkdir(parents=True)
             layout = {
+                "session_root": self.root.name,
                 "product_root": "Syncify",
                 "workspace_root": "Syncify-workspace",
                 "state_root": "Syncify-workspace/mode-state",

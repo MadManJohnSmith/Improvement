@@ -41,7 +41,7 @@ class AcceptanceTests(unittest.TestCase):
         plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
         (gen / "acceptance-plan.json").write_bytes(plan_bytes)
         artifacts = []
-        layout = {"product_root": "project",
+        layout = {"session_root": root.name, "product_root": "project",
                   "workspace_root": "project-workspace",
                   "state_root": "project-workspace/mode-state"}
         for role in ("auditor", "continuous-repair"):

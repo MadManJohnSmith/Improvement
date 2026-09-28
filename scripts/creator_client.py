@@ -217,6 +217,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     product = Path(request["project"])
     workspace = Path(request["workspace"])
     layout = layout_from_paths(product, workspace)
+    session_root = layout["session_root"]
     product_root = layout["product_root"]
     workspace_root = layout["workspace_root"]
     state_root = layout["state_root"]
@@ -229,6 +230,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Scenario:** {prompt_type}
 **Framework revision:** {framework_rev}
 **Project:** {project_name}
+**Session cwd (expected common-parent basename):** `{session_root}`
 **Product directory (exact basename):** `{product_root}`
 **Workspace directory (exact basename):** `{workspace_root}`
 **Mode-state path from their common parent (exact):** `{state_root}`
@@ -255,15 +257,21 @@ si falla), bash `@deepseek-ai/dsh-tool-bash`, filesystem
 `config.sampleOverCapGlobResults: false`, proveedor
 `@deepseek-ai/dsh-skill-filesystem` y loader `@deepseek-ai/dsh-tool-skill`. No
 incluyas filas de delegación, workflows, herramientas web/red ni plugin-manager.
-Los dos presets usan exclusivamente los nombres sibling autoritativos, exactos y
-case-sensitive: producto `{product_root}`, workspace `{workspace_root}` y estado
-relativo al padre común `{state_root}`. No sintetices estas rutas desde el ID
-`{project_name}`. Cada `mode.json` incluye `{product_root}` en `reads` y
-`{state_root}` en `writes`. Cada `SKILL.md` de modo contiene exactamente este bloque
-estructurado y además instruye comprobar que la sesión se abrió desde el padre común:
+Los dos presets usan exclusivamente la identidad sibling autoritativa, exacta y
+case-sensitive derivada al generar: cwd esperado por basename `{session_root}`, producto
+`{product_root}`, workspace `{workspace_root}` y estado relativo `{state_root}`. No
+incluyas la ruta absoluta del mantenedor ni sintetices nombres desde `{project_name}`.
+Cada `mode.json` incluye `{product_root}` en `reads` y `{state_root}` en `writes`.
+Cada `SKILL.md` de modo contiene exactamente este bloque estructurado:
 ```json mode-layout
-{{"product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
+{{"session_root":"{session_root}","product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
 ```
+Tras cargar el skill homónimo, la primera llamada bash no establece `workdir` (o usa
+exactamente `.`) y ejecuta en una sola llamada exactamente `pwd` más la comprobación
+del basename `{session_root}` y de los directorios relativos `./{product_root}` y
+`./{workspace_root}`. Nunca infiere, asciende, hace `cd` ni cambia el workdir para
+validar el layout. Todas las rutas relativas posteriores parten del cwd de sesión
+observado e inalterado; cualquier drift de `pwd` termina en `RETAINED`.
 No crean sesiones descendientes, subagentes ni workflows.
 
 Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
@@ -338,14 +346,22 @@ Ejecuta las capacidades internas en orden:
 
 ## Identidad de layout obligatoria
 
-En ambos modos usa los nombres sibling autoritativos exactos y case-sensitive:
-producto `{product_root}`, workspace `{workspace_root}` y mode-state `{state_root}`.
-Nunca derives esos nombres de `{project_name}`. Cada `mode.json` contiene
-`{product_root}` en `reads` y `{state_root}` en `writes`; cada `SKILL.md` de modo
-contiene exactamente este bloque y describe el acceso desde el padre común:
+En ambos modos usa la identidad sibling autoritativa exacta y case-sensitive: cwd de
+sesión esperado por basename `{session_root}`, producto `{product_root}`, workspace
+`{workspace_root}` y mode-state `{state_root}`. Nunca derives esos nombres de
+`{project_name}` ni incluyas una ruta absoluta del mantenedor. Cada `mode.json`
+contiene `{product_root}` en `reads` y `{state_root}` en `writes`; cada `SKILL.md` de
+modo contiene exactamente este bloque:
 ```json mode-layout
-{{"product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
+{{"session_root":"{session_root}","product_root":"{product_root}","workspace_root":"{workspace_root}","state_root":"{state_root}"}}
 ```
+El startup estructurado y la persona exigen `startup_workdir: session-cwd-only` y
+`workdir_override: forbidden-before-layout`: justo después del skill, la primera
+llamada bash omite `workdir` o usa `.`, ejecuta `pwd` y comprueba el basename
+`{session_root}` junto con `./{product_root}` y `./{workspace_root}`. Está prohibido
+inferir, ascender, hacer `cd` o cambiar workdir para buscar el layout. Todas las rutas
+relativas posteriores se resuelven desde ese cwd observado e inalterado; cualquier
+drift de `pwd` produce `RETAINED`.
 
 ## Ciclo operativo obligatorio y experiencia novata
 
@@ -367,8 +383,9 @@ completo con `workflow_write`; no responde finalmente hasta persistir y reportar
 ruta/conteo. Debe funcionar con `Audita completamente este proyecto; no modifiques
 ni publiques.`.
 
-Ambos lifecycle incluyen `tool_policy`: sesión en el padre común; Auditor solo usa
-bash read-only y `workflow_write` para estado; Repair jamás usa tools write/edit,
+Ambos lifecycle incluyen `startup` con el comando inicial exacto y `tool_policy` con
+`session_workdir: observed-unchanged-session-cwd`; Auditor solo usa bash read-only y
+`workflow_write` para estado; Repair jamás usa tools write/edit,
 y cualquier comando que cambie código usa bash con workdir exactamente igual al
 candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
 los vuelve a comprobar tras cada fase y ante cualquier drift queda RETAINED sin más

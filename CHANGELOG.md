@@ -1,5 +1,9 @@
 # Cambios
 
+## Startup de modos ligado exclusivamente al cwd de sesión — 2026-09-27
+
+- Fallo de auditoría final real: el Auditor recibió como cwd el padre común correcto, pero sobreescribió el workdir de su bash inicial con el padre superior y reportó falsamente ausente el workspace. El contrato generado exige ahora que, tras cargar el skill homónimo, la primera bash omita `workdir` o use `.`, ejecute `pwd` y valide los roots exactos `./<PRODUCT_ROOT>` y `./<WORKSPACE_ROOT>`; prohíbe inferir, ascender, buscar o cambiar cwd antes del layout, resuelve después todas las rutas relativas desde el cwd observado e inalterado y deja cualquier drift en `RETAINED`. `mode-layout` conserva el basename esperado del padre derivado al generar sin incrustar la ruta absoluta del mantenedor; lifecycle y persona fijan `startup_workdir: session-cwd-only` y `workdir_override: forbidden-before-layout`. Schema, Host/transacción y regresiones rechazan lifecycle/persona incompletos y comprueban el prompt preciso. Lifecycle continúa `EN CURSO/IMPLEMENTED_NOT_VERIFIED` hasta repetir la prueba DSH real.
+
 ## Migración segura de archivos esperados legacy — 2026-09-27
 
 - El preflight ya no pierde ni bloquea evidencia DSH antigua dentro de nombres estrictos: archiva junto con la evidencia inesperada el archivo esperado original completo, con source path, motivo y SHA-256, y activa solo registros schema-valid o el mapeo inequívoco `findings.id` → `finding_id`; formas anidadas red/green, resúmenes sin identidad y work-items incompatibles se conservan sin inventar datos. Descriptores legacy equivalentes se normalizan conservando bytes. Escritura, retirada y rollback siguen siendo transaccionales e idempotentes bajo los caps existentes. Regresiones cubren mezcla válida/incompatible, JSONL completo, work-items list/dict, descriptor y fallo tras retirada. Lifecycle permanece `EN CURSO/IMPLEMENTED_NOT_VERIFIED`.

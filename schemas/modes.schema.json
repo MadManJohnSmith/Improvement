@@ -66,6 +66,7 @@
         "read_before_write",
         "write_method",
         "bounds",
+        "startup",
         "tool_policy"
       ],
       "additionalProperties": true,
@@ -94,6 +95,59 @@
         },
         "bounds": {
           "type": "object"
+        },
+        "startup": {
+          "type": "object",
+          "required": [
+            "startup_workdir",
+            "workdir_override",
+            "first_post_skill_tool",
+            "first_bash_workdir",
+            "first_bash_command",
+            "expected_cwd_basename",
+            "relative_layout_checks",
+            "path_resolution",
+            "pwd_drift"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "startup_workdir": {
+              "const": "session-cwd-only"
+            },
+            "workdir_override": {
+              "const": "forbidden-before-layout"
+            },
+            "first_post_skill_tool": {
+              "const": "bash"
+            },
+            "first_bash_workdir": {
+              "const": "omitted-or-dot"
+            },
+            "first_bash_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expected_cwd_basename": {
+              "type": "string",
+              "minLength": 1
+            },
+            "relative_layout_checks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^\\./[^/]+$"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "uniqueItems": true
+            },
+            "path_resolution": {
+              "const": "observed-unchanged-session-cwd"
+            },
+            "pwd_drift": {
+              "const": "RETAINED"
+            }
+          }
         },
         "tool_policy": {
           "type": "object"

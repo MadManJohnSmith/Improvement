@@ -75,6 +75,7 @@ class Base(unittest.TestCase):
         (skill / "SKILL.md").write_text(skill_content)
         mode_artifacts = []
         layout = {
+            "session_root": self.root.name,
             "product_root": self.project.name,
             "workspace_root": self.workspace.name,
             "state_root": f"{self.workspace.name}/mode-state",
@@ -886,6 +887,7 @@ class CreatorTests(Base):
         cc.CreatorSession(self.run_dir).prepare()
         prompt = (self.run_dir / "creator-prompt.md").read_text()
 
+        self.assertIn(f"`{self.root.name}`", prompt)
         self.assertIn("`Syncify`", prompt)
         self.assertIn("`Syncify-workspace`", prompt)
         self.assertIn("`Syncify-workspace/mode-state`", prompt)
@@ -916,6 +918,16 @@ class CreatorTests(Base):
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("No\nincluyas filas de delegación, workflows, herramientas web/red ni plugin-manager", prompt)
         self.assertIn("json mode-lifecycle", prompt)
+        self.assertIn("`startup_workdir: session-cwd-only`", prompt)
+        self.assertIn("`workdir_override: forbidden-before-layout`", prompt)
+        self.assertIn("primera\nllamada bash omite `workdir` o usa `.`", prompt)
+        self.assertIn("`pwd`", prompt)
+        self.assertIn("`./project`", prompt)
+        self.assertIn("`./workspace`", prompt)
+        self.assertIn("prohibido\ninferir, ascender, hacer `cd` o cambiar workdir", prompt)
+        self.assertIn("drift de `pwd` produce `RETAINED`", prompt)
+        self.assertIn(f"basename `{self.root.name}`", prompt)
+        self.assertNotIn("session_root\":\"/", prompt)
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
         self.assertIn("ninguna colisión path/branch/worktree", prompt)
         self.assertIn("Nunca merge/push/publish", prompt)
@@ -1744,7 +1756,8 @@ class ValidatorTests(Base):
             "invariants": ["Arguments match"],
             "anti_goals": ["Do not mutate commands"],
             "mode_lifecycle": expected_lifecycle("auditor", {
-                "product_root": "product", "state_root": "workspace/mode-state"}),
+                "session_root": "parent", "product_root": "product",
+                "workspace_root": "workspace", "state_root": "workspace/mode-state"}),
             "state_machine": {
                 "states": ["READY"], "transitions": [],
                 "initial": "READY", "terminal": ["READY"],
@@ -1856,6 +1869,7 @@ class ValidatorTests(Base):
         mode_path = generated / "modes/project-continuous-repair/mode.json"
         mode = json.loads(mode_path.read_text())
         mode["mode_lifecycle"] = expected_lifecycle("auditor", {
+            "session_root": self.root.name,
             "product_root": self.project.name,
             "workspace_root": self.workspace.name,
             "state_root": f"{self.workspace.name}/mode-state",
@@ -1880,6 +1894,34 @@ class ValidatorTests(Base):
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("exact preset bootstrap contract", " ".join(
             report.layers["contracts"]["details"]))
+
+    def test_persona_without_session_cwd_startup_retained(self):
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-auditor/agent.cordis.yml"
+        prefix = persona_prefix("project-auditor")
+        self.assertIn("startup_workdir: session-cwd-only", prefix)
+        self.assertIn("workdir_override: forbidden-before-layout", prefix)
+        composition.write_text(composition.read_text().replace(
+            prefix, "Preset bootstrap: load the exact skill first, then find the project."))
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("exact preset bootstrap contract", " ".join(
+            report.layers["contracts"]["details"]))
+
+    def test_lifecycle_without_session_cwd_startup_retained(self):
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-auditor/mode.json"
+        mode = json.loads(mode_path.read_text())
+        del mode["mode_lifecycle"]["startup"]
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-auditor/mode.json":
+                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
 
     def test_persona_only_mode_composition_retained(self):
         generated, _ = self.make_package()

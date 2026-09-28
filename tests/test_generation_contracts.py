@@ -325,7 +325,9 @@ def _golden_mode_contract():
         "invariants": ["Never writes to product", "Max two attempts per unit"],
         "anti_goals": ["Do not modify source code"],
         "mode_lifecycle": expected_lifecycle("auditor", {
-            "product_root": "TestProject", "state_root": "TestProject-workspace/mode-state"}),
+            "session_root": "parent", "product_root": "TestProject",
+            "workspace_root": "TestProject-workspace",
+            "state_root": "TestProject-workspace/mode-state"}),
         "state_machine": {
             "states": ["READY", "AUDITING", "COMPLETE", "FAILED"],
             "transitions": [
@@ -1056,6 +1058,18 @@ class TestNegativeCorpus(unittest.TestCase):
         doc = _golden_mode_contract()
         doc["invariants"] = []
         with self.assertRaises(gc.ContractError):
+            gc.validate("mode-contract", doc)
+
+    def test_mode_lifecycle_without_session_cwd_startup_is_rejected(self):
+        doc = _golden_mode_contract()
+        del doc["mode_lifecycle"]["startup"]
+        with self.assertRaisesRegex(gc.ContractError, "mode_lifecycle"):
+            gc.validate("mode-contract", doc)
+
+    def test_mode_lifecycle_with_workdir_override_is_rejected(self):
+        doc = _golden_mode_contract()
+        doc["mode_lifecycle"]["startup"]["workdir_override"] = "allowed"
+        with self.assertRaisesRegex(gc.ContractError, "mode_lifecycle"):
             gc.validate("mode-contract", doc)
 
     # -- Skill contract: empty files ----------------------------------------
