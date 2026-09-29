@@ -50,7 +50,16 @@ Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación
 - Reparar todo lo persistido: «Repara los hallazgos de la auditoría; no publiques.»
 - Reparar IDs: «Repara A-01 y M-02; no publiques.»
 
-Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair deriva un worktree hermano mediante digest de revisión base completa e IDs seleccionados, ejecuta checks cerrados de path/symlink/worktree/branch/HEAD/dirty/stale/collision y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch y `candidate_commit: null`; un commit requiere otro prompt explícito. Drift de HEAD/status canónicos o diff fuera del candidato produce `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; falta piloto DSH real y no hay CAS/lease multiarchivo.
+Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair deriva un worktree hermano mediante digest de revisión base completa e IDs seleccionados, ejecuta checks cerrados de path/symlink/worktree/branch/HEAD/dirty/stale/collision y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch y `candidate_commit: null`; un commit requiere otro prompt explícito. Drift de HEAD/status canónicos o diff fuera del candidato produce `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; no hay CAS/lease multiarchivo.
+
+### Integración y recuperación de espacio (operador)
+
+El prompt simple no autoriza commit: el operador integra y después retira la candidata. Tras `git merge --ff-only <rama-dsh>` y `git push` en la rama canónica:
+
+1. Registrar `INTEGRATED` en `work-items.json.candidate` (solo el Host u el operador puede; los modos conservan el registro anterior y no lo borran).
+2. Retirar el worktree de esa candidata: `git worktree remove ../<Proyecto>-repair-<digest16>`, y su rama `git branch -D dsh/repair-<digest16>` cuando su tip esté fusionada. Solo si el worktree está limpio y su HEAD es ancestro de la rama canónica; una candidata sucia sin registro se conserva intacta (`unrecorded_dirty_target: RETAINED-never-adopted`, `unrelated_candidates: ignore-preserve`).
+
+El paso 2 no es cosmético: cada candidata puede acarrear decenas de GB de artefactos de compilación y varias rondas seguidas agotan el disco, lo que corta DSH a mitad de un turno. Comprobado en el piloto de Syncify, donde cuatro candidatas integradas sumaban unos 320 GB y el disco lleno tumbó dos turnos de Repair.
 
 ## Herramientas de mantenimiento (capa MVP)
 
