@@ -16,7 +16,8 @@ import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
                             initialize_state, repair_candidate_diff_command,
-                            repair_provision_command, repair_resume_command,
+                            repair_provision_command, repair_recording_command,
+                            repair_resume_command,
                             startup_check)
 
 
@@ -84,10 +85,18 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(candidate["unrelated_candidates"], "ignore-preserve")
         self.assertEqual(candidate["worktree_list_scope"],
                          "target-path-and-target-branch-only")
-        self.assertEqual(candidate["resume_policy"],
-                         "exact-recorded-dirty-only")
+        self.assertEqual(candidate["resume_policy"], "exact-recorded-only")
         self.assertEqual(candidate["resume_statuses"],
                          ["DIRTY", "RETAINED-pending-verification"])
+        self.assertEqual(candidate["unrecorded_dirty_target"],
+                         "RETAINED-never-adopted")
+        self.assertEqual(
+            candidate["interrupted_turn_recovery"],
+            "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command")
+        self.assertTrue(candidate["record_before_first_edit"])
+        self.assertEqual(candidate["record_statuses"], ["PROVISIONED", "DIRTY"])
+        self.assertEqual(candidate["recording_command"],
+                         repair_recording_command(layout))
         self.assertEqual(candidate["candidate_diff_command"],
                          repair_candidate_diff_command(layout))
         self.assertEqual(candidate["resume_command"], repair_resume_command(layout))
@@ -135,6 +144,115 @@ class ModeLifecycleTests(unittest.TestCase):
     def _run_resume(self, session, layout, base, digest, diff_digest):
         return self._run_command(
             repair_resume_command, session, layout, base, digest, diff_digest)
+
+    def _run_record(self, session, layout, base, digest, finding_digest=None):
+        command = repair_recording_command(layout).replace(
+            "<digest16>", digest).replace("<full-base>", base)
+        command = command.replace(
+            "<finding-ids-digest>", finding_digest or digest + "0" * 48)
+        return subprocess.run(command, cwd=session, shell=True,
+                              capture_output=True, text=True)
+
+    def _read_record_evidence(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        marker, finding_digest, status, path, branch, evidence = (
+            result.stdout.strip().split(" ", 5))
+        self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_RECORD__")
+        return {"finding_ids_digest": finding_digest, "status": status,
+                "path": path, "branch": branch, "evidence": evidence}
+
+    def test_repair_claims_candidate_before_first_edit_and_recovers_interrupted_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "5a5a5a5a5a5a5a5a"
+            self.assertEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
+            candidate = session / f"Product-repair-{digest}"
+
+            claimed = self._read_record_evidence(
+                self._run_record(session, layout, base, digest))
+            self.assertEqual(claimed["status"], "PROVISIONED")
+            self.assertEqual(claimed["evidence"], "-")
+            self.assertEqual(claimed["path"], str(candidate))
+            self.assertEqual(claimed["branch"], f"dsh/repair-{digest}")
+            self.assertEqual(claimed["finding_ids_digest"], digest + "0" * 48)
+
+            (candidate / "tracked.txt").write_bytes(b"interrupted repair bytes\n")
+            recovered = self._read_record_evidence(
+                self._run_record(session, layout, base, digest))
+            self.assertEqual(recovered["status"], "DIRTY")
+            diff_marker, diff_digest, paths = recovered["evidence"].split(" ", 2)
+            self.assertEqual(diff_marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
+            self.assertEqual(json.loads(paths), ["tracked.txt"])
+            self.assertEqual(recovered["path"], str(candidate))
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(candidate), "status", "--porcelain=v1"],
+                    text=True), " M tracked.txt\n")
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
+
+            resumed = self._run_resume(session, layout, base, digest, diff_digest)
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            self.assertEqual((candidate / "tracked.txt").read_bytes(),
+                             b"interrupted repair bytes\n")
+
+    def test_repair_recording_command_fails_closed_outside_recorded_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "6b6b6b6b6b6b6b6b"
+            cases = {"missing": base, "stale-base": "0" * 40}
+            for mutation, base_value in cases.items():
+                with self.subTest(mutation=mutation):
+                    result = self._run_record(session, layout, base_value, digest)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(subprocess.check_output(
+                        ["git", "-C", str(product), "status", "--porcelain=v1"],
+                        text=True), "")
+
+            with self.subTest(mutation="unregistered-target"):
+                candidate = session / f"Product-repair-{digest}"
+                candidate.mkdir()
+                result = self._run_record(session, layout, base, digest)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(candidate.joinpath("tracked.txt").exists())
+
+    def test_provisioned_candidate_record_needs_no_diff_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "7c7c7c7c7c7c7c7c"
+            self.assertEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
+            candidate = session / f"Product-repair-{digest}"
+            state = session / "Product-workspace/mode-state"
+            state.mkdir()
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "items": [],
+                "candidate": {"base_revision": base,
+                              "finding_ids_digest": digest + "0" * 48,
+                              "path": candidate.name,
+                              "branch": f"dsh/repair-{digest}",
+                              "head": base, "status": "PROVISIONED"},
+            }) + "\n")
+            schema = mode_lifecycle.state_schema()
+            value = json.loads((state / "work-items.json").read_text())
+            mode_lifecycle._valid(
+                value["candidate"], schema["files"]["work-items.json"]["candidate"],
+                "work-items.json.candidate")
+
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "items": [],
+                "candidate": {"base_revision": base,
+                              "finding_ids_digest": digest + "0" * 48,
+                              "path": candidate.name,
+                              "branch": f"dsh/repair-{digest}",
+                              "head": base, "status": "DIRTY"},
+            }) + "\n")
+            with self.assertRaises(ValueError):
+                mode_lifecycle._valid(
+                    json.loads((state / "work-items.json").read_text())["candidate"],
+                    schema["files"]["work-items.json"]["candidate"],
+                    "work-items.json.candidate")
 
     def test_repair_provision_command_creates_registered_sibling_and_keeps_canonical_clean(self):
         with tempfile.TemporaryDirectory() as tmp:

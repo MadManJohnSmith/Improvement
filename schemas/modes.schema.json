@@ -118,11 +118,16 @@
                   "candidate_workdir",
                   "provision_workdir",
                   "provision_command",
+                  "recording_command",
+                  "record_before_first_edit",
+                  "record_statuses",
                   "candidate_diff_command",
                   "resume_command",
                   "resume_policy",
                   "resume_statuses",
                   "resume_required_checks",
+                  "unrecorded_dirty_target",
+                  "interrupted_turn_recovery",
                   "provision_checks",
                   "unrelated_candidates",
                   "worktree_list_scope",
@@ -278,12 +283,25 @@
               "type": "string",
               "minLength": 1
             },
+            "recording_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "record_before_first_edit": {
+              "const": true
+            },
+            "record_statuses": {
+              "const": [
+                "PROVISIONED",
+                "DIRTY"
+              ]
+            },
             "resume_command": {
               "type": "string",
               "minLength": 1
             },
             "resume_policy": {
-              "const": "exact-recorded-dirty-only"
+              "const": "exact-recorded-only"
             },
             "resume_statuses": {
               "const": [
@@ -297,6 +315,12 @@
               "items": {
                 "type": "string"
               }
+            },
+            "unrecorded_dirty_target": {
+              "const": "RETAINED-never-adopted"
+            },
+            "interrupted_turn_recovery": {
+              "const": "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command"
             },
             "provision_checks": {
               "type": "array",

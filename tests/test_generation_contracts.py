@@ -1096,8 +1096,10 @@ class TestNegativeCorpus(unittest.TestCase):
         required = conditional["then"]["properties"]["repair_candidate"]["required"]
         for field in ("candidate_root", "forbidden_candidate_location",
                       "candidate_workdir", "provision_workdir", "provision_command",
-                      "candidate_diff_command", "resume_command", "resume_policy",
-                      "resume_statuses", "resume_required_checks"):
+                      "recording_command", "record_before_first_edit",
+                      "record_statuses", "candidate_diff_command", "resume_command",
+                      "resume_policy", "resume_statuses", "resume_required_checks",
+                      "unrecorded_dirty_target", "interrupted_turn_recovery"):
             self.assertIn(field, required)
         repair = lifecycle["properties"]["repair_candidate"]["properties"]
         self.assertEqual(repair["candidate_root"]["const"],
@@ -1106,10 +1108,16 @@ class TestNegativeCorpus(unittest.TestCase):
                          "under-product-root")
         self.assertEqual(repair["provision_workdir"]["const"],
                          "omitted-session-cwd")
-        self.assertEqual(repair["resume_policy"]["const"],
-                         "exact-recorded-dirty-only")
+        self.assertEqual(repair["resume_policy"]["const"], "exact-recorded-only")
         self.assertEqual(repair["resume_statuses"]["const"],
                          ["DIRTY", "RETAINED-pending-verification"])
+        self.assertEqual(repair["record_before_first_edit"]["const"], True)
+        self.assertEqual(repair["record_statuses"]["const"], ["PROVISIONED", "DIRTY"])
+        self.assertEqual(repair["unrecorded_dirty_target"]["const"],
+                         "RETAINED-never-adopted")
+        self.assertEqual(
+            repair["interrupted_turn_recovery"]["const"],
+            "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command")
 
     def test_repair_lifecycle_missing_provision_field_is_rejected(self):
         doc = _golden_mode_contract()

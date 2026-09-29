@@ -32,8 +32,8 @@ sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
 from mode_lifecycle import (repair_candidate_diff_command,
-                            repair_provision_command, repair_resume_command,
-                            startup_check)
+                            repair_provision_command, repair_recording_command,
+                            repair_resume_command, startup_check)
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -228,6 +228,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     repair_command = repair_provision_command(layout)
     repair_diff_command = repair_candidate_diff_command(layout)
     repair_resume = repair_resume_command(layout)
+    repair_record_command = repair_recording_command(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -442,7 +443,7 @@ destino relativo. Luego exige que realpath y el worktree registrado sean exactam
 `$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
 `./{product_root}/...`.
 Antes de crear/reusar lee y valida estrictamente `work-items.json.candidate`. Si el target
-está sucio, solo permite `resume_policy: exact-recorded-dirty-only`: mismo path, branch,
+está sucio, solo permite `resume_policy: exact-recorded-only`: mismo path, branch,
 base y digest de hallazgos, estado `DIRTY` o `RETAINED` pendiente de verificación, y
 evidencia `candidate_diff_digest` + `changed_paths`. Captura esa evidencia con el comando
 central `{repair_diff_command}`. Reanuda sin cambiar bytes únicamente con el comando
@@ -451,6 +452,19 @@ recomprueba worktree registrado exacto, HEAD base, canonical limpio/inalterado, 
 vacío y byte-idéntico, paths completos confinados a archivos regulares sin symlinks y
 ausencia de submódulos. Registro ausente o discrepancia de digest/path/base/status deja
 la colisión `RETAINED`; nunca adopta un worktree sucio arbitrario.
+Declara además `record_before_first_edit: true`, `record_statuses:
+["PROVISIONED","DIRTY"]`, `unrecorded_dirty_target: RETAINED-never-adopted`,
+`interrupted_turn_recovery: recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command`
+y el comando central `{repair_record_command}`. El procedimiento DEBE reclamar la
+candidata antes de editarla: nada de cambio de código puede ocurrir antes de que exista
+`work-items.json.candidate` con estado `PROVISIONED` que coincida en path, branch, head,
+base y `finding_ids_digest`. Ese reclamo se persiste con el `recording_command` central
+justo después de que el `provision_command` tenga éxito; tras el primer cambio de código se
+repite el mismo comando y se persiste como `DIRTY` con el `candidate_diff_digest` y
+`changed_paths` capturados. Si el reclamo no se puede persistir, no se cambia código y se
+reporta `RETAINED`. Una candidata registrada `PROVISIONED` que ya aparezca sucia es un
+turno interrumpido: se recupera con el `recording_command`, jamás creando otra vez ni
+descartando su diff.
 Para creación o reutilización limpia ejecuta literalmente el `provision_command` central,
 cuyos `provision_checks` se limitan a invariantes canónicos y a la identidad target: path
 y branch target ausentes o reutilizables como el mismo worktree, HEAD/base y limpieza del

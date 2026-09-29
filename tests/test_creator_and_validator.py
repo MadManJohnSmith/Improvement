@@ -1895,12 +1895,19 @@ class ValidatorTests(Base):
                          "target-path-and-target-branch-only")
         self.assertEqual(contract["collision_policy"],
                          "retain-target-collision-no-improvisation")
-        self.assertEqual(contract["resume_policy"],
-                         "exact-recorded-dirty-only")
+        self.assertEqual(contract["resume_policy"], "exact-recorded-only")
         self.assertEqual(contract["resume_statuses"],
                          ["DIRTY", "RETAINED-pending-verification"])
+        self.assertEqual(contract["unrecorded_dirty_target"],
+                         "RETAINED-never-adopted")
+        self.assertEqual(
+            contract["interrupted_turn_recovery"],
+            "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command")
+        self.assertTrue(contract["record_before_first_edit"])
+        self.assertEqual(contract["record_statuses"], ["PROVISIONED", "DIRTY"])
         self.assertIn("candidate_diff_command", contract)
         self.assertIn("resume_command", contract)
+        self.assertIn("recording_command", contract)
         self.assertIn("strict-work-items-candidate",
                       contract["resume_required_checks"])
         self.assertEqual(contract["commit"],
@@ -1960,7 +1967,12 @@ class ValidatorTests(Base):
         self.assertIn("provisioning bash call MUST omit workdir", repair_prefix)
         self.assertIn("Before provisioning, read and strictly validate work-items.json", repair_prefix)
         self.assertIn("Never adopt an unrecorded dirty worktree", repair_prefix)
-        self.assertIn("candidate diff digest and changed paths", repair_prefix)
+        self.assertIn("Claim the candidate before you edit it", repair_prefix)
+        self.assertIn("recording_command", repair_prefix)
+        self.assertIn("__IMPROVEMENT_CANDIDATE_RECORD__", repair_prefix)
+        self.assertIn("status PROVISIONED", repair_prefix)
+        self.assertIn("make no code change at all and report RETAINED", repair_prefix)
+        self.assertIn("recover it with the recording command", repair_prefix)
         self.assertIn("candidate_root is ${session-cwd}/<candidate-name>", repair_prefix)
         self.assertIn("workdir exactly equal to the candidate_workdir", repair_prefix)
         self.assertIn("never '.'", repair_prefix)

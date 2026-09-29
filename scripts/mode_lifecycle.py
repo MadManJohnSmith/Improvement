@@ -124,6 +124,32 @@ def repair_candidate_diff_command(layout):
             _candidate_diff_invocation("-"))
 
 
+def repair_recording_command(layout):
+    """Return the exact command that records candidate evidence into mode state.
+
+    The single recorded transition is PROVISIONED (clean, no diff) -> DIRTY (diff
+    captured). A candidate is only ever touched by the mode after its identity is
+    already durably recorded, so an interrupted turn never strands a dirty
+    worktree that the strict resume path would refuse.
+    """
+    return (
+        "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
+        "finding_ids_digest='<finding-ids-digest>'; " + _repair_target(layout) +
+        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
+        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
+        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
+        "candidate_status='PROVISIONED'; diff_evidence='-'; "
+        "if test -n \"$(git -C \"$candidate\" status --porcelain=v1)\"; then "
+        "candidate_status='DIRTY'; "
+        "diff_evidence=\"$(" + _candidate_diff_invocation("\"$diff_evidence\"") + ")\"; fi; "
+        "printf '__IMPROVEMENT_CANDIDATE_RECORD__ %s %s %s %s %s\\n' "
+        "\"$finding_ids_digest\" \"$candidate_status\" \"$candidate\" \"$branch\" "
+        "\"$diff_evidence\"")
+
+
 def repair_resume_command(layout):
     """Return the exact command for an already authorized dirty target."""
     return (
@@ -172,8 +198,18 @@ def persona_prefix(preset_id, role=None):
             "otherwise dirty target collision is RETAINED. Never adopt an unrecorded dirty worktree. "
             "The resume command must prove registered identity, HEAD at base, canonical unchanged and "
             "clean, a nonempty byte-identical candidate diff, safe regular changed paths, and no "
-            "submodule or symlink. Capture candidate diff digest and changed paths before persisting "
-            "DIRTY/RETAINED. Provision only from the unchanged session cwd: the provisioning bash call "
+            "submodule or symlink. "
+            "Claim the candidate before you edit it: immediately after the provisioning command "
+            "succeeds and before the first code-changing call, run the exact centrally generated "
+            "recording_command and persist its emitted __IMPROVEMENT_CANDIDATE_RECORD__ line as "
+            "work-items.json.candidate with status PROVISIONED, matching path, branch, head, base, and "
+            "finding_ids_digest. Re-run the same recording command after the first code change and "
+            "persist the result as status DIRTY with the captured candidate_diff_digest and "
+            "changed_paths. A claimed candidate that is PROVISIONED but already dirty is a turn that "
+            "was interrupted: recover it with the recording command, never with a fresh create, and "
+            "never by discarding its diff. If that first claim cannot be persisted, make no code "
+            "change at all and report RETAINED. "
+            "Provision only from the unchanged session cwd: the provisioning bash call "
             "MUST omit workdir (never use '.' as a code-changing workdir) and run the exact centrally "
             "generated provision_command after substituting only validated digest16 and full_base. "
             "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
@@ -250,9 +286,12 @@ def expected_lifecycle(role, layout):
             "candidate_workdir": f"{layout['product_root']}-repair-<digest16>",
             "provision_workdir": "omitted-session-cwd",
             "provision_command": repair_provision_command(layout),
+            "recording_command": repair_recording_command(layout),
+            "record_before_first_edit": True,
+            "record_statuses": ["PROVISIONED", "DIRTY"],
             "candidate_diff_command": repair_candidate_diff_command(layout),
             "resume_command": repair_resume_command(layout),
-            "resume_policy": "exact-recorded-dirty-only",
+            "resume_policy": "exact-recorded-only",
             "resume_statuses": ["DIRTY", "RETAINED-pending-verification"],
             "resume_required_checks": [
                 "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
@@ -261,6 +300,8 @@ def expected_lifecycle(role, layout):
                 "candidate-diff-nonempty-and-digest-matches", "changed-path-list-complete",
                 "changed-paths-candidate-confined-regular-no-symlink", "no-submodules",
             ],
+            "unrecorded_dirty_target": "RETAINED-never-adopted",
+            "interrupted_turn_recovery": "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command",
             "provision_checks": [
                 "canonical-real-directory-not-symlink", "canonical-git-clean",
                 "full-base-revision-matches", "target-path-absent-or-real-directory-not-symlink",
@@ -404,7 +445,7 @@ def state_schema():
                     {"work_item_id": text, "finding_id": text, "base_revision": revision, "status": {"enum": ["PENDING", "IN_PROGRESS", "VERIFIED", "RETAINED"]}},
                     {"work_item_id": "W-01", "finding_id": "A-01", "base_revision": "a" * 40, "status": "PENDING"}),
                 "candidate": {"type": ["object", "null"], "required": ["base_revision", "finding_ids_digest", "path", "branch", "head", "status"], "additionalProperties": False,
-                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
+                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["PROVISIONED", "DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
                     "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
                 "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head"],
