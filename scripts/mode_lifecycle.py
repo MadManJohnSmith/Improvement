@@ -478,7 +478,13 @@ def _legacy_state_schema():
 
 
 def state_schema():
-    text = {"type": "string", "minLength": 1, "maxLength": 1024}
+    # A record is already bounded as a whole by RECORD_BYTE_LIMIT, so every text
+    # field shares that single bound. A tighter per-field cap would make the
+    # preflight drop records the modes write routinely (a finding summary with
+    # its evidence runs past 1 KiB), and that loss is invisible afterwards:
+    # the finding's repair can land in the product while its record never
+    # reaches the live state again.
+    text = {"type": "string", "minLength": 1, "maxLength": RECORD_BYTE_LIMIT}
     revision = {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
     return {
         "schema_version": SCHEMA_VERSION,
@@ -581,24 +587,40 @@ def _adapt_record(record, spec, label):
 def _jsonl(data, spec, label):
     records = []
     incompatible = False
+    dropped = []
+    identity_keys = tuple(spec["dedupe_key"][:1]) + ("id",)
+
+    def identity(raw_line, parsed):
+        """Name a dropped record by its own identity, or by its line if it has none."""
+        if isinstance(parsed, dict):
+            for key in identity_keys:
+                value = parsed.get(key)
+                if isinstance(value, str) and value.strip():
+                    return f"{label}#{value.strip()}"
+        return f"{label}:{raw_line}"
+
     for number, raw in enumerate(data.splitlines(), 1):
         if not raw.strip():
             continue
         if len(raw) > RECORD_BYTE_LIMIT:
             incompatible = True
+            dropped.append(identity(number, None))
             continue
         try:
             record = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
             incompatible = True
+            dropped.append(identity(number, None))
             continue
-        record, changed = _adapt_record(record, spec, f"{label}:{number}")
+        adapted, changed = _adapt_record(record, spec, f"{label}:{number}")
         incompatible |= changed
-        if record is not None:
-            records.append(record)
+        if adapted is None:
+            dropped.append(identity(number, record))
+            continue
+        records.append(adapted)
     compacted = compact_records(records, spec["dedupe_key"], spec["limit"])
     encoded = b"".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n" for record in compacted)
-    return encoded, incompatible
+    return encoded, incompatible, dropped
 
 
 def _replace_bytes(path, encoded):
@@ -715,12 +737,12 @@ def initialize_state(state, descriptor, archive_root=None):
     staged = {"project.json": _encode_json(descriptor), "state-schema.json": _encode_json(schema)}
     originals = {}
 
-    def preserve_expected(name, data, reason):
+    def preserve_expected(name, data, reason, **extra):
         archive_name = f"active-{name}"
         if archive_name in legacy:
             archive_name = f"active-{hashlib.sha256(name.encode()).hexdigest()[:16]}-{name}"
         legacy[archive_name] = data
-        legacy_metadata[archive_name] = {"source_path": name, "reason": reason}
+        legacy_metadata[archive_name] = {"source_path": name, "reason": reason, **extra}
     for name in existing & allowed:
         data = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
         originals[name] = data
@@ -746,9 +768,13 @@ def initialize_state(state, descriptor, archive_root=None):
             if stored_schema not in (schema, _legacy_state_schema()):
                 preserve_expected(name, data, "incompatible-expected-file")
         if name.endswith(".jsonl"):
-            staged[name], incompatible = _jsonl(data, schema["files"][name], name)
+            staged[name], incompatible, dropped = _jsonl(data, schema["files"][name], name)
             if incompatible:
-                preserve_expected(name, data, "incompatible-records")
+                # The receipt names what could not be activated, so a record that
+                # leaves the live state is visible here instead of being
+                # rediscovered months later by cross-referencing identifiers.
+                preserve_expected(name, data, "incompatible-records",
+                                   dropped_records=dropped[:32])
         if name == "work-items.json":
             incompatible = False
             try:

@@ -14,11 +14,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
-                            LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
-                            initialize_state, repair_candidate_diff_command,
+                            LEGACY_TOTAL_BYTE_LIMIT, LIMITS, RECORD_BYTE_LIMIT,
+                            compact_records, initialize_state,
+                            repair_candidate_diff_command,
                             repair_provision_command, repair_reconcile_command,
                             repair_recording_command, repair_resume_command,
-                            startup_check)
+                            startup_check, state_schema)
 
 
 class ModeLifecycleTests(unittest.TestCase):
@@ -712,6 +713,94 @@ class ModeLifecycleTests(unittest.TestCase):
             generation, = archive.iterdir()
             self.assertEqual((generation / "files" /
                               "active-work-items.json").read_bytes(), original)
+
+    def test_finding_summary_longer_than_one_kibibyte_survives_the_preflight(self):
+        """A real audit summary is evidence-dense and routinely passes 1 KiB.
+
+        The schema used to cap every text field at 1024 characters while a whole
+        record may be 4096 bytes, so the preflight rejected those findings,
+        rebuilt findings.jsonl without them and reported nothing: the repair
+        could still land in the product while the record never came back. SYNC-AUD-047
+        was lost that way and only an audit found it months later.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            revision = "a" * 40
+            # The real case: 1245 characters, 1561 bytes on the wire.
+            long_summary = "x" * 1245
+            self.assertGreater(len(long_summary), 1024)
+            findings = [
+                {"finding_id": "SYNC-AUD-047", "base_revision": revision,
+                 "severity": "HIGH", "summary": long_summary, "status": "OPEN"},
+            ]
+            (state / "findings.jsonl").write_bytes(
+                b"".join(json.dumps(item).encode() + b"\n" for item in findings))
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            initialize_state(state, descriptor, root / "archive")
+
+            active = [json.loads(line) for line in
+                      (state / "findings.jsonl").read_text().splitlines()]
+            self.assertEqual([item["finding_id"] for item in active],
+                             ["SYNC-AUD-047"])
+            self.assertEqual(active[0]["summary"], long_summary)
+            # Nothing was dropped, so nothing needed archiving.
+            self.assertFalse((root / "archive").exists())
+
+    def test_text_fields_are_bounded_by_the_record_cap_not_a_literal(self):
+        """Pin the bound structurally so it cannot be re-tightened below the cap."""
+        schema = state_schema()
+        findings = schema["files"]["findings.jsonl"]["record"]
+        for field in ("finding_id", "summary"):
+            self.assertEqual(findings["properties"][field]["maxLength"],
+                             RECORD_BYTE_LIMIT)
+        handoffs = schema["files"]["handoffs.jsonl"]["record"]
+        for field in ("handoff_id", "next_prompt"):
+            self.assertEqual(handoffs["properties"][field]["maxLength"],
+                             RECORD_BYTE_LIMIT)
+        verification = schema["files"]["verification-results.jsonl"]["record"]
+        self.assertEqual(verification["properties"]["command"]["maxLength"],
+                         RECORD_BYTE_LIMIT)
+        # A record that is legal under the schema still fits the byte cap.
+        self.assertEqual(findings["max_bytes"], RECORD_BYTE_LIMIT)
+
+    def test_dropped_record_identities_are_named_in_the_archive_receipt(self):
+        """A record that leaves the live state must be visible in the evidence."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            revision = "a" * 40
+            findings = [
+                {"finding_id": "A-01", "base_revision": revision,
+                 "severity": "HIGH", "summary": "current", "status": "OPEN"},
+                {"finding_id": "A-02", "base_revision": revision,
+                 "severity": "NOT-A-SEVERITY", "summary": "broken enum", "status": "OPEN"},
+            ]
+            finding_bytes = b"".join(json.dumps(item).encode() + b"\n" for item in findings)
+            (state / "findings.jsonl").write_bytes(finding_bytes)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+
+            initialize_state(state, descriptor, root / "archive")
+
+            active = [json.loads(line) for line in
+                      (state / "findings.jsonl").read_text().splitlines()]
+            self.assertEqual([item["finding_id"] for item in active], ["A-01"])
+            generation, = (root / "archive").iterdir()
+            receipt = json.loads((generation / "receipt.json").read_text())
+            by_source = {item["source_path"]: item for item in receipt["files"]}
+            self.assertEqual(by_source["findings.jsonl"]["dropped_records"],
+                             ["findings.jsonl#A-02"])
+            # The original bytes are still recoverable.
+            self.assertEqual(
+                (generation / "files" / "active-findings.jsonl").read_bytes(),
+                finding_bytes)
 
     def test_mixed_records_preserve_whole_original_and_migrate_only_safe_records(self):
         with tempfile.TemporaryDirectory() as tmp:
