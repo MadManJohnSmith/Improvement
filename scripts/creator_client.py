@@ -32,8 +32,9 @@ sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
 from mode_lifecycle import (repair_candidate_diff_command,
-                            repair_provision_command, repair_recording_command,
-                            repair_resume_command, startup_check)
+                            repair_provision_command, repair_reconcile_command,
+                            repair_recording_command, repair_resume_command,
+                            startup_check)
 from onboard import checked
 
 SCHEMA_VERSION = 1
@@ -229,6 +230,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     repair_diff_command = repair_candidate_diff_command(layout)
     repair_resume = repair_resume_command(layout)
     repair_record_command = repair_recording_command(layout)
+    repair_reconcile_cmd = repair_reconcile_command(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -455,7 +457,7 @@ la colisión `RETAINED`; nunca adopta un worktree sucio arbitrario.
 Declara además `record_before_first_edit: true`, `record_statuses:
 ["PROVISIONED","DIRTY"]`, `unrecorded_dirty_target: RETAINED-never-adopted`,
 `interrupted_turn_recovery: recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command`
-y el comando central `{repair_record_command}`. El procedimiento DEBE reclamar la
+y el comando central `{repair_record_command}`. Si el comando central de reanudación falla SOLO porque el `candidate_diff_digest` registrado quedó obsoleto mientras el registro ya coincidía exactamente en path, branch, base y digest de hallazgos, eso NO es una colisión y NUNCA requiere decisión del operador: ejecuta el comando central `{repair_reconcile_cmd}`, persiste su línea `__IMPROVEMENT_CANDIDATE_RECONCILE__` como el nuevo registro `DIRTY` y reanuda normalmente (`stale_record_policy: reconcile-then-resume`, con las precondiciones exactas de identidad target, worktree registrado, HEAD base, canonical limpio e inalterado, diff no vacío, paths confinados sin symlinks y sin submódulos). Cualquier discrepancia real de path, branch, base o digest de hallazgos sigue siendo `RETAINED` duro. El procedimiento DEBE reclamar la
 candidata antes de editarla: nada de cambio de código puede ocurrir antes de que exista
 `work-items.json.candidate` con estado `PROVISIONED` que coincida en path, branch, head,
 base y `finding_ids_digest`. Ese reclamo se persiste con el `recording_command` central

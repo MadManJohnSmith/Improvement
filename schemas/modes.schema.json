@@ -122,9 +122,12 @@
                   "record_before_first_edit",
                   "record_statuses",
                   "candidate_diff_command",
+                  "reconcile_command",
                   "resume_command",
                   "resume_policy",
                   "resume_statuses",
+                  "stale_record_policy",
+                  "stale_record_precondition",
                   "resume_required_checks",
                   "unrecorded_dirty_target",
                   "interrupted_turn_recovery",
@@ -296,6 +299,10 @@
                 "DIRTY"
               ]
             },
+            "reconcile_command": {
+              "type": "string",
+              "minLength": 1
+            },
             "resume_command": {
               "type": "string",
               "minLength": 1
@@ -308,6 +315,16 @@
                 "DIRTY",
                 "RETAINED-pending-verification"
               ]
+            },
+            "stale_record_policy": {
+              "const": "reconcile-then-resume"
+            },
+            "stale_record_precondition": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
             },
             "resume_required_checks": {
               "type": "array",

@@ -150,6 +150,45 @@ def repair_recording_command(layout):
         "\"$diff_evidence\"")
 
 
+_RECONCILE_IDENTITY_SCRIPT = r'''import hashlib,sys
+full_base,raw=sys.argv[1],sys.argv[2]
+ids=sorted({part.strip() for part in raw.replace(",", "\n").split("\n") if part.strip()})
+if not ids: raise SystemExit(1)
+sys.stdout.write(hashlib.sha256((full_base+"\n"+"\n".join(ids)).encode()).hexdigest())
+'''
+
+
+def repair_reconcile_command(layout):
+    """Return the exact command that re-captures a stale recorded diff.
+
+    Ownership is already proven by the record itself: path, branch, base and
+    finding digest all matched the deterministic target. Only the diff
+    evidence is stale, so the current diff is re-measured on that same proven
+    candidate instead of stranding the repair for an operator. The command
+    never trusts the caller's identity: it recomputes the finding digest and
+    digest16 from the base revision plus the actual finding IDs, so a record
+    that disagrees about path, branch, base or findings cannot be reconciled.
+    """
+    encoded = base64.b64encode(_RECONCILE_IDENTITY_SCRIPT.encode()).decode()
+    return (
+        "set -eu; full_base='<full-base>'; "
+        "finding_ids_digest=$(python3 -c 'import base64;exec(base64.b64decode(\"" +
+        encoded + "\"))' \"$full_base\" '<finding-ids-lf-separated>'); "
+        "digest16=$(printf '%s' \"$finding_ids_digest\" | cut -c1-16); " +
+        _repair_target(layout) +
+        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
+        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
+        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
+        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
+        "diff_evidence=\"$(" + _candidate_diff_invocation("-") + ")\"; "
+        "printf '__IMPROVEMENT_CANDIDATE_RECONCILE__ %s %s %s %s %s\\n' "
+        "\"$finding_ids_digest\" 'DIRTY' \"$candidate\" \"$branch\" "
+        "\"$diff_evidence\"")
+
+
 def repair_resume_command(layout):
     """Return the exact command for an already authorized dirty target."""
     return (
@@ -199,6 +238,14 @@ def persona_prefix(preset_id, role=None):
             "The resume command must prove registered identity, HEAD at base, canonical unchanged and "
             "clean, a nonempty byte-identical candidate diff, safe regular changed paths, and no "
             "submodule or symlink. "
+            "If the resume command fails ONLY because the stored candidate_diff_digest is stale while "
+            "the record already matches target path, branch, base and finding digest exactly, that is "
+            "not a collision and never needs an operator: run the exact centrally generated "
+            "reconcile_command, persist its emitted __IMPROVEMENT_CANDIDATE_RECONCILE__ line as the new "
+            "DIRTY record, and resume normally (stale_record_policy: reconcile-then-resume). Re-capture "
+            "is allowed only after that exact identity match and only with the canonical product still "
+            "unchanged and clean. Any mismatch of path, branch, base or finding digest remains a hard "
+            "RETAINED. "
             "Claim the candidate before you edit it: immediately after the provisioning command "
             "succeeds and before the first code-changing call, run the exact centrally generated "
             "recording_command and persist its emitted __IMPROVEMENT_CANDIDATE_RECORD__ line as "
@@ -290,9 +337,17 @@ def expected_lifecycle(role, layout):
             "record_before_first_edit": True,
             "record_statuses": ["PROVISIONED", "DIRTY"],
             "candidate_diff_command": repair_candidate_diff_command(layout),
+            "reconcile_command": repair_reconcile_command(layout),
             "resume_command": repair_resume_command(layout),
             "resume_policy": "exact-recorded-only",
             "resume_statuses": ["DIRTY", "RETAINED-pending-verification"],
+            "stale_record_policy": "reconcile-then-resume",
+            "stale_record_precondition": [
+                "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
+                "registered-worktree-exact-identity", "target-head-equals-full-base",
+                "canonical-head-and-clean-unchanged", "candidate-diff-nonempty",
+                "changed-paths-candidate-confined-regular-no-symlink", "no-submodules",
+            ],
             "resume_required_checks": [
                 "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
                 "stored-candidate-diff-digest", "registered-worktree-exact-identity",

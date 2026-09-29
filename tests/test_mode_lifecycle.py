@@ -16,8 +16,8 @@ import mode_lifecycle
 from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, compact_records,
                             initialize_state, repair_candidate_diff_command,
-                            repair_provision_command, repair_recording_command,
-                            repair_resume_command,
+                            repair_provision_command, repair_reconcile_command,
+                            repair_recording_command, repair_resume_command,
                             startup_check)
 
 
@@ -97,6 +97,12 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(candidate["record_statuses"], ["PROVISIONED", "DIRTY"])
         self.assertEqual(candidate["recording_command"],
                          repair_recording_command(layout))
+        self.assertEqual(candidate["reconcile_command"],
+                         repair_reconcile_command(layout))
+        self.assertEqual(candidate["stale_record_policy"],
+                         "reconcile-then-resume")
+        self.assertIn("candidate-diff-nonempty",
+                      candidate["stale_record_precondition"])
         self.assertEqual(candidate["candidate_diff_command"],
                          repair_candidate_diff_command(layout))
         self.assertEqual(candidate["resume_command"], repair_resume_command(layout))
@@ -216,6 +222,83 @@ class ModeLifecycleTests(unittest.TestCase):
                 result = self._run_record(session, layout, base, digest)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(candidate.joinpath("tracked.txt").exists())
+
+    def _run_reconcile(self, session, layout, base, finding_ids):
+        command = repair_reconcile_command(layout).replace(
+            "<full-base>", base).replace("<finding-ids-lf-separated>", finding_ids)
+        return subprocess.run(command, cwd=session, shell=True,
+                              capture_output=True, text=True)
+
+    def test_stale_recorded_digest_recovers_without_operator_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            finding_ids = "A-01"
+            digest = hashlib.sha256(
+                (base + "\n" + finding_ids).encode()).hexdigest()[:16]
+            self.assertEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
+            candidate = session / f"Product-repair-{digest}"
+            tracked = candidate / "tracked.txt"
+
+            tracked.write_bytes(b"first pass bytes\n")
+            first_digest, _ = self._capture_diff(session, layout, base, digest)
+            tracked.write_bytes(b"second pass bytes after recording\n")
+            before = tracked.read_bytes()
+
+            stale_resume = self._run_resume(session, layout, base, digest, first_digest)
+            self.assertNotEqual(stale_resume.returncode, 0)
+
+            reconciled = self._run_reconcile(session, layout, base, finding_ids)
+            self.assertEqual(reconciled.returncode, 0, reconciled.stderr)
+            marker, finding_digest, status, path, branch, evidence = (
+                reconciled.stdout.strip().split(" ", 5))
+            self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_RECONCILE__")
+            self.assertEqual(status, "DIRTY")
+            self.assertEqual(path, str(candidate))
+            self.assertEqual(branch, f"dsh/repair-{digest}")
+            self.assertEqual(finding_digest, hashlib.sha256(
+                (base + "\n" + finding_ids).encode()).hexdigest())
+            diff_marker, current_digest, paths = evidence.split(" ", 2)
+            self.assertEqual(diff_marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
+            self.assertEqual(json.loads(paths), ["tracked.txt"])
+
+            resumed = self._run_resume(session, layout, base, digest, current_digest)
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            self.assertEqual(tracked.read_bytes(), before)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
+
+    def test_stale_digest_recovery_still_requires_exact_recorded_identity(self):
+        for mutation in ("wrong-findings", "other-findings", "stale-base"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                session, product, layout, base = self._provision_fixture(Path(tmp))
+                finding_ids = "A-01"
+                digest = hashlib.sha256(
+                    (base + "\n" + finding_ids).encode()).hexdigest()[:16]
+                self.assertEqual(self._run_provision(
+                    session, layout, base, digest).returncode, 0)
+                candidate = session / f"Product-repair-{digest}"
+                tracked = candidate / "tracked.txt"
+                tracked.write_bytes(b"stale bytes\n")
+                other = session / f"Product-repair-{'0' * 16}"
+                subprocess.run([
+                    "git", "-C", str(product), "worktree", "add", "-b",
+                    f"dsh/repair-{'0' * 16}", str(other), base,
+                ], check=True, capture_output=True)
+                (other / "tracked.txt").write_bytes(b"other candidate bytes\n")
+                if mutation == "wrong-findings":
+                    result = self._run_reconcile(session, layout, base, "A-99")
+                elif mutation == "other-findings":
+                    result = self._run_reconcile(session, layout, base, "B-01")
+                else:
+                    result = self._run_reconcile(session, layout, "0" * 40, finding_ids)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(tracked.read_bytes(), b"stale bytes\n")
+                self.assertEqual((other / "tracked.txt").read_bytes(),
+                                 b"other candidate bytes\n")
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", str(product), "status", "--porcelain=v1"],
+                    text=True), "")
 
     def test_provisioned_candidate_record_needs_no_diff_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
