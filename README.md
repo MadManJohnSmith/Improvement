@@ -1,92 +1,152 @@
-# agent-workflow
+# Improvement
 
-Framework para construir y operar flujos de auditoría y reparación con DSH, evidencia verificable y comportamiento fail-closed.
+**Dos modos especializados con memoria persistente para terminar tu proyecto con prompts
+sencillos.** Improvement instala en tu repositorio un auditor y un reparador continuo
+generados específicamente para tu proyecto, con memoria acotada que no satura, verificación
+con evidencia y un núcleo fail-closed: los modos nunca publican ni tocan tu producto sin
+que tú integres.
 
-## Estado
+Es un framework real, probado en dos campañas completas sobre repositorios reales
+(Syncify, una app de música en Rust/Tauri/Vue, y RehabWeb, una app clínica en Django/Vue).
+Las métricas de abajo son de esas campañas, no promesas.
 
-- **MVP del núcleo comprobado:** onboarding, skills, Host aislado, Auditor/Reparación, QA, reauditoría, controlador, presupuesto, archivo y recuperación acotada probados en Syncify y RehabWeb. Ver [estado](docs/status.md).
-- **Arquitectura 3.0 con C0–C7 implementados:** bootstrap install/accept/update/uninstall, contrato generacional de Creator, validador Host de 10 capas, aceptación, activación transaccional y promoción, verificados sobre paquetes reales (preset cordis) y pilotos clean-room. La activación de extremo a extremo requiere una sesión DSH con proveedor configurado por el usuario. Ver [arquitectura](ARQUITECTURA_FLUJO_AGENTES.md) e [índice](PLAN_IMPLEMENTACION.md).
-- **Biblioteca de skills materializada:** registro de fuentes con procedencia fijada, 21 skills base inmutables y 4 patrones de catálogo especializado activados por evidencia, con escenarios y regresión obligatoria. Ver `library/`.
-- Los presets usados en Syncify/RehabWeb son **fixtures de referencia**, no defaults que deba recibir otro proyecto.
+## El problema que resuelve
 
-## Experiencia final (implementada en C0–C7)
+En proyectos de larga vida, la auditoría y la reparación se vuelven difíciles por tres
+motivos: el contexto se llena, los errores vuelven a ocurrir porque nadie recuerda el
+anterior, y cada arreglo se hace con criterio distinto. Improvement pone eso en una
+estructura que sobrevive a los ciclos:
 
-Prerrequisito: DSH instalado, Creator disponible y al menos un proveedor/modelo configurado por el usuario en DSH.
+- un **auditor** que examina tu proyecto y persiste hallazgos con evidencia
+  (`archivo:línea`), severidad y deduplicación por `(hallazgo, revisión)`;
+- un **reparador** que toma los hallazgos, reclama una candidata de trabajo aislada en un
+  worktree hermano, la corrige, verifica y **te deja el árbol de tu producto intacto**;
+- una **memoria en disco** (`<proyecto>-workspace/mode-state`) con topes estrictos por
+  fichero y por registro: crece hasta su límite y se compacta, no se satura;
+- una **frontera de integración clara**: el modo deja el candidato verificado y tú haces
+  el commit y el push. Nada llega a tu rama sin pasar por ti.
+
+## Cómo se usa
+
+### 1. Requisitos
+
+- Linux, `git` y Python 3.
+- [DSH](docs/setup-dsh.md) instalado, con al menos un proveedor/modelo configurado por ti.
+  El framework nunca lee ni pide tus API keys: solo comprueba que las variables existen.
+
+### 2. Un comando
+
+Clona este framework junto a tu proyecto (nunca dentro) y ejecuta:
 
 ```bash
 python3 -B scripts/bootstrap.py install \
-  --project /ruta/proyecto \
+  --project /ruta/a/tu/proyecto \
   --launch-dsh
 ```
 
-Esta es la variante autónoma validada: detiene instancias DSH previas, inicia una
-instancia limpia con el overlay del framework y completa Creator, aceptación Host
-y activación desde el mismo comando. Omite `--launch-dsh` únicamente cuando ya
-exista una instancia DSH autenticada y compatible que quieras reutilizar.
+Eso descubre tu proyecto, genera `<TuProyecto>-auditor` y `<TuProyecto>-continuous-repair`
+con sus skills, valida el paquete en 10 capas, hace backup, instala y activa — o hace
+rollback dejando el estado recuperable. Tu producto no se toca durante la instalación.
 
-El bootstrap:
+### 3. Prompts simples
 
-1. descubre el proyecto y prepara un workspace externo;
-2. prepara el run y el prompt versionado y despacha Creator automáticamente: `--launch-dsh` detiene instancias DSH previas, inicia una instancia limpia con el plugin `workflow_write` del framework y supervisa su sesión; sin esa opción reutiliza una instancia DSH autenticada existente;
-3. Creator genera `<Proyecto>-auditor`, `<Proyecto>-continuous-repair` y skills específicas justificadas, seleccionando primero la biblioteca base y el catálogo;
-4. Creator invoca `bootstrap accept`;
-5. el Host valida, crea backups, instala en staging y ejecuta la aceptación;
-6. activa el conjunto o hace rollback/RETAINED.
+Con los dos presets activos en DSH, operas con mensajes cortos:
 
-El usuario no copia prompts, JSON, rutas, recibos ni escenarios de aceptación.
+| Quieres… | Escribes |
+|---|---|
+| Auditar todo | «Audita completamente este proyecto; no modifiques ni publiques.» |
+| Auditar un área | «Audita este flujo, característica o componente.» |
+| Reparar lo auditado | «Repara los hallazgos de la auditoría; no publiques.» |
+| Reparar hallazgos concretos | «Repara A-SEC-01 y A-SEC-02; no publiques.» |
 
-La activación automática de extremo a extremo corresponde a una sesión DSH real; sin ella el run queda en estado intermedio recuperable, nunca en un estado silencioso.
+Cada auditoría deja un handoff con el siguiente prompt listo para copiar. Cuando el
+reparador termina, integras con un `git merge --ff-only` normal: el commit y el push
+siguen siendo tuyos.
 
-## Uso comprobado actual
+## Casos reales
 
-Para mantenimiento o pilotos controlados, clona el framework junto al proyecto, nunca dentro:
+### Syncify — un proyecto con CI en rojo, cerrado
 
-```text
-padre/
-├── agent-workflow/
-├── proyecto/
-└── proyecto-workspace/
+App de música (Rust/Tauri/Vue) con la suite fallando. A lo largo de la campaña, los modos
+encontraron y repararon defectos reales, no solo de pruebas: un validador de WebP que
+rechazaba archivos legales, un recuento de álbumes que etiquetaba un disco de 10 pistas
+como de 1, un deadlock de SQLite que colgaba la CI con 0 % de CPU, un puente de descargas
+que firmaba peticiones con un secreto vacío.
+
+| Métrica | Resultado |
+|---|---|
+| Hallazgos distintos persistidos | 77 (114 registros con su historial) |
+| Trabajo verificado | 78 items VERIFIED |
+| Verificaciones persistidas | 67 (61 PASS, 6 BLOCKED declarados) |
+| Commits generados por los modos e integrados | 15 |
+| Resultado | CI verde en los 3 jobs (Rust, frontend, Python) |
+
+### RehabWeb — seguridad de una app clínica, con un prompt de seis palabras
+
+Instalación limpia de principio a fin con un solo comando. La primera auditoría encontró
+**45 hallazgos (6 CRITICAL, 16 HIGH, 23 MEDIUM)**, entre ellos: cualquier usuario
+autenticado podía leer el historial clínico de toda la población, y un paciente podía
+reescribir el diagnóstico de otro. El prompt «Repara A-SEC-01 y A-SEC-02; no publiques.»
+produjo la corrección de ambos con su prueba de regresión — 3 ficheros, 220 líneas — sin
+tocar tu producto hasta la integración.
+
+### El propio framework
+
+La memoria se aplica también a sí misma: 7 unidades de endurecimiento nacieron de los
+fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
+anti-escalada mecánica, retirada de candidatas documentada…), y una auditoría de la
+propia memoria descubrió una pérdida silenciosa de registros en el preflight, corregida
+con regresión. Suite del framework: **556 pruebas en verde**.
+
+## Qué obtienes en tu repo
+
+```
+tu-proyecto/
+tu-proyecto-workspace/
+├── mode-state/
+│   ├── findings.jsonl            # hallazgos con evidencia y estado
+│   ├── handoffs.jsonl            # un registro por auditoría, con el siguiente prompt
+│   ├── verification-results.jsonl  # cómo se verificó cada arreglo
+│   └── work-items.json           # cola de trabajo y candidata activa
+└── creator-runs/                 # qué generó Creator, con sus validaciones
 ```
 
-Preparación actual:
+Todo con topes por fichero y por registro, y compactación cuando se alcanzan: la memoria
+puede crecer mucho, pero no sin límite.
 
-```bash
-python3 -B scripts/onboard.py \
-  --project /ruta/proyecto \
-  --workspace /ruta/proyecto-workspace \
-  --name mi-proyecto \
-  --prepare-skills \
-  --session-root /ruta/padre
+## Qué NO hace (a propósito)
 
-# repetir con --init después de revisar el dry-run
-```
+- **No hace commit ni push.** El reparador deja el candidato verificado y el árbol de tu
+  producto limpio; integrar es tuyo. Esto es la frontera de seguridad, no una limitación.
+- **No es autónomo en la sombra.** Cada turno termina con un resultado legible; lo que se
+  retiene se dice y por qué.
+- **No instala proveedores ni credenciales.** DSH y tu proveedor son prerrequisitos.
+- **No promete aislamiento mecánico del sistema de ficheros.** La frontera es contractual
+  y está probada; no hay sandbox de kernel.
 
-Este flujo prepara perfil, skills y enlaces gestionados para mantenimiento o pilotos manuales. La generación Creator 3.0 usa `bootstrap install`; consulta [uso operativo actual](docs/usage.md) y [preparación DSH](docs/setup-dsh.md).
+## Estado: beta pública
 
-## Qué distribuye la arquitectura 3.0
+Esto se lanza para testeo. Lo que ya está probado: instalación de principio a fin sin
+intervención, el ciclo auditor→reparador→integración en dos campañas reales, y la memoria
+alcanzando sus topes en producción (compactación activa). Lo que falta para la versión
+estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): endurecer
+el registro de candidata, cablear el ledger de métricas, y compactación con recibo.
 
-- skills generales para bootstrap, aceptación, evidencia, validación segura y entrega;
-- biblioteca base inmutable materializada (21 skills) y catálogo especializado activado por evidencia (4 patrones), con registro de fuentes y escenarios;
-- capacidades internas de Creator adaptadas de scope/audit/architect/document/test/develop/check/debug/sync;
-- selección obligatoria: biblioteca base inmutable → catálogo especializado → composición → override limitado → extensión Creator solo como último recurso;
-- plantillas y schemas;
-- validadores Host;
-- bootstrap install/accept/update/uninstall/purge-data;
-- backups y activación transaccional;
-- plugin `workflow-write`;
-- fixtures saneados, no presets universales.
+**Para reportar tu experiencia**, comparte tu `mode-state` (`findings.jsonl`,
+`handoffs.jsonl`, `verification-results.jsonl` — sin código de tu producto), los turnos
+que acabaron retenidos y por qué. Ese es el informe más útil posible, y es exactamente el
+formato que el framework ya produce.
 
 ## Documentación
 
-- [Arquitectura normativa 3.0](ARQUITECTURA_FLUJO_AGENTES.md)
-- [Plan C0–C7](PLAN_IMPLEMENTACION.md)
-- [Contrato generacional de Creator](docs/creator-preset-spec.md)
+- [Uso operativo](docs/usage.md) — el ciclo completo, integración y recuperación de espacio
+- [Preparación de DSH](docs/setup-dsh.md)
 - [Estado comprobado](docs/status.md)
-- [Uso operativo actual](docs/usage.md)
-- [Preparación DSH](docs/setup-dsh.md)
-- [Planes detallados C0–C7](docs/plans/README.md)
-- [Cambios](CHANGELOG.md)
+- [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
+- [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
 
-## Seguridad y publicación
+## Licencia
 
-Nunca versionar perfiles reales, logs, auditorías privadas, candidatos, credenciales o rutas personales. Configurar un proveedor en DSH no autoriza al framework a leer su API key. La publicación pública y la licencia del framework siguen siendo decisiones del titular; un repositorio accesible no concede por sí solo una licencia abierta.
+Sin definir todavía: es decisión del titular y es la puerta G0 del plan de lanzamiento.
+Un repositorio accesible no concede por sí solo una licencia abierta.
