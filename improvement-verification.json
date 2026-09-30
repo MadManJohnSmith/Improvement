@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "stacks": [
+    {
+      "stack": "python-unittest",
+      "root": "",
+      "verify": [
+        "{python}",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "capabilities": [
+        "python3"
+      ]
+    }
+  ]
+}
