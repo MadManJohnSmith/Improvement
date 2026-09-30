@@ -294,6 +294,61 @@ class ModeLifecycleTests(unittest.TestCase):
                     {**claimed, "path": str(self._candidate(session, digest))},
                     candidate_spec, "absolute-path")
 
+    def test_preflight_drops_a_pass_that_did_not_verify_the_registered_candidate(self):
+        """IMP-AUD-008: un PASS tiene que nombrar el árbol que verificó.
+
+        El contrato prohíbe hacer commit de una candidata, así que el árbol
+        verificado suele ser un worktree DIRTY cuyo HEAD sigue siendo su base y
+        el arreglo vive en el diff sin commitear. `candidate_head` no lo
+        distingue de la revisión anterior al arreglo, y medido en el self-test
+        los siete registros llevaban dos cabezas, ambas anteriores al cambio.
+        El digest del diff es la única huella del árbol real.
+        """
+        descriptor = {"schema_version": 1, "project_id": "p",
+                      "product_root": "Product",
+                      "state_root": "Product-workspace/mode-state"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            base = "a" * 40
+            diff = "b" * 64
+            candidate = {"base_revision": base, "finding_ids_digest": "c" * 64,
+                         "path": "Product-repair-" + "d" * 16,
+                         "branch": "dsh/repair-" + "d" * 16,
+                         "head": base, "status": "DIRTY",
+                         "candidate_diff_digest": diff,
+                         "changed_paths": ["lib/example.py"]}
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": candidate,
+                "items": [{"work_item_id": "W-01", "finding_id": "A-01",
+                           "base_revision": base, "status": "VERIFIED"}],
+            }) + "\n")
+            record = {"finding_id": "A-01", "candidate_head": base,
+                      "candidate_diff_digest": diff, "result": "PASS",
+                      "command": "pytest"}
+            (state / "verification-results.jsonl").write_text(
+                json.dumps(record) + "\n")
+
+            # The record names another tree: it is evidence about something else.
+            (state / "verification-results.jsonl").write_text(
+                json.dumps({**record, "candidate_diff_digest": "e" * 64}) + "\n")
+            report = initialize_state(state, descriptor, root / "archive")
+            reasons = {note["reason"] for note in report["dropped"]}
+            self.assertIn("verification-of-another-candidate", reasons)
+            self.assertEqual(
+                (state / "verification-results.jsonl").read_text(), "")
+
+            # The record names the registered candidate: it stays.
+            (state / "verification-results.jsonl").write_text(
+                json.dumps(record) + "\n")
+            report = initialize_state(state, descriptor, root / "archive")
+            self.assertEqual(report["dropped"], [])
+            kept = [json.loads(line) for line in
+                    (state / "verification-results.jsonl").read_text().splitlines()
+                    if line.strip()]
+            self.assertEqual(kept, [record])
+
     def test_initialize_state_report_names_every_discard(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1274,6 +1329,7 @@ class ModeLifecycleTests(unittest.TestCase):
             ]
             verification = [
                 {"finding_id": "A-01", "candidate_head": revision,
+                 "candidate_diff_digest": "b" * 64,
                  "result": "PASS", "command": "pytest"},
                 {"finding_id": "A-02", "candidate_commit": revision,
                  "red": {"command": "pytest", "result": "FAIL"},

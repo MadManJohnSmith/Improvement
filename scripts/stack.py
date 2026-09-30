@@ -557,13 +557,20 @@ def allowed_verification_commands(value):
     return frozenset(allowed)
 
 
-def validate_verification_results(value, records):
+def validate_verification_results(value, records, candidate=None):
     """Mechanically reject stub evidence and false PASS/FAIL on missing stacks.
 
     Returns the records unchanged after validation. It does not execute them;
     execution is the mode's job. The Host can therefore enforce that every
     command is one of the exact product entrypoints it resolved, and that a
     stack with missing capabilities cannot yield PASS or FAIL.
+
+    `candidate` is the verified-candidate record from `work-items.json`. A
+    verification whose identity does not match it is refused: the contract
+    forbids committing a candidate, so the repaired tree is normally a DIRTY
+    worktree whose HEAD still equals its base and whose only fingerprint is the
+    diff digest. Without this, a PASS names a revision that may be older than
+    the repair and nothing can tell.
     """
     if not isinstance(records, list):
         raise ValueError('Resultados de verificación inválidos')
@@ -573,7 +580,8 @@ def validate_verification_results(value, records):
         by_command[_command_text(entry['verify_command'])] = ready
         if entry.get('lint_command'):
             by_command[_command_text(entry['lint_command'])] = ready
-    required = {'finding_id', 'candidate_head', 'result', 'command'}
+    required = {'finding_id', 'candidate_head', 'candidate_diff_digest',
+                'result', 'command'}
     for index, record in enumerate(records):
         if not isinstance(record, dict) or set(record) != required:
             raise ValueError(f'Resultado {index} no cumple el schema estricto')
@@ -582,7 +590,9 @@ def validate_verification_results(value, records):
         if (not isinstance(record.get('finding_id'), str)
                 or not record['finding_id']
                 or not isinstance(record.get('candidate_head'), str)
-                or not re.fullmatch(r'[0-9a-f]{40,64}', record['candidate_head'])):
+                or not re.fullmatch(r'[0-9a-f]{40,64}', record['candidate_head'])
+                or not isinstance(record.get('candidate_diff_digest'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', record['candidate_diff_digest'])):
             raise ValueError(f'Resultado {index} no cumple el schema estricto')
         if command not in by_command:
             raise ValueError(f'Resultado {index} usa comando ajeno al stack real')
@@ -591,6 +601,16 @@ def validate_verification_results(value, records):
         if not by_command[command] and result != 'BLOCKED':
             raise ValueError(
                 f'Resultado {index} debe ser BLOCKED: falta capacidad del stack')
+        if isinstance(candidate, dict):
+            expected_head = candidate.get('head')
+            expected_diff = candidate.get('candidate_diff_digest')
+            if expected_diff and record['candidate_diff_digest'] != expected_diff:
+                raise ValueError(
+                    f'Resultado {index} verifica un candidato distinto del registrado')
+            if (expected_head and expected_diff
+                    and record['candidate_head'] != expected_head):
+                raise ValueError(
+                    f'Resultado {index} nombra una revisión ajena al candidato verificado')
     return records
 
 

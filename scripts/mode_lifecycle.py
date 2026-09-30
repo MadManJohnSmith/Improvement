@@ -282,7 +282,13 @@ def persona_prefix(preset_id, role=None):
             "Verify the candidate with the product's own entrypoint listed in the capability "
             "plan (.dsh-managed/capability-plan.json, written by the Host at install): its test "
             "command and, when the plan lists one, its lint command, executed against the "
-            "candidate worktree. A verification record's command is always that entrypoint. A "
+            "candidate worktree. A verification record's command is always that entrypoint, and "
+            "its candidate_diff_digest is the one recorded for the candidate in "
+            "work-items.json, copied verbatim: the candidate is not committed, so its HEAD still "
+            "equals its base and the diff digest is the only fingerprint of the tree the entrypoint "
+            "actually ran against. A record naming a different digest is evidence about something "
+            "else, and the preflight drops it with a receipt "
+            "(verification-identity: candidate-diff-digest-must-match-work-items). A "
             "hand-written harness, mock, or copy of product code is investigation material and "
             "must never be recorded as a verification result "
             "(real_stack_verification.evidence: product-own-entrypoint-only). When the entrypoint "
@@ -382,6 +388,7 @@ def expected_lifecycle(role, layout):
             "missing_capability": "materialize-per-plan-else-BLOCKED-naming-the-step",
             "install_inside_product": "only-when-plan-marks-path-gitignored",
             "sandbox_readonly_sdk": "run-plan-materialize_step-then-use-the-copy-the-plan-names",
+            "verification_identity": "candidate-diff-digest-must-match-work-items",
         },
         "startup": {
             "startup_workdir": "session-cwd-only",
@@ -628,9 +635,9 @@ def state_schema():
                     "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
                 "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head"],
-                "record": _record_schema(["finding_id", "candidate_head", "result", "command"],
-                    {"finding_id": text, "candidate_head": revision, "result": {"enum": ["PASS", "FAIL", "BLOCKED"]}, "command": text},
-                    {"finding_id": "A-01", "candidate_head": "a" * 40, "result": "PASS", "command": "pytest"})},
+                "record": _record_schema(["finding_id", "candidate_head", "candidate_diff_digest", "result", "command"],
+                    {"finding_id": text, "candidate_head": revision, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result": {"enum": ["PASS", "FAIL", "BLOCKED"]}, "command": text},
+                    {"finding_id": "A-01", "candidate_head": "a" * 40, "candidate_diff_digest": "b" * 64, "result": "PASS", "command": "pytest"})},
             "overflows.jsonl": {"format": "jsonl", "limit": LIMITS["overflows.jsonl"],
                 "max_bytes": BYTE_LIMITS["overflows.jsonl"], "dedupe_key": ["overflow_id"],
                 "record": _record_schema(["overflow_id", "file", "reason", "dropped_records"],
@@ -850,6 +857,57 @@ def _archive_legacy(entries, metadata, descriptor, archive_root):
     return destination
 
 
+def _bind_verification_records(state, staged, preserve_expected):
+    """Refuse a PASS that does not name the candidate actually verified.
+
+    The contract forbids committing a candidate without a separate prompt, so
+    the tree a verification ran against is normally a DIRTY worktree whose HEAD
+    still equals its base: `candidate_head` alone cannot distinguish it from
+    the revision before the repair. The diff digest is the only fingerprint of
+    the repaired tree, so a record that does not carry the one registered in
+    `work-items.json` is evidence about something else and leaves the live state
+    with a receipt naming it.
+    """
+    try:
+        work_items = json.loads(staged["work-items.json"])
+        candidate = work_items.get("candidate")
+    except (KeyError, json.JSONDecodeError, UnicodeDecodeError):
+        candidate = None
+    if not isinstance(candidate, dict):
+        return
+    expected_diff = candidate.get("candidate_diff_digest")
+    if not expected_diff:
+        return
+    records = []
+    for line in staged["verification-results.jsonl"].decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        records.append(record)
+    stray = [
+        str(record.get("finding_id") or index)
+        for index, record in enumerate(records)
+        if record.get("candidate_diff_digest") != expected_diff
+    ]
+    if not stray:
+        return
+    kept = [record for record in records
+            if record.get("candidate_diff_digest") == expected_diff]
+    staged["verification-results.jsonl"] = b"".join(
+        json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
+        for record in kept)
+    preserve_expected(
+        "verification-results.jsonl",
+        b"".join(
+            json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
+            for record in records),
+        "verification-of-another-candidate",
+        dropped_records=stray[:32])
+
+
 def initialize_state(state, descriptor, archive_root=None):
     """Preflight state, archive bounded legacy evidence, then migrate strict files.
 
@@ -973,6 +1031,8 @@ def initialize_state(state, descriptor, archive_root=None):
             if incompatible:
                 extra = {"dropped_records": invalid_items[:32]} if invalid_items else {}
                 preserve_expected(name, data, "legacy-or-incompatible-work-items", **extra)
+
+    _bind_verification_records(state, staged, preserve_expected)
 
     for name in LIMITS:
         if name not in staged:

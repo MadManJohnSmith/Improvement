@@ -155,7 +155,7 @@ const runManaged = async (content, planText) => {
 const readyPlan = plan([{ name: 'node', verification_ready: true, verify_command: ['node', '--test'], lint_command: ['npm', 'run', 'lint'] }]);
 const blockedPlan = plan([{ name: 'python', verification_ready: false, verify_command: ['python', '-m', 'pytest'] }]);
 
-const record = (command, result) => ({ finding_id: 'A-01', candidate_head: 'a'.repeat(40), command, result });
+const record = (command, result) => ({ finding_id: 'A-01', candidate_head: 'a'.repeat(40), candidate_diff_digest: 'b'.repeat(64), command, result });
 const managedPass = await runManaged(`${JSON.stringify(record('["node","--test"]', 'PASS'))}\n`, readyPlan);
 check('managed: plan íntegro firmado -> PASS de entrypoint listo se escribe', managedPass.path === MANAGED_TARGET && calls.writeText !== undefined);
 

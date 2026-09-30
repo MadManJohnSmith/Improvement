@@ -414,6 +414,7 @@ class WorkflowWritePluginTest(unittest.TestCase):
         unavailable = dict(ready, verification_ready=False)
         entrypoint = '["python3","-B","-m","unittest","discover","-s","tests"]'
         record = {"finding_id": "A-01", "candidate_head": "a" * 40,
+                  "candidate_diff_digest": "b" * 64,
                   "command": entrypoint, "result": "PASS"}
         signed = self._signed_plan(workspace, [ready])
         signed_unavailable = self._signed_plan(workspace, [unavailable])

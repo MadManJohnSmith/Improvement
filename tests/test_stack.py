@@ -236,6 +236,48 @@ class StackPlanTests(unittest.TestCase):
             entry, = stack.plan(product, workspace=workspace)['stacks']
             self.assertEqual(entry['verify_command'][0], str(python))
 
+    def test_verification_results_must_name_the_registered_candidate(self):
+        """IMP-AUD-008: the evidence has to name the tree it actually ran on.
+
+        A candidate is not committed, so its HEAD still equals its base and the
+        repaired tree is the uncommitted diff. Only its digest distinguishes it
+        from the revision before the repair.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'go.mod': 'module x\n'})
+            fake = root / 'bin'
+            fake.mkdir()
+            go = fake / 'go'
+            go.write_text('#!/bin/sh\nexit 0\n')
+            go.chmod(0o755)
+            value = stack.plan(product, workspace=root / 'ws',
+                               env={'PATH': str(fake), 'HOME': str(root)})
+            entry, = value['stacks']
+            self.assertTrue(entry['verification_ready'])
+            command = json.dumps(entry['verify_command'], separators=(',', ':'))
+            head = 'a' * 40
+            diff = 'b' * 64
+            record = {'finding_id': 'A-01', 'candidate_head': head,
+                      'candidate_diff_digest': diff, 'result': 'PASS',
+                      'command': command}
+            candidate = {'head': head, 'candidate_diff_digest': diff}
+            self.assertEqual(
+                stack.validate_verification_results(value, [record], candidate),
+                [record])
+            with self.assertRaisesRegex(ValueError, 'candidato distinto'):
+                stack.validate_verification_results(
+                    value, [{**record, 'candidate_diff_digest': 'c' * 64}],
+                    candidate)
+            with self.assertRaisesRegex(ValueError, 'revisión ajena'):
+                stack.validate_verification_results(
+                    value, [{**record, 'candidate_head': 'd' * 40}], candidate)
+            with self.assertRaisesRegex(ValueError, 'schema estricto'):
+                stack.validate_verification_results(
+                    value, [{key: record[key] for key in
+                             ('finding_id', 'candidate_head', 'result', 'command')}],
+                    candidate)
+
     def test_verification_results_accept_only_real_entrypoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -245,6 +287,7 @@ class StackPlanTests(unittest.TestCase):
             entry, = value['stacks']
             command = json.dumps(entry['verify_command'], separators=(',', ':'))
             record = {'finding_id': 'A-01', 'candidate_head': 'a' * 40,
+                      'candidate_diff_digest': 'b' * 64,
                       'result': 'BLOCKED', 'command': command}
             self.assertEqual(stack.validate_verification_results(value, [record]),
                              [record])
@@ -280,6 +323,7 @@ class StackPlanTests(unittest.TestCase):
             command = json.dumps(entry['verify_command'], separators=(',', ':'))
             for result in ('PASS', 'FAIL'):
                 record = {'finding_id': 'A-01', 'candidate_head': 'a' * 40,
+                          'candidate_diff_digest': 'b' * 64,
                           'result': result, 'command': command}
                 self.assertEqual(stack.validate_verification_results(value, [record]),
                                  [record])
