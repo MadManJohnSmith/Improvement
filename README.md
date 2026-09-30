@@ -222,6 +222,7 @@ formato que el framework ya produce.
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
 - [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
+- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.md) (borrador sin publicar)
 
 ## Licencia
 

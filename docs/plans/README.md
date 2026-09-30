@@ -21,6 +21,8 @@ Estos documentos descomponen la arquitectura aprobada en iteraciones adaptables.
 8. [07 — C6: piloto clean-room](07-c6-piloto.md)
 9. [08 — C7: promoción y distribución](08-c7-promocion.md)
 10. [09 — protocolo de adaptación y aprendizaje](09-adaptacion.md)
+11. [10 — lanzamiento público beta](10-lanzamiento-publico.md)
+12. [11 — notas de la beta v0.1.0](11-notas-beta-v0.1.0.md) — borrador preparado, sin publicar
 
 ## Cómo usar los planes
 

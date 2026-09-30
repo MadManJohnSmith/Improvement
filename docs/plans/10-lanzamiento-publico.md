@@ -30,7 +30,7 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 | G3 | Compactación con recibo | El desbordamiento de runtime deja recibo (patrón del archivo legacy, `dropped_records` incluido) en lugar de perder registros sin traza. Caso Syncify: 50/50 handoffs. | HECHO 2026-09-29 |
 | G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | HECHO 2026-09-29 |
 | G5 | Documentación pública | README (hecho), quickstart no técnico en `docs/usage.md`, política de feedback: qué comparte un tester (su `mode-state` es la evidencia). | HECHO 2026-09-30 |
-| G6 | Etiqueta y notas | Tag `v0.1.0-beta`, release notes con las métricas reales del piloto y los límites conocidos. | PENDIENTE |
+| G6 | Etiqueta y notas | Tag `v0.1.0-beta`, release notes con las métricas reales del piloto y los límites conocidos. | NOTAS LISTAS, FALTA PUBLICAR (requiere autorización del titular y G0 resuelta) |
 | G7 | Verificación contra el stack real | El Host resuelve un plan de capacidades al instalar (`scripts/stack.py`): entrypoint propio del producto por stack (cualquier tecnología, monorepos incluidos), estado real de cada capacidad y paso exacto de provisión fuera del producto. La evidencia de verificación es ese entrypoint o `BLOCKED` nombrando lo que falta; los stubs son material de investigación, nunca resultado. Regresión con el caso rehab (Django ausente) y con los stacks reales de Syncify, RehabWeb y LoboApp. | HECHO 2026-09-29 |
 
 ## Criterios de la beta
