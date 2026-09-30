@@ -331,6 +331,34 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertIn("__IMPROVEMENT_CANDIDATE_RECORD__", prefix)
         self.assertIn("recover it with the recording command", prefix)
 
+    def test_repair_verifies_with_the_product_entrypoint_and_never_stubs(self):
+        """G7: la evidencia de verificación es el entrypoint real del producto.
+
+        La venv con el stack real de rehab no estaba disponible y el modo
+        verificó con un arnés de stubs: el contrato ahora lo prohíbe como
+        evidencia, obliga al entrypoint propio del producto y, cuando la
+        capacidad falta, exige BLOCKED nombrando el paso de provisión.
+        """
+        layout = {"session_root": "parent", "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace",
+                  "state_root": "Syncify-workspace/mode-state"}
+        contract = mode_lifecycle.expected_lifecycle("continuous-repair", layout)
+        real = contract["real_stack_verification"]
+        self.assertEqual(real["plan"], ".dsh-managed/capability-plan.json")
+        self.assertEqual(real["evidence"], "product-own-entrypoint-only")
+        self.assertEqual(real["stubs"],
+                         "investigation-material-never-verification-evidence")
+        self.assertEqual(real["missing_capability"],
+                         "materialize-per-plan-else-BLOCKED-naming-the-step")
+        self.assertEqual(
+            mode_lifecycle.expected_lifecycle("auditor", layout)["real_stack_verification"],
+            real)
+        prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
+        self.assertIn("capability plan (.dsh-managed/capability-plan.json", prefix)
+        self.assertIn("must never be recorded as a verification result", prefix)
+        self.assertIn("BLOCKED naming the exact capability", prefix)
+        self.assertIn("never substitute a stub", prefix)
+
     def test_repair_can_re_anchor_a_declared_base_behind_a_clean_head(self):
         """Regresión RehabWeb §6.9: base declarada ancestro del HEAD, producto limpio.
 

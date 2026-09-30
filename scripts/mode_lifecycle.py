@@ -265,6 +265,18 @@ def persona_prefix(preset_id, role=None):
             "immediately RETAINED with no retry or further action.")
     if role == "continuous-repair":
         return bootstrap + (
+            "Verify the candidate with the product's own entrypoint listed in the capability "
+            "plan (.dsh-managed/capability-plan.json, written by the Host at install): its test "
+            "command and, when the plan lists one, its lint command, executed against the "
+            "candidate worktree. A verification record's command is always that entrypoint. A "
+            "hand-written harness, mock, or copy of product code is investigation material and "
+            "must never be recorded as a verification result "
+            "(real_stack_verification.evidence: product-own-entrypoint-only). When the entrypoint "
+            "cannot run because a capability is missing, materialize it exactly as the plan's "
+            "provision_step says: every artifact outside the product tree, and inside the product "
+            "only for paths the plan marks gitignored. If the capability is still missing, record "
+            "BLOCKED naming the exact capability and its provision step; never PASS, never FAIL, "
+            "and never substitute a stub. "
             "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
             "Before provisioning, if that declared base differs from the current canonical product "
             "HEAD, prove the relation instead of improvising: run git -C <product> merge-base "
@@ -341,6 +353,13 @@ def expected_lifecycle(role, layout):
             "record_fields": ["overflow_id", "file", "reason", "dropped_records"],
             "dropped_records_cap": 32,
             "dedupe_key": ["overflow_id"],
+        },
+        "real_stack_verification": {
+            "plan": ".dsh-managed/capability-plan.json",
+            "evidence": "product-own-entrypoint-only",
+            "stubs": "investigation-material-never-verification-evidence",
+            "missing_capability": "materialize-per-plan-else-BLOCKED-naming-the-step",
+            "install_inside_product": "only-when-plan-marks-path-gitignored",
         },
         "startup": {
             "startup_workdir": "session-cwd-only",

@@ -451,6 +451,17 @@ El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
 destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
 `$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
 `./{product_root}/...`.
+La verificación del candidato usa el entrypoint propio del producto listado en el plan de
+capacidades (`.dsh-managed/capability-plan.json`, escrito por el Host al instalar): su comando de
+pruebas y, cuando exista, su lint, ejecutados contra el worktree candidato; el `command` de todo
+registro de verificación es ese entrypoint. Un arnés, mock o copia del código del producto escrita
+a mano es material de investigación y jamás se registra como resultado de verificación
+(`real_stack_verification.evidence: product-own-entrypoint-only`): no demuestra el comportamiento
+del producto real. Si el entrypoint no corre por una capacidad faltante, materialízala exactamente
+como diga el `provision_step` del plan — cada artefacto fuera del árbol del producto, y dentro del
+producto solo para rutas que el plan marque como gitignored. Si la capacidad sigue faltando,
+registra `BLOCKED` nombrando la capacidad exacta y su paso de provisión; nunca PASS, nunca FAIL,
+nunca un stub.
 La base registrada en hallazgos, handoffs e ítems es procedencia de auditoría, no un candado. Si
 esa base declarada difiere del HEAD canónico actual del producto, el modo PRUEBA la relación en
 lugar de improvisar: ejecuta `git -C ./<product> merge-base --is-ancestor <declared-base> HEAD` y

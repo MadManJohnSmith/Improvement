@@ -278,6 +278,18 @@ class Transaction:
             raise TransactionError("Se requieren exactamente dos presets finales")
         return modes
 
+    def _resolve_capabilities(self):
+        """Write the real-stack capability plan (data only; nothing is installed)."""
+        import stack as stack_plan
+        product_doc = _json(self.workspace / "project.json")
+        try:
+            value = stack_plan.plan(Path(product_doc["project"]), workspace=self.workspace)
+            path = stack_plan.write(value, self.workspace)
+        except (OSError, ValueError) as error:
+            raise TransactionError(f"stack del producto no resoluble: {error}") from error
+        return {"path": str(path), "stacks": stack_plan.summary(value),
+                "evidence": value["evidence"], "stubs": value["stubs"]}
+
     def _prepare_mode_state(self):
         common = self.workspace.parent
         product_doc = _json(self.workspace / "project.json")
@@ -593,6 +605,7 @@ class Transaction:
             # The preflight report names what the preflight discarded, so the
             # operator sees it in the install result instead of only in the archive.
             mode_state_preflight = self._prepare_mode_state()
+            capability_plan = self._resolve_capabilities()
             publication = self._publish_presets(target, modes, generation_id)
             if publication["result"] == "RESTART_REQUIRED":
                 return {
@@ -600,6 +613,7 @@ class Transaction:
                     "generation_id": generation_id,
                     "previous_generation_id": backup_manifest["previous_generation_id"],
                     "mode_state_preflight": mode_state_preflight,
+                    "capability_plan": capability_plan,
                     "message": (
                         "DSH guardó la actualización del bundle pero requiere "
                         "reinicio; relanza DSH y repite bootstrap install"),
@@ -633,6 +647,7 @@ class Transaction:
             "published_presets": published,
             "mode_state": str(self.workspace / "mode-state"),
             "mode_state_preflight": mode_state_preflight,
+            "capability_plan": capability_plan,
         }
 
     def rollback(self, generation_id):

@@ -1356,6 +1356,15 @@ def main():
     p_accept.add_argument("--generated", required=True,
                           help="Ruta a creator-runs/<id>/generated")
 
+    # stack
+    p_stack = sub.add_parser(
+        "stack", help="Resolver el plan de verificación contra el stack real")
+    p_stack.add_argument("--project", required=True)
+    p_stack.add_argument("--workspace", default=None)
+    p_stack.add_argument("--write", action="store_true",
+                         help="Escribir .dsh-managed/capability-plan.json")
+    p_stack.add_argument("--json", action="store_true", help="Volcar el plan completo")
+
     # verify-acceptance
     p_verify = sub.add_parser("verify-acceptance",
                               help="Verificar estado de aceptación de una generación")
@@ -1424,6 +1433,24 @@ def main():
                 reevaluate=args.reevaluate,
             )
 
+        elif args.command == "stack":
+            import stack as stack_plan
+            project = Path(args.project).resolve()
+            workspace = (
+                Path(args.workspace).resolve() if args.workspace
+                else project.parent / f"{project.name}-workspace"
+            )
+            value = stack_plan.plan(project, workspace=workspace)
+            result = {
+                "result": "RESOLVED",
+                "evidence": value["evidence"],
+                "stubs": value["stubs"],
+                "stacks": stack_plan.summary(value),
+            }
+            if args.write:
+                result["path"] = str(stack_plan.write(value, workspace))
+            if args.json:
+                result["plan"] = value
         elif args.command == "update":
             project = Path(args.project).resolve()
             workspace = (
