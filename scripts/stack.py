@@ -447,6 +447,52 @@ def load(workspace):
     return value
 
 
+def _command_text(parts):
+    """Canonical command field stored in verification-results.jsonl."""
+    return json.dumps(parts, ensure_ascii=False, separators=(',', ':'))
+
+
+def allowed_verification_commands(value):
+    """Canonical command strings allowed as product verification evidence."""
+    allowed = set()
+    for stack in value['stacks']:
+        allowed.add(_command_text(stack['verify_command']))
+        if stack.get('lint_command'):
+            allowed.add(_command_text(stack['lint_command']))
+    return frozenset(allowed)
+
+
+def validate_verification_results(value, records):
+    """Mechanically reject stub evidence and false PASS/FAIL on missing stacks.
+
+    Returns the records unchanged after validation. It does not execute them;
+    execution is the mode's job. The Host can therefore enforce that every
+    command is one of the exact product entrypoints it resolved, and that a
+    stack with missing capabilities cannot yield PASS or FAIL.
+    """
+    if not isinstance(records, list):
+        raise ValueError('Resultados de verificación inválidos')
+    by_command = {}
+    for entry in value['stacks']:
+        ready = bool(entry['verification_ready'])
+        by_command[_command_text(entry['verify_command'])] = ready
+        if entry.get('lint_command'):
+            by_command[_command_text(entry['lint_command'])] = ready
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f'Resultado {index} inválido')
+        command = record.get('command')
+        result = record.get('result')
+        if command not in by_command:
+            raise ValueError(f'Resultado {index} usa comando ajeno al stack real')
+        if result not in {'PASS', 'FAIL', 'BLOCKED'}:
+            raise ValueError(f'Resultado {index} tiene veredicto inválido')
+        if not by_command[command] and result != 'BLOCKED':
+            raise ValueError(
+                f'Resultado {index} debe ser BLOCKED: falta capacidad del stack')
+    return records
+
+
 def summary(value):
     """Compact, operator-facing digest: per stack, ready or the named blocker."""
     lines = []

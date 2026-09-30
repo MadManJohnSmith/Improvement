@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
+import stack
 from mode_lifecycle import expected_lifecycle, persona_prefix
 
 
@@ -198,6 +199,16 @@ class TransactionTests(unittest.TestCase):
             lifecycle["startup"]["success_sentinel"],
             "__IMPROVEMENT_LAYOUT_OK__")
         self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(), "gen-1")
+        capability_path = (self.workspace / stack.PLAN_RELATIVE)
+        self.assertTrue(capability_path.is_file())
+        capability_plan = stack.load(self.workspace)
+        self.assertEqual(capability_plan["stacks"], [])
+        self.assertEqual(result["capability_plan"]["path"], str(capability_path))
+        self.assertEqual(result["capability_plan"]["stacks"], [])
+        self.assertEqual(result["capability_plan"]["evidence"],
+                         "product-own-entrypoint-only")
+        self.assertEqual(result["capability_plan"]["stubs"],
+                         "investigation-material-never-verification-evidence")
 
     def test_install_archives_legacy_mode_evidence_outside_active_state(self):
         state = self.workspace / "mode-state"

@@ -149,6 +149,48 @@ class StackPlanTests(unittest.TestCase):
             entry, = stack.plan(product, workspace=workspace)['stacks']
             self.assertEqual(entry['verify_command'][0], str(python))
 
+    def test_verification_results_accept_only_real_entrypoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'go.mod': 'module x\n'})
+            value = stack.plan(product, workspace=root / 'ws',
+                               env={'PATH': '/nonexistent', 'HOME': str(root)})
+            entry, = value['stacks']
+            command = json.dumps(entry['verify_command'], separators=(',', ':'))
+            record = {'finding_id': 'A-01', 'candidate_head': 'a' * 40,
+                      'result': 'BLOCKED', 'command': command}
+            self.assertEqual(stack.validate_verification_results(value, [record]),
+                             [record])
+            with self.assertRaisesRegex(ValueError, 'comando ajeno'):
+                stack.validate_verification_results(
+                    value, [{**record, 'command': 'python hand_written_stub.py'}])
+            with self.assertRaisesRegex(ValueError, 'debe ser BLOCKED'):
+                stack.validate_verification_results(
+                    value, [{**record, 'result': 'PASS'}])
+            with self.assertRaisesRegex(ValueError, 'debe ser BLOCKED'):
+                stack.validate_verification_results(
+                    value, [{**record, 'result': 'FAIL'}])
+
+    def test_ready_stack_accepts_pass_or_fail_from_real_entrypoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'go.mod': 'module x\n'})
+            fake = root / 'bin'
+            fake.mkdir()
+            go = fake / 'go'
+            go.write_text('#!/bin/sh\nexit 0\n')
+            go.chmod(0o755)
+            value = stack.plan(product, workspace=root / 'ws',
+                               env={'PATH': str(fake), 'HOME': str(root)})
+            entry, = value['stacks']
+            self.assertTrue(entry['verification_ready'])
+            command = json.dumps(entry['verify_command'], separators=(',', ':'))
+            for result in ('PASS', 'FAIL'):
+                record = {'finding_id': 'A-01', 'candidate_head': 'a' * 40,
+                          'result': result, 'command': command}
+                self.assertEqual(stack.validate_verification_results(value, [record]),
+                                 [record])
+
     def test_plan_is_digest_bound_and_load_fails_closed_on_tamper(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
