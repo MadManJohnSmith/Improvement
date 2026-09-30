@@ -136,6 +136,19 @@ class StackPlanTests(unittest.TestCase):
             self.assertEqual(entry['verify_command'][-1], 'compact')
             self.assertFalse(entry['verification_ready'])
 
+    def test_materialized_workspace_venv_becomes_the_real_python_entrypoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'requirements.txt': 'Django==6.0.2\n',
+                                       'manage.py': 'print(1)\n'})
+            workspace = root / 'ws'
+            python = workspace / '.stack/python-django/venv/bin/python'
+            python.parent.mkdir(parents=True)
+            python.write_text('#!/bin/sh\nexit 0\n')
+            python.chmod(0o755)
+            entry, = stack.plan(product, workspace=workspace)['stacks']
+            self.assertEqual(entry['verify_command'][0], str(python))
+
     def test_plan_is_digest_bound_and_load_fails_closed_on_tamper(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -315,9 +315,18 @@ def _capability_status(needs, *, path_env=None, home=None):
     return status
 
 
-def _python_placeholder():
-    interpreter = _interpreter()
-    return interpreter or 'python3'
+def _materialized_python(workspace, stack, interpreter):
+    """A venv the plan itself asked for outranks the system interpreter.
+
+    Once the operator or a mode materialized `<workspace>/.stack/<stack>/venv`
+    exactly as the plan's provision step says, the entrypoint resolves to it:
+    that is the difference between a plan that names a command and a project
+    whose real suite can actually run.
+    """
+    candidate = Path(workspace) / '.stack' / stack / 'venv' / 'bin' / 'python'
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return interpreter
 
 
 def plan(product, *, workspace=None, env=None):
@@ -372,7 +381,8 @@ def plan(product, *, workspace=None, env=None):
             stacks.append(stack_plan)
             continue
         spec = STACKS[entry['stack']]
-        verify = [[part.replace('{python}', interpreter) for part in command]
+        effective_python = _materialized_python(workspace, entry['stack'], interpreter)
+        verify = [[part.replace('{python}', effective_python) for part in command]
                   for command in spec['verify']]
         stack_plan = {
             'stack': entry['stack'],
