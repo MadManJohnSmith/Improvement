@@ -451,6 +451,17 @@ El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
 destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
 `$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
 `./{product_root}/...`.
+La base registrada en hallazgos, handoffs e ítems es procedencia de auditoría, no un candado. Si
+esa base declarada difiere del HEAD canónico actual del producto, el modo PRUEBA la relación en
+lugar de improvisar: ejecuta `git -C ./<product> merge-base --is-ancestor <declared-base> HEAD` y
+exige el producto canónico limpio. Si y solo si la base declarada es ancestro del HEAD y el
+producto está limpio, reancla (`stale_base_policy:
+re-anchor-when-declared-base-is-ancestor-of-clean-head`): `full_base` es el HEAD canónico actual,
+la identidad de la candidata se deriva de esa base efectiva, el `base_revision` de la candidata
+registrada es la base efectiva, y el informe final declara ambas bases con la prueba de ancestría.
+Hallazgos y handoffs conservan su base declarada sin cambios. Cualquier otra relación (historia
+divergente, historia reescrita o forzada, producto canónico sucio, base desconocida) es
+`RETAINED` duro sin más acción.
 Antes de crear/reusar lee y valida estrictamente `work-items.json.candidate`. Si el target
 está sucio, solo permite `resume_policy: exact-recorded-only`: mismo path, branch,
 base y digest de hallazgos, estado `DIRTY` o `RETAINED` pendiente de verificación, y

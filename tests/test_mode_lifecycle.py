@@ -102,6 +102,8 @@ class ModeLifecycleTests(unittest.TestCase):
                          repair_reconcile_command(layout))
         self.assertEqual(candidate["stale_record_policy"],
                          "reconcile-then-resume")
+        self.assertEqual(candidate["stale_base_policy"],
+                         "re-anchor-when-declared-base-is-ancestor-of-clean-head")
         self.assertIn("candidate-diff-nonempty",
                       candidate["stale_record_precondition"])
         self.assertEqual(candidate["candidate_diff_command"],
@@ -328,6 +330,42 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertIn("recording_command", prefix)
         self.assertIn("__IMPROVEMENT_CANDIDATE_RECORD__", prefix)
         self.assertIn("recover it with the recording command", prefix)
+
+    def test_repair_can_re_anchor_a_declared_base_behind_a_clean_head(self):
+        """Regresión RehabWeb §6.9: base declarada ancestro del HEAD, producto limpio.
+
+        El comando de provisión exige que el HEAD del producto coincida con
+        full_base; sin ruta de re-anclaje, integrar una candidata dejaba
+        bloqueado todo ciclo de reparación posterior sobre los mismos
+        hallazgos (cuatro turnos RETAINED seguidos en RehabWeb).
+        """
+        prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
+        self.assertIn("merge-base --is-ancestor", prefix)
+        self.assertIn("re-anchor-when-declared-base-is-ancestor-of-clean-head",
+                      prefix)
+        self.assertIn("the recorded candidate base_revision is the effective base",
+                      prefix)
+        self.assertIn("Findings and handoffs keep their declared base unchanged",
+                      prefix)
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "1e1e1e1e1e1e1e1e"
+            # Base declarada ancestro del HEAD actual: el re-anclaje es legal.
+            (product / "second.txt").write_text("avance\n")
+            subprocess.run(["git", "-C", str(product), "add", "second.txt"],
+                           check=True)
+            subprocess.run([
+                "git", "-C", str(product), "-c", "user.name=Test",
+                "-c", "user.email=test@example.invalid", "commit", "-qm", "avance",
+            ], check=True)
+            head = subprocess.check_output(
+                ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
+            self.assertNotEqual(base, head)
+            # La base efectiva (HEAD) aprovisiona; la declarada would fail closed.
+            self.assertEqual(self._run_provision(
+                session, layout, head, digest).returncode, 0)
+            self.assertNotEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
 
     def _run_reconcile(self, session, layout, base, finding_ids):
         command = repair_reconcile_command(layout).replace(

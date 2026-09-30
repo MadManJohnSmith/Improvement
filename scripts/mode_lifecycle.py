@@ -265,6 +265,18 @@ def persona_prefix(preset_id, role=None):
             "immediately RETAINED with no retry or further action.")
     if role == "continuous-repair":
         return bootstrap + (
+            "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
+            "Before provisioning, if that declared base differs from the current canonical product "
+            "HEAD, prove the relation instead of improvising: run git -C <product> merge-base "
+            "--is-ancestor <declared-base> HEAD and require the canonical product clean. If and only "
+            "if the declared base is an ancestor of HEAD and the product is clean, re-anchor "
+            "(stale_base_policy: re-anchor-when-declared-base-is-ancestor-of-clean-head): full_base "
+            "is the current canonical HEAD, the candidate identity derives from that effective base, "
+            "the recorded candidate base_revision is the effective base, and the final report states "
+            "the declared base, the effective base, and the ancestry proof. Findings and handoffs "
+            "keep their declared base unchanged. Any other relation (divergent history, rewritten or "
+            "force-pushed history, dirty canonical product, unknown base) is a hard RETAINED with no "
+            "further action. "
             "Before provisioning, read and strictly validate work-items.json candidate. Use the exact "
             "centrally generated resume_command only when that record exactly matches target path, "
             "branch, base, finding digest, stored candidate_diff_digest, and status DIRTY or RETAINED; "
@@ -393,6 +405,7 @@ def expected_lifecycle(role, layout):
             "resume_policy": "exact-recorded-only",
             "resume_statuses": ["DIRTY", "RETAINED-pending-verification"],
             "stale_record_policy": "reconcile-then-resume",
+        "stale_base_policy": "re-anchor-when-declared-base-is-ancestor-of-clean-head",
             "stale_record_precondition": [
                 "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
                 "registered-worktree-exact-identity", "target-head-equals-full-base",
