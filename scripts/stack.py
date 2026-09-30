@@ -18,6 +18,7 @@ The plan is written by the Host (install) to
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -478,11 +479,17 @@ def validate_verification_results(value, records):
         by_command[_command_text(entry['verify_command'])] = ready
         if entry.get('lint_command'):
             by_command[_command_text(entry['lint_command'])] = ready
+    required = {'finding_id', 'candidate_head', 'result', 'command'}
     for index, record in enumerate(records):
-        if not isinstance(record, dict):
-            raise ValueError(f'Resultado {index} inválido')
+        if not isinstance(record, dict) or set(record) != required:
+            raise ValueError(f'Resultado {index} no cumple el schema estricto')
         command = record.get('command')
         result = record.get('result')
+        if (not isinstance(record.get('finding_id'), str)
+                or not record['finding_id']
+                or not isinstance(record.get('candidate_head'), str)
+                or not re.fullmatch(r'[0-9a-f]{40,64}', record['candidate_head'])):
+            raise ValueError(f'Resultado {index} no cumple el schema estricto')
         if command not in by_command:
             raise ValueError(f'Resultado {index} usa comando ajeno al stack real')
         if result not in {'PASS', 'FAIL', 'BLOCKED'}:

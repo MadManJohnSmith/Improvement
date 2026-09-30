@@ -135,20 +135,24 @@ const runManaged = async (content, planText) => {
 const readyPlan = plan([{ name: 'node', verification_ready: true, verify_command: ['node', '--test'], lint_command: ['npm', 'run', 'lint'] }]);
 const blockedPlan = plan([{ name: 'python', verification_ready: false, verify_command: ['python', '-m', 'pytest'] }]);
 
-const managedPass = await runManaged(`${JSON.stringify({ command: '["node","--test"]', result: 'PASS' })}\n`, readyPlan);
+const record = (command, result) => ({ finding_id: 'A-01', candidate_head: 'a'.repeat(40), command, result });
+const managedPass = await runManaged(`${JSON.stringify(record('["node","--test"]', 'PASS'))}\n`, readyPlan);
 check('managed: PASS de entrypoint listo se escribe', managedPass.path === MANAGED_TARGET && calls.writeText !== undefined);
 
-const managedBlocked = await runManaged(JSON.stringify({ command: '["python","-m","pytest"]', result: 'BLOCKED' }), blockedPlan);
+const managedBlocked = await runManaged(JSON.stringify(record('["python","-m","pytest"]', 'BLOCKED')), blockedPlan);
 check('managed: capacidad ausente acepta BLOCKED', managedBlocked.path === MANAGED_TARGET && calls.writeText !== undefined);
 
-const missingPass = await runManaged(JSON.stringify({ command: '["python","-m","pytest"]', result: 'PASS' }), blockedPlan).catch((e) => e.message);
+const missingPass = await runManaged(JSON.stringify(record('["python","-m","pytest"]', 'PASS')), blockedPlan).catch((e) => e.message);
 check('managed: capacidad ausente rechaza PASS antes de writeText', /debe ser BLOCKED/.test(missingPass) && calls.writeText === undefined, missingPass);
 
-const foreignCommand = await runManaged(JSON.stringify({ command: '["echo","stub"]', result: 'PASS' }), readyPlan).catch((e) => e.message);
+const foreignCommand = await runManaged(JSON.stringify(record('["echo","stub"]', 'PASS')), readyPlan).catch((e) => e.message);
 check('managed: comando stub/ajeno rechazado', /comando ajeno/.test(foreignCommand) && calls.writeText === undefined, foreignCommand);
 
+const extraFields = await runManaged(JSON.stringify({ ...record('["node","--test"]', 'PASS'), detail: 'inventado' }), readyPlan).catch((e) => e.message);
+check('managed: campos fuera del schema estricto rechazados', /schema estricto/.test(extraFields) && calls.writeText === undefined, extraFields);
+
 for (const [label, badPlan] of [['malformado', '{'], ['adulterado', plan([{ verification_ready: true, verify_command: 'node --test' }])]]) {
-  const error = await runManaged(JSON.stringify({ command: '["node","--test"]', result: 'PASS' }), badPlan).catch((e) => e.message);
+  const error = await runManaged(JSON.stringify(record('["node","--test"]', 'PASS')), badPlan).catch((e) => e.message);
   check(`managed: plan ${label} rechazado`, /capability-plan inválido|comando ajeno/.test(error) && calls.writeText === undefined, error);
 }
 

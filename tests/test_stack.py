@@ -164,6 +164,12 @@ class StackPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'comando ajeno'):
                 stack.validate_verification_results(
                     value, [{**record, 'command': 'python hand_written_stub.py'}])
+            with self.assertRaisesRegex(ValueError, 'schema estricto'):
+                stack.validate_verification_results(
+                    value, [{**record, 'detail': 'campo extra'}])
+            with self.assertRaisesRegex(ValueError, 'schema estricto'):
+                stack.validate_verification_results(
+                    value, [{key: record[key] for key in ('finding_id', 'result', 'command')}])
             with self.assertRaisesRegex(ValueError, 'debe ser BLOCKED'):
                 stack.validate_verification_results(
                     value, [{**record, 'result': 'PASS'}])

@@ -110,6 +110,14 @@ async function validateManagedVerification(ctx, target, content, signal) {
     if (!record || typeof record !== 'object' || Array.isArray(record)) {
       throw new Error(`verification-result ${index} inválido`);
     }
+    const keys = Object.keys(record).sort();
+    const required = ['candidate_head', 'command', 'finding_id', 'result'];
+    if (keys.length !== required.length || keys.some((key, offset) => key !== required[offset])
+        || typeof record.finding_id !== 'string' || record.finding_id.length === 0
+        || typeof record.candidate_head !== 'string'
+        || !/^[0-9a-f]{40,64}$/.test(record.candidate_head)) {
+      throw new Error(`verification-result ${index} no cumple el schema estricto`);
+    }
     if (!commands.has(record.command)) {
       throw new Error(`verification-result ${index} usa comando ajeno al stack real`);
     }
