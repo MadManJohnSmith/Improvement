@@ -53,6 +53,13 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
   característica (no como falta) es parte del mensaje público.
 - Dependencias de terceros ya atribuidas en `THIRD_PARTY_NOTICES.md`; cualquier skill
   nueva que entre a `library/` exige su entrada de procedencia.
+- Proyectos móviles sin toolchain (caso LoboApp: Flutter sin SDK en la máquina): la
+  verificación del candidato queda `BLOCKED` por falta de capacidad, nunca PASS inventado.
+  Adaptador candidato para evidencia en dispositivo Android: `google/artemis` (Apache-2.0,
+  automatización de UI con capturas/logcat y servidor MCP). No se adopta como dependencia —
+  añade ADB/emulador/FFmpeg al entorno del usuario, solo cubre objetivos Android y no emite
+  diagnósticos de análisis estático; si un tester de proyecto móvil lo integra, exige entrada
+  de procedencia y queda como verificador externo, nunca como fuente de autoridad.
 
 ## Línea base medible del piloto (para comparar durante la beta)
 
