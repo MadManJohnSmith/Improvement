@@ -407,7 +407,14 @@ Usa `schema_version: 1`, `state_root: "{state_root}"`, `state_schema:
 "state-schema.json"`, `read_before_write: true`, `write_method:
 "workflow_write-full-replacement-not-atomic"` y estos límites exactos en ambos:
 `findings.jsonl: 200`, `handoffs.jsonl: 50`, `work-items.json: 200`,
-`verification-results.jsonl: 200`.
+`verification-results.jsonl: 200`, `overflows.jsonl: 100`.
+
+Ambos modos declaran y aplican `overflow_receipt` sobre `overflows.jsonl`: antes de
+cualquier reemplazo completo que descarte registros por límite de archivo o por
+deduplicación, añade primero a `overflows.jsonl` un recibo con `overflow_id` nuevo y
+único, el `file` afectado, la `reason` de la causa y `dropped_records` con hasta 32
+identificadores de lo descartado; solo después escribe el archivo compactado. Un
+registro que sale del estado sin recibo es una pérdida sin traza.
 
 Auditor debe incluir `audit_handoff` con `required_before_final: true`, dedupe
 `["finding_id","base_revision"]`, writes `findings.jsonl`, `handoffs.jsonl`,
@@ -457,14 +464,16 @@ la colisión `RETAINED`; nunca adopta un worktree sucio arbitrario.
 Declara además `record_before_first_edit: true`, `record_statuses:
 ["PROVISIONED","DIRTY"]`, `unrecorded_dirty_target: RETAINED-never-adopted`,
 `interrupted_turn_recovery: recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command`
-y el comando central `{repair_record_command}`. Si el comando central de reanudación falla SOLO porque el `candidate_diff_digest` registrado quedó obsoleto mientras el registro ya coincidía exactamente en path, branch, base y digest de hallazgos, eso NO es una colisión y NUNCA requiere decisión del operador: ejecuta el comando central `{repair_reconcile_cmd}`, persiste su línea `__IMPROVEMENT_CANDIDATE_RECONCILE__` como el nuevo registro `DIRTY` y reanuda normalmente (`stale_record_policy: reconcile-then-resume`, con las precondiciones exactas de identidad target, worktree registrado, HEAD base, canonical limpio e inalterado, diff no vacío, paths confinados sin symlinks y sin submódulos). Cualquier discrepancia real de path, branch, base o digest de hallazgos sigue siendo `RETAINED` duro. El procedimiento DEBE reclamar la
+y el comando central `{repair_record_command}`. Si el comando central de reanudación falla SOLO porque el `candidate_diff_digest` registrado quedó obsoleto mientras el registro ya coincidía exactamente en path, branch, base y digest de hallazgos, eso NO es una colisión y NUNCA requiere decisión del operador: ejecuta el comando central `{repair_reconcile_cmd}`, persiste el objeto JSON que imprime tras el marcador `__IMPROVEMENT_CANDIDATE_RECONCILE__` verbatim como el nuevo registro `DIRTY` y reanuda normalmente (`stale_record_policy: reconcile-then-resume`, con las precondiciones exactas de identidad target, worktree registrado, HEAD base, canonical limpio e inalterado, diff no vacío, paths confinados sin symlinks y sin submódulos). Cualquier discrepancia real de path, branch, base o digest de hallazgos sigue siendo `RETAINED` duro. Todo registro de candidata es el objeto JSON exacto que los comandos centrales imprimen tras su marcador: se persiste verbatim, campo a campo, sin añadir, quitar, renombrar, reordenar ni reformatear campos y sin alterar valores (la `path` es el nombre relativo del candidato que trae el objeto, nunca una ruta absoluta); editar a mano, re-clavar o envolver el objeto emitido para que encaje está prohibido. El procedimiento DEBE reclamar la
 candidata antes de editarla: nada de cambio de código puede ocurrir antes de que exista
 `work-items.json.candidate` con estado `PROVISIONED` que coincida en path, branch, head,
 base y `finding_ids_digest`. Ese reclamo se persiste con el `recording_command` central
-justo después de que el `provision_command` tenga éxito; tras el primer cambio de código se
-repite el mismo comando y se persiste como `DIRTY` con el `candidate_diff_digest` y
-`changed_paths` capturados. Si el reclamo no se puede persistir, no se cambia código y se
-reporta `RETAINED`. Una candidata registrada `PROVISIONED` que ya aparezca sucia es un
+justo después de que el `provision_command` tenga éxito, guardando verbatim el objeto
+JSON impreso tras el marcador `__IMPROVEMENT_CANDIDATE_RECORD__`; tras el primer cambio
+de código se repite el mismo comando y se persiste el objeto recién emitido de la misma
+forma verbatim (ya trae `status: DIRTY` con `candidate_diff_digest` y `changed_paths`).
+Si el objeto verbatim no se puede persistir, no se cambia código y se reporta
+`RETAINED`. Una candidata registrada `PROVISIONED` que ya aparezca sucia es un
 turno interrumpido: se recupera con el `recording_command`, jamás creando otra vez ni
 descartando su diff.
 Para creación o reutilización limpia ejecuta literalmente el `provision_command` central,

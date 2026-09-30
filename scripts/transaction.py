@@ -305,6 +305,10 @@ class Transaction:
         if isinstance(value, dict):
             return value.get("items", value.get("presets", []))
         return value if isinstance(value, list) else []
+        value = value.get("value", value) if isinstance(value, dict) else value
+        if isinstance(value, dict):
+            return value.get("items", value.get("presets", []))
+        return value if isinstance(value, list) else []
 
     @staticmethod
     def _rpc_value(value):
@@ -586,13 +590,16 @@ class Transaction:
 
         try:
             # Operational state is shared by both modes and remains outside product.
-            self._prepare_mode_state()
+            # The preflight report names what the preflight discarded, so the
+            # operator sees it in the install result instead of only in the archive.
+            mode_state_preflight = self._prepare_mode_state()
             publication = self._publish_presets(target, modes, generation_id)
             if publication["result"] == "RESTART_REQUIRED":
                 return {
                     "result": "RESTART_REQUIRED",
                     "generation_id": generation_id,
                     "previous_generation_id": backup_manifest["previous_generation_id"],
+                    "mode_state_preflight": mode_state_preflight,
                     "message": (
                         "DSH guardó la actualización del bundle pero requiere "
                         "reinicio; relanza DSH y repite bootstrap install"),
@@ -625,6 +632,7 @@ class Transaction:
             "backup": str(backup_manifest_path),
             "published_presets": published,
             "mode_state": str(self.workspace / "mode-state"),
+            "mode_state_preflight": mode_state_preflight,
         }
 
     def rollback(self, generation_id):

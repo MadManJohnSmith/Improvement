@@ -16,8 +16,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import decisions
+import metrics
 from budget import BudgetExhausted, Ledger
 from host_controller import ControllerAlive, HostController, HostError
+from metrics import NO_DISPONIBLE
 
 LIMITS = {'attempts': 3, 'cost': 0, 'seconds': 0}
 
@@ -348,6 +351,89 @@ class HostControllerTest(unittest.TestCase):
         self.assertEqual(outcome['outcome'], 'UNIT_DONE')
         self.assertTrue(task_path.exists() and result_path.exists())
         self.assertEqual(self._queue(mission)['late-1']['state'], 'DONE')
+
+    # 9. Memoria de misión al cierre de turno (métricas y decisiones).
+    def test_turn_close_records_metric_event_and_no_decision_when_done(self):
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+        controller.run_next(self._launcher(root, plans, []))
+        self.assertEqual(metrics.verify(mission / 'metrics')['events'], 1)
+        summary = metrics.summarize(mission / 'metrics')
+        self.assertEqual(summary['elapsed_s'], NO_DISPONIBLE)
+        store = decisions.create(mission, 'host-fixture')
+        self.assertEqual(store.verify()['decisions'], 0)
+
+    def test_turn_close_records_observed_elapsed_seconds(self):
+        root = self._root()
+        mission = root / 'mission'
+        controller = HostController(mission)
+        controller.register_mandate('host-fixture',
+                                    {'attempts': 3, 'cost': 0, 'seconds': 100})
+        entry, plan = self._unit(root, 'u1')
+        entry['seconds'] = 42
+        controller.enqueue(entry)
+        controller.run_next(self._launcher(root, {'u1': plan}, []))
+        summary = metrics.summarize(mission / 'metrics')
+        self.assertEqual(summary['elapsed_s']['total'], 42)
+        self.assertEqual(summary['elapsed_s']['sources'], ['host-fixture'])
+
+    def test_retained_unit_leaves_metric_and_decision(self):
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+
+        def broken(unit):
+            raise ValueError('fallo del launcher')
+
+        outcome = controller.run_next(broken)
+        self.assertEqual(outcome['outcome'], 'UNIT_RETAINED')
+        self.assertEqual(metrics.verify(mission / 'metrics')['events'], 1)
+        store = decisions.create(mission, 'host-fixture')
+        view = store.get_for_units(['u1'])
+        self.assertEqual(len(view), 1)
+        self.assertEqual(view[0]['status'], 'VIGENTE')
+        self.assertIn('fallo del launcher', view[0]['motive'])
+        self.assertEqual(view[0]['authorization_ref'], 'host-mandate')
+
+    def test_cancel_records_metric_and_decision_for_in_flight_unit(self):
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+        try:
+            controller.run_next(self._launcher(root, plans, []),
+                                inject=_crash_at('turn_started'))
+        except Crash:
+            pass
+        controller.cancel()
+        self.assertEqual(metrics.verify(mission / 'metrics')['events'], 1)
+        store = decisions.create(mission, 'host-fixture')
+        self.assertEqual(len(store.get_for_units(['u1'])), 1)
+
+    def test_metrics_failure_at_turn_close_leaves_unit_reconcilable(self):
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+        metrics_root = mission / 'metrics'
+        (metrics_root / 'events.jsonl').write_text('corrupto\n')
+        (metrics_root / 'head.json').write_text(json.dumps(
+            {'kind': 'metrics-head', 'version': 1, 'events': 0,
+             'head_sha256': 'x'}) + '\n')
+        with self.assertRaises(ValueError):
+            controller.run_next(self._launcher(root, plans, []))
+        self.assertEqual(self._queue(mission)['u1']['state'], 'IN_FLIGHT')
+        controller.reconcile_on_start()
+        self.assertEqual(self._queue(mission)['u1']['state'], 'PENDING')
+
+    def test_reopening_mission_with_altered_decision_identity_fails_closed(self):
+        root = self._root()
+        mission, controller, _plans = self._setup(root, [])
+        controller.release_locks()
+        path = mission / 'decisions' / 'identity.json'
+        envelope = json.loads(path.read_text())
+        envelope['payload'] = {'kind': 'decision-store', 'identity': 'otra-identidad'}
+        envelope['content_sha256'] = hashlib.sha256(json.dumps(
+            {key: envelope[key] for key in ('version', 'event_id', 'payload')},
+            sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        path.write_text(json.dumps(envelope))
+        with self.assertRaises(ValueError):
+            HostController(mission)
 
 
 if __name__ == '__main__':

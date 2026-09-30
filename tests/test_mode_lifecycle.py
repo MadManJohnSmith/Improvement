@@ -162,11 +162,10 @@ class ModeLifecycleTests(unittest.TestCase):
 
     def _read_record_evidence(self, result):
         self.assertEqual(result.returncode, 0, result.stderr)
-        marker, finding_digest, status, path, branch, evidence = (
-            result.stdout.strip().split(" ", 5))
-        self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_RECORD__")
-        return {"finding_ids_digest": finding_digest, "status": status,
-                "path": path, "branch": branch, "evidence": evidence}
+        marker, _, payload = result.stdout.strip().partition(" ")
+        self.assertIn(marker, ("__IMPROVEMENT_CANDIDATE_RECORD__",
+                               "__IMPROVEMENT_CANDIDATE_RECONCILE__"))
+        return json.loads(payload)
 
     def test_repair_claims_candidate_before_first_edit_and_recovers_interrupted_turn(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,20 +177,24 @@ class ModeLifecycleTests(unittest.TestCase):
 
             claimed = self._read_record_evidence(
                 self._run_record(session, layout, base, digest))
-            self.assertEqual(claimed["status"], "PROVISIONED")
-            self.assertEqual(claimed["evidence"], "-")
-            self.assertEqual(claimed["path"], str(candidate))
-            self.assertEqual(claimed["branch"], f"dsh/repair-{digest}")
-            self.assertEqual(claimed["finding_ids_digest"], digest + "0" * 48)
+            self.assertEqual(claimed, {
+                "base_revision": base,
+                "finding_ids_digest": digest + "0" * 48,
+                "path": f"Product-repair-{digest}",
+                "branch": f"dsh/repair-{digest}",
+                "head": base,
+                "status": "PROVISIONED",
+            })
 
             (candidate / "tracked.txt").write_bytes(b"interrupted repair bytes\n")
             recovered = self._read_record_evidence(
                 self._run_record(session, layout, base, digest))
             self.assertEqual(recovered["status"], "DIRTY")
-            diff_marker, diff_digest, paths = recovered["evidence"].split(" ", 2)
-            self.assertEqual(diff_marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
-            self.assertEqual(json.loads(paths), ["tracked.txt"])
-            self.assertEqual(recovered["path"], str(candidate))
+            self.assertEqual(recovered["changed_paths"], ["tracked.txt"])
+            self.assertEqual(recovered["path"], f"Product-repair-{digest}")
+            self.assertEqual(recovered["head"], base)
+            self.assertEqual(recovered["base_revision"], base)
+            self.assertEqual(recovered["finding_ids_digest"], digest + "0" * 48)
             self.assertEqual(
                 subprocess.check_output(
                     ["git", "-C", str(candidate), "status", "--porcelain=v1"],
@@ -199,7 +202,8 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
 
-            resumed = self._run_resume(session, layout, base, digest, diff_digest)
+            resumed = self._run_resume(session, layout, base, digest,
+                                       recovered["candidate_diff_digest"])
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
             self.assertEqual((candidate / "tracked.txt").read_bytes(),
                              b"interrupted repair bytes\n")
@@ -223,6 +227,107 @@ class ModeLifecycleTests(unittest.TestCase):
                 result = self._run_record(session, layout, base, digest)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(candidate.joinpath("tracked.txt").exists())
+
+    def test_recording_command_emits_the_exact_persistable_candidate_object(self):
+        """Regresión RehabWeb: el objeto emitido se persiste verbatim, sin ensamblado.
+
+        El comando anterior imprimía una línea de 5 campos con ruta absoluta que
+        ningún modo podía persistir sin transformarla a mano (ahí nacían los
+        campos extra y las rutas absolutas que el preflight descartaba).
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "9d9d9d9d9d9d9d9d"
+            self.assertEqual(self._run_provision(
+                session, layout, base, digest).returncode, 0)
+            candidate_spec = state_schema()["files"]["work-items.json"]["candidate"]
+
+            claimed = self._read_record_evidence(
+                self._run_record(session, layout, base, digest))
+            mode_lifecycle._valid(claimed, candidate_spec, "work-items.json.candidate")
+            self.assertEqual(claimed["path"], f"Product-repair-{digest}")
+            self.assertEqual(set(claimed), {
+                "base_revision", "finding_ids_digest", "path", "branch",
+                "head", "status"})
+
+            (session / f"Product-repair-{digest}" / "tracked.txt").write_bytes(
+                b"dirty\n")
+            dirty = self._read_record_evidence(
+                self._run_record(session, layout, base, digest))
+            mode_lifecycle._valid(dirty, candidate_spec, "work-items.json.candidate")
+            self.assertEqual(set(dirty), {
+                "base_revision", "finding_ids_digest", "path", "branch",
+                "head", "status", "candidate_diff_digest", "changed_paths"})
+
+            # Lo que un modo escribía a mano queda fuera del contrato:
+            with self.assertRaises(ValueError):
+                mode_lifecycle._valid({**dirty, "extra_field": "x"},
+                                      candidate_spec, "extra-field")
+            with self.assertRaises(ValueError):
+                mode_lifecycle._valid(
+                    {**claimed, "path": str(session / f"Product-repair-{digest}")},
+                    candidate_spec, "absolute-path")
+
+    def test_initialize_state_report_names_every_discard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            base = "a" * 40
+            good_finding = {"finding_id": "A-01", "base_revision": base,
+                            "severity": "HIGH", "summary": "s", "status": "OPEN"}
+            (state / "findings.jsonl").write_text("\n".join([
+                json.dumps(good_finding),
+                "x" * (RECORD_BYTE_LIMIT + 1),
+                "not-json",
+                json.dumps({**good_finding, "finding_id": "A-02", "extra": 1}),
+            ]) + "\n")
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1,
+                "candidate": {"base_revision": base,
+                              "finding_ids_digest": "b" * 64,
+                              "path": "/abs/Product-repair-" + "c" * 16,
+                              "extra_field": 1,
+                              "branch": "dsh/repair-" + "c" * 16,
+                              "head": base, "status": "PROVISIONED"},
+                "items": [{"work_item_id": "W-01", "finding_id": "A-01",
+                           "base_revision": base, "status": "PENDING"},
+                          {"work_item_id": "W-bad", "finding_id": "A-01",
+                           "base_revision": base, "status": "NOT-A-STATUS"}],
+            }) + "\n")
+            (state / "overflows.jsonl").write_text(json.dumps(
+                {"overflow_id": "OV-01", "file": "handoffs.jsonl",
+                 "reason": "limit-overflow",
+                 "dropped_records": ["audit-3"]}) + "\n")
+            report = initialize_state(
+                state, {"schema_version": 1, "project_id": "p",
+                        "product_root": "Product",
+                        "state_root": "Product-workspace/mode-state"},
+                root / "archive")
+
+            by_file = {note["file"]: note for note in report["dropped"]}
+            self.assertEqual(by_file["findings.jsonl"]["reason"],
+                             "incompatible-records")
+            self.assertEqual(
+                len(by_file["findings.jsonl"]["dropped_records"]), 3)
+            self.assertTrue(any("A-02" in name
+                                for name in by_file["findings.jsonl"]["dropped_records"]))
+            self.assertEqual(by_file["work-items.json"]["dropped_records"],
+                             ["W-bad", "candidate:/abs/Product-repair-" + "c" * 16])
+            self.assertNotIn("overflows.jsonl", by_file)
+            migrated = json.loads((state / "overflows.jsonl").read_text())
+            self.assertEqual(migrated["overflow_id"], "OV-01")
+            self.assertIsNotNone(report["archive"])
+
+    def test_persona_requires_verbatim_candidate_persistence(self):
+        prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
+        self.assertIn("persist it verbatim, field-for-field", prefix)
+        self.assertIn("no field added, removed, renamed, reordered, or reformatted",
+                      prefix)
+        self.assertIn("never an absolute path", prefix)
+        self.assertIn("recording_command", prefix)
+        self.assertIn("__IMPROVEMENT_CANDIDATE_RECORD__", prefix)
+        self.assertIn("recover it with the recording command", prefix)
 
     def _run_reconcile(self, session, layout, base, finding_ids):
         command = repair_reconcile_command(layout).replace(
@@ -251,17 +356,18 @@ class ModeLifecycleTests(unittest.TestCase):
 
             reconciled = self._run_reconcile(session, layout, base, finding_ids)
             self.assertEqual(reconciled.returncode, 0, reconciled.stderr)
-            marker, finding_digest, status, path, branch, evidence = (
-                reconciled.stdout.strip().split(" ", 5))
+            marker, _, payload = reconciled.stdout.strip().partition(" ")
             self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_RECONCILE__")
-            self.assertEqual(status, "DIRTY")
-            self.assertEqual(path, str(candidate))
-            self.assertEqual(branch, f"dsh/repair-{digest}")
-            self.assertEqual(finding_digest, hashlib.sha256(
+            record = json.loads(payload)
+            self.assertEqual(record["status"], "DIRTY")
+            self.assertEqual(record["path"], f"Product-repair-{digest}")
+            self.assertEqual(record["branch"], f"dsh/repair-{digest}")
+            self.assertEqual(record["head"], base)
+            self.assertEqual(record["base_revision"], base)
+            self.assertEqual(record["finding_ids_digest"], hashlib.sha256(
                 (base + "\n" + finding_ids).encode()).hexdigest())
-            diff_marker, current_digest, paths = evidence.split(" ", 2)
-            self.assertEqual(diff_marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
-            self.assertEqual(json.loads(paths), ["tracked.txt"])
+            self.assertEqual(record["changed_paths"], ["tracked.txt"])
+            current_digest = record["candidate_diff_digest"]
 
             resumed = self._run_resume(session, layout, base, digest, current_digest)
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
@@ -611,7 +717,7 @@ class ModeLifecycleTests(unittest.TestCase):
                 "schema_version": 1, "candidate": None, "items": [],
             })
             for name in ("findings.jsonl", "handoffs.jsonl",
-                         "verification-results.jsonl"):
+                         "verification-results.jsonl", "overflows.jsonl"):
                 self.assertEqual((state / name).read_text(), "")
 
     def test_initialize_state_migrates_legacy_empty_work_items(self):
@@ -632,7 +738,8 @@ class ModeLifecycleTests(unittest.TestCase):
 
     def test_initialize_state_migrates_legacy_schema_after_full_preflight(self):
         with tempfile.TemporaryDirectory() as tmp:
-            state = Path(tmp) / "mode-state"
+            root = Path(tmp)
+            state = root / "mode-state"
             descriptor = {"schema_version": 1, "project_id": "project",
                           "product_root": "Project",
                           "state_root": "Project-workspace/mode-state"}
@@ -648,8 +755,14 @@ class ModeLifecycleTests(unittest.TestCase):
             schema["files"]["verification-results.jsonl"]["dedupe_key"] = [
                 "finding_id", "candidate_commit"]
             schema_path.write_text(json.dumps(schema))
-            initialize_state(state, descriptor)
-            self.assertIn("record_max_bytes", json.loads(schema_path.read_text()))
+            report = initialize_state(state, descriptor, root / "archive")
+            migrated = json.loads(schema_path.read_text())
+            self.assertIn("record_max_bytes", migrated)
+            self.assertIn("overflows.jsonl", migrated["files"])
+            self.assertEqual(report["dropped"], [
+                {"file": "state-schema.json",
+                 "reason": "incompatible-expected-file"}])
+            self.assertIsNotNone(report["archive"])
 
     def test_initialize_state_archives_malformed_expected_file(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -10,7 +10,12 @@ un callable inyectado por el caller (el rig en producción; un fake
 determinista en pruebas): este módulo no ejecuta modelos, no interpreta
 semántica y no concede autoridad; verifica hashes con missions.digest,
 publica el lote del publicador en un almacén por unidad y registra
-UNIT_DONE | UNIT_RETAINED con causa.
+UNIT_DONE | UNIT_RETAINED con causa. Al cierre de cada turno deja memoria
+durable de la misión: un evento `turn` en `metrics/` (solo métricas
+observadas, p. ej. elapsed_s) y, en toda retención, la decisión ratificada
+por el Host en `decisions/` con la causa y la autorización del mandato;
+ambos almacenes fallan cerrados y una escritura fallida deja la unidad en
+vuelo para reconciliación, sin fingir un cierre limpio.
 
 Reconciliación (contrato especificado y probado en tests/test_recovery_durable.py):
 al arrancar un controlador nuevo, las unidades IN_FLIGHT se re-marcan PENDING
@@ -29,6 +34,8 @@ import time
 
 from pathlib import Path
 
+import decisions
+import metrics
 import missions
 from budget import Ledger
 from publisher import Publisher
@@ -125,8 +132,12 @@ class HostController:
         self._released = False
         self._events = None
         self._seq = 0
+        self._decisions_store = None
+        self._metrics_root = None
         try:
             self._mandate = self._load_mandate()
+            if self._mandate is not None:
+                self._open_mission_memory()
             self.budget = (Ledger(self._budget_root)
                            if (self._budget_root / 'limits.json').exists() else None)
             if (self._mandate is not None and self.budget is not None
@@ -169,8 +180,36 @@ class HostController:
             raise ValueError('Mandato ya registrado')
         self.budget = ledger
         self._mandate = {'identity': identity, 'authorization': authorization, 'limits': dict(limits)}
+        self._open_mission_memory()
         self._event('MANDATE_REGISTERED', identity=identity, limits=dict(limits))
         return {'created': True}
+
+    # -- memoria de misión -------------------------------------------------
+
+    def _open_mission_memory(self):
+        """Abre métricas y decisiones de la misión; identidad exclusiva, fallo cerrado."""
+        root = self.mission_dir / 'metrics'
+        if root.is_symlink() or (root.exists() and not root.is_dir()):
+            raise ValueError('Raíz de métricas inválida')
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self._metrics_root = root
+        self._decisions_store = decisions.DecisionStore(
+            self.mission_dir, self._mandate['identity'])
+
+    def _record_turn_close(self, unit):
+        """Evento de métricas al cierre del turno; solo se registran métricas observadas."""
+        values = {}
+        if unit.get('seconds') is not None:
+            values['elapsed_s'] = unit['seconds']
+        metrics.record_event(self._metrics_root, 'turn',
+                             source=self._mandate['identity'],
+                             unit=unit['unit_id'], **values)
+
+    def _record_retention_decision(self, unit_id, cause):
+        """Retención ratificada por el Host en el ledger de decisiones de la misión."""
+        self._decisions_store.record(
+            cause, [], [unit_id],
+            authorization_ref=self._mandate['authorization'])
 
     # -- cola --------------------------------------------------------------
 
@@ -298,6 +337,7 @@ class HostController:
         self._event('PUBLISHED', unit=unit_id, batch_id=batch_id)
         if inject is not None:
             inject('published')
+        self._record_turn_close(unit)
         unit['state'] = 'DONE'
         self._save_queue()
         self._event('UNIT_DONE', unit=unit_id, batch_id=batch_id)
@@ -337,10 +377,13 @@ class HostController:
         cause = 'cancelado por el operador'
         retained = [unit['unit_id'] for unit in self._queue['units'] if unit['state'] == 'IN_FLIGHT']
         if retained:
-            for unit in self._queue['units']:
-                if unit['state'] == 'IN_FLIGHT':
-                    unit['state'] = 'RETAINED'
-                    unit['retained_cause'] = cause
+            in_flight = [unit for unit in self._queue['units'] if unit['state'] == 'IN_FLIGHT']
+            for unit in in_flight:
+                self._record_turn_close(unit)
+                self._record_retention_decision(unit['unit_id'], cause)
+            for unit in in_flight:
+                unit['state'] = 'RETAINED'
+                unit['retained_cause'] = cause
             self._save_queue()
             for unit_id in retained:
                 self._event('UNIT_RETAINED', unit=unit_id, cause=cause)
@@ -406,6 +449,10 @@ class HostController:
 
     def _retain(self, unit, cause):
         cause = cause[:MAX_CAUSE]
+        # Memoria de cierre antes del cambio de estado: una escritura fallida
+        # deja la unidad en vuelo (reconciliable) en vez de un cierre fingido.
+        self._record_turn_close(unit)
+        self._record_retention_decision(unit['unit_id'], cause)
         try:
             unit['state'] = 'RETAINED'
             unit['retained_cause'] = cause

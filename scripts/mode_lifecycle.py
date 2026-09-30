@@ -17,6 +17,7 @@ LIMITS = {
     "handoffs.jsonl": 50,
     "work-items.json": 200,
     "verification-results.jsonl": 200,
+    "overflows.jsonl": 100,
 }
 BYTE_LIMITS = {
     "project.json": 8_192,
@@ -25,6 +26,7 @@ BYTE_LIMITS = {
     "handoffs.jsonl": 131_072,
     "work-items.json": 262_144,
     "verification-results.jsonl": 262_144,
+    "overflows.jsonl": 131_072,
 }
 RECORD_BYTE_LIMIT = 4_096
 LEGACY_FILE_BYTE_LIMIT = 8 * 1024 * 1024
@@ -124,13 +126,50 @@ def repair_candidate_diff_command(layout):
             _candidate_diff_invocation("-"))
 
 
+def _candidate_diff_capture_shell():
+    """Capture the diff line and split it into guarded digest and JSON paths."""
+    return (
+        "diff_line=\"$(" + _candidate_diff_invocation("-") + ")\"; "
+        "case \"$diff_line\" in \"__IMPROVEMENT_CANDIDATE_DIFF__ \"*) ;; *) exit 1;; esac; "
+        "diff_digest=\"${diff_line#__IMPROVEMENT_CANDIDATE_DIFF__ }\"; "
+        "diff_paths=\"${diff_digest#* }\"; "
+        "diff_digest=\"${diff_digest%% *}\"; "
+        "case \"$diff_digest\" in ''|*[!0-9a-f]*) exit 1;; esac; "
+        "case \"$diff_paths\" in \\[*\\]) ;; *) exit 1;; esac; ")
+
+
+def _candidate_record_json(marker, dirty):
+    """printf of the exact candidate object the mode must persist verbatim.
+
+    Field order matches the state schema required list; the path is the
+    relative candidate name (the schema forbids a leading slash) and head is
+    the base revision the candidate was provisioned at. DIRTY adds the diff
+    digest and the changed-path array captured by the guarded diff command.
+    """
+    fields = ('{"base_revision":"%s","finding_ids_digest":"%s","path":"%s",'
+              '"branch":"%s","head":"%s","status":"%s"')
+    args = ('"$full_base" "$finding_ids_digest" "$candidate_name" "$branch" '
+            '"$full_base"')
+    if dirty:
+        return ("printf '" + marker + " " + fields +
+                ",\"candidate_diff_digest\":\"%s\",\"changed_paths\":%s}\\n' "
+                + args + " 'DIRTY' \"$diff_digest\" \"$diff_paths\"")
+    return ("printf '" + marker + " " + fields + "}\\n' "
+            + args + " 'PROVISIONED'")
+
+
 def repair_recording_command(layout):
     """Return the exact command that records candidate evidence into mode state.
 
-    The single recorded transition is PROVISIONED (clean, no diff) -> DIRTY (diff
-    captured). A candidate is only ever touched by the mode after its identity is
-    already durably recorded, so an interrupted turn never strands a dirty
-    worktree that the strict resume path would refuse.
+    The command prints the exact JSON object to persist verbatim as
+    work-items.json.candidate after the __IMPROVEMENT_CANDIDATE_RECORD__
+    marker. The single recorded transition is PROVISIONED (clean, no diff) ->
+    DIRTY (diff captured). A candidate is only ever touched by the mode after
+    its identity is already durably recorded, so an interrupted turn never
+    strands a dirty worktree that the strict resume path would refuse. The
+    object is schema-valid by construction (relative candidate path, head at
+    base), so persistence requires no hand-assembly: any field the mode adds,
+    removes, or rewrites is a deviation from the contract, not a fix.
     """
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
@@ -141,13 +180,11 @@ def repair_recording_command(layout):
         "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
         "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
         "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
-        "candidate_status='PROVISIONED'; diff_evidence='-'; "
         "if test -n \"$(git -C \"$candidate\" status --porcelain=v1)\"; then "
-        "candidate_status='DIRTY'; "
-        "diff_evidence=\"$(" + _candidate_diff_invocation("\"$diff_evidence\"") + ")\"; fi; "
-        "printf '__IMPROVEMENT_CANDIDATE_RECORD__ %s %s %s %s %s\\n' "
-        "\"$finding_ids_digest\" \"$candidate_status\" \"$candidate\" \"$branch\" "
-        "\"$diff_evidence\"")
+        + _candidate_diff_capture_shell() + _candidate_record_json(
+            "__IMPROVEMENT_CANDIDATE_RECORD__", True) +
+        "; else " + _candidate_record_json(
+            "__IMPROVEMENT_CANDIDATE_RECORD__", False) + "; fi")
 
 
 _RECONCILE_IDENTITY_SCRIPT = r'''import hashlib,sys
@@ -179,14 +216,11 @@ def repair_reconcile_command(layout):
         "test -d \"$candidate\" -a ! -L \"$candidate\"; "
         "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
         "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
         "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
         "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
         "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
-        "diff_evidence=\"$(" + _candidate_diff_invocation("-") + ")\"; "
-        "printf '__IMPROVEMENT_CANDIDATE_RECONCILE__ %s %s %s %s %s\\n' "
-        "\"$finding_ids_digest\" 'DIRTY' \"$candidate\" \"$branch\" "
-        "\"$diff_evidence\"")
+        + _candidate_diff_capture_shell() +
+        _candidate_record_json("__IMPROVEMENT_CANDIDATE_RECONCILE__", True))
 
 
 def repair_resume_command(layout):
@@ -238,21 +272,30 @@ def persona_prefix(preset_id, role=None):
             "The resume command must prove registered identity, HEAD at base, canonical unchanged and "
             "clean, a nonempty byte-identical candidate diff, safe regular changed paths, and no "
             "submodule or symlink. "
+            "Every candidate record is the exact JSON object the central commands print after their "
+            "marker: persist it verbatim, field-for-field, with no field added, removed, renamed, "
+            "reordered, or reformatted, and no value altered (the path is the relative candidate "
+            "name the object carries, never an absolute path). Hand-editing, re-keying, or wrapping "
+            "the emitted object to make it fit is forbidden; if the verbatim object cannot be "
+            "persisted, make no code change and report RETAINED. "
             "If the resume command fails ONLY because the stored candidate_diff_digest is stale while "
             "the record already matches target path, branch, base and finding digest exactly, that is "
             "not a collision and never needs an operator: run the exact centrally generated "
-            "reconcile_command, persist its emitted __IMPROVEMENT_CANDIDATE_RECONCILE__ line as the new "
-            "DIRTY record, and resume normally (stale_record_policy: reconcile-then-resume). Re-capture "
+            "reconcile_command, persist the JSON object it prints after the "
+            "__IMPROVEMENT_CANDIDATE_RECONCILE__ marker verbatim as the new DIRTY record, and resume "
+            "normally (stale_record_policy: reconcile-then-resume). Re-capture "
             "is allowed only after that exact identity match and only with the canonical product still "
             "unchanged and clean. Any mismatch of path, branch, base or finding digest remains a hard "
             "RETAINED. "
             "Claim the candidate before you edit it: immediately after the provisioning command "
             "succeeds and before the first code-changing call, run the exact centrally generated "
-            "recording_command and persist its emitted __IMPROVEMENT_CANDIDATE_RECORD__ line as "
-            "work-items.json.candidate with status PROVISIONED, matching path, branch, head, base, and "
-            "finding_ids_digest. Re-run the same recording command after the first code change and "
-            "persist the result as status DIRTY with the captured candidate_diff_digest and "
-            "changed_paths. A claimed candidate that is PROVISIONED but already dirty is a turn that "
+            "recording_command and persist the JSON object it prints after the "
+            "__IMPROVEMENT_CANDIDATE_RECORD__ marker verbatim as "
+            "work-items.json.candidate (status PROVISIONED, with path, branch, head, base, and "
+            "finding_ids_digest exactly as emitted). Re-run the same recording command after the "
+            "first code change and persist the newly emitted object the same verbatim way (it "
+            "already carries status DIRTY with candidate_diff_digest and "
+            "changed_paths). A claimed candidate that is PROVISIONED but already dirty is a turn that "
             "was interrupted: recover it with the recording command, never with a fresh create, and "
             "never by discarding its diff. If that first claim cannot be persisted, make no code "
             "change at all and report RETAINED. "
@@ -279,6 +322,14 @@ def expected_lifecycle(role, layout):
         "read_before_write": True,
         "write_method": "workflow_write-full-replacement-not-atomic",
         "bounds": LIMITS,
+        "overflow_receipt": {
+            "file": "overflows.jsonl",
+            "when": "any-write-that-drops-records-beyond-limits-or-dedupe",
+            "append_before_replacement": True,
+            "record_fields": ["overflow_id", "file", "reason", "dropped_records"],
+            "dropped_records_cap": 32,
+            "dedupe_key": ["overflow_id"],
+        },
         "startup": {
             "startup_workdir": "session-cwd-only",
             "workdir_override": "forbidden-before-layout",
@@ -513,6 +564,15 @@ def state_schema():
                 "record": _record_schema(["finding_id", "candidate_head", "result", "command"],
                     {"finding_id": text, "candidate_head": revision, "result": {"enum": ["PASS", "FAIL", "BLOCKED"]}, "command": text},
                     {"finding_id": "A-01", "candidate_head": "a" * 40, "result": "PASS", "command": "pytest"})},
+            "overflows.jsonl": {"format": "jsonl", "limit": LIMITS["overflows.jsonl"],
+                "max_bytes": BYTE_LIMITS["overflows.jsonl"], "dedupe_key": ["overflow_id"],
+                "record": _record_schema(["overflow_id", "file", "reason", "dropped_records"],
+                    {"overflow_id": text,
+                     "file": {"enum": sorted(name for name in LIMITS if name != "overflows.jsonl")},
+                     "reason": text,
+                     "dropped_records": {"type": "array", "items": text, "maxItems": 32}},
+                    {"overflow_id": "OV-01", "file": "handoffs.jsonl",
+                     "reason": "limit-overflow", "dropped_records": ["audit-3"]})},
         },
     }
 
@@ -716,7 +776,13 @@ def _archive_legacy(entries, metadata, descriptor, archive_root):
 
 
 def initialize_state(state, descriptor, archive_root=None):
-    """Preflight state, archive bounded legacy evidence, then migrate strict files."""
+    """Preflight state, archive bounded legacy evidence, then migrate strict files.
+
+    Returns a report ({"state", "dropped", "archive"}) naming every file the
+    preflight replaced or discarded and the identities of the dropped records,
+    so the caller surfaces what left the live state instead of leaving it
+    discoverable only inside the legacy archive.
+    """
     state = Path(state)
     if state.exists():
         if not state.is_dir() or state.is_symlink():
@@ -725,6 +791,7 @@ def initialize_state(state, descriptor, archive_root=None):
     existing = set()
     legacy = {}
     legacy_metadata = {}
+    notes = []
     if state.exists():
         existing = {entry.name for entry in state.iterdir()}
         for name in existing - allowed:
@@ -743,6 +810,7 @@ def initialize_state(state, descriptor, archive_root=None):
             archive_name = f"active-{hashlib.sha256(name.encode()).hexdigest()[:16]}-{name}"
         legacy[archive_name] = data
         legacy_metadata[archive_name] = {"source_path": name, "reason": reason, **extra}
+        notes.append({"file": name, "reason": reason, **extra})
     for name in existing & allowed:
         data = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)
         originals[name] = data
@@ -777,6 +845,7 @@ def initialize_state(state, descriptor, archive_root=None):
                                    dropped_records=dropped[:32])
         if name == "work-items.json":
             incompatible = False
+            invalid_items = []
             try:
                 current = json.loads(data)
             except (json.JSONDecodeError, UnicodeDecodeError):
@@ -801,14 +870,25 @@ def initialize_state(state, descriptor, archive_root=None):
                         items.append(item)
                     else:
                         incompatible = True
+                        if isinstance(item, dict):
+                            invalid_items.append(str(
+                                item.get("work_item_id") or item.get("finding_id")
+                                or f"items[{index}]"))
+                        else:
+                            invalid_items.append(f"items[{index}]")
                 candidate_spec = schema["files"][name]["candidate"]
                 if not _is_valid(current["candidate"], candidate_spec, "work-items.json.candidate"):
+                    if isinstance(current["candidate"], dict) and current["candidate"].get("path"):
+                        invalid_items.append(f"candidate:{current['candidate']['path']}")
+                    else:
+                        invalid_items.append("candidate")
                     current["candidate"] = None
                     incompatible = True
                 current["items"] = compact_records(items, ("work_item_id", "base_revision"), LIMITS[name])
             staged[name] = _encode_json(current)
             if incompatible:
-                preserve_expected(name, data, "legacy-or-incompatible-work-items")
+                extra = {"dropped_records": invalid_items[:32]} if invalid_items else {}
+                preserve_expected(name, data, "legacy-or-incompatible-work-items", **extra)
 
     for name in LIMITS:
         if name not in staged:
@@ -821,10 +901,11 @@ def initialize_state(state, descriptor, archive_root=None):
     if legacy_total > LEGACY_TOTAL_BYTE_LIMIT:
         raise ValueError(
             f"legacy mode-state evidence exceeds total cap of {LEGACY_TOTAL_BYTE_LIMIT} bytes")
+    archive_destination = None
     if legacy:
         if archive_root is None:
             raise ValueError("legacy mode-state evidence requires a managed archive root")
-        _archive_legacy(legacy, legacy_metadata, descriptor, archive_root)
+        archive_destination = _archive_legacy(legacy, legacy_metadata, descriptor, archive_root)
     state.mkdir(mode=0o700, exist_ok=True)
     removed = []
     try:
@@ -849,4 +930,5 @@ def initialize_state(state, descriptor, archive_root=None):
             if not path.exists():
                 _replace_bytes(path, data)
         raise
-    return state
+    return {"state": str(state), "dropped": notes,
+            "archive": str(archive_destination) if archive_destination else None}
