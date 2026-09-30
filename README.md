@@ -135,12 +135,20 @@ verificación sea real y no declarativa.
 
 ### El propio framework
 
+Instalado sobre un clon de sí mismo, el auditor encontró 7 defectos reales del framework
+(2 HIGH, 5 MEDIUM) y el reparador arregló los dos primeros con sus pruebas: la compactación
+por límite descartaba registros **sin recibo** (la pérdida silenciosa que G3 debía haber
+cerrado y solo cubrió a medias), y la herramienta de escritura no confinaba el estado
+gestionado a su raíz, dejando la frontera de solo lectura del auditor apoyada únicamente en
+un `git status` posterior. Verificado con la suite real del proyecto: **585 pruebas en
+verde**.
+
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
 silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**582 pruebas en verde**.
+**585 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 
