@@ -443,8 +443,8 @@ los primeros 16 hex en `{product_root}-repair-<digest16>` y
 `${{session-cwd}}/<candidate-name>`, `candidate_workdir` relativo
 `{product_root}-repair-<digest16>` y `provision_workdir: omitted-session-cwd`.
 Provisiona desde el cwd de sesión con `workdir` omitido — nunca `.` para esta llamada
-que cambia Git — ejecutando el `provision_command` central exacto, sustituyendo solo
-`<digest16>` y `<full-base>` ya validados:
+que cambia Git — ejecutando el `provision_command` central exacto, sustituyendo sus tres
+placeholders `<digest16>`, `<full-base>` y `<declared-base>` ya validados:
 `{repair_command}`.
 El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
 `git -C ./{product_root} worktree add`, porque `git -C` cambiaría la resolución de un
@@ -464,9 +464,9 @@ registra `BLOCKED` nombrando la capacidad exacta y su paso de provisión; nunca 
 nunca un stub.
 La base registrada en hallazgos, handoffs e ítems es procedencia de auditoría, no un candado. Si
 esa base declarada difiere del HEAD canónico actual del producto, el modo PRUEBA la relación en
-lugar de improvisar: ejecuta `git -C ./<product> merge-base --is-ancestor <declared-base> HEAD` y
-exige el producto canónico limpio. Si y solo si la base declarada es ancestro del HEAD y el
-producto está limpio, reancla (`stale_base_policy:
+lugar de improvisar: exige el producto canónico limpio y pasa la base declarada en el placeholder
+`declared_base` del comando de provisión exacto, que ejecuta la comprobación de ascendencia. Si y
+solo si esa comprobación pasa y el producto está limpio, reancla (`stale_base_policy:
 re-anchor-when-declared-base-is-ancestor-of-clean-head`): `full_base` es el HEAD canónico actual,
 la identidad de la candidata se deriva de esa base efectiva, el `base_revision` de la candidata
 registrada es la base efectiva, y el informe final declara ambas bases con la prueba de ancestría.

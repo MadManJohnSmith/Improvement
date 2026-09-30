@@ -62,16 +62,22 @@ def _repair_target(layout):
 def repair_provision_command(layout):
     """Return the exact target-scoped clean create/reuse command.
 
-    The command takes exactly two substitutions, digest16 and full_base, and both
-    are quoted shell variables. The declared base of the audit is deliberately not
-    a third one: a `<declared-base>` placeholder reaches the shell unsubstituted,
-    and a shell reading it as a redirection retains the turn before it ever looks
-    at the candidate. The relation between the declared base and the effective one
-    is proved by the person, as its own step, before provisioning.
+    The command takes exactly three substitutions, `digest16`, `full_base` and
+    `declared_base`, each a quoted shell variable the mode substitutes from
+    validated values before running it. The third one is what makes the
+    re-anchor mechanical: a shell cannot be asked to believe a proof, so
+    `git merge-base --is-ancestor` runs here against the declared base of the
+    audit and fails the turn when the relation does not hold. Leaving it to
+    the persona is what produced a re-anchor that could claim a proof it never
+    ran.
     """
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
+        "declared_base='<declared-base>'; "
         + _repair_target(layout) +
+        "case \"$declared_base\" in "
+        "*[!0-9a-f]*|'') exit 1;; esac; "
+        "git -C \"$product\" merge-base --is-ancestor \"$declared_base\" \"$full_base\"; "
         "if test ! -e \"$candidate\" -a ! -L \"$candidate\" && "
         "! git -C \"$product\" show-ref --verify --quiet \"refs/heads/$branch\"; then "
         "test \"$path_count\" = 0 -a \"$branch_count\" = 0; "
@@ -292,10 +298,10 @@ def persona_prefix(preset_id, role=None):
             "and never substitute a stub. "
             "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
             "Before provisioning, if that declared base differs from the current canonical product "
-            "HEAD, prove the relation instead of improvising: run git -C <product> merge-base "
-            "--is-ancestor <declared-base> HEAD and require the canonical product clean. If and only "
-            "if the declared base is an ancestor of HEAD and the product is clean, re-anchor "
-            "(stale_base_policy: re-anchor-when-declared-base-is-ancestor-of-clean-head): full_base "
+            "HEAD, require the canonical product clean and pass the declared base as the "
+            "`declared_base` placeholder: the provision command runs the ancestry proof itself "
+            "(stale_base_policy: re-anchor-when-declared-base-is-ancestor-of-clean-head). Only when "
+            "it passes, re-anchor: full_base "
             "is the current canonical HEAD, the candidate identity derives from that effective base, "
             "the recorded candidate base_revision is the effective base, and the final report states "
             "the declared base, the effective base, and the ancestry proof. Findings and handoffs "
@@ -338,7 +344,9 @@ def persona_prefix(preset_id, role=None):
             "change at all and report RETAINED. "
             "Provision only from the unchanged session cwd: the provisioning bash call "
             "MUST omit workdir (never use '.' as a code-changing workdir) and run the exact centrally "
-            "generated provision_command after substituting only validated digest16 and full_base. "
+            "generated provision_command after substituting the three validated "
+            "placeholders and nothing else: digest16, full_base and declared_base "
+            "(the declared base of the selected findings, unchanged after a re-anchor). "
             "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
             "The command may inspect the full worktree list only to match that target path and target "
             "branch. Never validate assumptions about, modify, delete, or let unrelated candidates "
@@ -438,7 +446,7 @@ def expected_lifecycle(role, layout):
             "resume_policy": "exact-recorded-only",
             "resume_statuses": ["DIRTY", "RETAINED-pending-verification"],
             "stale_record_policy": "reconcile-then-resume",
-        "stale_base_policy": "re-anchor-when-declared-base-is-ancestor-of-clean-head",
+            "stale_base_policy": "re-anchor-when-declared-base-is-ancestor-of-clean-head",
             "stale_record_precondition": [
                 "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
                 "registered-worktree-exact-identity", "target-head-equals-full-base",
@@ -456,7 +464,9 @@ def expected_lifecycle(role, layout):
             "interrupted_turn_recovery": "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command",
             "provision_checks": [
                 "canonical-real-directory-not-symlink", "canonical-git-clean",
-                "full-base-revision-matches", "target-path-absent-or-real-directory-not-symlink",
+                "full-base-revision-matches",
+                "declared-base-is-ancestor-of-full-base",
+                "target-path-absent-or-real-directory-not-symlink",
                 "target-path-listed-worktree-if-present", "target-branch-absent-or-target-reuse",
                 "target-path-and-branch-identify-same-worktree-on-reuse",
                 "target-head-equals-full-base-on-clean-reuse", "target-clean-on-clean-reuse",

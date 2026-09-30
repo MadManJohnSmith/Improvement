@@ -287,7 +287,7 @@ class TestAccept(_BootstrapTestBase):
             "effective_routing_digest": "b" * 64,
             "context_policy": {
                 "skill_entrypoint_max_bytes": 32768,
-                "support_file_max_bytes": 24576,
+                "support_file_max_bytes": 25600,
                 "warning_ratio": 0.9,
             },
             "license_provenance": [],

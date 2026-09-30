@@ -27,6 +27,15 @@ from onboard import checked
 
 SCHEMA_VERSION = 1
 
+# Default ceiling for a support file such as mode.json, which carries the whole
+# mode contract. It is a guard against an unbounded contract, not a target: the
+# repair contract grew past the old 24 KiB when the ancestry proof moved from
+# prose the persona was asked to believe into `git merge-base --is-ancestor`
+# inside the command that provisions the candidate. Enforcing a requirement
+# mechanically is worth those bytes, so the default moved to 25 KiB rather
+# than trimming contract text that now says something the shell can check.
+SUPPORT_FILE_MAX_BYTES = 25600
+
 
 def _yaml_scalar(value):
     value = value.strip()
@@ -334,7 +343,7 @@ def _validate_layer_graph(report, manifest, generated):
     # Hot path budgets
     policy = manifest.get("context_policy", {})
     max_entry = policy.get("skill_entrypoint_max_bytes", 32768)
-    max_support = policy.get("support_file_max_bytes", 24576)
+    max_support = policy.get("support_file_max_bytes", SUPPORT_FILE_MAX_BYTES)
 
     for art in manifest.get("artifacts", []):
         full = generated / art.get("path", "")
@@ -686,7 +695,7 @@ def _validate_layer_context_budget(report, manifest, generated):
     policy = manifest.get("context_policy", {})
     warning_ratio = policy.get("warning_ratio", 0.9)
     max_entry = policy.get("skill_entrypoint_max_bytes", 32768)
-    max_support = policy.get("support_file_max_bytes", 24576)
+    max_support = policy.get("support_file_max_bytes", SUPPORT_FILE_MAX_BYTES)
 
     warnings = []
     for art in manifest.get("artifacts", []):

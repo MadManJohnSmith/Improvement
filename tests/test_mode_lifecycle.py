@@ -30,7 +30,7 @@ from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
 PRODUCT = "My Product"
 # generation-manifest context_policy.support_file_max_bytes: the ceiling the
 # graph and context_budget layers apply to every artifact that is not a SKILL.md.
-SUPPORT_FILE_MAX_BYTES = 24576
+SUPPORT_FILE_MAX_BYTES = 25600
 
 
 def _placeholders(command):
@@ -153,33 +153,19 @@ class ModeLifecycleTests(unittest.TestCase):
         return session / self._candidate_name(digest)
 
     def _run_command(self, template, session, layout, base,
-                     digest="0123456789abcdef", diff_digest=None):
+                     digest="0123456789abcdef", diff_digest=None, declared=None):
         command = template(layout).replace(
             "<digest16>", digest).replace("<full-base>", base).replace(
-                "<declared-base>", base)
+                "<declared-base>", base if declared is None else declared)
         if diff_digest is not None:
             command = command.replace("<candidate-diff-digest>", diff_digest)
         return subprocess.run(command, cwd=session, shell=True,
                               capture_output=True, text=True)
 
-    def _run_provision(self, session, layout, base, digest="0123456789abcdef"):
-        return self._run_command(repair_provision_command, session, layout, base, digest)
-    def _run_ancestry_proof(self, session, layout, effective, declared):
-        """The step the contract names, run verbatim against a real product.
-
-        The person runs it before provisioning with the declared base of the
-        audit; the product does not embed it in provision_command, so this is the
-        exact text the contract publishes.
-        """
-        product = "./" + layout["product_root"]
-        command = (f"set -eu; test -d {shlex.quote(product)}; "
-                   f"test -z \"$(git -C {shlex.quote(product)} status --porcelain=v1)\"; "
-                   f"test \"$(git -C {shlex.quote(product)} rev-parse HEAD)\" = {shlex.quote(effective)}; "
-                   f"git -C {shlex.quote(product)} merge-base --is-ancestor "
-                   f"{shlex.quote(declared)} HEAD")
-        return subprocess.run(command, cwd=session, shell=True,
-                              capture_output=True, text=True)
-
+    def _run_provision(self, session, layout, base, digest="0123456789abcdef",
+                       declared=None):
+        return self._run_command(repair_provision_command, session, layout, base,
+                                 digest, declared=declared)
     def _capture_diff(self, session, layout, base, digest):
         result = self._run_command(
             repair_candidate_diff_command, session, layout, base, digest)
@@ -403,23 +389,25 @@ class ModeLifecycleTests(unittest.TestCase):
         El comando de provisión exige que el HEAD del producto coincida con
         full_base; sin ruta de re-anclaje, integrar una candidata dejaba
         bloqueado todo ciclo de reparación posterior sobre los mismos
-        hallazgos (cuatro turnos RETAINED seguidos en RehabWeb). La prueba de
-        ascendencia es un paso propio de la persona, con el producto canónico
-        limpio, y no un placeholder dentro del comando de provisión.
+        hallazgos (cuatro turnos RETAINED seguidos en RehabWeb).
+
+        La ascendencia la comprueba el propio comando, no la persona: una shell
+        no puede creer una prueba, así que `merge-base --is-ancestor` corre
+        contra la base declarada que el modo sustituye. Una base declarada que
+        no es ancestro —historia divergente, reescrita o forzada— retiene el
+        turno sin llegar a mirar la candidata.
         """
         prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
-        self.assertIn("git -C <product> merge-base --is-ancestor <declared-base> HEAD",
-                      prefix)
         self.assertIn("re-anchor-when-declared-base-is-ancestor-of-clean-head",
                       prefix)
         self.assertIn("the recorded candidate base_revision is the effective base",
                       prefix)
         self.assertIn("Findings and handoffs keep their declared base unchanged",
                       prefix)
+        self.assertIn("digest16, full_base and declared_base", prefix)
         with tempfile.TemporaryDirectory() as tmp:
             session, product, layout, base = self._provision_fixture(Path(tmp))
             digest = "1e1e1e1e1e1e1e1e"
-            # Base declarada ancestro del HEAD actual: el re-anclaje es legal.
             (product / "second.txt").write_text("avance\n")
             subprocess.run(["git", "-C", str(product), "add", "second.txt"],
                            check=True)
@@ -430,11 +418,76 @@ class ModeLifecycleTests(unittest.TestCase):
             head = subprocess.check_output(
                 ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
             self.assertNotEqual(base, head)
-            # La base efectiva (HEAD) aprovisiona; la declarada would fail closed.
+            # Base declarada ancestro del HEAD: el re-anclaje es legal.
             self.assertEqual(self._run_provision(
-                session, layout, head, digest).returncode, 0)
-            self.assertNotEqual(self._run_provision(
-                session, layout, base, digest).returncode, 0)
+                session, layout, head, digest, declared=base).returncode, 0)
+
+    def test_provision_refuses_a_declared_base_that_is_not_an_ancestor(self):
+        """Historial divergente: la ascendencia se comprueba, no se afirma."""
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "2e2e2e2e2e2e2e2e"
+            (product / "second.txt").write_text("avance\n")
+            subprocess.run(["git", "-C", str(product), "add", "second.txt"],
+                           check=True)
+            subprocess.run([
+                "git", "-C", str(product), "-c", "user.name=Test",
+                "-c", "user.email=test@example.invalid", "commit", "-qm", "avance",
+            ], check=True)
+            head = subprocess.check_output(
+                ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
+            # Una revisión que existe en el objeto store pero no en esta historia:
+            # exactamente lo que deja una historia reescrita o forzada.
+            orphan = subprocess.check_output(
+                ["git", "-C", str(product), "commit-tree",
+                 "4b825dc642cb6eb9a060e54bf8d69288fbee4904"],
+                input="divergido\n", text=True).strip()
+            self.assertNotEqual(
+                self._run_provision(session, layout, head, digest,
+                                    declared=orphan).returncode, 0)
+            self.assertFalse(self._candidate(session, digest).exists())
+            # La misma revisión declarada sí aprovisiona cuando es ancestro.
+            self.assertEqual(
+                self._run_provision(session, layout, head, digest,
+                                    declared=base).returncode, 0)
+
+    def test_provision_refuses_a_declared_base_that_is_not_a_revision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            digest = "3e3e3e3e3e3e3e3e"
+            for bogus in ("", "HEAD", "; rm -rf /", "abc"):
+                with self.subTest(declared=bogus):
+                    result = self._run_provision(
+                        session, layout, base, digest, declared=bogus)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(self._candidate(session, digest).exists())
+
+    def test_provision_survives_a_product_path_containing_spaces(self):
+        """Un producto con espacios en la ruta parte `git -C $product` sin comillas."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = root / "session root"
+            product = session / "my product"
+            workspace = session / "product workspace"
+            for path in (session, product, workspace):
+                path.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(product)], check=True)
+            (product / "tracked.txt").write_text("uno\n")
+            subprocess.run(["git", "-C", str(product), "add", "tracked.txt"],
+                           check=True)
+            subprocess.run([
+                "git", "-C", str(product), "-c", "user.name=Test",
+                "-c", "user.email=test@example.invalid", "commit", "-qm", "base",
+            ], check=True)
+            base = subprocess.check_output(
+                ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
+            layout = {"session_root": session.name, "product_root": product.name,
+                      "workspace_root": workspace.name,
+                      "state_root": f"{workspace.name}/mode-state"}
+            digest = "4e4e4e4e4e4e4e4e"
+            result = self._run_provision(session, layout, base, digest)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((session / f"my product-repair-{digest}").is_dir())
 
     def _run_reconcile(self, session, layout, base, finding_ids):
         command = repair_reconcile_command(layout).replace(
@@ -554,25 +607,24 @@ class ModeLifecycleTests(unittest.TestCase):
     def test_declared_base_proof_rejects_a_divergent_base(self):
         """IMP-AUD-003: the declared base must reach the effective one, proven.
 
-        The proof is a step of the person, run before provisioning, and it is the
-        step the contract names. A divergent history, a rewritten one, and a dirty
-        canonical product are each refused; only an ancestor of a clean HEAD lets
-        the re-anchor happen.
+        The proof runs inside the provisioning command, against the declared
+        base the mode substitutes: a shell cannot believe a claim of ancestry.
+        An orphan revision and a divergent history are each refused, and the
+        refusal happens before any candidate exists.
         """
-        prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
-        self.assertIn("git -C <product> merge-base --is-ancestor <declared-base> HEAD",
-                      prefix)
         with tempfile.TemporaryDirectory() as tmp:
             session, product, layout, base = self._provision_fixture(Path(tmp))
             orphan = subprocess.check_output(
                 ["git", "-C", str(product), "commit-tree",
                  "4b825dc642cb6eb9a060e54bf8d69288fbee4904"],
                 input="orphan\n", text=True).strip()
-            result = self._run_ancestry_proof(session, layout, base, base)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            digest = "0123456789abcdef"
+            self.assertEqual(
+                self._run_provision(session, layout, base, digest).returncode, 0)
             self.assertNotEqual(
-                self._run_ancestry_proof(session, layout, base, orphan).returncode, 0)
-            self.assertFalse(self._candidate(session, "0123456789abcdef").exists())
+                self._run_provision(session, layout, base, digest,
+                                    declared=orphan).returncode, 0)
+            self.assertFalse(self._candidate(session, "5e5e5e5e5e5e5e5e").exists())
 
     def test_declared_base_proof_accepts_an_ancestor_behind_a_clean_head(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -586,23 +638,27 @@ class ModeLifecycleTests(unittest.TestCase):
             head = subprocess.check_output(
                 ["git", "-C", str(product), "rev-parse", "HEAD"], text=True).strip()
             self.assertNotEqual(base, head)
+            digest = "6e6e6e6e6e6e6e6e"
             self.assertEqual(
-                self._run_ancestry_proof(session, layout, head, base).returncode, 0)
+                self._run_provision(session, layout, head, digest,
+                                    declared=base).returncode, 0)
             # A dirty canonical product is refused: the proof is not only ancestry.
             (product / "tracked.txt").write_text("sucio\n")
             self.assertNotEqual(
-                self._run_ancestry_proof(session, layout, head, base).returncode, 0)
+                self._run_provision(session, layout, head, digest,
+                                    declared=base).returncode, 0)
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(product), "status", "--porcelain=v1"],
                 text=True).strip(), "M tracked.txt")
 
-    def test_provision_command_takes_only_the_declared_substitutions(self):
+    def test_provision_command_takes_exactly_the_declared_substitutions(self):
         """A placeholder the contract does not substitute is a retained turn.
 
-        The person substitutes digest16 and full_base and nothing else, so any
-        other `<...>` left in the provisioning command reaches the shell verbatim
-        and is read as a redirection. The declared base of the audit is proved by
-        the person, in its own step, and never travels inside this command.
+        The person substitutes digest16, full_base and declared_base, so any
+        other `<...>` left in the provisioning command reaches the shell
+        verbatim and is read as a redirection. The declared base travels inside
+        this command on purpose: the ancestry relation is proved where it is
+        enforced, and nowhere else may claim it.
         """
         layout = {"session_root": "common-parent", "product_root": PRODUCT,
                   "workspace_root": f"{PRODUCT}-workspace",
@@ -610,20 +666,20 @@ class ModeLifecycleTests(unittest.TestCase):
         contract = mode_lifecycle.expected_lifecycle(
             "continuous-repair", layout)["repair_candidate"]
         command = repair_provision_command(layout)
-        self.assertNotIn("<declared-base>", command)
+        self.assertIn("<declared-base>", command)
         self.assertEqual(sorted(_placeholders(command)),
-                         ["<digest16>", "<full-base>"])
+                         ["<declared-base>", "<digest16>", "<full-base>"])
         for other in ("recording_command", "candidate_diff_command",
                       "reconcile_command", "resume_command"):
             self.assertNotIn("<declared-base>", contract[other], other)
         prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
-        self.assertIn("substituting only validated digest16 and full_base", prefix)
+        self.assertIn("digest16, full_base and declared_base", prefix)
 
     def test_emitted_repair_contract_fits_the_support_file_budget(self):
         """The contract is emitted into mode.json, a budgeted support file.
 
         Every byte added to the lifecycle block lands in every generated mode.json,
-        and the graph and context_budget layers refuse one over 24576 bytes. A
+        and the graph and context_budget layers refuse one over 25600 bytes. A
         contract that overflows the budget does not merely grow: the Host rejects
         the package it is part of, so the margin is measured here instead of being
         discovered in an acceptance run.

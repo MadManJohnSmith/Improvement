@@ -113,7 +113,7 @@ class AcceptanceTests(unittest.TestCase):
             "required_capabilities": [], "forbidden_capabilities": [],
             "effective_routing_digest": "b" * 64,
             "context_policy": {"skill_entrypoint_max_bytes": 32768,
-                "support_file_max_bytes": 24576, "warning_ratio": .9},
+                "support_file_max_bytes": 25600, "warning_ratio": .9},
             "license_provenance": [],
         }
         (gen / "generation-manifest.json").write_text(json.dumps(manifest, indent=2))
