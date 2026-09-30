@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 from pathlib import Path
 
@@ -288,7 +289,8 @@ def declared(product):
     return resolved
 
 
-def _capability_status(needs, *, path_env=None, home=None):
+def _capability_status(needs, *, path_env=None, home=None, workspace=None,
+                       stack_name=None, default_path=None):
     status = []
     interpreter = _interpreter() if path_env is None else (
         shutil.which('python3', path=path_env) or _interpreter() or 'python3')
@@ -298,14 +300,40 @@ def _capability_status(needs, *, path_env=None, home=None):
                     else shutil.which(binary))
         if binary == 'python3' and not resolved:
             resolved = interpreter
-        if resolved and not (binary == 'flutter' and not _flutter_ready(resolved)):
-            status.append({'capability': binary, 'status': 'available', 'path': resolved})
+        if resolved and binary == 'flutter' and not _flutter_ready(resolved):
+            resolved = None
+        if not resolved:
+            candidate = home / '.local/share/flutter/bin' / binary
+            if candidate.is_file() and not (binary == 'flutter'
+                                            and not _flutter_ready(candidate)):
+                resolved = str(candidate)
+        if resolved:
+            # Unresolved by the default PATH means an SDK the user installed
+            # somewhere of their own: outside the sandbox's writable root, and
+            # the only kind of toolchain that tends to rewrite itself.
+            outside_sandbox = (workspace is not None and stack_name is not None
+                               and default_path is not None
+                               and not shutil.which(binary, path=default_path))
+            if outside_sandbox:
+                target = Path(workspace) / '.stack' / stack_name / binary
+                local = _materialized_capability(workspace, stack_name, binary)
+                # The plan names the workspace copy even before it exists, so a
+                # verification record names the same command whether the mode
+                # materialized the capability first or gave up with BLOCKED.
+                entry = {'capability': binary, 'status': 'available',
+                         'path': local or str(target)}
+                if local:
+                    entry['materialized'] = True
+                    entry['source_path'] = str(resolved)
+                else:
+                    entry['materialize_step'] = _capability_copy_step(
+                        workspace, stack_name, binary, resolved)
+                status.append(entry)
+                continue
+            status.append({'capability': binary, 'status': 'available',
+                           'path': resolved})
             continue
         hint = PROVISION_HINTS.get(binary, {'what': binary, 'check': 'PATH', 'step': 'instalar ' + binary})
-        candidate = home / '.local/share/flutter/bin' / binary
-        if candidate.is_file() and not (binary == 'flutter' and not _flutter_ready(candidate)):
-            status.append({'capability': binary, 'status': 'available', 'path': str(candidate)})
-            continue
         status.append({
             'capability': binary,
             'status': 'missing',
@@ -339,6 +367,33 @@ def _runnable_entrypoint(command, capabilities, default_path):
                 and capability.get('path')):
             return [capability['path'], *rest]
     return command
+
+
+def _materialized_capability(workspace, stack_name, binary):
+    """A workspace-local copy of a capability the sandbox cannot write to.
+
+    `workspace-write` only makes the session tree writable, so a toolchain
+    installed elsewhere is mounted read-only for the mode. Most tools never
+    write to their own installation and run fine that way (a Python venv does
+    not self-mutate), but a self-managing SDK rewrites files inside itself on
+    every single run -- Flutter stamps its engine version into `bin/cache` on
+    each invocation -- and then no amount of warming makes it runnable. A copy
+    under `<workspace>/.stack/<stack>/` is outside the product, inside the
+    writable root, and cheap to make: hardlinks share every byte until the tool
+    replaces a file by rename, which breaks the link and leaves the original
+    installation untouched.
+    """
+    candidate = Path(workspace) / '.stack' / stack_name / binary
+    if candidate.exists() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return None
+
+
+def _capability_copy_step(workspace, stack_name, binary, source):
+    target = Path(workspace) / '.stack' / stack_name / binary
+    return (f"materializar la capacidad con `cp -al {shlex.quote(str(source))} "
+            f"{shlex.quote(str(target))}` (y `cp -a` si el sistema de ficheros no "
+            f"admite enlaces duros), sin instalarla dentro del producto")
 
 
 def _materialized_python(workspace, stack, interpreter):
@@ -402,7 +457,8 @@ def plan(product, *, workspace=None, env=None):
                 'provision_outside_product': True,
                 'capabilities': _capability_status(
                     entry['declared_capabilities'] or ('python3',),
-                    path_env=env.get('PATH'), home=home),
+                    path_env=env.get('PATH'), home=home, workspace=workspace,
+                    stack_name=entry['stack'], default_path=default_path),
             }
             stack_plan['verification_ready'] = all(
                 capability['status'] == 'available'
@@ -425,8 +481,10 @@ def plan(product, *, workspace=None, env=None):
             'verify_cwd': entry['root'] or '.',
             'lint_command': verify[1] if len(verify) > 1 else None,
             'provision_outside_product': spec['provision_outside'],
-            'capabilities': _capability_status(spec['needs'], path_env=env.get('PATH'),
-                                               home=home),
+            'capabilities': _capability_status(
+                spec['needs'], path_env=env.get('PATH'), home=home,
+                workspace=workspace, stack_name=entry['stack'],
+                default_path=default_path),
         }
         if not spec['provision_outside']:
             in_product = {'node': ['node_modules'], 'dart-flutter': ['.dart_tool'],

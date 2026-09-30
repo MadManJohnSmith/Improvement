@@ -93,8 +93,9 @@ class StackPlanTests(unittest.TestCase):
             (home / '.local/share/flutter/bin/cache/dart-sdk').mkdir(parents=True)
             value = stack.plan(product, workspace=root / 'ws', env=env)
             self.assertTrue(value['stacks'][0]['verification_ready'])
+            # The plan names the workspace copy the sandbox can actually write.
             self.assertEqual(value['stacks'][0]['capabilities'][0]['path'],
-                             str(binary))
+                             str(root / 'ws' / '.stack/dart-flutter/flutter'))
 
     def test_entrypoint_names_the_capability_the_default_path_cannot_resolve(self):
         """Un SDK fuera del PATH por defecto no puede quedar como nombre suelto.
@@ -114,13 +115,14 @@ class StackPlanTests(unittest.TestCase):
             binary.chmod(0o755)
             (flutter_bin / 'cache/dart-sdk').mkdir(parents=True)
             env = {'PATH': '/nonexistent', 'HOME': str(home)}
+            target = root / 'ws' / '.stack/dart-flutter/flutter'
             value = stack.plan(product, workspace=root / 'ws', env=env)
             entry, = value['stacks']
             self.assertTrue(entry['verification_ready'])
-            self.assertEqual(entry['verify_command'], [str(binary), 'test'])
-            self.assertEqual(entry['lint_command'], [str(binary), 'analyze'])
+            self.assertEqual(entry['verify_command'], [str(target), 'test'])
+            self.assertEqual(entry['lint_command'], [str(target), 'analyze'])
             allowed = stack.allowed_verification_commands(value)
-            self.assertIn(json.dumps([str(binary), 'test'], separators=(',', ':')),
+            self.assertIn(json.dumps([str(target), 'test'], separators=(',', ':')),
                           allowed)
 
     def test_entrypoint_stays_bare_when_the_default_path_already_resolves_it(self):
@@ -137,6 +139,49 @@ class StackPlanTests(unittest.TestCase):
             env = {'PATH': str(node_bin), 'HOME': str(root)}
             entry, = stack.plan(product, workspace=root / 'ws', env=env)['stacks']
             self.assertEqual(entry['verify_command'], ['npm', 'test'])
+
+    def test_sdk_outside_the_sandbox_is_materialized_workspace_local(self):
+        """Un SDK que se reescribe a sí mismo no puede correr de solo lectura.
+
+        `workspace-write` solo deja escribir en el árbol de la sesión, así que
+        un toolchain instalado en casa del usuario llega montado read-only.
+        Flutter sella su versión de engine en `bin/cache` en cada invocación:
+        calentarlo no ayuda, siempre intenta escribir. El plan pide la copia
+        local al workspace y, una vez hecha, manda ahí el entrypoint.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pubspec.lock': 'packages: {}\n'})
+            home = root / 'home'
+            flutter_root = home / '.local/share/flutter'
+            (flutter_root / 'bin/cache/dart-sdk').mkdir(parents=True)
+            binary = flutter_root / 'bin/flutter'
+            binary.write_text('#!/bin/sh\nexit 0\n')
+            binary.chmod(0o755)
+            env = {'PATH': '/nonexistent', 'HOME': str(home)}
+            workspace = root / 'ws'
+
+            value = stack.plan(product, workspace=workspace, env=env)
+            entry, = value['stacks']
+            self.assertTrue(entry['verification_ready'])
+            target = workspace / '.stack/dart-flutter/flutter'
+            self.assertEqual(entry['capabilities'][0]['path'], str(target))
+            self.assertIn(f'cp -al {binary} {target}', entry['capabilities'][0]['materialize_step'])
+            self.assertNotIn(str(product), entry['capabilities'][0]['materialize_step'])
+            self.assertEqual(entry['verify_command'], [str(target), 'test'])
+
+            # Una vez materializada, el plan la prefiere y deja de pedir el paso.
+            target.parent.mkdir(parents=True)
+            target.write_text('#!/bin/sh\nexit 0\n')
+            target.chmod(0o755)
+            (target.parent / 'cache/dart-sdk').mkdir(parents=True)
+            value = stack.plan(product, workspace=workspace, env=env)
+            entry, = value['stacks']
+            capability, = entry['capabilities']
+            self.assertTrue(capability['materialized'])
+            self.assertEqual(capability['source_path'], str(binary))
+            self.assertNotIn('materialize_step', capability)
+            self.assertEqual(entry['verify_command'], [str(target), 'test'])
 
     def test_in_product_install_is_flagged_unless_the_product_ignores_it(self):
         with tempfile.TemporaryDirectory() as tmp:

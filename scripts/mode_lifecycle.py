@@ -274,7 +274,12 @@ def persona_prefix(preset_id, role=None):
             "(real_stack_verification.evidence: product-own-entrypoint-only). When the entrypoint "
             "cannot run because a capability is missing, materialize it exactly as the plan's "
             "provision_step says: every artifact outside the product tree, and inside the product "
-            "only for paths the plan marks gitignored. If the capability is still missing, record "
+            "only for paths the plan marks gitignored. When a capability carries a "
+            "materialize_step instead, the plan has already decided the capability has to run "
+            "from a copy this session can write to (a self-managing SDK seals files inside "
+            "its own installation on every run and fails on a read-only mount): run that exact "
+            "step once, then use the capability path the plan names, which is that copy. If the "
+            "capability is still missing, record "
             "BLOCKED naming the exact capability and its provision step; never PASS, never FAIL, "
             "and never substitute a stub. "
             "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
@@ -360,6 +365,7 @@ def expected_lifecycle(role, layout):
             "stubs": "investigation-material-never-verification-evidence",
             "missing_capability": "materialize-per-plan-else-BLOCKED-naming-the-step",
             "install_inside_product": "only-when-plan-marks-path-gitignored",
+            "sandbox_readonly_sdk": "run-plan-materialize_step-then-use-the-copy-the-plan-names",
         },
         "startup": {
             "startup_workdir": "session-cwd-only",

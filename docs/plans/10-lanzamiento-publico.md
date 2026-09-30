@@ -28,7 +28,7 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 | G1 | Contrato de candidata | El `recording_command` emite el objeto JSON exacto a persistir; la persona prohíbe añadir campos; el preflight informa de lo que descarta (no solo lo archiva). Regresión con el caso RehabWeb (campos extra + ruta absoluta). | HECHO 2026-09-29 |
 | G2 | decisions + metrics al ciclo | Llamar al ledger de métricas y al almacén de decisiones al cierre de turno en `host_controller.py` (el hook ya existe: transiciones y UNIT_DONE/UNIT_RETAINED). Regresión con la regresión existente de ambos módulos. | HECHO 2026-09-29 |
 | G3 | Compactación con recibo | El desbordamiento de runtime deja recibo (patrón del archivo legacy, `dropped_records` incluido) en lugar de perder registros sin traza. Caso Syncify: 50/50 handoffs. | HECHO 2026-09-29 |
-| G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | PENDIENTE |
+| G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | EN CURSO |
 | G5 | Documentación pública | README (hecho), quickstart no técnico en `docs/usage.md`, política de feedback: qué comparte un tester (su `mode-state` es la evidencia). | EN CURSO |
 | G6 | Etiqueta y notas | Tag `v0.1.0-beta`, release notes con las métricas reales del piloto y los límites conocidos. | PENDIENTE |
 | G7 | Verificación contra el stack real | El Host resuelve un plan de capacidades al instalar (`scripts/stack.py`): entrypoint propio del producto por stack (cualquier tecnología, monorepos incluidos), estado real de cada capacidad y paso exacto de provisión fuera del producto. La evidencia de verificación es ese entrypoint o `BLOCKED` nombrando lo que falta; los stubs son material de investigación, nunca resultado. Regresión con el caso rehab (Django ausente) y con los stacks reales de Syncify, RehabWeb y LoboApp. | HECHO 2026-09-29 |
@@ -56,6 +56,10 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
   nueva que entre a `library/` exige su entrada de procedencia.
 - Proyectos móviles sin toolchain (caso LoboApp: Flutter sin SDK en la máquina): la
   verificación del candidato queda `BLOCKED` por falta de capacidad, nunca PASS inventado.
+  Con el SDK materializado fuera del producto la misma verificación corre de verdad, y el
+  plan nombra el entrypoint por su ruta absoluta cuando el PATH por defecto no lo resuelve:
+  un nombre suelto que la shell del modo no puede invocar convertiría una suite real en un
+  `BLOCKED` que el runtime no se ha ganado (`scripts/stack.py::_runnable_entrypoint`).
   Adaptador candidato para evidencia en dispositivo Android: `google/artemis` (Apache-2.0,
   automatización de UI con capturas/logcat y servidor MCP). No se adopta como dependencia —
   añade ADB/emulador/FFmpeg al entorno del usuario, solo cubre objetivos Android y no emite

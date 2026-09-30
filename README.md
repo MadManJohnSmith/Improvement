@@ -6,8 +6,9 @@ generados específicamente para tu proyecto, con memoria acotada que no satura, 
 con evidencia y un núcleo fail-closed: los modos nunca publican ni tocan tu producto sin
 que tú integres.
 
-Es un framework real, probado en dos campañas completas sobre repositorios reales
-(Syncify, una app de música en Rust/Tauri/Vue, y RehabWeb, una app clínica en Django/Vue).
+Es un framework real, probado en tres campañas completas sobre repositorios reales
+(Syncify, una app de música en Rust/Tauri/Vue; RehabWeb, una app clínica en Django/Vue;
+y LoboApp, una app Flutter fresh con el framework instalado desde un clon de GitHub).
 Las métricas de abajo son de esas campañas, no promesas.
 
 ## El problema que resuelve
@@ -63,6 +64,29 @@ Cada auditoría deja un handoff con el siguiente prompt listo para copiar. Cuand
 reparador termina, integras con un `git merge --ff-only` normal: el commit y el push
 siguen siendo tuyos.
 
+## Verificación contra tu proyecto real, nunca con stubs
+
+Al instalar, Improvement lee tu proyecto y escribe un **plan de capacidades** en
+`<proyecto>-workspace/.dsh-managed/capability-plan.json`: qué tecnologías compose tu
+proyecto (incluidos monorepos), cuál es **el comando de test y el de análisis propios de
+cada una**, y si esta máquina tiene ya lo necesario para ejecutarlos.
+
+Ese plan es la única evidencia que el reparador puede registrar. Un comando inventado, un
+mock o una copia del código del producto son material de investigación, nunca un
+resultado. Si el comando no puede ejecutarse porque falta una herramienta, el registro es
+`BLOCKED` nombrando exactamente qué falta y cómo se instala — nunca un `PASS` inventado.
+
+```
+stacks:
+  dart-flutter  listo  (/home/tu/usuario/.local/share/flutter/bin/flutter test)
+  java-gradle   falta java   (instalar un JDK 17+ fuera del producto y anteponerlo al PATH)
+```
+
+Un detalle que la beta teachings a la fuerza: si la herramienta está instalada pero fuera
+del `PATH` por defecto, el plan la nombra **por su ruta absoluta**. Un nombre suelto que la
+shell del modo no puede invocar convertiría una suite que funciona en un `BLOCKED` que el
+runtime no se ha ganado.
+
 ## Casos reales
 
 ### Syncify — un proyecto con CI en rojo, cerrado
@@ -92,11 +116,12 @@ tocar tu producto hasta la integración.
 
 ### El propio framework
 
-La memoria se aplica también a sí misma: 7 unidades de endurecimiento nacieron de los
+La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
-anti-escalada mecánica, retirada de candidatas documentada…), y una auditoría de la
-propia memoria descubrió una pérdida silenciosa de registros en el preflight, corregida
-con regresión. Suite del framework: **556 pruebas en verde**.
+anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
+probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
+silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
+**581 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 
@@ -107,12 +132,16 @@ tu-proyecto-workspace/
 │   ├── findings.jsonl            # hallazgos con evidencia y estado
 │   ├── handoffs.jsonl            # un registro por auditoría, con el siguiente prompt
 │   ├── verification-results.jsonl  # cómo se verificó cada arreglo
+│   ├── overflows.jsonl           # qué se descartó al compactar, y por qué
 │   └── work-items.json           # cola de trabajo y candidata activa
+├── .dsh-managed/
+│   └── capability-plan.json      # los comandos reales de tu proyecto y qué falta
 └── creator-runs/                 # qué generó Creator, con sus validaciones
 ```
 
 Todo con topes por fichero y por registro, y compactación cuando se alcanzan: la memoria
-puede crecer mucho, pero no sin límite.
+puede crecer mucho, pero no sin límite. Lo que la compactación descarta no desaparece en
+silencio: queda un recibo en `overflows.jsonl` diciendo qué se perdió y por qué.
 
 ## Qué NO hace (a propósito)
 
