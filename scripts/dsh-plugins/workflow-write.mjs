@@ -49,6 +49,13 @@
  *     fs/observed. Los parámetros de escalada NO se publican en el esquema
  *     (las misiones prohíben enviarlos); quedan cubiertos por resolvePolicy si
  *     un modelo los fuerza.
+ *  6. Confinamiento de la escritura de estado: una sesión gestionada (un hijo
+ *     inmediato del cwd marcado por el capability-plan del Host) declara su raíz
+ *     `<workspace>/mode-state`, y todo destino resuelto fuera de ella se deniega
+ *     antes del write-intent. La frontera de solo lectura del auditor la impone
+ *     así la herramienta y no el Git posterior. Una sesión sin workspace
+ *     gestionado conserva el comportamiento anterior: el revisor de aceptación
+ *     sigue escribiendo su result.json.
  *
  * Sin aprobación, falla cerrado; el aislamiento no se debilita: la ejecución
  * siempre pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
@@ -58,6 +65,8 @@ export const inject = ['tools', 'fs', 'systemPrompt'];
 const MANAGED_RESULTS_SUFFIX = '/mode-state/verification-results.jsonl';
 const PLAN_RELATIVE = '.dsh-managed/capability-plan.json';
 const PLAN_BYTE_LIMIT = 131072;
+const STATE_DIR_NAME = 'mode-state';
+const TRAVERSAL = /(?:^|\/)\.\.(?:\/|$)/u;
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -65,6 +74,70 @@ function canonicalJson(value) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function asPosixPath(value) {
+  return typeof value === 'string' ? value.replace(/\\/g, '/').replace(/\/+$/, '') : '';
+}
+
+/**
+ * State root the session is bound to, or null when it is not a managed one.
+ *
+ * The mode contract confines state writes to `<workspace>/mode-state`, where
+ * the workspace is an immediate child of the session cwd that the Host marked
+ * as managed with its capability plan. Deriving the root from the session, not
+ * from the target, is the point: anchoring on the target only proves the
+ * destination is shaped like state, and a product path shaped like anything
+ * else would pass.
+ */
+async function managedStateRoot(ctx, cwd, signal) {
+  if (typeof cwd !== 'string' || cwd === '') return null;
+  if (typeof ctx.fs.listDir !== 'function' || typeof ctx.fs.processPath !== 'function'
+      || typeof ctx.fs.resolve !== 'function' || typeof ctx.fs.stat !== 'function') return null;
+  const sessionRoot = asPosixPath(cwd);
+  let entries;
+  try {
+    entries = await ctx.fs.listDir(await ctx.fs.resolve('.', {cwd, signal}), signal);
+  } catch {
+    return null;
+  }
+  const workspaces = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry?.type !== 'directory') continue;
+    const child = asPosixPath(ctx.fs.processPath(entry.target));
+    if (child === '' || !child.startsWith(`${sessionRoot}/`)) continue;
+    let plan;
+    try {
+      plan = await ctx.fs.stat(
+        await ctx.fs.resolve(PLAN_RELATIVE, {cwd: child, signal}), signal);
+    } catch {
+      continue;
+    }
+    if (plan?.type === 'file') workspaces.push(child);
+  }
+  if (workspaces.length === 0) return null;
+  if (workspaces.length > 1) {
+    throw new Error('workflow_write: la sesión declara más de un workspace gestionado; '
+      + `${workspaces.join(', ')}; denegado sin reintento`);
+  }
+  return `${workspaces[0]}/${STATE_DIR_NAME}`;
+}
+
+async function assertStateWrite(ctx, target, stateRoot) {
+  if (typeof ctx.fs.processPath !== 'function') return;
+  const resolved = ctx.fs.processPath(target);
+  if (typeof resolved !== 'string') return;
+  // processPath keeps the physical spelling, so a `..` segment survives
+  // resolution. It is refused instead of normalized: the canonical tree is
+  // the only tree a state write may touch.
+  if (TRAVERSAL.test(resolved.replace(/\\/g, '/'))) {
+    throw new Error('workflow_write: ruta de escritura de estado no canónica; denegado sin reintento');
+  }
+  const candidate = asPosixPath(resolved);
+  if (candidate !== stateRoot && !candidate.startsWith(`${stateRoot}/`)) {
+    throw new Error(`workflow_write: la escritura de estado sale de ${stateRoot}: ${candidate}; `
+      + 'denegado sin reintento');
+  }
 }
 
 async function validateManagedVerification(ctx, target, content, signal) {
@@ -296,6 +369,10 @@ export function apply(ctx, config) {
         ...(cwd !== undefined ? { cwd } : {}),
         signal: exec.signal,
       });
+      // Una sesión gestionada declara su raíz de estado; la herramienta la
+      // impone en vez de confiar en que el modelo respete el contrato (SR-3).
+      const stateRoot = await managedStateRoot(ctx, cwd, exec.signal);
+      if (stateRoot) await assertStateWrite(ctx, target, stateRoot);
       await validateManagedVerification(ctx, target, args.content, exec.signal);
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el

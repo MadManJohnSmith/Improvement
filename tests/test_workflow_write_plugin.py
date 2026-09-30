@@ -11,7 +11,9 @@ DSH_MODULE_ROOT=/absolute/node_modules python3 -B -m unittest discover -s tests
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
@@ -90,6 +92,16 @@ try {
   };
 
   fs.mkdirSync('/state/ws', {recursive: true});
+  // A managed Improvement session: the workspace is an immediate child of the
+  // session cwd and the Host marked it with its capability plan, so state
+  // writes are confined to <workspace>/mode-state and the product is not one.
+  const managed = '/state/ws/Improvement-workspace';
+  fs.mkdirSync(`${managed}/mode-state`, {recursive: true});
+  fs.mkdirSync(`${managed}/.dsh-managed`, {recursive: true});
+  fs.writeFileSync(`${managed}/.dsh-managed/capability-plan.json`,
+    JSON.stringify({version: 1, workspace: managed, stacks: []}));
+  fs.mkdirSync('/state/ws/Improvement/scripts', {recursive: true});
+  fs.writeFileSync('/state/ws/Improvement/scripts/stack.py', 'CANONICAL = true\n');
   const created = await rpc('session/create', {request: {cwd: '/state/ws', agentPreset: 'write-fixture'}});
   if (!created.ok) throw new Error('session: ' + JSON.stringify(created.error));
   const agent = boot.ctx.agents.get(created.value.sessionId);
@@ -106,12 +118,12 @@ try {
     exactRows: expectedRows.every(id => content.includes(`- id: ${id}`)) &&
       (content.match(/^\s*- id: /gm) || []).length === expectedRows.length};
 
-  const r1 = await call({file_path: '/state/ws/probe1.txt', content: 'ordinary'});
-  report.ordinary = {isError: r1.isError, err: text(r1), written: fs.existsSync('/state/ws/probe1.txt')};
+  const r1 = await call({file_path: `${managed}/mode-state/probe1.txt`, content: 'ordinary'});
+  report.ordinary = {isError: r1.isError, err: text(r1), written: fs.existsSync(`${managed}/mode-state/probe1.txt`)};
 
-  const r2 = await call({file_path: '/state/ws/probe2.txt', content: 'same-mode',
+  const r2 = await call({file_path: `${managed}/mode-state/probe2.txt`, content: 'same-mode',
     sandbox_permissions: 'workspace-write', justification: 'same mode'});
-  report.sameMode = {isError: r2.isError, err: text(r2), written: fs.existsSync('/state/ws/probe2.txt')};
+  report.sameMode = {isError: r2.isError, err: text(r2), written: fs.existsSync(`${managed}/mode-state/probe2.txt`)};
 
   const r3 = await callTool('bash', {command: 'printf ordinary', description: 'ordinary'});
   report.bashOrdinary = {isError: r3.isError, err: text(r3)};
@@ -123,12 +135,17 @@ try {
   const r4 = await call({file_path: '/inputs/node_modules/evil.txt', content: 'no'});
   report.outside = {isError: r4.isError, err: text(r4)};
 
+  const r5 = await call({file_path: '/state/ws/Improvement/scripts/stack.py', content: 'mutado'});
+  report.productWrite = {isError: r5.isError, err: text(r5),
+    unchanged: fs.readFileSync('/state/ws/Improvement/scripts/stack.py', 'utf8') === 'CANONICAL = true\n'};
+
   report.ok = report.composition.guard && report.composition.workflowOutsidePreset &&
     report.composition.exactRows &&
     !r1.isError && report.ordinary.written && !r2.isError && report.sameMode.written &&
     !r3.isError && report['bash_workspace-write'].isError && report['bash_danger-full-access'].isError &&
     /RETAINED with no retry/.test(report['bash_workspace-write'].err) &&
-    /RETAINED with no retry/.test(report['bash_danger-full-access'].err) && r4.isError;
+    /RETAINED with no retry/.test(report['bash_danger-full-access'].err) && r4.isError &&
+    report.productWrite.isError && report.productWrite.unchanged;
 } catch (error) {
   report.fatal = String(error && error.stack || error).slice(0, 1200);
   report.ok = false;
@@ -137,8 +154,130 @@ fs.writeFileSync('/state/probe.json', JSON.stringify(report, null, 1));
 if (boot) await boot.shutdown.shutdown(report.ok ? 0 : 1); else process.exit(1);
 '''
 
+# Drives the real plugin module against a managed Improvement session, without
+# the DSH runtime: a fake ctx supplies only the fs/policy services the tool
+# already calls, so the confinement decision under test is the plugin's own.
+CONFINEMENT_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const report = {};
+const product = path.join(process.argv[2], 'Improvement', 'scripts', 'stack.py');
+const before = fs.readFileSync(product, 'utf8');
+report.stateWrite = await attempt(process.argv[2], 'Improvement-workspace/mode-state/work-items.json', '{"schema_version":1,"candidate":null,"items":[]}');
+report.productWrite = await attempt(process.argv[2], 'Improvement/scripts/stack.py', 'mutated by a state write');
+report.productUnchanged = fs.readFileSync(product, 'utf8') === before;
+report.reviewerWrite = await attempt(process.argv[3], 'result.json', '{"verdict":"PASS"}');
+process.stdout.write(JSON.stringify(report));
+'''
+
 
 class WorkflowWritePluginTest(unittest.TestCase):
+    def test_state_write_is_confined_to_the_managed_state_root(self):
+        """SR-3 is only true if the tool itself refuses a product path.
+
+        The mode contract confines state writes to ``<workspace>/mode-state``
+        and the read-only audit boundary depends on it, but the tool resolved
+        any path inside the writable area: one misdirected workflow_write
+        mutated the canonical product and only Git noticed afterwards.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-state-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement' / 'scripts' / 'stack.py'
+        product.parent.mkdir(parents=True)
+        product.write_text('CANONICAL = True\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            json.dumps({'version': 1, 'workspace': str(workspace), 'stacks': []}))
+        (workspace / 'mode-state').mkdir()
+        # A session with no managed workspace is not a state-write session: the
+        # acceptance reviewer writes its own result.json and must keep working.
+        reviewer = root / 'reviewer'
+        reviewer.mkdir()
+        driver = root / 'driver.mjs'
+        driver.write_text(CONFINEMENT_DRIVER.replace(
+            'PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run(
+            [node, driver.as_posix(), session.as_posix(), reviewer.as_posix()],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+        self.assertTrue(report['stateWrite']['ok'], report['stateWrite'])
+        self.assertFalse(report['productWrite']['ok'], report['productWrite'])
+        self.assertTrue(report['productUnchanged'],
+                        'a denied state write still mutated the canonical product')
+        self.assertTrue(report['reviewerWrite']['ok'], report['reviewerWrite'])
+
     def test_same_mode_escalation_writes_and_outside_denied(self):
         runtime = __import__('os').environ.get('DSH_MODULE_ROOT')
         if not runtime:
@@ -193,6 +332,10 @@ class WorkflowWritePluginTest(unittest.TestCase):
         self.assertTrue(report['composition']['workflowOutsidePreset'])
         self.assertTrue(report['composition']['exactRows'])
         self.assertTrue(report['outside']['isError'], 'outside the writable area must be denied')
+        self.assertTrue(report['productWrite']['isError'],
+                        'a state write outside <workspace>/mode-state must be denied')
+        self.assertTrue(report['productWrite']['unchanged'],
+                        'the denied product write still mutated the product')
 
 
 if __name__ == '__main__':

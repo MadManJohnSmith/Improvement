@@ -893,6 +893,71 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual((generation / "files" /
                               "active-work-items.json").read_bytes(), original)
 
+    def test_initialize_state_receipts_records_dropped_only_by_the_limit(self):
+        """The record cap drops valid records, so it owes the same receipt.
+
+        The limit is not a compatibility signal: 250 well formed findings
+        compact to 200 with incompatible=False and dropped=[], so the
+        compacted file replaced the original and 50 findings left the live
+        state with no receipt in overflows.jsonl and no archived copy. The
+        repair of one of them then landed in the product with no record left
+        to stand on. SYNC-AUD-047 was lost exactly that way.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "mode-state"
+            state.mkdir()
+            revision = "a" * 40
+            records = [{"finding_id": f"IMP-AUD-{index:04d}", "base_revision": revision,
+                        "severity": "HIGH", "summary": f"finding {index}", "status": "OPEN"}
+                       for index in range(LIMITS["findings.jsonl"] + 50)]
+            path = state / "findings.jsonl"
+            original = "".join(json.dumps(record) + "\n" for record in records).encode()
+            path.write_bytes(original)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            archive = Path(tmp) / "archive"
+            report = initialize_state(state, descriptor, archive)
+            kept = [json.loads(line) for line in path.read_text().splitlines()]
+            self.assertEqual(len(kept), LIMITS["findings.jsonl"])
+            self.assertEqual(kept[0]["finding_id"], records[50]["finding_id"])
+            note, = [item for item in report["dropped"] if item["file"] == "findings.jsonl"]
+            # The receipt caps at 32 identities by contract; the archived copy
+            # is what keeps the remaining 18 reachable.
+            self.assertEqual(note["dropped_records"],
+                             [f"findings.jsonl#{record['finding_id']}"
+                              for record in records[:32]])
+            generation, = archive.iterdir()
+            self.assertEqual((generation / "files" / "active-findings.jsonl").read_bytes(),
+                             original)
+
+    def test_initialize_state_receipts_work_items_dropped_only_by_the_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "mode-state"
+            state.mkdir()
+            items = [{"work_item_id": f"W-{index:04d}", "finding_id": f"IMP-AUD-{index:04d}",
+                      "base_revision": "a" * 40, "status": "PENDING"}
+                     for index in range(LIMITS["work-items.json"] + 10)]
+            path = state / "work-items.json"
+            original = json.dumps({"schema_version": 1, "candidate": None,
+                                   "items": items}).encode()
+            path.write_bytes(original)
+            descriptor = {"schema_version": 1, "project_id": "project",
+                          "product_root": "Project",
+                          "state_root": "Project-workspace/mode-state"}
+            archive = Path(tmp) / "archive"
+            report = initialize_state(state, descriptor, archive)
+            migrated = json.loads(path.read_text())
+            self.assertEqual(len(migrated["items"]), LIMITS["work-items.json"])
+            self.assertEqual(migrated["items"][0]["work_item_id"], "W-0010")
+            note, = [entry for entry in report["dropped"]
+                     if entry["file"] == "work-items.json"]
+            self.assertEqual(note["dropped_records"],
+                             [f"W-{index:04d}" for index in range(10)])
+            generation, = archive.iterdir()
+            self.assertEqual((generation / "files" / "active-work-items.json").read_bytes(),
+                             original)
+
     def test_finding_summary_longer_than_one_kibibyte_survives_the_preflight(self):
         """A real audit summary is evidence-dense and routinely passes 1 KiB.
 

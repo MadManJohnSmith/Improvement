@@ -525,8 +525,15 @@ def validate_mode_lifecycle(mode_dir, expected_layout):
         raise ValueError("SKILL.md mode-lifecycle does not match the role contract")
 
 
-def compact_records(records, key_fields, limit):
-    """Keep the newest record per key, then the newest bounded records."""
+def compact_records(records, key_fields, limit, dropped=None):
+    """Keep the newest record per key, then the newest bounded records.
+
+    ``dropped`` receives the records the limit removes, in the order they
+    leave. A record that leaves the live state only because the file grew
+    past its cap is as gone as one rejected by the schema, so the caller
+    needs the same identity to name it in a receipt or an archived copy;
+    without either, a later repair cannot be traced back to a record.
+    """
     if not isinstance(records, list) or not isinstance(limit, int) or limit < 1:
         raise ValueError("invalid compaction input")
     latest = {}
@@ -540,7 +547,11 @@ def compact_records(records, key_fields, limit):
         if key in latest:
             del latest[key]
         latest[key] = record
-    return list(latest.values())[-limit:]
+    values = list(latest.values())
+    kept = values[-limit:]
+    if dropped is not None and len(kept) < len(values):
+        dropped.extend(values[:len(values) - limit])
+    return kept
 
 
 def _record_schema(required, properties, example):
@@ -716,7 +727,15 @@ def _jsonl(data, spec, label):
             dropped.append(identity(number, record))
             continue
         records.append(adapted)
-    compacted = compact_records(records, spec["dedupe_key"], spec["limit"])
+    over_limit = []
+    compacted = compact_records(records, spec["dedupe_key"], spec["limit"], over_limit)
+    if over_limit:
+        # Exceeding the cap is a loss like any other: the receipt and the
+        # archived copy are the only trace of records the live state never
+        # carried, so a limit drop must travel the same path as a bad one.
+        incompatible = True
+        dropped.extend(identity(f"limit-{index}", record)
+                       for index, record in enumerate(over_limit))
     encoded = b"".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode() + b"\n" for record in compacted)
     return encoded, incompatible, dropped
 
@@ -922,7 +941,16 @@ def initialize_state(state, descriptor, archive_root=None):
                         invalid_items.append("candidate")
                     current["candidate"] = None
                     incompatible = True
-                current["items"] = compact_records(items, ("work_item_id", "base_revision"), LIMITS[name])
+                over_limit = []
+                current["items"] = compact_records(
+                    items, ("work_item_id", "base_revision"), LIMITS[name], over_limit)
+                if over_limit:
+                    # Work items that are valid and simply outnumbered by the cap
+                    # leave the live state too, so the receipt has to name them.
+                    incompatible = True
+                    invalid_items.extend(
+                        str(item.get("work_item_id") or item.get("finding_id") or "item")
+                        for item in over_limit if isinstance(item, dict))
             staged[name] = _encode_json(current)
             if incompatible:
                 extra = {"dropped_records": invalid_items[:32]} if invalid_items else {}
