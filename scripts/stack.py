@@ -316,6 +316,31 @@ def _capability_status(needs, *, path_env=None, home=None):
     return status
 
 
+def _runnable_entrypoint(command, capabilities, default_path):
+    """Name the entrypoint the way it can actually be invoked.
+
+    A verification record must echo the plan's exact command, and the plugin
+    rejects anything else, so a bare name the mode's shell cannot resolve is a
+    BLOCKED the runtime never earned: the capability is installed, the plan
+    even carries its absolute path, and the only thing missing is the name.
+    When a capability was resolved through the plan's own fallback (an SDK
+    outside the default PATH, a venv the plan materialized), the plan names
+    it by that absolute path. Names the default PATH already resolves stay
+    bare, so the common case reads exactly like the product's own docs.
+    """
+    if not command:
+        return command
+    head, rest = command[0], command[1:]
+    if head.startswith('/') or shutil.which(head, path=default_path):
+        return command
+    for capability in capabilities:
+        if (capability['capability'] == head
+                and capability['status'] == 'available'
+                and capability.get('path')):
+            return [capability['path'], *rest]
+    return command
+
+
 def _materialized_python(workspace, stack, interpreter):
     """A venv the plan itself asked for outranks the system interpreter.
 
@@ -347,6 +372,9 @@ def plan(product, *, workspace=None, env=None):
         env['PATH'] = f"{flutter_home}:{path}"
         interpreter = shutil.which('python3', path=env['PATH']) or interpreter
     workspace = Path(workspace) if workspace else product.parent
+    # The ambient PATH, before augmentation: that is the PATH the mode's own
+    # shell will have, so it alone decides whether a bare name can be invoked.
+    default_path = path
     stacks = []
     seen_roots = set()
     entries = detect(product)
@@ -379,6 +407,10 @@ def plan(product, *, workspace=None, env=None):
             stack_plan['verification_ready'] = all(
                 capability['status'] == 'available'
                 for capability in stack_plan['capabilities'])
+            stack_plan['verify_command'] = _runnable_entrypoint(
+                stack_plan['verify_command'], stack_plan['capabilities'], default_path)
+            stack_plan['lint_command'] = _runnable_entrypoint(
+                stack_plan['lint_command'], stack_plan['capabilities'], default_path)
             stacks.append(stack_plan)
             continue
         spec = STACKS[entry['stack']]
@@ -403,6 +435,10 @@ def plan(product, *, workspace=None, env=None):
             stack_plan['in_product_install_gitignored'] = _gitignored(product, in_product)
         stack_plan['verification_ready'] = all(
             capability['status'] == 'available' for capability in stack_plan['capabilities'])
+        stack_plan['verify_command'] = _runnable_entrypoint(
+            stack_plan['verify_command'], stack_plan['capabilities'], default_path)
+        stack_plan['lint_command'] = _runnable_entrypoint(
+            stack_plan['lint_command'], stack_plan['capabilities'], default_path)
         stacks.append(stack_plan)
     result = {
         'version': VERSION,

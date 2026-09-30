@@ -96,6 +96,48 @@ class StackPlanTests(unittest.TestCase):
             self.assertEqual(value['stacks'][0]['capabilities'][0]['path'],
                              str(binary))
 
+    def test_entrypoint_names_the_capability_the_default_path_cannot_resolve(self):
+        """Un SDK fuera del PATH por defecto no puede quedar como nombre suelto.
+
+        El registro de verificación debe repetir el comando del plan y el
+        plugin no acepta otro, así que un `flutter` desnudo que la shell del
+        modo no resuelve convierte una suite real en un BLOCKED falso.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pubspec.lock': 'packages: {}\n'})
+            home = root / 'home'
+            flutter_bin = home / '.local/share/flutter/bin'
+            flutter_bin.mkdir(parents=True)
+            binary = flutter_bin / 'flutter'
+            binary.write_text('#!/bin/sh\nexit 0\n')
+            binary.chmod(0o755)
+            (flutter_bin / 'cache/dart-sdk').mkdir(parents=True)
+            env = {'PATH': '/nonexistent', 'HOME': str(home)}
+            value = stack.plan(product, workspace=root / 'ws', env=env)
+            entry, = value['stacks']
+            self.assertTrue(entry['verification_ready'])
+            self.assertEqual(entry['verify_command'], [str(binary), 'test'])
+            self.assertEqual(entry['lint_command'], [str(binary), 'analyze'])
+            allowed = stack.allowed_verification_commands(value)
+            self.assertIn(json.dumps([str(binary), 'test'], separators=(',', ':')),
+                          allowed)
+
+    def test_entrypoint_stays_bare_when_the_default_path_already_resolves_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'package-lock.json': '{}\n',
+                                      'package.json': '{"name": "web"}'})
+            node_bin = root / 'nodebin'
+            node_bin.mkdir()
+            for name in ('node', 'npm'):
+                binary = node_bin / name
+                binary.write_text('#!/bin/sh\nexit 0\n')
+                binary.chmod(0o755)
+            env = {'PATH': str(node_bin), 'HOME': str(root)}
+            entry, = stack.plan(product, workspace=root / 'ws', env=env)['stacks']
+            self.assertEqual(entry['verify_command'], ['npm', 'test'])
+
     def test_in_product_install_is_flagged_unless_the_product_ignores_it(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
