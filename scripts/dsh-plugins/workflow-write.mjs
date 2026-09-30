@@ -43,6 +43,9 @@
  *  4. execute replica la tool write de upstream: ctx.fs.resolve con opciones de
  *     sesión (cwd = raíz de la política o cwd de la sesión, señal de aborto),
  *     waterfall fs/write-intent, writeText con la política resuelta y emisión
+ *  5. G7: antes de reemplazar el verification-results.jsonl gestionado, resuelve
+ *     canónicamente su capability-plan.json hermano y rechaza cualquier comando
+ *     que no sea un entrypoint real ligado al plan o PASS/FAIL sin capacidad.
  *     fs/observed. Los parámetros de escalada NO se publican en el esquema
  *     (las misiones prohíben enviarlos); quedan cubiertos por resolvePolicy si
  *     un modelo los fuerza.
@@ -51,6 +54,73 @@
  * siempre pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
  */
 export const inject = ['tools', 'fs', 'systemPrompt'];
+
+const MANAGED_RESULTS_SUFFIX = '/mode-state/verification-results.jsonl';
+const PLAN_RELATIVE = '.dsh-managed/capability-plan.json';
+const PLAN_BYTE_LIMIT = 131072;
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function validateManagedVerification(ctx, target, content, signal) {
+  if (typeof ctx.fs.processPath !== 'function') return;
+  const rawTargetPath = await ctx.fs.processPath(target);
+  if (typeof rawTargetPath !== 'string') return;
+  const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!targetPath.endsWith(MANAGED_RESULTS_SUFFIX)) return;
+
+  const workspacePath = targetPath.slice(0, -MANAGED_RESULTS_SUFFIX.length);
+  const expectedTarget = await ctx.fs.resolve('mode-state/verification-results.jsonl', {
+    cwd: workspacePath, signal,
+  });
+  if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
+    throw new Error('verification-results target no coincide con el mode-state gestionado');
+  }
+  const planTarget = await ctx.fs.resolve(PLAN_RELATIVE, { cwd: workspacePath, signal });
+  const planText = await ctx.fs.readText(planTarget, signal);
+  if (typeof planText !== 'string' || Buffer.byteLength(planText, 'utf8') > PLAN_BYTE_LIMIT) {
+    throw new Error('capability-plan ausente o excesivo');
+  }
+  let plan;
+  try { plan = JSON.parse(planText); } catch { throw new Error('capability-plan inválido'); }
+  if (!plan || plan.version !== 1 || !Array.isArray(plan.stacks)) {
+    throw new Error('capability-plan inválido');
+  }
+  const commands = new Map();
+  for (const stack of plan.stacks) {
+    const ready = stack?.verification_ready === true;
+    for (const command of [stack?.verify_command, stack?.lint_command]) {
+      if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== 'string')) continue;
+      const key = canonicalJson(command);
+      // If two stacks share one command, the strictest readiness wins.
+      commands.set(key, commands.has(key) ? commands.get(key) && ready : ready);
+    }
+  }
+  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
+  if (lines.length === 1 && lines[0] === '') return;
+  if (lines.some((line) => line.trim() === '')) throw new Error('verification-results contiene línea vacía');
+  for (let index = 0; index < lines.length; index++) {
+    let record;
+    try { record = JSON.parse(lines[index]); } catch { throw new Error(`verification-result ${index} inválido`); }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error(`verification-result ${index} inválido`);
+    }
+    if (!commands.has(record.command)) {
+      throw new Error(`verification-result ${index} usa comando ajeno al stack real`);
+    }
+    if (!['PASS', 'FAIL', 'BLOCKED'].includes(record.result)) {
+      throw new Error(`verification-result ${index} tiene resultado inválido`);
+    }
+    if (commands.get(record.command) !== true && record.result !== 'BLOCKED') {
+      throw new Error(`verification-result ${index} debe ser BLOCKED: falta capacidad del stack`);
+    }
+  }
+}
 
 export function apply(ctx, config) {
   const MODES = ['workspace-write', 'danger-full-access'];
@@ -218,6 +288,7 @@ export function apply(ctx, config) {
         ...(cwd !== undefined ? { cwd } : {}),
         signal: exec.signal,
       });
+      await validateManagedVerification(ctx, target, args.content, exec.signal);
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el
       // marcador [sandbox: ...] cuando son denegaciones; envolver aquí cualquier

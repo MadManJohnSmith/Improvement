@@ -16,6 +16,10 @@ function check(label, cond, detail = '') {
 const registered = [];
 const guards = [];
 const calls = {};
+const files = new Map();
+const MANAGED_TARGET = '/ws/project-workspace/mode-state/verification-results.jsonl';
+const PLAN_TARGET = '/ws/project-workspace/.dsh-managed/capability-plan.json';
+const plan = (stacks) => JSON.stringify({ version: 1, stacks });
 const POLICY = { mode: 'workspace-write', workspaceRoot: '/ws/root' };
 const ctx = {
   get(key) {
@@ -25,7 +29,13 @@ const ctx = {
   },
   tools: { register: (d) => registered.push(d), guard: (g) => guards.push(g) },
   fs: {
-    resolve: async (p, opts) => { calls.resolve = { p, opts }; return { displayPath: `/abs/${p}` }; },
+    resolve: async (p, opts) => {
+      calls.resolve = { p, opts };
+      const displayPath = p.startsWith('/') ? p : opts?.cwd === '/ws/project-workspace' ? `${opts.cwd}/${p}` : `/abs/${p}`;
+      return { displayPath, targetKey: displayPath };
+    },
+    processPath: async (target) => target.displayPath,
+    readText: async (target) => files.get(target.displayPath),
     writeText: async (t, c, intent, signal, policy) => {
       calls.writeText = { t, c, policyMode: policy?.mode };
       return { version: 3, operation: 'create', before: null, after: c };
@@ -116,7 +126,37 @@ check('M7: escalada estrictamente mayor -> approval invocado', calls.approval ==
 const e1 = await wf.execute({}, { signal }).catch((e) => e.message);
 check('sin args -> file_path debe ser un string no vacío', e1 === 'file_path debe ser un string no vacío', e1);
 
-// ── 4. M9: barrido de esquema sobre la tool bash REAL de upstream ────
+// ── 4. validación de verification-results gestionado ────────────────
+const runManaged = async (content, planText) => {
+  files.set(PLAN_TARGET, planText);
+  calls.writeText = undefined;
+  return wf.execute({ file_path: MANAGED_TARGET, content }, { signal });
+};
+const readyPlan = plan([{ name: 'node', verification_ready: true, verify_command: ['node', '--test'], lint_command: ['npm', 'run', 'lint'] }]);
+const blockedPlan = plan([{ name: 'python', verification_ready: false, verify_command: ['python', '-m', 'pytest'] }]);
+
+const managedPass = await runManaged(`${JSON.stringify({ command: '["node","--test"]', result: 'PASS' })}\n`, readyPlan);
+check('managed: PASS de entrypoint listo se escribe', managedPass.path === MANAGED_TARGET && calls.writeText !== undefined);
+
+const managedBlocked = await runManaged(JSON.stringify({ command: '["python","-m","pytest"]', result: 'BLOCKED' }), blockedPlan);
+check('managed: capacidad ausente acepta BLOCKED', managedBlocked.path === MANAGED_TARGET && calls.writeText !== undefined);
+
+const missingPass = await runManaged(JSON.stringify({ command: '["python","-m","pytest"]', result: 'PASS' }), blockedPlan).catch((e) => e.message);
+check('managed: capacidad ausente rechaza PASS antes de writeText', /debe ser BLOCKED/.test(missingPass) && calls.writeText === undefined, missingPass);
+
+const foreignCommand = await runManaged(JSON.stringify({ command: '["echo","stub"]', result: 'PASS' }), readyPlan).catch((e) => e.message);
+check('managed: comando stub/ajeno rechazado', /comando ajeno/.test(foreignCommand) && calls.writeText === undefined, foreignCommand);
+
+for (const [label, badPlan] of [['malformado', '{'], ['adulterado', plan([{ verification_ready: true, verify_command: 'node --test' }])]]) {
+  const error = await runManaged(JSON.stringify({ command: '["node","--test"]', result: 'PASS' }), badPlan).catch((e) => e.message);
+  check(`managed: plan ${label} rechazado`, /capability-plan inválido|comando ajeno/.test(error) && calls.writeText === undefined, error);
+}
+
+calls.writeText = undefined;
+const normalWrite = await wf.execute({ file_path: '/ws/project-workspace/notes.txt', content: 'normal' }, { signal });
+check('write normal no gestionado sigue funcionando', normalWrite.path === '/ws/project-workspace/notes.txt' && calls.writeText?.c === 'normal');
+
+// ── 5. M9: barrido de esquema sobre la tool bash REAL de upstream ────
 const registry = new Map();
 const guards2 = [];
 const realCtx = {
