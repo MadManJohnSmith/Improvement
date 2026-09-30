@@ -60,7 +60,15 @@ def _repair_target(layout):
 
 
 def repair_provision_command(layout):
-    """Return the exact target-scoped clean create/reuse command."""
+    """Return the exact target-scoped clean create/reuse command.
+
+    The command takes exactly two substitutions, digest16 and full_base, and both
+    are quoted shell variables. The declared base of the audit is deliberately not
+    a third one: a `<declared-base>` placeholder reaches the shell unsubstituted,
+    and a shell reading it as a redirection retains the turn before it ever looks
+    at the candidate. The relation between the declared base and the effective one
+    is proved by the person, as its own step, before provisioning.
+    """
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
         + _repair_target(layout) +

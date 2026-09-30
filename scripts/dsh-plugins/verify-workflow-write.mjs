@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 
 // Portable: el plugin se resuelve junto a este script; la ruta del runtime se
 // puede invalidar con DSH_TOOLS_INDEX (…/dsh-cli/node_modules/@deepseek-ai/dsh-tools/lib/index.js).
@@ -19,7 +20,26 @@ const calls = {};
 const files = new Map();
 const MANAGED_TARGET = '/ws/project-workspace/mode-state/verification-results.jsonl';
 const PLAN_TARGET = '/ws/project-workspace/.dsh-managed/capability-plan.json';
-const plan = (stacks) => JSON.stringify({ version: 1, stacks });
+// Canonicalización de producción (scripts/stack.py: json.dumps(plan sin
+// plan_sha256, ensure_ascii=False, sort_keys=True, separators=(',', ':')) y
+// sha256 de su UTF-8). El arnés firma sus planes igual que el Host: un plan sin
+// firma aquí sería un defecto del fixture, no de la herramienta, y reventaría
+// todos los casos verdes antes de probar nada.
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+const signPlan = (value) => {
+  const { plan_sha256: _recorded, ...unsigned } = value;
+  return {
+    ...unsigned,
+    plan_sha256: createHash('sha256').update(canonicalJson(unsigned), 'utf8').digest('hex'),
+  };
+};
+const plan = (stacks) => JSON.stringify(signPlan({ version: 1, stacks }));
 const POLICY = { mode: 'workspace-write', workspaceRoot: '/ws/root' };
 const ctx = {
   get(key) {
@@ -137,16 +157,38 @@ const blockedPlan = plan([{ name: 'python', verification_ready: false, verify_co
 
 const record = (command, result) => ({ finding_id: 'A-01', candidate_head: 'a'.repeat(40), command, result });
 const managedPass = await runManaged(`${JSON.stringify(record('["node","--test"]', 'PASS'))}\n`, readyPlan);
-check('managed: PASS de entrypoint listo se escribe', managedPass.path === MANAGED_TARGET && calls.writeText !== undefined);
+check('managed: plan íntegro firmado -> PASS de entrypoint listo se escribe', managedPass.path === MANAGED_TARGET && calls.writeText !== undefined);
 
 const managedBlocked = await runManaged(JSON.stringify(record('["python","-m","pytest"]', 'BLOCKED')), blockedPlan);
 check('managed: capacidad ausente acepta BLOCKED', managedBlocked.path === MANAGED_TARGET && calls.writeText !== undefined);
 
 const missingPass = await runManaged(JSON.stringify(record('["python","-m","pytest"]', 'PASS')), blockedPlan).catch((e) => e.message);
-check('managed: capacidad ausente rechaza PASS antes de writeText', /debe ser BLOCKED/.test(missingPass) && calls.writeText === undefined, missingPass);
+check('managed: G2 disponibilidad mutada -> PASS denegado antes de writeText', /debe ser BLOCKED/.test(missingPass) && calls.writeText === undefined, missingPass);
 
 const foreignCommand = await runManaged(JSON.stringify(record('["echo","stub"]', 'PASS')), readyPlan).catch((e) => e.message);
-check('managed: comando stub/ajeno rechazado', /comando ajeno/.test(foreignCommand) && calls.writeText === undefined, foreignCommand);
+check('managed: G1 comando mutado -> denegado antes de writeText', /comando ajeno/.test(foreignCommand) && calls.writeText === undefined, foreignCommand);
+
+// G3: el digest del plan. Cada mutación se prueba sola y contra el mismo
+// registro válido, para que el rechazo se atribuya al digest y no al comando.
+const signedReady = signPlan({
+  version: 1,
+  stacks: [{ name: 'node', verification_ready: true, verify_command: ['node', '--test'] }],
+});
+const { plan_sha256: _readyDigest, ...unsignedReadyPlan } = signedReady;
+const foreignDigest = signPlan({
+  version: 1,
+  stacks: [{ name: 'python', verification_ready: true, verify_command: ['python', '-m', 'pytest'] }],
+}).plan_sha256;
+for (const [label, mutated] of [
+  ['sin firma', unsignedReadyPlan],
+  ['digest ajeno', { ...unsignedReadyPlan, plan_sha256: '0'.repeat(64) }],
+  ['firma de otro plan', { ...unsignedReadyPlan, plan_sha256: foreignDigest }],
+]) {
+  const error = await runManaged(
+    JSON.stringify(record('["node","--test"]', 'PASS')), JSON.stringify(mutated)).catch((e) => e.message);
+  check(`managed: G3 plan ${label} -> denegado antes de writeText`,
+    /capability-plan alterado/.test(error) && calls.writeText === undefined, error);
+}
 
 const extraFields = await runManaged(JSON.stringify({ ...record('["node","--test"]', 'PASS'), detail: 'inventado' }), readyPlan).catch((e) => e.message);
 check('managed: campos fuera del schema estricto rechazados', /schema estricto/.test(extraFields) && calls.writeText === undefined, extraFields);

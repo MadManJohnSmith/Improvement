@@ -60,6 +60,8 @@
  * Sin aprobación, falla cerrado; el aislamiento no se debilita: la ejecución
  * siempre pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
  */
+import { createHash } from 'node:crypto';
+
 export const inject = ['tools', 'fs', 'systemPrompt'];
 
 const MANAGED_RESULTS_SUFFIX = '/mode-state/verification-results.jsonl';
@@ -163,6 +165,11 @@ async function validateManagedVerification(ctx, target, content, signal) {
   try { plan = JSON.parse(planText); } catch { throw new Error('capability-plan inválido'); }
   if (!plan || plan.version !== 1 || !Array.isArray(plan.stacks)) {
     throw new Error('capability-plan inválido');
+  }
+  const { plan_sha256: recordedDigest, ...unsignedPlan } = plan;
+  const actualDigest = createHash('sha256').update(canonicalJson(unsignedPlan), 'utf8').digest('hex');
+  if (typeof recordedDigest !== 'string' || recordedDigest !== actualDigest) {
+    throw new Error('capability-plan alterado');
   }
   const commands = new Map();
   for (const stack of plan.stacks) {

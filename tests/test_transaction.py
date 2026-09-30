@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
 import stack
+import acceptance
+import acceptance_reviewer
 from mode_lifecycle import expected_lifecycle, persona_prefix
 
 
@@ -131,9 +133,69 @@ class TransactionTests(unittest.TestCase):
 
     def install(self, generated=None, generation="gen-1", client=None, **kwargs):
         self.client = client or getattr(self, "client", None) or Client()
-        return tx.install(self.workspace, generated or self.generated, generation,
-                          host_verdict=kwargs.pop("host_verdict", verdict(generation)),
-                          dsh_home=self.home, client=self.client, **kwargs)
+        supplied = kwargs.pop("host_verdict", None)
+        if supplied is None:
+            supplied = verdict(generation)
+        if isinstance(supplied, dict):
+            verdict_path = self.root / "host-verdict.json"
+            verdict_path.write_text(json.dumps(supplied) + "\n")
+            supplied = verdict_path
+        with unittest.mock.patch("acceptance.validate_host_verdict", return_value=verdict(generation)):
+            return tx.install(self.workspace, generated or self.generated, generation,
+                              host_verdict=supplied,
+                              dsh_home=self.home, client=self.client, **kwargs)
+
+    def _host_run(self, generated, generation):
+        """A real acceptance run: the artifacts the Host binds a verdict to."""
+        run = self.root / f"acceptance-run-{generation}"
+        (run / "validation").mkdir(parents=True)
+        (run / "acceptance").mkdir()
+        plan = {"schema_version": 1, "generation_id": generation,
+                "requirements": [], "gates": [], "creator_limit": "Host only."}
+        (generated / "acceptance-plan.json").write_text(json.dumps(plan) + "\n")
+        (run / "validation" / "summary.json").write_text(
+            json.dumps({"generation_id": generation, "layers": []}) + "\n")
+        return run
+
+    def _host_verdict(self, run, generated, generation):
+        """Emit the verdict acceptance.validate_host_verdict would emit.
+
+        Built from the product's own digest helpers so the fixture cannot drift
+        away from the binding it is supposed to exercise.
+        """
+        doc = {
+            "schema_version": acceptance.SCHEMA_VERSION,
+            "generation_id": generation,
+            "verdict": "READY_FOR_INSTALL",
+            "static_passed": True,
+            "acceptance_plan_valid": True,
+            "dynamic_evaluation": "NOT_RUN",
+            "candidate_digest": acceptance_reviewer.tree_digest(generated),
+            "manifest_digest": acceptance._digest_file(
+                generated / "generation-manifest.json"),
+            "validation_summary_digest": acceptance._digest_file(
+                run / "validation" / "summary.json"),
+            "acceptance_plan_digest": acceptance._digest_file(
+                generated / "acceptance-plan.json"),
+            "host_policy_digest": acceptance.current_host_policy_digest(),
+            "timestamp": "2026-01-01T00:00:00+00:00",
+        }
+        path = run / "acceptance" / "host-verdict.json"
+        path.write_text(json.dumps(doc) + "\n")
+        return path
+
+    def install_bound(self, generated=None, generation="gen-1", client=None,
+                      verdict_path=None, verdict_generation=None, **kwargs):
+        """Install with the real acceptance binding: no mock of any digest check."""
+        self.client = client or getattr(self, "client", None) or Client()
+        generated = generated or self.generated
+        if verdict_path is None:
+            run = self._host_run(generated, generation)
+            verdict_path = self._host_verdict(
+                run, generated, verdict_generation or generation)
+        return tx.install(self.workspace, generated, generation,
+                          host_verdict=verdict_path, dsh_home=self.home,
+                          client=self.client, **kwargs)
 
     def uninstall(self):
         return tx.uninstall(self.workspace, dsh_home=self.home,
@@ -144,9 +206,49 @@ class TransactionTests(unittest.TestCase):
             tx.install(self.workspace, self.generated, "gen-1",
                        dsh_home=self.home, client=Client())
 
+    def test_rejects_unbound_in_memory_verdict(self):
+        with self.assertRaisesRegex(tx.TransactionError, "ruta"):
+            tx.install(self.workspace, self.generated, "gen-1",
+                       host_verdict=verdict(), dsh_home=self.home, client=Client())
+
     def test_rejects_non_installable_verdict(self):
         with self.assertRaisesRegex(tx.TransactionError, "no aprobó"):
             self.install(host_verdict=verdict(value="RETAINED"))
+
+    def test_installs_with_a_real_host_verdict_and_no_mocked_binding(self):
+        """IMP-AUD-007: publication is bound to this candidate by the real check.
+
+        The rest of this class mocks acceptance.validate_host_verdict, so with the
+        mock in place a verdict for another candidate, or a candidate mutated
+        after acceptance, would still publish. This installation runs the real
+        binding against a verdict acceptance itself could have emitted.
+        """
+        result = self.install_bound()
+        self.assertEqual(result["result"], "ACTIVE")
+        self.assertEqual(set(result["published_presets"]), {
+            "project-auditor", "project-continuous-repair"})
+        self.assertEqual((self.workspace / ".dsh-managed" / "ACTIVE").read_text().strip(),
+                         "gen-1")
+
+    def test_rejects_a_real_verdict_copied_from_another_candidate(self):
+        other = self._package(self.root / "generated-other", marker="otro")
+        run = self._host_run(other, "gen-1")
+        borrowed = self._host_verdict(run, other, "gen-1")
+        # The candidate under installation is not the accepted one.
+        (self.generated / "skills" / "project-check" /
+         "resources" / "guide.txt").write_text("guide alterada\n")
+        with self.assertRaisesRegex(
+                (tx.TransactionError, ValueError), "cambió el candidato"):
+            self.install_bound(verdict_path=borrowed)
+        self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
+        self.assertTrue(borrowed.is_file())
+
+    def test_rejects_a_real_verdict_from_another_generation(self):
+        run = self._host_run(self.generated, "gen-2")
+        borrowed = self._host_verdict(run, self.generated, "gen-2")
+        with self.assertRaisesRegex(tx.TransactionError, "otra generación"):
+            self.install_bound(generation="gen-1", verdict_path=borrowed)
+        self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
 
     def test_publishes_two_presets_and_shared_state_then_activates(self):
         result = self.install()

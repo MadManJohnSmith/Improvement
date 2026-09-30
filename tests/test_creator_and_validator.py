@@ -3,9 +3,12 @@
     python3 -B -m unittest tests.test_creator_and_validator -v
 """
 
+import contextlib
 import http.server
+import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -1815,6 +1818,135 @@ class ValidatorTests(Base):
                               "contracts/legacy.skill.json"), "mode")
         with self.assertRaisesRegex(gc.ContractError, "contract.kind must be"):
             hv._contract_kind({"kind": []}, "contracts/legacy.skill.json")
+
+    def _add_reference(self, generated, manifest, relative, body):
+        """Declare one extra reference file in the manifest, as a stack would."""
+        path = generated / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body)
+        manifest["artifacts"].append({
+            "path": relative, "type": "skill-reference",
+            "sha256": cc._digest_bytes(body.encode())})
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        return path
+
+    def test_graph_rejects_a_dangling_reference_on_its_own(self):
+        """A reference that resolves to nothing fails, and says only that.
+
+        Paired with a cycle in the same fixture, a single "graph is red" assertion
+        proves nothing: either condition alone could have produced the red. Here
+        the only broken edge is the dangling one, so the detail names it and no
+        cycle is reported.
+        """
+        generated, manifest = self.make_package()
+        self._add_reference(generated, manifest, "skills/project-auditor/a.txt",
+                            "load: missing.txt\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        details = " ".join(report.layers["graph"]["details"])
+        self.assertFalse(report.layers["graph"]["passed"])
+        self.assertFalse(report.passed)
+        self.assertIn("Dangling reference", details)
+        self.assertIn("missing.txt", details)
+        self.assertNotIn("cycle", details.lower())
+
+    def test_graph_rejects_a_two_node_load_cycle_on_its_own(self):
+        generated, manifest = self.make_package()
+        self._add_reference(generated, manifest, "skills/project-auditor/a.txt",
+                            "load: b.txt\n")
+        self._add_reference(generated, manifest, "skills/project-auditor/b.txt",
+                            "load: a.txt\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        details = " ".join(report.layers["graph"]["details"])
+        self.assertFalse(report.layers["graph"]["passed"])
+        self.assertFalse(report.passed)
+        self.assertIn("cycle", details.lower())
+        self.assertNotIn("Dangling reference", details)
+
+    def test_graph_rejects_a_self_load_cycle_on_its_own(self):
+        generated, manifest = self.make_package()
+        self._add_reference(generated, manifest, "skills/project-auditor/loop.md",
+                            "load: loop.md\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        details = " ".join(report.layers["graph"]["details"])
+        self.assertFalse(report.layers["graph"]["passed"])
+        self.assertIn("cycle", details.lower())
+        self.assertNotIn("Dangling reference", details)
+
+    def test_graph_accepts_acyclic_nested_relative_references(self):
+        """A relative reference that resolves is not a violation.
+
+        References are resolved against the referring file's own directory, so a
+        nested source may point upward with `../`. A validator that only ever
+        checked same-directory names would reject this legitimate package.
+        """
+        generated, manifest = self.make_package()
+        self._add_reference(generated, manifest,
+                            "skills/project-auditor/notes/base.md",
+                            "load: ../shared/other.md\nload: more.md\n")
+        self._add_reference(generated, manifest,
+                            "skills/project-auditor/notes/more.md", "detalle\n")
+        self._add_reference(generated, manifest,
+                            "skills/project-auditor/shared/other.md", "compartido\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.layers["graph"]["passed"],
+                        report.layers["graph"]["details"])
+        self.assertTrue(report.passed, report.layers["graph"]["details"])
+        self.assertEqual(report.verdict, "READY_FOR_ACCEPTANCE")
+
+    def test_cli_requires_authoritative_run_layout(self):
+        with unittest.mock.patch.object(sys, "argv", [
+                "host_validator.py", "--generated", "unused"]):
+            with self.assertRaises(SystemExit) as failure:
+                hv.main()
+        self.assertEqual(failure.exception.code, 2)
+
+    def _run_cli(self, generated, run_dir):
+        argv = ["host_validator.py", "--generated", str(generated),
+                "--run-dir", str(run_dir)]
+        out = io.StringIO()
+        with unittest.mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(out):
+            with self.assertRaises(SystemExit) as failure:
+                hv.main()
+        return failure.exception.code, out.getvalue()
+
+    def test_cli_enforces_the_authoritative_layout_of_a_real_run(self):
+        """IMP-AUD-005: the layout the CLI validates is the one of the run.
+
+        The flag being required proves nothing about enforcement. Each case runs
+        the real validation over a real run directory: a run with no bootstrap
+        request, a request whose paths describe another project, and a package
+        whose mode identity no longer matches. Only the matching run passes.
+        """
+        generated, _ = self.make_package()
+        code, output = self._run_cli(generated, self.run_dir)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(json.loads(output)["verdict"], "READY_FOR_ACCEPTANCE")
+
+        without_request = Path(tempfile.mkdtemp(prefix="run-no-request-"))
+        self.addCleanup(shutil.rmtree, without_request, True)
+        code, output = self._run_cli(generated, without_request)
+        self.assertEqual(code, 1, output)
+        self.assertIn("Layout autoritativo del run inválido", output)
+
+        other_run = Path(tempfile.mkdtemp(prefix="run-other-layout-"))
+        self.addCleanup(shutil.rmtree, other_run, True)
+        (other_run / "inputs").mkdir()
+        (other_run / "inputs" / "bootstrap-request.json").write_text(json.dumps({
+            "project": str(self.root / "otro-producto"),
+            "workspace": str(self.root / "otro-producto-workspace")}) + "\n")
+        code, output = self._run_cli(generated, other_run)
+        self.assertEqual(code, 1, output)
+        self.assertIn("authoritative layout invalid", output)
+
+        skill = generated / "modes/project-auditor/SKILL.md"
+        skill.write_text(skill.read_text().replace(
+            self.workspace.name, "another-workspace"))
+        code, output = self._run_cli(generated, self.run_dir)
+        self.assertEqual(code, 1, output)
+        self.assertIn("authoritative layout invalid", output)
 
     def test_manifest_requires_skill_entrypoint_type_for_skill_md(self):
         generated, manifest = self.make_package()

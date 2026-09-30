@@ -224,12 +224,13 @@ class Transaction:
             raise TransactionError(
                 "Veredicto Host requerido antes de activar: install exige "
                 "host-verdict ACTIVE emitido por acceptance")
-        doc = host_verdict
-        if isinstance(host_verdict, (str, Path)):
-            p = Path(host_verdict)
-            if p.is_symlink() or not p.is_file():
-                raise TransactionError(f"host-verdict no disponible: {p}")
-            doc = _json(p)
+        if not isinstance(host_verdict, (str, Path)):
+            raise TransactionError(
+                "host-verdict debe ser una ruta para verificar su binding")
+        p = Path(host_verdict)
+        if p.is_symlink() or not p.is_file():
+            raise TransactionError(f"host-verdict no disponible: {p}")
+        doc = _json(p)
         if not isinstance(doc, dict):
             raise TransactionError("host-verdict no verificable")
         verdict = doc.get("verdict")
@@ -536,12 +537,10 @@ class Transaction:
         """Stage, publish two presets, verify roster, then activate."""
         self._require_host_verdict(host_verdict, generation_id)
         generated = Path(generated_dir)
-        if isinstance(host_verdict, (str, Path)):
-            # Defense in depth for direct transaction.py invocations: bind the
-            # verdict to the current candidate and Host result artifacts.
-            import acceptance
-            acceptance.validate_host_verdict(
-                host_verdict, generated, generation_id=generation_id)
+        # Bind every accepted verdict to the current candidate and Host artifacts.
+        import acceptance
+        acceptance.validate_host_verdict(
+            host_verdict, generated, generation_id=generation_id)
         if not generated.is_dir():
             raise TransactionError(f"generated/ ausente: {generated}")
         _safe_tree(generated)

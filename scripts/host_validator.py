@@ -11,6 +11,7 @@ Versión: 1
 import hashlib
 import json
 import os
+import posixpath
 import re
 import sys
 import tempfile
@@ -186,7 +187,7 @@ def validate_package(generated_dir, *, run_dir=None):
     _validate_layer_license(report, manifest)
 
     # Layer 10: Anti-auto-approval y lifecycle
-    _validate_layer_lifecycle(report, manifest)
+    _validate_layer_lifecycle(report, manifest, generated, run_dir=run_dir)
 
     return report
 
@@ -260,8 +261,52 @@ def _validate_layer_graph(report, manifest, generated):
     """Layer 3: Reference graph, cycles, hot paths."""
     issues = []
 
-    # Check for orphan files (files referenced that don't exist in manifest)
     manifested = {a["path"] for a in manifest.get("artifacts", [])}
+    graph = {path: set() for path in manifested}
+    reference_types = {"mode-reference", "skill-reference", "reference"}
+    for art in manifest.get("artifacts", []):
+        if art.get("type") not in reference_types:
+            continue
+        source = art.get("path", "")
+        full = generated / source
+        if not full.is_file() or full.is_symlink():
+            continue
+        for raw in full.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if not line.startswith("load: "):
+                continue
+            reference = line[6:].strip()
+            if not reference:
+                continue
+            # References are relative to the referring file, and a nested source
+            # may climb out of its own directory. Joining without normalizing
+            # leaves `notes/../shared/x.md`, which is a real manifested artifact
+            # that no manifest ever spells that way: the edge would be reported
+            # dangling while the target sits right there on disk.
+            target = posixpath.normpath(
+                posixpath.join(posixpath.dirname(source), reference))
+            if target == ".." or target.startswith("../"):
+                issues.append(
+                    f"Reference escapes the package: {source} -> {reference}")
+            elif target not in manifested:
+                issues.append(f"Dangling reference: {source} -> {target}")
+            else:
+                graph[source].add(target)
+
+    visiting, visited = set(), set()
+    def visit(node):
+        if node in visiting:
+            issues.append(f"Reference cycle detected at {node}")
+            return
+        if node in visited:
+            return
+        visiting.add(node)
+        for target in graph.get(node, ()):
+            visit(target)
+        visiting.remove(node)
+        visited.add(node)
+    for node in sorted(graph):
+        visit(node)
 
     # Check entrypoints exist
     entrypoints = [
@@ -710,9 +755,18 @@ def _validate_layer_license(report, manifest):
     report.add_layer("license", not issues, issues)
 
 
-def _validate_layer_lifecycle(report, manifest):
-    """Layer 10: Anti-auto-approval and lifecycle checks."""
+def _validate_layer_lifecycle(report, manifest, generated, run_dir=None):
+    """Layer 10: Anti-auto-approval and per-role lifecycle checks."""
     issues = []
+    try:
+        layout = _authoritative_layout(run_dir)
+        if layout is not None:
+            modes_root = generated / "modes"
+            for mode_dir in sorted(modes_root.iterdir() if modes_root.is_dir() else ()):
+                if mode_dir.is_dir() and not mode_dir.is_symlink():
+                    validate_mode_layout(mode_dir, layout)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        issues.append(f"Lifecycle por rol inválido: {error}")
 
     # Creator must only emit GENERATED
     if manifest.get("status") != "GENERATED":
@@ -815,8 +869,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generated", required=True,
                         help="Ruta al directorio generated/")
-    parser.add_argument("--run-dir",
-                        help="Ruta al run para escribir reportes")
+    parser.add_argument("--run-dir", required=True,
+                        help="Ruta al run para layout autoritativo y reportes")
     args = parser.parse_args()
 
     try:

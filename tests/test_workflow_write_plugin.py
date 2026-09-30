@@ -18,6 +18,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
+import stack
 from transaction import Transaction
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
@@ -236,8 +237,115 @@ report.reviewerWrite = await attempt(process.argv[3], 'result.json', '{"verdict"
 process.stdout.write(JSON.stringify(report));
 '''
 
+# Drives the real plugin against a managed session and the managed
+# verification-results file. The Python side owns the plan bytes, so the digest is
+# produced by the production canonicalization (stack.py) and not by a re-implementation
+# living in the fixture. Each case swaps only one of the three G7 inputs — the
+# recorded command, the stack availability, or the plan digest — and the report
+# says whether the write actually reached the disk.
+PLAN_BINDING_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const cases = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const planPath = path.join(session, 'Improvement-workspace', '.dsh-managed', 'capability-plan.json');
+const relative = 'Improvement-workspace/mode-state/verification-results.jsonl';
+const targetPath = path.join(session, relative);
+const report = {};
+for (const [name, spec] of Object.entries(cases)) {
+  fs.writeFileSync(planPath, spec.plan);
+  fs.rmSync(targetPath, {force: true});
+  const outcome = await attempt(session, relative, spec.content);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    written: fs.existsSync(targetPath),
+    onDisk: fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : null};
+}
+process.stdout.write(JSON.stringify(report));
+'''
+
 
 class WorkflowWritePluginTest(unittest.TestCase):
+    def _signed_plan(self, workspace, stacks):
+        """Plan bytes signed the way the Host signs them and read back by the Host.
+
+        The digest expression is the one ``stack.plan`` uses; ``stack.load`` is the
+        production reader, so a canonicalization that drifted by so much as a
+        separator would raise here instead of silently making the case green.
+        """
+        value = {"version": 1, "product": str(workspace.parent / "Improvement"),
+                 "workspace": str(workspace), "stacks": stacks}
+        value["plan_sha256"] = stack._digest(json.dumps(
+            dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+        stack.write(value, workspace)
+        stack.load(workspace)
+        return (workspace / stack.PLAN_RELATIVE).read_text()
+
     def test_state_write_is_confined_to_the_managed_state_root(self):
         """SR-3 is only true if the tool itself refuses a product path.
 
@@ -277,6 +385,75 @@ class WorkflowWritePluginTest(unittest.TestCase):
         self.assertTrue(report['productUnchanged'],
                         'a denied state write still mutated the canonical product')
         self.assertTrue(report['reviewerWrite']['ok'], report['reviewerWrite'])
+
+    def test_managed_verification_write_binds_the_capability_plan_digest(self):
+        """IMP-AUD-006: the plan is a signed input of the managed write, not a hint.
+
+        The plan lives in the session's writable area, so a rewritten plan could
+        otherwise declare a hand-written harness as the product entrypoint and
+        turn a green suite into recorded evidence. The tool recomputes
+        plan_sha256 with the production canonicalization and refuses the write
+        before writeText when it does not match. The three G7 inputs are mutated
+        one at a time, so each rejection is attributable to the mutation and not
+        to a neighbour that happens to fail too.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-plan-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        (session / 'Improvement' / 'scripts').mkdir(parents=True)
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+
+        ready = {"name": "python", "verification_ready": True,
+                 "verify_command": ["python3", "-B", "-m", "unittest", "discover", "-s", "tests"],
+                 "lint_command": None}
+        unavailable = dict(ready, verification_ready=False)
+        entrypoint = '["python3","-B","-m","unittest","discover","-s","tests"]'
+        record = {"finding_id": "A-01", "candidate_head": "a" * 40,
+                  "command": entrypoint, "result": "PASS"}
+        signed = self._signed_plan(workspace, [ready])
+        signed_unavailable = self._signed_plan(workspace, [unavailable])
+        body = json.loads(signed)
+        cases = {
+            "intact": {"plan": signed, "content": json.dumps(record) + "\n"},
+            "command": {"plan": signed,
+                        "content": json.dumps(dict(record, command='["echo","stub"]')) + "\n"},
+            "availability": {"plan": signed_unavailable,
+                             "content": json.dumps(record) + "\n"},
+            "digest": {"plan": json.dumps(dict(body, plan_sha256="0" * 64)) + "\n",
+                       "content": json.dumps(record) + "\n"},
+            "unsigned": {"plan": json.dumps(
+                {k: v for k, v in body.items() if k != "plan_sha256"}) + "\n",
+                "content": json.dumps(record) + "\n"},
+        }
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'plan-driver.mjs'
+        driver.write_text(PLAN_BINDING_DRIVER.replace(
+            'PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run(
+            [node, driver.as_posix(), session.as_posix()],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        self.assertTrue(report["intact"]["ok"], report["intact"])
+        self.assertTrue(report["intact"]["written"], report["intact"])
+        self.assertEqual(report["intact"]["onDisk"], json.dumps(record) + "\n")
+        for name, expected in (("command", "comando ajeno"),
+                               ("availability", "debe ser BLOCKED"),
+                               ("digest", "capability-plan alterado"),
+                               ("unsigned", "capability-plan alterado")):
+            with self.subTest(case=name):
+                outcome = report[name]
+                self.assertFalse(outcome["ok"], outcome)
+                self.assertIn(expected, outcome["error"])
+                self.assertFalse(
+                    outcome["written"],
+                    f'{name} reached writeText: {outcome["onDisk"]!r}')
 
     def test_same_mode_escalation_writes_and_outside_denied(self):
         runtime = __import__('os').environ.get('DSH_MODULE_ROOT')
