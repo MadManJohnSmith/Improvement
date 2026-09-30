@@ -114,6 +114,25 @@ reescribir el diagnóstico de otro. El prompt «Repara A-SEC-01 y A-SEC-02; no p
 produjo la corrección de ambos con su prueba de regresión — 3 ficheros, 220 líneas — sin
 tocar tu producto hasta la integración.
 
+### LoboApp — la beta que encontró los límites de verdad
+
+App Flutter (Android) instalada **desde un clon de GitHub del framework**, sobre un producto
+recién clonado y sin contaminación previa: exactamente el escenario que se encuentra un
+tester. La auditoría con un prompt simple persistió 9 hallazgos (1 CRITICAL, 2 HIGH,
+4 MEDIUM, 2 LOW).
+El CRITICAL era una promesa incumplida: el aviso de privacidad decía que cerrar sesión
+borra del dispositivo lo que guardaste, pero el código solo quitaba una clave — el avance y
+las notas seguían ahí y reaparecían al volver a entrar. «Repara F-01 y F-02; no publiques.»
+produjo el arreglo con sus pruebas de regresión en 7 ficheros y 353 líneas, verificado con
+**`flutter test` real** (125 pruebas en verde) y `flutter analyze` sin incidencias, y
+integrado con `bb01cba..eb25ec3`: commit, fast-forward y push del operador.
+
+Esta campaña es la que encontró los dos fallos que ninguna prueba sintética habría visto:
+el framework emitía un comando de verificación que su propia shell no podía ejecutar, y el
+sandbox dejaba el SDK montado en solo lectura mientras la herramienta se reescribe a sí
+misma en cada ejecución. Los dos están corregidos, con regresión, y son la razón de que la
+verificación sea real y no declarativa.
+
 ### El propio framework
 
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
@@ -121,7 +140,7 @@ fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
 silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**581 pruebas en verde**.
+**582 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 
@@ -156,10 +175,13 @@ silencio: queda un recibo en `overflows.jsonl` diciendo qué se perdió y por qu
 ## Estado: beta pública
 
 Esto se lanza para testeo. Lo que ya está probado: instalación de principio a fin sin
-intervención, el ciclo auditor→reparador→integración en dos campañas reales, y la memoria
-alcanzando sus topes en producción (compactación activa). Lo que falta para la versión
-estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): endurecer
-el registro de candidata, cablear el ledger de métricas, y compactación con recibo.
+intervención, desde un clon de GitHub y sin contaminación previa; el ciclo
+auditor→reparador→integración en tres campañas reales; verificación ejecutada contra el
+entrypoint real del producto (Flutter y Django, sin stubs) con la evidencia persistida y
+validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo. Lo que
+falta para la versión estable está en el
+[plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): elegir licencia (G0) y la
+etiqueta de la beta (G6).
 
 **Para reportar tu experiencia**, comparte tu `mode-state` (`findings.jsonl`,
 `handoffs.jsonl`, `verification-results.jsonl` — sin código de tu producto), los turnos

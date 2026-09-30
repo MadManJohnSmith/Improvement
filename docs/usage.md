@@ -52,6 +52,35 @@ Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación
 
 Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair deriva un worktree hermano mediante digest de revisión base completa e IDs seleccionados, ejecuta checks cerrados de path/symlink/worktree/branch/HEAD/dirty/stale/collision y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch y `candidate_commit: null`; un commit requiere otro prompt explícito. Drift de HEAD/status canónicos o diff fuera del candidato produce `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; no hay CAS/lease multiarchivo.
 
+### Qué significa "verificado"
+
+Repair solo puede registrar como evidencia el comando que el propio proyecto declara, y ese
+comando lo fija el Host al instalar en `<Proyecto>-workspace/.dsh-managed/capability-plan.json`:
+
+```bash
+python3 -B scripts/bootstrap.py stack --project /ruta/proyecto --workspace /ruta/proyecto-workspace
+```
+
+Imprime una línea por stack detectado. `listo` significa que el comando se puede ejecutar
+tal cual. `falta <capacidad>` significa que hace falta algo concreto y el plan dice
+exactamente cómo instalarlo, siempre fuera del producto.
+
+Dos propiedades de ese plan que conviene conocer:
+
+- **El comando se nombra como se puede ejecutar.** Si tu toolchain está fuera del `PATH` por
+  defecto (un SDK de Flutter en `~/.local/share`, un JDK en `/opt`), el plan lo nombra por
+  su ruta absoluta o por la copia local del workspace. Un nombre suelto que la shell del
+  reparador no resuelve convertiría una suite que funciona en un `BLOCKED` injusto.
+- **El sandbox decide qué se puede escribir.** `workspace-write` solo deja escribir en el
+  árbol de la sesión. Un SDK que se reescribe a sí mismo en cada ejecución (Flutter sella su
+  versión de engine en `bin/cache` en cada llamada) necesita una copia local: por eso el plan
+  pide materializarla en `<workspace>/.stack/<stack>/` con enlaces duros, que no cuestan
+  espacio y no tocan tu instalación original.
+
+Cuando algo no puede ejecutarse, el registro es `BLOCKED` nombrando la capacidad y su paso de
+provisión. Nunca hay un `PASS` inventado ni un sustituto escrito a mano: un mock o una copia
+del código del producto sirven para investigar, no para verificar.
+
 ### Integración y recuperación de espacio (operador)
 
 El prompt simple no autoriza commit: el operador integra y después retira la candidata. Tras `git merge --ff-only <rama-dsh>` y `git push` en la rama canónica:

@@ -28,7 +28,7 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 | G1 | Contrato de candidata | El `recording_command` emite el objeto JSON exacto a persistir; la persona prohíbe añadir campos; el preflight informa de lo que descarta (no solo lo archiva). Regresión con el caso RehabWeb (campos extra + ruta absoluta). | HECHO 2026-09-29 |
 | G2 | decisions + metrics al ciclo | Llamar al ledger de métricas y al almacén de decisiones al cierre de turno en `host_controller.py` (el hook ya existe: transiciones y UNIT_DONE/UNIT_RETAINED). Regresión con la regresión existente de ambos módulos. | HECHO 2026-09-29 |
 | G3 | Compactación con recibo | El desbordamiento de runtime deja recibo (patrón del archivo legacy, `dropped_records` incluido) en lugar de perder registros sin traza. Caso Syncify: 50/50 handoffs. | HECHO 2026-09-29 |
-| G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | EN CURSO |
+| G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | HECHO 2026-09-29 |
 | G5 | Documentación pública | README (hecho), quickstart no técnico en `docs/usage.md`, política de feedback: qué comparte un tester (su `mode-state` es la evidencia). | EN CURSO |
 | G6 | Etiqueta y notas | Tag `v0.1.0-beta`, release notes con las métricas reales del piloto y los límites conocidos. | PENDIENTE |
 | G7 | Verificación contra el stack real | El Host resuelve un plan de capacidades al instalar (`scripts/stack.py`): entrypoint propio del producto por stack (cualquier tecnología, monorepos incluidos), estado real de cada capacidad y paso exacto de provisión fuera del producto. La evidencia de verificación es ese entrypoint o `BLOCKED` nombrando lo que falta; los stubs son material de investigación, nunca resultado. Regresión con el caso rehab (Django ausente) y con los stacks reales de Syncify, RehabWeb y LoboApp. | HECHO 2026-09-29 |
@@ -68,15 +68,23 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 
 ## Línea base medible del piloto (para comparar durante la beta)
 
-| Métrica | Syncify | RehabWeb |
-|---|---|---|
-| Comandos de instalación | 1 | 1 |
-| Hallazgos distintos persistidos | 77 (114 registros) | 45 |
-| Severidad máxima | HIGH | 6 CRITICAL |
-| Trabajo verificado | 78 items VERIFIED | 2 CRITICAL reparados |
-| Verificaciones persistidas | 67 (61 PASS / 6 BLOCKED) | 4 |
-| Commits de los modos integrados | 15 | 1 |
-| Resultado | CI verde en 3 jobs | 220 líneas de arreglo en 3 ficheros |
+| Métrica | Syncify | RehabWeb | LoboApp |
+|---|---|---|---|
+| Comandos de instalación | 1 | 1 | 1 |
+| Hallazgos distintos persistidos | 77 (114 registros) | 45 | 9 |
+| Severidad máxima | HIGH | 6 CRITICAL | 1 CRITICAL |
+| Trabajo verificado | 78 items VERIFIED | 2 CRITICAL reparados | 2 items VERIFIED |
+| Verificaciones persistidas | 67 (61 PASS / 6 BLOCKED) | 4 | 2 PASS (flutter test) |
+| Commits de los modos integrados | 15 | 1 | 1 |
+| Resultado | CI verde en 3 jobs | 220 líneas de arreglo en 3 ficheros | 353 líneas en 7 ficheros; 125 pruebas Flutter y `flutter analyze` sin incidencias |
 
-Métrica del propio framework: 556 pruebas en verde; 7 unidades de endurecimiento nacidas
+LoboApp se instaló de cero desde el clon de GitHub del framework sobre un producto Flutter
+recién clonado, y es la campaña que cerró G7: la verificación se ejecutó con
+`flutter test` real desde la copia local del workspace, no con un arnés. Su coste en
+tiempo fue alto —DSH se cae cada varios minutos en este entorno y el turno se relanza
+hasta que termina—, y el marco aguantó: producto intacto en `bb01cba` durante toda la
+campaña, candidata registrada y reconciliada, y `bb01cba..eb25ec3` integrado solo con
+commit, fast-forward y push del operador.
+
+Métrica del propio framework: 582 pruebas en verde; las unidades de endurecimiento nacen
 de los pilotos; una pérdida silenciosa del preflight detectada y corregida con regresión.
