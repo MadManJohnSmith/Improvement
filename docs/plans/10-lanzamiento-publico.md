@@ -71,22 +71,28 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 | Métrica | Syncify | RehabWeb | LoboApp |
 |---|---|---|---|
 | Comandos de instalación | 1 | 1 | 1 |
-| Hallazgos distintos persistidos | 77 (114 registros) | 45 | 9 |
+| Hallazgos distintos persistidos | 77 (114 registros) | 45 | 9 + 5 en la reauditoría |
 | Severidad máxima | HIGH | 6 CRITICAL | 1 CRITICAL |
-| Trabajo verificado | 78 items VERIFIED | 2 CRITICAL reparados | 2 items VERIFIED |
-| Verificaciones persistidas | 67 (61 PASS / 6 BLOCKED) | 4 | 2 PASS (flutter test) |
-| Commits de los modos integrados | 15 | 1 | 1 |
-| Resultado | CI verde en 3 jobs | 220 líneas de arreglo en 3 ficheros | 353 líneas en 7 ficheros; 125 pruebas Flutter y `flutter analyze` sin incidencias |
+| Trabajo verificado | 78 items VERIFIED | 2 CRITICAL reparados | 14 items VERIFIED |
+| Verificaciones persistidas | 67 (61 PASS / 6 BLOCKED) | 4 | 14 PASS (flutter test) |
+| Commits de los modos integrados | 15 | 1 | 4 |
+| Resultado | CI verde en 3 jobs | 220 líneas de arreglo en 3 ficheros | 14 hallazgos cerrados; 166 pruebas Flutter y `flutter analyze` sin incidencias |
 
 LoboApp se instaló de cero desde el clon de GitHub del framework sobre un producto Flutter
 recién clonado, y es la campaña que cerró G7: la verificación se ejecutó con
-`flutter test` real desde la copia local del workspace, no con un arnés. Su coste en
-tiempo fue alto —DSH se cae cada varios minutos en este entorno y el turno se relanza
-hasta que termina—, y el marco aguantó: producto intacto en `bb01cba` durante toda la
-campaña, candidata registrada y reconciliada, y `bb01cba..eb25ec3` integrado solo con
-commit, fast-forward y push del operador.
+`flutter test` real desde la copia local del workspace, no con un arnés. Se llega al final:
+los 9 hallazgos de la primera auditoría se repararon e integraron en cuatro turnos, la
+reauditoría los confirmó como `RESOLVED` con evidencia y encontró 5 más —uno de ellos creado
+por el arreglo anterior, que dejó sin poder restaurar un respaldo heredado— y todos se
+cerraron. Total `bb01cba..4c0bb30`.
 
-Métrica del propio framework: 585 pruebas en verde; las unidades de endurecimiento nacen
+Su coste en tiempo fue alto: DSH se cae cada varios minutos en este entorno y cada turno se
+relanza hasta que termina, con un Creator que hubo que reanudar tres veces. El marco aguantó
+todo: producto intacto hasta la integración, candidatas registradas y reconciliadas, base
+declarada re-anclada al HEAD con la ascendencia comprobada mecánicamente, y el operador
+integrando solo con commit, fast-forward y push.
+
+Métrica del propio framework: 606 pruebas en verde; las unidades de endurecimiento nacen
 de los pilotos; una pérdida silenciosa del preflight detectada y corregida con regresión.
 
 ## El framework sobre sí mismo (self-test)
@@ -94,7 +100,7 @@ de los pilotos; una pérdida silenciosa del preflight detectada y corregida con 
 El framework instalado de cero sobre un clon de sí mismo, con su entrypoint declarado
 (`python3 -B -m unittest discover -s tests`), no solo se auditó: se corrigió. El auditor
 persistió 7 hallazgos (2 HIGH, 5 MEDIUM) y el reparador atendió los dos primeros con un
-prompt de seis palabras, verificando con la suite real del proyecto (585 pruebas):
+prompt de seis palabras, verificando con la suite real del proyecto (606 pruebas):
 
 - **IMP-AUD-001 (HIGH):** la compactación por límite descartaba registros sin recibo. G3
   cubría el descarte por incompatibilidad de esquema, pero lo que excedía el tope se perdía

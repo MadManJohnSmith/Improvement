@@ -133,22 +133,40 @@ sandbox dejaba el SDK montado en solo lectura mientras la herramienta se reescri
 misma en cada ejecución. Los dos están corregidos, con regresión, y son la razón de que la
 verificación sea real y no declarativa.
 
+La campaña siguió hasta el final. Los 9 hallazgos se repararon y se integraron en cuatro
+turnos, cada uno verificado con `flutter test` real; la reauditoría posterior confirmó los
+9 como **RESOLVED** con evidencia y encontró 5 más, que también se repararon. Al terminar:
+**14 hallazgos, 166 pruebas Flutter en verde**, y cuatro commits integrados con
+`bb01cba..4c0bb30`. Entre ellos, un hallazgo que el arreglo anterior había creado: al
+comparar espacios de nombres, un respaldo heredado sin namespace dejó de restaurarse.
+
 ### El propio framework
 
 Instalado sobre un clon de sí mismo, el auditor encontró 7 defectos reales del framework
-(2 HIGH, 5 MEDIUM) y el reparador arregló los dos primeros con sus pruebas: la compactación
-por límite descartaba registros **sin recibo** (la pérdida silenciosa que G3 debía haber
-cerrado y solo cubrió a medias), y la herramienta de escritura no confinaba el estado
-gestionado a su raíz, dejando la frontera de solo lectura del auditor apoyada únicamente en
-un `git status` posterior. Verificado con la suite real del proyecto: **585 pruebas en
-verde**.
+(2 HIGH, 5 MEDIUM) y el reparador los arregló todos con sus pruebas: la compactación por
+límite descartaba registros **sin recibo** (la pérdida silenciosa que G3 debía haber cerrado
+y solo cubrió a medias); la herramienta de escritura no confinaba el estado gestionado a su
+raíz, dejando la frontera de solo lectura del auditor apoyada únicamente en un
+`git status` posterior; la capa `graph` del validador no comprobaba nada; la capa
+`lifecycle` se saltaba el contrato por rol; el control G7 leía el plan de capacidades sin
+comprobar su firma; y `install` solo vinculaba el veredicto Host al candidato cuando
+recibía una ruta.
+
+La reauditoría del framework confirmó los siete como **RESOLVED** y encontró el más incómodo de
+todos: **un resultado de verificación no identificaba el árbol que verificó**. El contrato
+prohíbe hacer commit de una candidata, así que el árbol verificado es un worktree sucio
+cuyo HEAD sigue siendo su base y el arreglo vive en el diff sin commitear; `candidate_head`
+no lo distingue de la revisión anterior al arreglo. Medido sobre el estado real, los siete
+registros llevaban dos cabezas, ambas anteriores a los cambios que decían verificar. Ahora
+cada registro lleva el digest del diff verificado y tres sitios lo comprueban. Suite del
+propio framework: **606 pruebas en verde**.
 
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
 silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**585 pruebas en verde**.
+**606 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 
