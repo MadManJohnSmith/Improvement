@@ -109,7 +109,14 @@ Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el 
 **Meta vigente:** beta pública — cualquier persona con su repo y su DSH configurado instala
 con un comando, opera los dos modos con prompts simples y reporta compartiendo su
 `mode-state`. Las puertas G0–G6 del plan de lanzamiento son la definición operativa de
-«terminado» para esa meta; hasta G4 (E2E desde clon de GitHub) la instalación está
-verificada solo desde clon local.
+«terminado» para esa meta; G0–G5 y G7 están cerradas y **G6 (tag y publicación) sigue
+pendiente de autorización del titular**, sin lo cual el repositorio puede instalarse pero
+no se anuncia.
+
+**Trabajo abierto, según la «Deuda declarada» de `PLAN_IMPLEMENTACION.md`:** queda D2
+—el confinamiento mecánico de bash no se cierra sin el runtime DSH instalado y una lista
+negra no es confinamiento— y D11 a medias, con el gate de holdout implementado y probado
+pero sin una corrida real de los 55 escenarios contra un modo. D12 es la publicación. El
+resto de la tabla está cerrada con regresión propia.
 
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

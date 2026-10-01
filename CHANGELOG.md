@@ -1,5 +1,11 @@
 # Cambios
 
+## Cierre de la deuda declarada — 2026-09-30
+- Ocho unidades sobre la tabla de deuda que el propio repo carryaba, cada una con regresión y suite en verde: D3 recuento de la auditoría, D4 reescritura de commits, D5 retirada de candidata, D6 veredicto derivado, D7 hallazgo rico, D8 vista de cierre, D9 raíz de evidencia, D10 alcance de auditoría, D1 lease por fichero y el gate de holdout de D11.
+- **Queda abierta D2** y no por falta de trabajo: el confinamiento mecánico de bash no se puede cerrar desde aquí sin el runtime DSH instalado, y una lista negra de comandos no es confinamiento. La fila lo dice con esas palabras para que nadie la lea como un olvido.
+- **D11 queda a medias con honestidad**: el gate está implementado y probado contra observaciones sintéticas, pero ejecutar los 55 escenarios contra un modo real —lo que convertiría la tabla en puntuación — no se ha hecho, así que ningún cambio de biblioteca ha pasado por él todavía.
+- **D12 y G6 siguen bloqueados por autorización del titular**: el tag `v0.1.0-beta` y la publicación no se han hecho. El árbol tiene diez commits locales por delante de `origin/dev` y cero tags.
+
 ## El gate que decide si una skill merece entrar — 2026-09-30
 - **El corpus tenía 55 escenarios con veredicto esperado y nadie los ejecutaba.** La regresión comprobaba que cada skill tenga un positivo y un negativo, nunca qué pasó al correrlos: sin eso, un cambio de skill es indistinguible de una mejora. `scripts/skill_gate.py` más `bootstrap.py skill-gate` es esa decisión y nada más — las observaciones entran desde fuera, porque correr escenarios contra un agente necesita un runtime.
 - Tres propiedades tomadas de SkillOpt porque son fáciles de hacer mal: el candidato se acepta **solo** si mejora estrictamente el holdout —igual no es mejor, y «no peor» es como se filtra una regresión—; se rechaza aunque el holdout suba si pierde en la partición de entrenamiento, que es la forma de un sobreajuste; y si el slice de validación no es disjunto o no hay observaciones, el gate **se abstiene** en vez de pasar o suspender. Abstención y rechazo son cosas distintas: lo primero no tiene evidencia para juzgar, lo segundo la tiene y el candidato sale perdiendo.
