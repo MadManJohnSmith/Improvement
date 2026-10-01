@@ -419,7 +419,11 @@ registro que sale del estado sin recibo es una pérdida sin traza.
 Auditor debe incluir `audit_handoff` con `required_before_final: true`, dedupe
 `["finding_id","base_revision"]`, writes `findings.jsonl`, `handoffs.jsonl`,
 `work-items.json`, persist_order `["findings.jsonl","handoffs.jsonl","work-items.json"]`,
-final_fields `persisted_path`, `persisted_count`, `next_prompt`, la regla
+`evidence_anchor` con `fields_written_by_the_mode: [path, excerpt]`,
+`fields_computed_by_the_tool: [line, located]`, excerpt verbatim con su indentación,
+`resolved: exactly-one-occurrence-in-the-product`, `absent` y `ambiguous` con
+`refused-write` (nunca adivinar), `no_anchor: allowed-and-visible-...`; final_fields
+`persisted_path`, `persisted_count`, `next_prompt`, la regla
 `persisted_count: copy-the-number-the-count-command-prints` con su `count_command`
 central, `handoff_coverage: audit-handoff-names-every-open-finding-at-its-base-revision`
 y next_prompt exacto `Repara los hallazgos de la auditoría; no publiques.`. Su

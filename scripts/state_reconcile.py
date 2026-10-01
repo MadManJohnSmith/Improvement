@@ -107,6 +107,25 @@ def latest_findings(state):
     return findings
 
 
+def anchored_findings(state):
+    """Split the ledger by whether its evidence carries a located anchor.
+
+    A finding with no anchor is not a defect — an architecture problem has no
+    line — but it is a claim nobody can check, and the ratio is the honest
+    measure of how much of the queue can be verified without reading the
+    product. The line itself was located by the write tool, so this counts what
+    the state says, not what the mode claimed.
+    """
+    anchored, unanchored = 0, 0
+    for record in latest_findings(state).values():
+        evidence = record.get("evidence")
+        if isinstance(evidence, dict) and evidence.get("located") is True:
+            anchored += 1
+        else:
+            unanchored += 1
+    return {"anchored": anchored, "unanchored": unanchored}
+
+
 def closed_findings(state):
     """Findings the ledger still calls OPEN although their work item is VERIFIED.
 
@@ -152,6 +171,7 @@ def reconcile(product, workspace):
     candidate = _work_items(state).get("candidate")
     report = {
         "state": str(state),
+        "anchors": anchored_findings(state),
         "closed_findings": closed_findings(state),
         "uncovered_findings": uncovered_findings(state),
         "limits": LIMITS,

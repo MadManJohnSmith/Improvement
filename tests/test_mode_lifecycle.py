@@ -467,6 +467,51 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(migrated["overflow_id"], "OV-01")
             self.assertIsNotNone(report["archive"])
 
+    def test_preflight_keeps_legacy_findings_and_activates_anchored_ones(self):
+        """The anchor is added without touching any state that already exists.
+
+        Every campaign so far wrote findings with five fields and the evidence
+        buried in `summary`. Requiring an anchor in the schema would make the
+        preflight archive all of it — a loss the framework never performs on
+        historical evidence — so the field is optional: an unanchored legacy
+        record stays exactly as it was, a well-formed anchor survives, and only
+        a malformed one is dropped, with the receipt naming it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            base = "a" * 40
+            legacy = {"finding_id": "A-01", "base_revision": base,
+                      "severity": "HIGH", "summary": "Missing validation at src/api.py:42",
+                      "status": "OPEN"}
+            anchored = {**legacy, "finding_id": "A-02", "evidence": {
+                "path": "src/api.py", "excerpt": "def create_user(payload):",
+                "line": 42, "located": True}}
+            malformed = {**legacy, "finding_id": "A-03", "evidence": {
+                "path": "src/api.py", "excerpt": "def other():", "confidence": "alta"}}
+            truncated = {**legacy, "finding_id": "A-04", "evidence": {
+                "path": "src/api.py", "excerpt": "def third():", "line": 0, "located": True}}
+            (state / "findings.jsonl").write_text("\n".join(
+                json.dumps(record, ensure_ascii=False)
+                for record in (legacy, anchored, malformed, truncated)) + "\n")
+            report = initialize_state(
+                state, {"schema_version": 1, "project_id": "p",
+                        "product_root": "Product",
+                        "state_root": "Product-workspace/mode-state"},
+                root / "archive")
+
+            active = [json.loads(line) for line in
+                      (state / "findings.jsonl").read_text().splitlines() if line.strip()]
+            self.assertEqual([record["finding_id"] for record in active],
+                             ["A-01", "A-02"])
+            self.assertNotIn("evidence", active[0])
+            self.assertEqual(active[1]["evidence"]["line"], 42)
+            self.assertIs(active[1]["evidence"]["located"], True)
+            dropped = report["dropped"][0]["dropped_records"]
+            self.assertTrue(any("A-03" in name for name in dropped))
+            self.assertTrue(any("A-04" in name for name in dropped))
+
     def test_persona_requires_verbatim_candidate_persistence(self):
         prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
         self.assertIn("persist it verbatim, field-for-field", prefix)

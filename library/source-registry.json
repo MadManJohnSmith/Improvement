@@ -565,6 +565,36 @@
       "license_status": "open",
       "status": "CANDIDATE",
       "decision_summary": "485 entries (202 agents, 183 skills, 92 plugins, hooks/workflows). 101 catalog candidates identified; conversion requires narrowing to observable activation, de-duplication and capability filtering. Routing ambiguity and context overload risks documented; multi-harness claims are not treated as semantic equivalence."
+    },
+    {
+      "source_id": "microsoft-skillopt",
+      "title": "SkillOpt: ReflACT training loop for agent skill documents",
+      "publisher": "Microsoft",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/microsoft/skillopt",
+      "revision": "fa4ca184573e42ec11472959dd57422381418096",
+      "retrieved_at": "2026-09-30",
+      "provenance_status": "pinned",
+      "license": "MIT",
+      "license_status": "open",
+      "status": "CANDIDATE",
+      "decision_summary": "Leido por dentro en staging externo. Se toma el diseno de RSI, no el motor: gate de aceptacion solo si mejora estrictamente el holdout, buffer de ediciones rechazadas con score antes/despues que se realimenta a la reflexion, regiones protegidas que solo enfatizan reglas existentes y nunca introducen nuevas, y abstension declarada cuando el slice de validacion no es disjunto. Se rechaza la dependencia: exige pip install skillopt y una cadena de modelos que la politica de distribucion no permite.",
+      "notes": "engine/trainer.py:1645 (step buffer con rejected_edits y score_before/score_after); evaluation/gate.py (acepta solo si cand_score > current_score, best_skill aparte); optimizer/appendix.py (APPENDIX_START/END, solo Execution_Lapse, prohibited introducir reglas; mismo patron protegido que SLOW_UPDATE). Incluye plugins/dsh (apply(ctx), siete herramientas skillopt_*) con la arquitectura de plugin de scripts/dsh-plugins/. El substrato ya existe aqui: 55 escenarios con veredicto esperado, ninguno ejecutable; falta puntuarlos contra un agente. Base de D11."
+    },
+    {
+      "source_id": "alibaba-open-code-review",
+      "title": "OpenCodeReview CLI",
+      "publisher": "Alibaba",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/alibaba/open-code-review",
+      "revision": "a758d9cbfb689937c7857ad64b2dd66adb58c0c2",
+      "retrieved_at": "2026-09-30",
+      "provenance_status": "pinned",
+      "license": "Apache-2.0",
+      "license_status": "open",
+      "status": "CANDIDATE",
+      "decision_summary": "Leido por dentro en staging externo. Se toma el ancla de evidencia: el comentario se ancla a un fragmento literal y se localiza por coincidencia determinista; si no aparece se reubica entre ficheros sin modelo y con aviso; cero o varios aciertos rechazan y dejan el comentario sin localizar antes de que el modelo sobrescriba la evidencia. Se rechaza la dependencia: un informe externo no puede ser evidencia bajo G7, su esquema no cabe en el ledger estricto y la delegacion choca con F7.",
+      "notes": "diff/resolver.go (ResolveComment y RelocateAcrossFiles deterministas; declinan en ambiguedad y devuelven false como 'aun sin localizar', no como error) y llmloop/loop.go:721 (el LLM solo entra si lo determinista no resolvio, con comment_refiled registrado). agent/selection.go: seleccion previa al despacho como funcion pura compartida por preview y ejecucion; agent/agent.go:1251 registerCoverage sella el denominador y su fallo impide reportar exito. Correccion sobre ASSURANCE_CASE.md: afirma validacion JSON Schema de la respuesta del LLM y no existe en el codigo."
     }
   ]
 }

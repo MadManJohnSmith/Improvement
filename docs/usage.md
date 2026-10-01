@@ -112,6 +112,12 @@ Nombra tres discrepancias que el estado por sí solo no puede ver:
 - los hallazgos que el ledger sigue llamando `OPEN` aunque su work item sea `VERIFIED` (`closed_findings`): el hallazgo pasa a `RESOLVED` cuando una auditoría posterior observa el arreglo, así que entre ambas cosas la cola ofrece trabajo ya hecho;
 - los hallazgos `OPEN` que ningún handoff tomó nunca (`uncovered_findings`).
 
+Y un reparto, `anchors`: cuántos hallazgos llevan su evidencia anclada a una línea que la
+herramienta localizó —citando un fragmento literal que aparece exactamente una vez en el
+fichero— y cuántos no. Un hallazgo sin ancla no es un defecto: una arquitectura o una
+capacidad ausente no tienen línea. El número es la medida honesta de cuánta cola puede
+verificarse sin abrir el producto.
+
 ## Herramientas de mantenimiento (capa MVP)
 
 Para mantenimiento del framework o pilotos controlados supervisados por el mantenedor.

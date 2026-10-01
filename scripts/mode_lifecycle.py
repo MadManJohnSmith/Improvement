@@ -29,6 +29,10 @@ BYTE_LIMITS = {
     "overflows.jsonl": 131_072,
 }
 RECORD_BYTE_LIMIT = 4_096
+# The anchor is the one piece of a finding a machine can check, so it is kept
+# small enough that adding it to a record never pushes the record over its cap.
+ANCHOR_EXCERPT_MAX_BYTES = 240
+ANCHOR_PATH_MAX_BYTES = 4_096
 LEGACY_FILE_BYTE_LIMIT = 8 * 1024 * 1024
 LEGACY_TOTAL_BYTE_LIMIT = 32 * 1024 * 1024
 LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -332,7 +336,20 @@ def persona_prefix(preset_id, role=None):
             "use cd or a subdirectory workdir. Any accidental workdir override or pwd drift is "
             "immediately RETAINED with no retry or further action. "
             "Persist in the declared order (persist_order): findings.jsonl first, then "
-            "handoffs.jsonl, then work-items.json. The audit handoff MUST name every finding "
+            "handoffs.jsonl, then work-items.json. Every finding you persist carries its "
+            "evidence anchor: write evidence.path (the file inside the product, relative to "
+            "the product root) and evidence.excerpt (a verbatim fragment of the code you are "
+            "talking about, at least 8 bytes, keeping its own indentation). Never write "
+            "evidence.line or evidence.located: workflow_write locates the fragment in the "
+            "product, writes the line itself, and refuses the write when the fragment appears "
+            "nowhere or appears more than once, because an anchor it cannot place is an anchor "
+            "pointing at an unrelated line while looking located. When the tool refuses, quote a "
+            "fragment that is unique in that file (add the surrounding line or the def line) "
+            "and write again; never guess a line and never pad the excerpt to make it match. A "
+            "finding about something with no location, such as an architecture or a missing "
+            "capability, carries no evidence at all, which is honest and visible, not a gap you "
+            "should hide. "
+            "The audit handoff MUST name every finding "
             "that findings.jsonl leaves OPEN at that same base_revision, and no other: "
             "workflow_write refuses a handoff that omits one or names a finding that is not "
             "persisted (handoff_coverage: audit-handoff-names-every-open-finding-at-its-base-"
@@ -505,6 +522,15 @@ def expected_lifecycle(role, layout):
             "writes": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
             "candidate_state": "preserve-existing",
             "persist_order": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
+            "evidence_anchor": {
+                "fields_written_by_the_mode": ["path", "excerpt"],
+                "fields_computed_by_the_tool": ["line", "located"],
+                "excerpt": "verbatim-fragment-with-its-own-indentation",
+                "resolved": "exactly-one-occurrence-in-the-product",
+                "absent": "refused-write",
+                "ambiguous": "refused-write-never-guessed",
+                "no_anchor": "allowed-and-visible-for-findings-with-no-location",
+            },
             "final_fields": ["persisted_path", "persisted_count", "next_prompt"],
             "persisted_count": "copy-the-number-the-count-command-prints",
             "count_command": audit_count_command(layout),
@@ -670,6 +696,30 @@ def _record_schema(required, properties, example):
             "properties": properties, "example": example, "max_bytes": RECORD_BYTE_LIMIT}
 
 
+def _anchor_schema():
+    """The one field of a finding a machine can check.
+
+    `path` and `excerpt` are what the mode writes: the path inside the product
+    and a verbatim fragment of the code it is talking about. `line` and
+    `located` are what the write tool computes by locating that fragment, so a
+    finding can never claim the location of code it did not quote. A finding
+    about something that has no location — an architecture, a missing
+    capability — carries no anchor at all, which is honest and visible, rather
+    than an anchor invented to look anchored.
+    """
+    return {
+        "type": "object",
+        "required": ["path", "excerpt"],
+        "additionalProperties": False,
+        "properties": {
+            "path": {"type": "string", "minLength": 1, "maxLength": ANCHOR_PATH_MAX_BYTES},
+            "excerpt": {"type": "string", "minLength": 8, "maxLength": ANCHOR_EXCERPT_MAX_BYTES},
+            "line": {"type": "integer", "minimum": 1},
+            "located": {"enum": [True]},
+        },
+    }
+
+
 def _legacy_state_schema():
     return {
         "schema_version": 1,
@@ -704,8 +754,10 @@ def state_schema():
             "findings.jsonl": {"format": "jsonl", "limit": LIMITS["findings.jsonl"],
                 "max_bytes": BYTE_LIMITS["findings.jsonl"], "dedupe_key": ["finding_id", "base_revision"],
                 "record": _record_schema(["finding_id", "base_revision", "severity", "summary", "status"],
-                    {"finding_id": text, "base_revision": revision, "severity": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]}, "summary": text, "status": {"enum": ["OPEN", "RESOLVED", "RETAINED"]}},
-                    {"finding_id": "A-01", "base_revision": "a" * 40, "severity": "HIGH", "summary": "Missing validation", "status": "OPEN"})},
+                    {"finding_id": text, "base_revision": revision, "severity": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]}, "summary": text, "status": {"enum": ["OPEN", "RESOLVED", "RETAINED"]},
+                     "evidence": _anchor_schema()},
+                    {"finding_id": "A-01", "base_revision": "a" * 40, "severity": "HIGH", "summary": "Missing validation", "status": "OPEN",
+                     "evidence": {"path": "src/api.py", "excerpt": "def create_user(payload):", "line": 42, "located": True}})},
             "handoffs.jsonl": {"format": "jsonl", "limit": LIMITS["handoffs.jsonl"],
                 "max_bytes": BYTE_LIMITS["handoffs.jsonl"], "dedupe_key": ["handoff_id", "base_revision"],
                 "record": _record_schema(["handoff_id", "base_revision", "finding_ids", "next_prompt"],
@@ -741,9 +793,12 @@ def _valid(value, schema, label):
     types = schema.get("type")
     if types:
         choices = types if isinstance(types, list) else [types]
-        mapping = {"object": dict, "array": list, "string": str, "null": type(None)}
+        mapping = {"object": dict, "array": list, "string": str, "integer": int,
+                   "null": type(None)}
         if not any(type(value) is mapping[kind] for kind in choices):
             raise ValueError(f"{label} has invalid type")
+        if isinstance(value, int) and value < schema.get("minimum", value):
+            raise ValueError(f"{label} is below the minimum")
     if isinstance(value, str):
         if len(value) < schema.get("minLength", 0) or len(value) > schema.get("maxLength", 1 << 30):
             raise ValueError(f"{label} has invalid length")

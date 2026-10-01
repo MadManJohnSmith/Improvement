@@ -66,12 +66,19 @@ export const inject = ['tools', 'fs', 'systemPrompt'];
 
 const MANAGED_RESULTS_SUFFIX = '/mode-state/verification-results.jsonl';
 const MANAGED_HANDOFFS_SUFFIX = '/mode-state/handoffs.jsonl';
+const MANAGED_FINDINGS_SUFFIX = '/mode-state/findings.jsonl';
 const PLAN_RELATIVE = '.dsh-managed/capability-plan.json';
 const PLAN_BYTE_LIMIT = 131072;
 const FINDINGS_BYTE_LIMIT = 262144;
+const ANCHORED_FILE_BYTE_LIMIT = 1048576;
+const ANCHOR_EXCERPT_MIN = 8;
 const STATE_DIR_NAME = 'mode-state';
 const AUDIT_NEXT_PROMPT = 'Repara los hallazgos de la auditoría; no publiques.';
 const REVISION = /^[0-9a-f]{40,64}$/u;
+const FINDING_KEYS = ['base_revision', 'finding_id', 'severity', 'status', 'summary'];
+const FINDING_KEYS_WITH_EVIDENCE = ['base_revision', 'evidence', 'finding_id', 'severity', 'status', 'summary'];
+const SEVERITIES = ['CRITICAL', 'HIGH', 'LOW', 'MEDIUM'];
+const STATUSES = ['OPEN', 'RESOLVED', 'RETAINED'];
 const TRAVERSAL = /(?:^|\/)\.\.(?:\/|$)/u;
 
 function canonicalJson(value) {
@@ -146,20 +153,11 @@ async function assertStateWrite(ctx, target, stateRoot) {
   }
 }
 
-async function validateManagedVerification(ctx, target, content, signal) {
-  if (typeof ctx.fs.processPath !== 'function') return;
-  const rawTargetPath = await ctx.fs.processPath(target);
-  if (typeof rawTargetPath !== 'string') return;
-  const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!targetPath.endsWith(MANAGED_RESULTS_SUFFIX)) return;
-
-  const workspacePath = targetPath.slice(0, -MANAGED_RESULTS_SUFFIX.length);
-  const expectedTarget = await ctx.fs.resolve('mode-state/verification-results.jsonl', {
-    cwd: workspacePath, signal,
-  });
-  if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
-    throw new Error('verification-results target no coincide con el mode-state gestionado');
-  }
+/**
+ * The signed capability plan, or nothing. Shared by every managed gate so the
+ * product root and the entrypoints come from the same Host-signed input.
+ */
+async function loadSignedPlan(ctx, workspacePath, signal) {
   const planTarget = await ctx.fs.resolve(PLAN_RELATIVE, { cwd: workspacePath, signal });
   const planText = await ctx.fs.readText(planTarget, signal);
   if (typeof planText !== 'string' || Buffer.byteLength(planText, 'utf8') > PLAN_BYTE_LIMIT) {
@@ -175,6 +173,10 @@ async function validateManagedVerification(ctx, target, content, signal) {
   if (typeof recordedDigest !== 'string' || recordedDigest !== actualDigest) {
     throw new Error('capability-plan alterado');
   }
+  return plan;
+}
+
+function planCommands(plan) {
   const commands = new Map();
   for (const stack of plan.stacks) {
     const ready = stack?.verification_ready === true;
@@ -185,6 +187,25 @@ async function validateManagedVerification(ctx, target, content, signal) {
       commands.set(key, commands.has(key) ? commands.get(key) && ready : ready);
     }
   }
+  return commands;
+}
+
+async function validateManagedVerification(ctx, target, content, signal) {
+  if (typeof ctx.fs.processPath !== 'function') return;
+  const rawTargetPath = await ctx.fs.processPath(target);
+  if (typeof rawTargetPath !== 'string') return;
+  const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!targetPath.endsWith(MANAGED_RESULTS_SUFFIX)) return;
+
+  const workspacePath = targetPath.slice(0, -MANAGED_RESULTS_SUFFIX.length);
+  const expectedTarget = await ctx.fs.resolve('mode-state/verification-results.jsonl', {
+    cwd: workspacePath, signal,
+  });
+  if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
+    throw new Error('verification-results target no coincide con el mode-state gestionado');
+  }
+  const plan = await loadSignedPlan(ctx, workspacePath, signal);
+  const commands = planCommands(plan);
   const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
   if (lines.length === 1 && lines[0] === '') return;
   if (lines.some((line) => line.trim() === '')) throw new Error('verification-results contiene línea vacía');
@@ -228,6 +249,134 @@ async function validateManagedVerification(ctx, target, content, signal) {
     }
     decided.set(key, record.result);
   });
+}
+
+/**
+ * Locate a quoted fragment in the product, without asking a model.
+ *
+ * The finding says which file it is talking about and quotes the code verbatim;
+ * the tool finds that quote and writes the line. A quote that does not appear,
+ * or that appears in more than one place, is refused instead of resolved: an
+ * anchor that cannot be placed is an anchor that would point at an unrelated
+ * line while looking perfectly located, which is exactly the failure mode this
+ * replaces. A finding about something with no location carries no anchor, and
+ * that is honest rather than a gap.
+ */
+function locateExcerpt(content, excerpt) {
+  const lines = (text) => text.replace(/\r\n?/g, '\n').split('\n').map((line) => line.replace(/\s+$/, ''));
+  const haystack = lines(content);
+  // Only the tail is trimmed: a quote keeps the indentation it was copied with,
+  // because in most languages that indentation is part of what it says.
+  const needle = lines(excerpt.trimEnd());
+  const matches = [];
+  for (let index = 0; index + needle.length <= haystack.length; index++) {
+    if (needle.every((line, offset) => haystack[index + offset] === line)) matches.push(index + 1);
+  }
+  return matches;
+}
+
+async function readProductFile(ctx, productPath, relative, signal) {
+  if (TRAVERSAL.test(String(relative).replace(/\\/g, '/'))) {
+    throw new Error(`evidence.path sale del producto: ${relative}`);
+  }
+  const target = await ctx.fs.resolve(String(relative), { cwd: productPath, signal });
+  const info = await ctx.fs.stat(target, signal);
+  if (info?.type !== 'file') {
+    throw new Error(`evidence.path no es un fichero real: ${relative}`);
+  }
+  if (typeof info.size === 'number' && info.size > ANCHORED_FILE_BYTE_LIMIT) {
+    throw new Error(`evidence.path excede el límite verificable: ${relative}`);
+  }
+  const text = await ctx.fs.readText(target, signal);
+  if (typeof text !== 'string') {
+    throw new Error(`evidence.path no se puede leer: ${relative}`);
+  }
+  return text;
+}
+
+async function validateManagedFindings(ctx, target, content, signal) {
+  if (typeof ctx.fs.processPath !== 'function' || typeof ctx.fs.readText !== 'function') return undefined;
+  const rawTargetPath = await ctx.fs.processPath(target);
+  if (typeof rawTargetPath !== 'string') return undefined;
+  const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!targetPath.endsWith(MANAGED_FINDINGS_SUFFIX)) return undefined;
+
+  const workspacePath = targetPath.slice(0, -MANAGED_FINDINGS_SUFFIX.length);
+  const expectedTarget = await ctx.fs.resolve('mode-state/findings.jsonl', {
+    cwd: workspacePath, signal,
+  });
+  if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
+    throw new Error('findings target no coincide con el mode-state gestionado');
+  }
+  const plan = await loadSignedPlan(ctx, workspacePath, signal);
+  const productPath = typeof plan.product === 'string' ? plan.product.replace(/\/+$/, '') : null;
+  if (!productPath) throw new Error('capability-plan no declara el producto');
+
+  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
+  if (lines.length === 1 && lines[0] === '') return undefined;
+  if (lines.some((line) => line.trim() === '')) throw new Error('findings contiene línea vacía');
+
+  const rewritten = [];
+  for (let index = 0; index < lines.length; index++) {
+    let record;
+    try { record = JSON.parse(lines[index]); } catch { throw new Error(`finding ${index} inválido`); }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error(`finding ${index} inválido`);
+    }
+    const keys = Object.keys(record).sort().join(',');
+    if (keys !== FINDING_KEYS.join(',') && keys !== FINDING_KEYS_WITH_EVIDENCE.join(',')) {
+      throw new Error(`finding ${index} no cumple el schema estricto`);
+    }
+    if (typeof record.finding_id !== 'string' || record.finding_id.length === 0
+        || !REVISION.test(String(record.base_revision))
+        || !SEVERITIES.includes(record.severity)
+        || !STATUSES.includes(record.status)
+        || typeof record.summary !== 'string' || record.summary.length === 0) {
+      throw new Error(`finding ${index} no cumple el schema estricto`);
+    }
+    const evidence = record.evidence;
+    if (evidence === undefined) {
+      rewritten.push(record);
+      continue;
+    }
+    if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+      throw new Error(`finding ${index}: evidence debe ser objeto o estar ausente`);
+    }
+    const evidenceKeys = Object.keys(evidence).sort();
+    if (evidenceKeys.length < 2
+        || !evidenceKeys.includes('excerpt') || !evidenceKeys.includes('path')
+        || evidenceKeys.some((key) => !['excerpt', 'line', 'located', 'path'].includes(key))) {
+      throw new Error(`finding ${index}: evidence debe llevar exactamente path y excerpt`);
+    }
+    // line and located are computed here; a mode that writes them is claiming a
+    // location it did not locate.
+    if ('line' in evidence || 'located' in evidence) {
+      throw new Error(`finding ${index}: evidence.line y evidence.located los calcula la herramienta`);
+    }
+    if (typeof evidence.path !== 'string' || evidence.path.length === 0
+        || typeof evidence.excerpt !== 'string'
+        || Buffer.byteLength(evidence.excerpt, 'utf8') < ANCHOR_EXCERPT_MIN) {
+      throw new Error(`finding ${index}: evidence necesita path y un excerpt de al menos ${ANCHOR_EXCERPT_MIN} bytes`);
+    }
+    const source = await readProductFile(ctx, productPath, evidence.path, signal);
+    const matches = locateExcerpt(source, evidence.excerpt);
+    if (matches.length === 0) {
+      throw new Error(`finding ${index} (${record.finding_id}): el excerpt no aparece en ${evidence.path}`);
+    }
+    if (matches.length > 1) {
+      throw new Error(`finding ${index} (${record.finding_id}): el excerpt aparece ${matches.length} veces en ${evidence.path}; `
+        + 'cita un fragmento que sea único');
+    }
+    rewritten.push({
+      finding_id: record.finding_id,
+      base_revision: record.base_revision,
+      severity: record.severity,
+      summary: record.summary,
+      status: record.status,
+      evidence: {path: evidence.path, excerpt: evidence.excerpt, line: matches[0], located: true},
+    });
+  }
+  return rewritten.map((record) => JSON.stringify(record)).join('\n') + '\n';
 }
 
 /**
@@ -497,11 +646,16 @@ export function apply(ctx, config) {
       if (stateRoot) await assertStateWrite(ctx, target, stateRoot);
       await validateManagedVerification(ctx, target, args.content, exec.signal);
       await validateManagedHandoff(ctx, target, args.content, exec.signal);
+      // The findings gate resolves every anchor and returns the rewritten
+      // content, because the line a finding claims is the line the tool
+      // computed, not the one the mode wrote.
+      const anchored = await validateManagedFindings(ctx, target, args.content, exec.signal);
+      const content = anchored ?? args.content;
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el
       // marcador [sandbox: ...] cuando son denegaciones; envolver aquí cualquier
       // fallo los falsearía como denegaciones de política.
-      const outcome = await ctx.fs.writeText(target, args.content, intent, exec.signal, policy);
+      const outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec);
       return { path: target.displayPath, operation: outcome.operation, before: outcome.before, after: outcome.after };
     },

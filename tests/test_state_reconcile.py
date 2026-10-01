@@ -205,6 +205,23 @@ class StateReconcileTests(unittest.TestCase):
         with self.assertRaisesRegex(state_reconcile.ReconcileError, "solo se retira una INTEGRATED"):
             state_reconcile.retire(self.product, self.workspace)
 
+    def test_anchor_ratio_is_reported_without_touching_the_ledger(self):
+        self._write_state(
+            None,
+            findings=[{"finding_id": "A-01", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "x", "status": "OPEN",
+                       "evidence": {"path": "a.txt", "excerpt": "one", "line": 1,
+                                    "located": True}},
+                      {"finding_id": "A-02", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "Architecture", "status": "OPEN"}],
+            handoffs=[{"handoff_id": "audit-1", "base_revision": self.base,
+                       "finding_ids": ["A-01", "A-02"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}])
+        before = (self.state / "findings.jsonl").read_text()
+        report = state_reconcile.reconcile(self.product, self.workspace)
+        self.assertEqual(report["anchors"], {"anchored": 1, "unanchored": 1})
+        self.assertEqual((self.state / "findings.jsonl").read_text(), before)
+
     def test_uncovered_findings_name_what_no_handoff_ever_took(self):
         self._write_state(
             None,

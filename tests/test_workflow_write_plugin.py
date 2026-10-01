@@ -421,15 +421,103 @@ process.stdout.write(JSON.stringify(report));
 '''
 
 
+ANCHOR_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), size: info.size,
+            type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const cases = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const relative = 'Improvement-workspace/mode-state/findings.jsonl';
+const targetPath = path.join(session, relative);
+const report = {};
+for (const [name, spec] of Object.entries(cases)) {
+  fs.rmSync(targetPath, {force: true});
+  const outcome = await attempt(session, relative, spec);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    written: fs.existsSync(targetPath),
+    onDisk: fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : null,
+    after: outcome.ok ? outcome.value?.after ?? null : null};
+}
+process.stdout.write(JSON.stringify(report));
+'''
+
+
 class WorkflowWritePluginTest(unittest.TestCase):
-    def _signed_plan(self, workspace, stacks):
+    def _signed_plan(self, workspace, stacks, product=None):
         """Plan bytes signed the way the Host signs them and read back by the Host.
 
         The digest expression is the one ``stack.plan`` uses; ``stack.load`` is the
         production reader, so a canonicalization that drifted by so much as a
         separator would raise here instead of silently making the case green.
         """
-        value = {"version": 1, "product": str(workspace.parent / "Improvement"),
+        value = {"version": 1,
+                 "product": str(product if product else workspace.parent / "Improvement"),
                  "workspace": str(workspace), "stacks": stacks}
         value["plan_sha256"] = stack._digest(json.dumps(
             dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")))
@@ -542,6 +630,98 @@ class WorkflowWritePluginTest(unittest.TestCase):
                                ("digest", "capability-plan alterado"),
                                ("unsigned", "capability-plan alterado"),
                                ("contradiction", "contradice")):
+            with self.subTest(case=name):
+                outcome = report[name]
+                self.assertFalse(outcome["ok"], outcome)
+                self.assertIn(expected, outcome["error"])
+                self.assertFalse(
+                    outcome["written"],
+                    f'{name} reached writeText: {outcome["onDisk"]!r}')
+
+    def test_finding_anchor_is_located_by_the_tool_not_claimed_by_the_mode(self):
+        """The one field of a finding a machine can check.
+
+        Evidence was prose inside `summary`, so `archivo:línea` was a claim
+        about itself. The finding now quotes a fragment verbatim and names the
+        file; the tool locates that quote and writes the line. A quote that does
+        not appear, or that appears twice, is refused instead of resolved —
+        open-code-review declines for exactly the same reason, because an
+        anchor that cannot be placed ends up looking located while pointing at
+        an unrelated line. A finding about something with no location carries no
+        anchor, which is honest and countable.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-anchor-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        (product / 'src').mkdir(parents=True)
+        (product / 'src' / 'api.py').write_text(
+            'import os\n\n\ndef create_user(payload):\n    return payload\n\n\n'
+            'def helper():\n    return 1\n\n\ndef other():\n    return 1\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+        signed = self._signed_plan(workspace, [], product=str(product))
+
+        base = 'a' * 40
+        record = {'finding_id': 'A-01', 'base_revision': base, 'severity': 'HIGH',
+                  'summary': 'Missing validation', 'status': 'OPEN'}
+
+        def with_evidence(**evidence):
+            return json.dumps({**record, 'evidence': {'path': 'src/api.py', **evidence}},
+                              ensure_ascii=False) + '\n'
+
+        cases = {
+            "resolves": with_evidence(excerpt='def create_user(payload):'),
+            "resolves_multiline": with_evidence(
+                excerpt='def helper():\n    return 1'),
+            "absent": with_evidence(excerpt='def deleted_user(payload):'),
+            "ambiguous": with_evidence(excerpt='    return 1'),
+            "no_anchor": json.dumps(record) + '\n',
+            "line_claimed": with_evidence(
+                excerpt='def helper():\n    return 1', line=8),
+            "unknown_field": json.dumps({**record, 'evidence': {
+                'path': 'src/api.py', 'excerpt': 'def helper():', 'confidence': 'alta'}},
+                ensure_ascii=False) + '\n',
+            "path_escape": with_evidence(excerpt='import os') .replace(
+                '"src/api.py"', '"../Improvement/src/api.py"'),
+        }
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(signed)
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'anchor-driver.mjs'
+        driver.write_text(ANCHOR_DRIVER.replace(
+            'PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run(
+            [node, driver.as_posix(), session.as_posix()],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        anchored = json.loads(report["resolves"]["onDisk"])["evidence"]
+        self.assertTrue(report["resolves"]["ok"], report["resolves"])
+        self.assertEqual(anchored["line"], 4)
+        self.assertIs(anchored["located"], True)
+        # The model wrote path and excerpt; the line in the bytes that landed is
+        # the tool's, and the record is re-serialized in canonical field order.
+        self.assertEqual(
+            json.loads(report["resolves"]["onDisk"])["evidence"]["excerpt"],
+            "def create_user(payload):")
+        multiline = json.loads(report["resolves_multiline"]["onDisk"])["evidence"]
+        self.assertEqual(multiline["line"], 8)
+
+        # No anchor is allowed and stays visibly unanchored rather than being
+        # padded with an invented location.
+        unanchored = json.loads(report["no_anchor"]["onDisk"])
+        self.assertNotIn("evidence", unanchored)
+
+        for name, expected in (("absent", "no aparece"),
+                               ("ambiguous", "veces"),
+                               ("line_claimed", "los calcula la herramienta"),
+                               ("unknown_field", "exactamente path y excerpt"),
+                               ("path_escape", "sale del producto")):
             with self.subTest(case=name):
                 outcome = report[name]
                 self.assertFalse(outcome["ok"], outcome)
