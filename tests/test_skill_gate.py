@@ -123,6 +123,29 @@ class SkillGateTests(unittest.TestCase):
         self.assertEqual(report["action"], "reject", report)
         self.assertTrue(any("entrenamiento" in reason for reason in report["reasons"]))
 
+    def test_gate_abstains_instead_of_raising_when_one_side_has_no_holdout(self):
+        """One-sided evidence must abstain, not raise.
+
+        When the baseline observed only the training slice, its validation
+        accuracy is ``None`` while the candidate's is a real float. The abstain
+        decision was made by an earlier check and then execution still fell
+        through to ``float > None``, raising TypeError. A gate with nothing to
+        compare failing with a stack trace is the worst possible answer: it
+        reads as a broken tool rather than a gate that correctly refuses to
+        judge, and it happens exactly when a run was incomplete.
+        """
+        loaded = skill_gate.load_scenarios(self.library)
+        train, _ = skill_gate.split_scenarios(loaded, 0.4)
+        train_only = {"scenarios": {x["scenario_id"]: "PASS" for x in train}}
+        full = _observation(self.scenarios)
+        report = self._run(train_only, full)
+        self.assertEqual(report["action"], "abstain", report)
+        self.assertTrue(report["reasons"], report)
+        self.assertIsNone(report["baseline"]["validation"]["accuracy"], report)
+        # The mirror image: a candidate that never reached the holdout.
+        mirrored = self._run(full, train_only)
+        self.assertEqual(mirrored["action"], "abstain", mirrored)
+
     def test_real_library_corpus_loads_and_splits(self):
         loaded = skill_gate.load_scenarios(ROOT / "library")
         self.assertGreaterEqual(len(loaded), 50)

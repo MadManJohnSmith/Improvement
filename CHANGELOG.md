@@ -1,5 +1,12 @@
 # Cambios
 
+## El gate se rompía justo cuando no debía juzgar — 2026-09-30
+- **La vólvora documentada de `skill-gate` no se había ejecutado nunca contra el corpus real.** Al correrla con los 55 escenarios de `library/` apareció un crash: `TypeError: '>' not supported between instances of 'float' and 'NoneType'`.
+- La causa es precisa. El gate decide `abstain` cuando no hay evidencia, pero la decisión se tomaba **antes** y la ejecución seguía igual a comparar accuracies. Con el baseline sin observaciones de holdout (`None`) y el candidato con ellas (float), esa comparación no tenía sentido posible. `docs/usage.md` promete que se abstiene —«no acepta, no rechaza» si no hay observaciones, y en vez de eso lanzaba una excepción.
+- **Es el peor momento posible para fallar**: ocurre cuando una corrida quedó incompleta, que es justo cuando el gate debería ser la autoridad. Un `TypeError` ahí se lee como una herramienta rota, no como una puerta que se niega a juzgar sin pruebas.
+- La regresión cubre el caso de **evidencia unilateral** (una de las dos partes sin holdout) y su espejo, que es el que realmente crasheaba; se verificó que sin el arreglo falla y con él pasa. Con el corpus real se comprobaron los tres desenlaces: `accept` con mejora estricta, `reject` con regresión y `abstain` sin holdout.
+- Suite: 633 OK (4 saltadas).
+
 ## Las 51 comprobaciones del self-check ya no son código muerto — 2026-09-30
 - `verify-workflow-write.mjs` **no lo invocaba nadie**: 51 checks —integridad del plan de capacidades, estrictez de schema, denegaciones del sandbox, y el barrido M7/M9 de escalada— que solo se ejecutaban a mano. Un script de verificación que nadie corre se pudre en silencio, y este respaldaba justo las afirmaciones de seguridad del repositorio.
 - **Al arreglar la ruta del mantenedor en la entrada anterior se había introducido una pérdida de alcance**, y se corrigió aquí: el script pasó a fallar cerrado sin `DSH_TOOL_BASH`, con lo cual **los 32 checks que solo necesitan node nunca llegaban a ejecutarse**. Ahora el barrido M9 es un bloque condicionado: sin runtime imprime `SKIP` y los otros 33 se siguen corriendo. Perder verificación por una variable de entorno ausente sería exactamente el `skip` que esta serie de commits lleva eliminado.

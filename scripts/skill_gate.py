@@ -160,6 +160,17 @@ def evaluate_gate(baseline_path, candidate_path, library, val_fraction=0.3):
     if refusals:
         report.update({"action": "reject", "reasons": refusals})
         return report
+    # Unverifiable is empty, so every slice has a real accuracy to compare. The
+    # explicit guard is what keeps an empty run abstaining: without it a missing
+    # observation scored `None` and this line raised TypeError instead of
+    # abstaining, which is the one thing a gate with no evidence must never do.
+    if any(slice_ is None or slice_["accuracy"] is None
+           for slice_ in (base_val, cand_val)):
+        report.update({
+            "action": "abstain",
+            "reasons": ["faltan observaciones para comparar el holdout"],
+        })
+        return report
     improved = cand_val["accuracy"] > base_val["accuracy"]
     report.update({
         "action": "accept" if improved else "reject",
