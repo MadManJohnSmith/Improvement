@@ -155,5 +155,78 @@ class ArchitectureConsistencyTest(unittest.TestCase):
                     self.assertNotIn(pattern, text)
 
 
+    def test_every_skipped_regression_is_skipped_for_a_named_external_component(self):
+        """A skip is an honest absence of proof, and only while it names why.
+
+        The suite reports "N skipped", and that number was never accounted for:
+        the README said the suite was green without saying which regressions did
+        not run. A skip whose reason is a component this repository does not
+        ship is legitimate — a DSH runtime, `node`, `bubblewrap`, `jsonschema` —
+        and saying so is what makes it honest. A skip with any other reason, or
+        no reason, is a regression that stopped testing while still counting as
+        one, which is the failure this framework exists to prevent and the one
+        it had already committed once.
+
+        So every `skipTest` in the suite has to name a component from that list.
+        The list is the declaration, and adding a component to it is a decision
+        somebody can see; a silent skip is not possible any more.
+        """
+        declared = ("DSH_MODULE_ROOT", "node", "node_modules", "bubblewrap",
+                    "jsonschema", "dsh-tools", "runtime")
+        offenders = []
+        for path in sorted((ROOT / "tests").glob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"skipTest\(\s*(['\"])(.*?)\1", source,
+                                     re.DOTALL):
+                reason = match.group(2)
+                line = source[:match.start()].count("\n") + 1
+                if not any(name in reason for name in declared):
+                    offenders.append(f"{path.name}:{line}: {reason[:70]}")
+        self.assertEqual(offenders, [])
+
+    def test_every_cli_subcommand_is_mentioned_in_the_usage_document(self):
+        """A command nobody can find is a command nobody runs.
+
+        `audit.py archive`, `missions.py reaudit` and the `transaction.py`
+        entry points had regressions and no mention in `docs/usage.md`, and the
+        operator-facing `skill-gate-run` was named only in the status document.
+        All of them work; none of them were discoverable, which for a framework
+        whose whole claim is that it is operable means they were not really
+        part of the product.
+
+        The check is over the parsers themselves rather than a hand-kept list,
+        so adding a subcommand without documenting it fails here instead of
+        being noticed by whoever needed it first. The name has to appear
+        anywhere in the document, code blocks included, because a command shown
+        in a ```bash fence is documented; requiring inline backticks would only
+        push the documentation somewhere less useful. A short name like
+        `install` can therefore pass on another command's mention, which makes
+        this check looser than a per-command index — deliberately, since a
+        false alarm here costs more than the collision it would catch.
+        """
+        usage = self.read('docs/usage.md')
+        declared = set()
+        for path in sorted((ROOT / 'scripts').glob('*.py')):
+            declared.update(re.findall(
+                r'add_parser\(\s*[\'"]([a-z][a-z0-9-]*)[\'"]', path.read_text()))
+        self.assertTrue(declared, 'no subcommands found: the scan is broken')
+        missing = sorted(name for name in declared if name not in usage)
+        self.assertEqual(missing, [])
+
+    def test_the_skipped_regressions_are_named_where_the_suite_count_is(self):
+        """The number that goes green has to say what did not run.
+
+        "750 pruebas en verde" is a claim about the whole suite, and eleven of
+        those do not execute without a DSH runtime, `node`, `bubblewrap` or
+        `jsonschema` present. The count is worth publishing precisely because it
+        is not total, so the document that publishes it has to name the gap in
+        the same breath.
+        """
+        status = self.read("docs/status.md")
+        for component in ("DSH_MODULE_ROOT", "node", "bubblewrap", "jsonschema"):
+            with self.subTest(component=component):
+                self.assertIn(component, status)
+
+
 if __name__ == '__main__':
     unittest.main()

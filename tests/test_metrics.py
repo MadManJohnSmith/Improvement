@@ -109,5 +109,72 @@ class MetricsStoreTests(unittest.TestCase):
             verify(self.root)
 
 
+    def test_la_operacion_que_lee_el_ledger_existe_y_esta_cableada(self):
+        """El controlador escribe un evento por turno y nadie lo leía.
+
+        `metrics.summarize` y `metrics.verify` tenían seis regresiones que
+        probaban que el almacén funciona y ninguna que probara que alguien lo
+        consulta: una misión acumulaba coste y no había forma de preguntarle
+        cuánto. `docs/status.md` listaba «métricas append-only» entre los
+        servicios del framework, que era cierto del escritura y falso del
+        servicio.
+
+        Así que el comando tiene que existir, agregar lo registrado, declarar
+        NO_DISPONIBLE lo que nunca se registró —nunca cero, que afirmaría que la
+        misión costó nada— y fallar cerrado sobre un ledger manipulado antes de
+        devolver cualquier total.
+        """
+        import os
+        import shutil
+        import subprocess
+
+        mission = self.root
+        store = mission / 'metrics'
+        store.mkdir(mode=0o700)
+        record_event(store, 'turn', source='session-uno', unit='U-1', requests=3)
+        record_event(store, 'turn', source='session-uno', unit='U-2', requests=4)
+
+        def run(*extra):
+            # shutil.which('python3') and not sys.executable: in this host
+            # sys.executable is the ZCode AppImage, which starts a GUI.
+            return subprocess.run(
+                [shutil.which('python3'), '-B',
+                 str(Path(__file__).resolve().parents[1] / 'scripts' / 'bootstrap.py'),
+                 'metrics', '--mission', str(mission), *extra],
+                capture_output=True, text=True, timeout=120,
+                env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+        finished = run()
+        self.assertEqual(finished.returncode, 0, finished.stderr[-2000:])
+        report = json.loads(finished.stdout)
+        self.assertEqual(report['chain']['events'], 2)
+        self.assertEqual(report['summary']['requests']['total'], 7)
+        # Never recorded is unavailable, not zero: zero would say the mission
+        # ran and cost nothing, which is a different and false claim.
+        self.assertEqual(report['summary']['tokens_input'], NO_DISPONIBLE)
+
+        # A mission that closed no unit has no ledger, and that is a
+        # measurement rather than an error.
+        empty = Path(self.root).parent / 'mision-vacia'
+        empty.mkdir()
+        finished = subprocess.run(
+            [shutil.which('python3'), '-B',
+             str(Path(__file__).resolve().parents[1] / 'scripts' / 'bootstrap.py'),
+             'metrics', '--mission', str(empty)],
+            capture_output=True, text=True, timeout=120,
+            env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+        self.assertEqual(finished.returncode, 0, finished.stderr[-2000:])
+        self.assertEqual(json.loads(finished.stdout)['chain']['events'], 0)
+
+        # A tampered ledger produces no total at all.
+        head = store / 'head.json'
+        checkpoint = json.loads(head.read_text())
+        checkpoint['head_sha256'] = 'a' * 64
+        head.write_text(json.dumps(checkpoint, ensure_ascii=False, sort_keys=True) + '\n')
+        refused = run()
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertNotIn('summary', refused.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

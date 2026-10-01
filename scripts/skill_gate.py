@@ -45,18 +45,53 @@ from pathlib import Path
 ACTIONS = ("accept", "reject", "abstain")
 
 
+class ReflectionRefused(RuntimeError):
+    """This exact candidate was already refused against this exact corpus.
+
+    Carries the prior refusal so the caller can show it, instead of spending a
+    full agent run to arrive at an answer the gate already gave.
+    """
+
+    def __init__(self, refusal):
+        super().__init__("; ".join(refusal.get("reasons") or ["candidata ya rechazada"]))
+        self.refusal = refusal
+
+
 def evaluate_bound_gate(baseline_path, candidate_path, corpus_path,
                         baseline_digest, candidate_digest, val_fraction=0.3,
-                        library=None):
-    """Strict gate over complete observations bound to corpus and candidates."""
+                        library=None, reflection_buffer=None):
+    """Strict gate over complete observations bound to corpus and candidates.
+
+    With `reflection_buffer`, the gate also carries its half of the improvement
+    loop: a candidate already refused on this corpus raises before it is scored,
+    and a fresh refusal is recorded with the held-out scores that produced it.
+    The scores matter as much as the reason — "it got worse" is actionable, and
+    "0.512 against 0.489" is what makes a second attempt different instead of
+    merely new.
+    """
     import corpus_compiler
 
     corpus = corpus_compiler.load_corpus(corpus_path)
+    corpus_digest = corpus["corpus_digest"]
+    if reflection_buffer is not None:
+        from reflection import prior_refusal
+        entry = prior_refusal(reflection_buffer, corpus_digest, candidate_digest)
+        if entry is not None:
+            raise ReflectionRefused({
+                "refused": True,
+                "action": entry.get("action"),
+                "corpus_digest": corpus_digest,
+                "candidate_digest": candidate_digest,
+                "reasons": entry.get("reasons") or ["sin razón registrada"],
+                "note": "esta candidata ya fue rechazada contra este mismo corpus; "
+                        "cambia la edición en lugar de reenviarla",
+            })
     baseline_payload, baseline = corpus_compiler.load_bound_observations(
         baseline_path, corpus, baseline_digest)
     candidate_payload, candidate = corpus_compiler.load_bound_observations(
         candidate_path, corpus, candidate_digest)
     reasons = []
+    scores = (None, None)
     if (baseline_payload["provider"]["status"] != "available" or
             candidate_payload["provider"]["status"] != "available"):
         action = "abstain"
@@ -72,17 +107,25 @@ def evaluate_bound_gate(baseline_path, candidate_path, corpus_path,
                              corpus))]
         report = _evaluate_loaded(baseline, candidate, scenarios, val_fraction)
         action, reasons = report["action"], report["reasons"]
+        base_val = (report.get("baseline") or {}).get("validation") or {}
+        cand_val = (report.get("candidate") or {}).get("validation") or {}
+        scores = (base_val.get("accuracy"), cand_val.get("accuracy"))
     result = {
         "schema_version": corpus_compiler.SCHEMA_VERSION,
         "compiler_version": corpus["compiler_version"],
-        "corpus_digest": corpus["corpus_digest"],
+        "corpus_digest": corpus_digest,
         "baseline_candidate_digest": baseline_digest,
         "candidate_digest": candidate_digest,
         "action": action,
         "reasons": reasons,
     }
+    if reflection_buffer is not None and action != "accept":
+        from reflection import record
+        record(reflection_buffer, corpus_digest=corpus_digest,
+               candidate_digest=candidate_digest, action=action, reasons=reasons,
+               baseline=scores[0], candidate=scores[1])
     return corpus_compiler.validate_bound_report(
-        result, corpus["corpus_digest"], candidate_digest)
+        result, corpus_digest, candidate_digest)
 
 
 def load_scenarios(library):

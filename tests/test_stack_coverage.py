@@ -195,24 +195,62 @@ class StackCoverageTest(unittest.TestCase):
 class CampaignEvidenceTest(unittest.TestCase):
     """Which stacks were proven by a real project, and which are only declared.
 
-    Documentation is not coverage, and the difference has to be visible to the
-    person about to install this on their repository.
+    These two cases used to read `docs/status.md` and assert that four strings
+    appeared somewhere near the heading, with the proven set hardcoded in the
+    test body. That passes when the document claims a campaign for Go, which
+    never happened, and passes when the registry gains a stack the table never
+    mentions. A coverage claim nobody can falsify is not coverage, and the one
+    place it mattered most was the table a reader consults before trusting this
+    on their own repository.
+
+    So the proven set is declared once, in `stack.CAMPAIGN_EVIDENCE`, next to
+    the commands it applies to, and these cases check the table against it in
+    both directions: every proven stack says so and names its campaign, and
+    every stack without a campaign says so too — which is the direction that
+    had no check at all.
     """
 
-    def test_status_documents_stack_coverage_per_stack(self):
-        status = (ROOT / "docs" / "status.md").read_text(encoding="utf-8")
-        self.assertIn("stack_coverage", status)
-        for stack_name in sorted(stack_module.STACKS):
-            with self.subTest(stack=stack_name):
-                self.assertIn(stack_name, status)
+    PROOF_WORDS = ("PROBADA", "probada", "campaña real", "campaign")
 
-    def test_only_stacks_with_a_campaign_are_claimed_as_proven(self):
+    def _table_rows(self):
         status = (ROOT / "docs" / "status.md").read_text(encoding="utf-8")
         start = status.index("stack_coverage")
-        block = status[start:start + 2000]
-        proven = {"rust", "python-django", "dart-flutter", "python-generic"}
-        for stack_name in sorted(proven):
-            self.assertIn(stack_name, block, stack_name)
+        rows = {}
+        for line in status[start:].splitlines():
+            if not line.startswith("|"):
+                if rows:
+                    break
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if len(cells) != 3 or cells[0] in ("stack", "---"):
+                continue
+            rows[cells[0].strip("`")] = cells[2]
+        return rows
+
+    def test_the_table_names_every_declared_stack_and_nothing_else(self):
+        rows = self._table_rows()
+        self.assertEqual(sorted(rows), sorted(stack_module.STACKS))
+
+    def test_only_stacks_with_a_campaign_are_claimed_as_proven(self):
+        rows = self._table_rows()
+        proven = stack_module.CAMPAIGN_EVIDENCE
+        self.assertEqual(sorted(proven), ["dart-flutter", "python-django",
+                                          "python-generic", "rust"])
+        for stack_name, evidence in sorted(proven.items()):
+            with self.subTest(stack=stack_name):
+                cell = rows[stack_name]
+                self.assertIn("PROBADA", cell, f"{stack_name}: {cell}")
+                # The campaign is named, not merely asserted to exist.
+                self.assertIn(evidence.split(",")[0].split("(")[0].strip()[:12],
+                              cell, f"{stack_name}: {cell}")
+        for stack_name, cell in sorted(rows.items()):
+            if stack_name in proven:
+                continue
+            with self.subTest(stack=stack_name):
+                # The direction that had no check: a declared stack must not
+                # borrow the vocabulary of a proven one.
+                self.assertNotIn("PROBADA", cell, f"{stack_name}: {cell}")
+                self.assertIn("declarada", cell, f"{stack_name}: {cell}")
 
 
 if __name__ == "__main__":

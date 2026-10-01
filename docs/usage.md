@@ -168,6 +168,44 @@ python3 -B scripts/bootstrap.py skill-gate-commit-check --changed-path library/b
 Falla cerrado si el cambio toca el corpus o el gate y el informe no lo acepta. **Un `abstain` bloquea igual que un
 `reject`**: la abstención no es permiso. Y los cambios que no tocan el corpus no se bloquean, porque una puerta
 que para todos los commits es una puerta que la gente desactiva.
+### Ejecutar el corpus y no repetir lo ya rechazado
+```bash
+python3 -B scripts/bootstrap.py skill-gate-run --corpus /ruta/externa/corpus.json \
+  --mode <proyecto>-auditor --candidate-digest <sha256> --observations /ruta/externa/obs.json
+python3 -B scripts/bootstrap.py bound-skill-gate ... --buffer /ruta/externa/reflexion.jsonl
+python3 -B scripts/bootstrap.py skill-gate-reflect --buffer /ruta/externa/reflexion.jsonl \
+  --corpus-digest <sha256>
+```
+`skill-gate-run` despacha cada caso compilado contra un modo real y escribe observaciones ligadas a
+corpus, candidata y versión de compilador; el prompt del evaluador no lleva el veredicto esperado, y un
+caso que no pudo correr vuelve `NOT_COVERED` con el motivo, nunca un `PASS` asumido. **Sin una sesión
+DSH autenticada se abstiene nombrando lo que falta**, porque el framework no instala ni invoca
+proveedores.
+
+Con `--buffer`, un rechazo queda registrado con su puntuación de holdout antes y después, y **reenviar
+una candidata ya rechazada contra ese mismo corpus se niega sin puntuarla**: los mismos bytes sobre el
+mismo corpus no pueden puntuar distinto, y hacerlo costaría una corrida completa de agente para
+recibir la misma respuesta. `skill-gate-reflect` devuelve el resumen que debe leer el siguiente intento.
+Un rechazo de otro corpus no aplica: respondió a otra pregunta.
+
+### Ver lo que una misión costó, y lo que no se registró
+```bash
+python3 -B scripts/bootstrap.py metrics --mission /ruta/externa/mision
+```
+Verifica la cadena del ledger (`events.jsonl` con digest por evento y global) y agrega lo registrado.
+Lo que nunca se registró se reporta `NO_DISPONIBLE`, **nunca cero**: cero afirmaría que la misión costó
+nada. Una misión sin ledger devuelve todo `NO_DISPONIBLE` con `events: 0`. Un ledger manipulado no
+devuelve ningún total.
+
+### Comandos de servicio, fuera del camino del usuario
+Estos existen y tienen regresión propia, pero el flujo normal no los invoca: `bootstrap.py` los usa como
+biblioteca. Se documentan para que nadie descubra por accident que hay una segunda puerta.
+- `missions.py reaudit` — re-ejecuta la auditoría semántica de una unidad cerrada (`verify` verifica el
+  resultado; `reaudit` vuelve a mirar el producto).
+- `audit.py archive` — archiva un ciclo terminado; `inventory` y `consolidate` están en
+  [audit-contract.md](audit-contract.md).
+- `transaction.py install|rollback|uninstall` — superficie de bajo nivel de la transacción
+  (backup verificado, staging, swap y restauración). El camino del usuario es `bootstrap.py`.
 
 ### Cuando el estado y el repositorio dejan de contarse (operador)
 

@@ -186,13 +186,6 @@ def recall(workspace, path=None, excerpt=None, fingerprint=None, limit=3):
     return found[-limit:] if limit else found
 
 
-def is_repeat(workspace, path, excerpt, fingerprint=None):
-    """True when this defect already has a proven fix. The auditor asks this
-    before persisting, so a repeat is marked with its episode instead of
-    re-raised as new work."""
-    return bool(recall(workspace, path, excerpt, fingerprint, limit=1))
-
-
 def stats(workspace):
     index = read_index(workspace)
     ledger = ledger_path(workspace)

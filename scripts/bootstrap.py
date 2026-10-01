@@ -30,6 +30,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from onboard import checked, framework_clean, prepare_project_skills
+import metrics
 import state_reconcile
 
 SCHEMA_VERSION = 1
@@ -1428,6 +1429,17 @@ def main():
     p_bound.add_argument("--candidate-digest", required=True)
     p_bound.add_argument("--val-fraction", type=float, default=0.3)
     p_bound.add_argument("--report", required=True)
+    p_bound.add_argument("--buffer", default=None,
+                         help="Búfer de reflexión donde se guarda el rechazo "
+                              "y se detectan reenvíos de una candidata ya rechazada")
+
+    p_reflect = sub.add_parser(
+        "skill-gate-reflect",
+        help="Leer el búfer de reflexión: qué se rechazó, por qué y por cuánto")
+    p_reflect.add_argument("--buffer", required=True)
+    p_reflect.add_argument("--corpus-digest", default=None,
+                           help="Limitar a un corpus; un rechazo de otro no aplica")
+    p_reflect.add_argument("--limit", type=int, default=10)
 
     p_run = sub.add_parser(
         "skill-gate-run", help="Ejecutar el corpus contra un modo real")
@@ -1457,6 +1469,15 @@ def main():
                          help="Retirar la candidata INTEGRATED verificada")
     p_state.add_argument("--repoint", default=None,
                          help="Revisión ya integrada a la que re-apuntar el registro")
+
+    p_metrics = sub.add_parser(
+        "metrics",
+        help="Verificar la cadena del ledger de métricas de una misión y "
+             "agregarlo; lo nunca registrado se reporta NO_DISPONIBLE")
+    p_metrics.add_argument("--mission", required=True,
+                           help="Directorio externo de la misión, fuera del producto")
+    p_metrics.add_argument("--kind", action="append", default=None,
+                           help="Limitar a un kind de evento; repetible")
 
     args = parser.parse_args()
 
@@ -1549,12 +1570,16 @@ def main():
             result = {"result": "RESOLVED", "corpus": corpus}
 
         elif args.command == "bound-skill-gate":
-            import corpus_compiler
             import skill_gate
-            report = skill_gate.evaluate_bound_gate(
-                Path(args.baseline), Path(args.candidate), Path(args.corpus),
-                args.baseline_digest, args.candidate_digest, args.val_fraction,
-                Path(args.library))
+            try:
+                report = skill_gate.evaluate_bound_gate(
+                    Path(args.baseline), Path(args.candidate), Path(args.corpus),
+                    args.baseline_digest, args.candidate_digest, args.val_fraction,
+                    Path(args.library), args.buffer)
+            except skill_gate.ReflectionRefused as refused:
+                result = {"result": "RETAINED", "gate": refused.refusal}
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                sys.exit(1)
             Path(args.report).write_text(json.dumps(
                 report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
                 encoding="utf-8")
@@ -1567,6 +1592,12 @@ def main():
             # keeps its exit 0 because changing a published command's contract
             # would break callers that already read the report instead.
             exit_code = 0 if report["action"] == "accept" else 1
+
+        elif args.command == "skill-gate-reflect":
+            import reflection
+            result = {"result": "RESOLVED", "buffer": str(Path(args.buffer)),
+                      "reflection": reflection.brief(
+                          args.buffer, args.corpus_digest, args.limit)}
 
         elif args.command == "skill-gate-run":
             import corpus_compiler
@@ -1601,6 +1632,33 @@ def main():
                 args.corpus_digest, args.candidate_digest)
             result["result"] = "RESOLVED"
 
+        elif args.command == "metrics":
+            # The controller writes one `turn` event per closed unit and nothing
+            # else read the ledger back: `metrics.summarize` and `metrics.verify`
+            # were tested and unreferenced, so a mission accumulated cost and
+            # nobody could ask what it was. The chain is verified before the
+            # aggregate, because a total computed over a tampered ledger is a
+            # number nobody should read as a measurement.
+            mission = Path(args.mission).resolve()
+            store = mission / "metrics"
+            if store.is_symlink() or (store.exists() and not store.is_dir()):
+                raise ValueError(f"raíz de métricas inválida: {store}")
+            if not store.is_dir():
+                # A mission that closed no unit has no ledger, and that is a
+                # measurement, not a failure: every metric is unavailable rather
+                # than zero, because zero would claim the run happened and cost
+                # nothing.
+                result = {"result": "RESOLVED", "mission": str(mission),
+                          "chain": {"events": 0, "head_sha256": None},
+                          "summary": {name: metrics.NO_DISPONIBLE
+                                      for name in metrics.METRICS},
+                          "recorded": "no hay ledger: esta misión no registró ningún evento"}
+            else:
+                chain = metrics.verify(store)
+                result = {"result": "RESOLVED", "mission": str(mission),
+                          "chain": chain,
+                          "summary": metrics.summarize(store, args.kind),
+                          "recorded": "lo que no aparece como NO_DISPONIBLE no se registró"}
         elif args.command == "state":
             project = Path(args.project).resolve()
             workspace = (

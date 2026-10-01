@@ -23,6 +23,7 @@ import subprocess
 from pathlib import Path
 
 from mode_lifecycle import BYTE_LIMITS, LIMITS, _encode_json, _replace_bytes
+import stack
 
 
 class ReconcileError(ValueError):
@@ -126,6 +127,87 @@ def anchored_findings(state):
     return {"anchored": anchored, "unanchored": unanchored}
 
 
+def memory(workspace):
+    """What the framework remembers about this project, and how much.
+
+    The ledger and its index existed and were correct; nothing surfaced them,
+    so "the framework applies memory to itself" was a sentence in the README
+    rather than something an operator could check. The count is the honest
+    measure: a project with no closed repair has nothing remembered, and that
+    is zero episodes rather than a failure.
+    """
+    import episodes
+
+    state = Path(workspace) / "mode-state"
+    counted = episodes.stats(workspace)
+    units = sorted({entry.get("unit") for entry in episodes.read_episodes(workspace)
+                    if isinstance(entry.get("unit"), str) and entry["unit"]})
+    signatures = set(episodes.read_index(workspace)["signatures"])
+    claimed = set()
+    for record in latest_findings(state).values():
+        evidence = record.get("evidence")
+        prior = evidence.get("prior_episode") if isinstance(evidence, dict) else None
+        if isinstance(prior, dict) and isinstance(prior.get("unit"), str):
+            claimed.add(prior["unit"])
+    return {
+        "signatures": counted["signatures"],
+        "episodes": counted["episodes"],
+        "ledger_bytes": counted["ledger_bytes"],
+        "units": units,
+        # A finding claiming an episode the ledger no longer holds is drift
+        # between two files that are supposed to agree, and it is reported
+        # rather than tolerated: a repeat nobody can trace is not a repeat the
+        # memory proved.
+        "unknown_claimed_units": sorted(claimed - set(units)),
+        "known_signatures": len(signatures),
+    }
+
+
+def verification_verdicts(state):
+    """What each finding's verification records actually add up to.
+
+    `verification-results.jsonl` holds one record per entrypoint a plan named,
+    on purpose: a stack with a test command and a lint command produces two,
+    and the mode cannot collapse them into a single friendlier answer. The
+    finding-level verdict is therefore *derived*, and the plugin deliberately
+    refuses to derive it — its own comment says the Host does that, which is
+    true and was, until now, the only place it was true. Nothing called
+    `stack.derived_verdicts`: the contract promised
+    `worst-result-per-finding-and-candidate-partial-is-derived-not-written`, the
+    persona told the mode the name would be derived from the records, and no
+    code in this repository ever derived it. A finding verified in part had no
+    verdict anywhere.
+
+    This is that derivation, at read time and never written back. `partial` is
+    reported because it is the difference between "the tests ran and said so,
+    the linter could not run" and "nothing ran": both are not-PASS, and only one
+    of them is progress.
+    """
+    records = _read_jsonl(state / "verification-results.jsonl")
+    usable = [record for record in records
+              if isinstance(record.get("finding_id"), str)
+              and isinstance(record.get("candidate_head"), str)
+              and record.get("result") in ("PASS", "BLOCKED", "FAIL")]
+    derived = stack.derived_verdicts(usable)
+    counts = {"PASS": 0, "BLOCKED": 0, "FAIL": 0, "PARTIAL": 0}
+    unverified = []
+    for (finding_id, head), group in sorted(derived.items()):
+        if group["verdict"] == "PASS":
+            counts["PASS"] += 1
+            continue
+        if group["partial"]:
+            counts["PARTIAL"] += 1
+        else:
+            counts[group["verdict"]] += 1
+        unverified.append({
+            "finding_id": finding_id, "candidate_head": head,
+            "verdict": "PARTIAL" if group["partial"] else group["verdict"],
+            "entries": group["entries"],
+        })
+    return {"counts": counts, "unverified": unverified,
+            "records": len(records), "usable": len(usable)}
+
+
 def repeat_findings(state):
     """OPEN findings the memory had already closed by a verified repair.
 
@@ -215,7 +297,9 @@ def reconcile(product, workspace):
     report = {
         "state": str(state),
         "anchors": anchored_findings(state),
+        "memory": memory(workspace),
         "repeats": repeat_findings(state),
+        "verifications": verification_verdicts(state),
         "audit_scopes": audit_scopes(state),
         "closed_findings": closed_findings(state),
         "uncovered_findings": uncovered_findings(state),

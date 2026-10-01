@@ -965,6 +965,64 @@ class ModeLifecycleTests(unittest.TestCase):
         for field in ("line", "located", "fingerprint", "prior_episode"):
             self.assertIn(field, source, field)
 
+    def _mode_document(self, role="continuous-repair"):
+        """The smallest document `mode-contract` accepts, ready for a lifecycle."""
+        name = f"project-{role}"
+        return {
+            "schema_version": 1, "kind": "mode",
+            "name": name,
+            "preset_id": name,
+            "role": role, "purpose": "role",
+            "reuse_source": "composition", "triggers": ["role"],
+            "anti_triggers": [], "inputs": [], "reads": ["project"],
+            "writes": ["project-workspace/mode-state"],
+            "required_capabilities": [], "forbidden_capabilities": [],
+            "invariants": ["shared state"], "anti_goals": [],
+            "state_machine": {"states": ["READY"], "transitions": [],
+                              "initial": "READY", "terminal": ["READY"]},
+            "handoffs": [],
+            "failure_modes": {"retries": 0, "timeout_seconds": 60,
+                              "on_failure": "retain"},
+            "scenarios": ["PUBLIC-1"], "provenance": {"license": "MIT"},
+        }
+
+    def test_the_emitted_contract_validates_against_its_own_schema(self):
+        """The budget test measured the document; nothing checked it was legal.
+
+        `mode_lifecycle.expected_lifecycle` emits the `mode_lifecycle` block
+        that lands in every generated `mode.json`, and
+        `generation_contracts.validate("mode-contract", …)` checks it against
+        `schemas/modes.schema.json` — consts included. The suite built that very
+        document to measure its bytes and stopped there, so the two could drift
+        apart silently: an edit that emitted a value the schema pins would keep
+        the byte count plausible and fail only later, in an acceptance run, on
+        a package nobody could regenerate. That is exactly how the candidate
+        `candidate_location` const broke before.
+
+        So the emitted contract is validated here for both roles, and the check
+        is proved non-vacuous: a lifecycle carrying a value the schema forbids
+        has to be refused.
+        """
+        import generation_contracts
+
+        layout = {"session_root": "tmpXXXXXXXXXX", "product_root": "project",
+                  "workspace_root": "project-workspace",
+                  "state_root": "project-workspace/mode-state"}
+        for role in ("auditor", "continuous-repair"):
+            with self.subTest(role=role):
+                document = dict(self._mode_document(role),
+                                mode_lifecycle=mode_lifecycle.expected_lifecycle(
+                                    role, layout))
+                generation_contracts.validate("mode-contract", document)
+
+        # Non-vacuous: the same document with a value the schema pins rejected.
+        broken = dict(self._mode_document(role="continuous-repair"),
+                      mode_lifecycle=mode_lifecycle.expected_lifecycle(
+                          "continuous-repair", layout))
+        broken["mode_lifecycle"]["candidate_root"] = "${session-cwd}/under-product"
+        with self.assertRaises(generation_contracts.ContractError):
+            generation_contracts.validate("mode-contract", broken)
+
     def test_emitted_repair_contract_fits_the_support_file_budget(self):
         """The contract is emitted into mode.json, a budgeted support file.
 

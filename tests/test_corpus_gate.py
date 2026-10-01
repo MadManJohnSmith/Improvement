@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import corpus_compiler
+import reflection
 import skill_gate
 
 LIBRARY = ROOT / "library"
@@ -442,6 +443,107 @@ class BoundGateExitCodeTest(unittest.TestCase):
             "--report", str(Path(self.tmp) / "accepted.json"))
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
         self.assertIn('"RESOLVED"', finished.stdout)
+
+    def test_the_refusal_is_kept_so_the_next_attempt_is_not_the_same_one(self):
+        """A gate that only says no is half a loop.
+
+        The refusal was printed and then discarded: the next editor started
+        from nothing, proposed something the corpus had already refused, and
+        paid a full agent run to be told the same thing. That is the same
+        repetition E2 paid for in the defect memory, in the place where it costs
+        the most, and SkillOpt's design — recorded in the source registry — puts
+        a buffer of rejected edits with before/after scores precisely so the
+        reflection has something to read.
+
+        Three things have to hold, and each is a different failure if it does
+        not: the refusal is recorded with the held-out scores, a re-send of the
+        exact candidate is refused *before* scoring, and a refusal from another
+        corpus blocks nothing, because it answered a different question.
+        """
+        buffer = Path(self.tmp) / "reflection.jsonl"
+        rejected = self._cli(
+            "bound-skill-gate", "--corpus", str(self.corpus_path),
+            "--baseline", str(self._observations("rb.json", BASE_DIGEST, self.truth)),
+            "--candidate", str(self._observations("rc.json", CAND_DIGEST, self.truth)),
+            "--baseline-digest", BASE_DIGEST, "--candidate-digest", CAND_DIGEST,
+            "--report", str(Path(self.tmp) / "r.json"), "--buffer", str(buffer))
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        entries = reflection.read(buffer)
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["candidate_digest"], CAND_DIGEST)
+        self.assertEqual(entries[0]["corpus_digest"], self.corpus["corpus_digest"])
+        self.assertEqual(entries[0]["action"], "reject")
+        # The scores are what make a second attempt different rather than new.
+        self.assertIsInstance(entries[0].get("baseline_validation"), float)
+        self.assertIsInstance(entries[0].get("candidate_validation"), float)
+
+        # The brief is what the next attempt reads.
+        brief = json.loads(self._cli(
+            "skill-gate-reflect", "--buffer", str(buffer),
+            "--corpus-digest", self.corpus["corpus_digest"]).stdout)["reflection"]
+        self.assertEqual(brief["entries"][0]["candidate_digest"], CAND_DIGEST)
+        self.assertIn("holdout", brief["entries"][0]["score"])
+
+        # Re-sending the identical candidate is refused without scoring it: the
+        # observations file is deleted first, so reaching the gate at all would
+        # raise, and a clean refusal proves the check ran early.
+        (Path(self.tmp) / "rc.json").unlink()
+        again = self._cli(
+            "bound-skill-gate", "--corpus", str(self.corpus_path),
+            "--baseline", str(self._observations("rb.json", BASE_DIGEST, self.truth)),
+            "--candidate", str(Path(self.tmp) / "rc.json"),
+            "--baseline-digest", BASE_DIGEST, "--candidate-digest", CAND_DIGEST,
+            "--report", str(Path(self.tmp) / "r2.json"), "--buffer", str(buffer))
+        self.assertEqual(again.returncode, 1, again.stdout + again.stderr)
+        self.assertIn("ya fue rechazada", again.stdout)
+        self.assertFalse((Path(self.tmp) / "r2.json").exists())
+
+        # A different corpus answers a different question, so its refusals do
+        # not travel.
+        other = json.loads(self._cli(
+            "skill-gate-reflect", "--buffer", str(buffer),
+            "--corpus-digest", "f" * 64).stdout)["reflection"]
+        self.assertEqual(other["entries"], [])
+        self.assertEqual(other["total_refusals"], 1)
+
+    def test_the_refusal_loop_holds_its_own_invariants(self):
+        """The buffer is a memory, so it inherits the memory's hard parts.
+
+        Append in place, because a temp file plus `os.replace` would drop every
+        earlier refusal — the exact defect the episodic ledger shipped with. An
+        accept is not recorded: a buffer that also collects successes becomes a
+        changelog. A torn trailing line is a crash and is skipped; corruption
+        before it is refused, because a silently shortened memory forgets a
+        refusal the gate once gave.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            buffer = Path(tmp) / "b.jsonl"
+            corpus, candidate = "a" * 64, "b" * 64
+            reflection.record(buffer, corpus_digest=corpus,
+                              candidate_digest=candidate, action="reject",
+                              reasons=["el holdout no mejora"],
+                              baseline=0.6, candidate=0.5)
+            reflection.record(buffer, corpus_digest=corpus,
+                              candidate_digest="c" * 64, action="reject",
+                              reasons=["regresión en entrenamiento"])
+            self.assertEqual(len(reflection.read(buffer)), 2)
+            with self.assertRaisesRegex(reflection.ReflectionError, "solo se recuerdan"):
+                reflection.record(buffer, corpus_digest=corpus,
+                                  candidate_digest="d" * 64, action="accept",
+                                  reasons=[])
+            with self.assertRaisesRegex(reflection.ReflectionError, "sha256"):
+                reflection.record(buffer, corpus_digest="no-es-digest",
+                                  candidate_digest="d" * 64, action="reject",
+                                  reasons=["x"])
+            # A crash between the write and the newline is skipped, not fatal.
+            with buffer.open("a", encoding="utf-8") as stream:
+                stream.write('{"version":1,"corpus')
+            self.assertEqual(len(reflection.read(buffer)), 2)
+            # Corruption before the last line is refused.
+            buffer.write_text('{"nope"\n' + buffer.read_text(), encoding="utf-8")
+            with self.assertRaisesRegex(reflection.ReflectionError, "línea inválida"):
+                reflection.read(buffer)
 
     def test_the_legacy_gate_keeps_its_published_exit_zero(self):
         # Changing an already published command's contract would break callers

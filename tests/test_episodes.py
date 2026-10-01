@@ -38,7 +38,6 @@ class EpisodesTest(unittest.TestCase):
 
     def test_recall_starts_empty_and_says_so(self):
         self.assertEqual(episodes.recall(self.workspace, "src/a.py", "x"), [])
-        self.assertFalse(episodes.is_repeat(self.workspace, "src/a.py", "x"))
 
     def test_a_verified_repair_is_remembered_and_recalled(self):
         episode = self._close()
@@ -63,9 +62,23 @@ class EpisodesTest(unittest.TestCase):
         self.assertEqual(episodes.stats(self.workspace)["signatures"], 2)
 
     def test_a_repeat_is_recognisable_before_persisting(self):
+        """Recall is the reader; stamping the repeat is the plugin's job.
+
+        This module is the Host side: it owns the ledger, the index and the
+        query. It does not decide that a finding is a repeat — `workflow_write`
+        does, by looking up the fingerprint it already computes and stamping
+        `prior_episode` — because a Python helper nothing called for two units
+        is how the auditor ended up repeating itself while seventeen green
+        tests watched. The stamping side is proven in
+        `tests/test_workflow_write_plugin.py`; this is the query it queries.
+        """
         self._close()
-        self.assertTrue(episodes.is_repeat(self.workspace, "src/a.py", "token = 1"))
-        self.assertFalse(episodes.is_repeat(self.workspace, "src/c.py", "other"))
+        found = episodes.recall(self.workspace, "src/a.py", "token = 1")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["unit"], "unit-1")
+        # The same code in a file the memory has never seen is not a repeat,
+        # which is the property that keeps the count meaningful.
+        self.assertEqual(episodes.recall(self.workspace, "src/c.py", "other"), [])
 
     def test_an_unverified_attempt_is_not_remembered(self):
         # Recording a fix that did not verify teaches the next session to retry
@@ -151,7 +164,7 @@ class EpisodesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             episodes.read_index(self.workspace)
         with self.assertRaises(ValueError):
-            episodes.is_repeat(self.workspace, "src/a.py", "x")
+            episodes.recall(self.workspace, "src/a.py", "x")
 
     def test_an_index_of_an_unknown_version_is_refused(self):
         episodes.index_path(self.workspace).write_text(

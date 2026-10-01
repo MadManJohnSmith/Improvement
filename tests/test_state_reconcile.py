@@ -54,13 +54,16 @@ class StateReconcileTests(unittest.TestCase):
             ["git", "-C", str(path), "rev-parse", "HEAD"],
             capture_output=True, text=True, check=True).stdout.strip()
 
-    def _write_state(self, candidate, items=(), findings=(), handoffs=()):
+    def _write_state(self, candidate, items=(), findings=(), handoffs=(),
+                     verifications=()):
         (self.state / "work-items.json").write_text(json.dumps(
             {"schema_version": 1, "candidate": candidate, "items": list(items)}))
         (self.state / "findings.jsonl").write_text("".join(
             json.dumps(record) + "\n" for record in findings))
         (self.state / "handoffs.jsonl").write_text("".join(
             json.dumps(record) + "\n" for record in handoffs))
+        (self.state / "verification-results.jsonl").write_text("".join(
+            json.dumps(record) + "\n" for record in verifications))
 
     def _integrated_candidate(self, branch="dsh/repair-0123456789abcdef",
                               path="Product-repair-0123456789abcdef"):
@@ -246,6 +249,115 @@ class StateReconcileTests(unittest.TestCase):
         report = state_reconcile.reconcile(self.product, self.workspace)
         self.assertEqual(report["anchors"], {"anchored": 1, "unanchored": 1})
         self.assertEqual((self.state / "findings.jsonl").read_text(), before)
+
+    def test_what_the_framework_remembers_is_visible_and_consistent(self):
+        """The memory existed, was correct, and nothing showed it.
+
+        `episodes.py` had a ledger, an index and seventeen green tests, and no
+        operator-facing way to ask what the framework remembered about their
+        project — so "la memoria se aplica también a sí misma" was a line in
+        the README with no way to check it. The report carries the counts, and
+        carries the drift check too: a finding claiming an episode the ledger
+        no longer holds is two files disagreeing, and a repeat nobody can trace
+        is not a repeat the memory proved.
+        """
+        import episodes
+
+        self._write_state(
+            None,
+            findings=[{"finding_id": "A-01", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "x", "status": "OPEN",
+                       "evidence": {"path": "src/a.py", "excerpt": "token = 1",
+                                    "line": 1, "located": True,
+                                    "prior_episode": {"unit": "unit-1",
+                                                      "evidence": "v.jsonl#unit-1",
+                                                      "repair": "borrar la cache"}}},
+                      {"finding_id": "A-02", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "y", "status": "OPEN",
+                       "evidence": {"path": "src/b.py", "excerpt": "other",
+                                    "line": 2, "located": True,
+                                    "prior_episode": {"unit": "fantasma",
+                                                      "evidence": None,
+                                                      "repair": None}}}],
+            handoffs=[{"handoff_id": "audit-1", "base_revision": self.base,
+                       "finding_ids": ["A-01", "A-02"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}])
+        # Nothing closed yet: an empty memory is a measurement, not a failure.
+        empty = state_reconcile.memory(self.workspace)
+        self.assertEqual(empty["episodes"], 0)
+        self.assertEqual(empty["units"], [])
+
+        episodes.record(self.workspace, unit="unit-1", path="src/a.py",
+                        excerpt="token = 1", verdict="PASS",
+                        evidence="verification.jsonl#unit-1",
+                        repair="borrar la cache")
+        report = state_reconcile.memory(self.workspace)
+        self.assertEqual(report["episodes"], 1)
+        self.assertEqual(report["signatures"], 1)
+        self.assertEqual(report["units"], ["unit-1"])
+        self.assertGreater(report["ledger_bytes"], 0)
+        # A-02 claims an episode the ledger never held. Reporting it is the
+        # whole point: a drift the report hid would be a memory that lies.
+        self.assertEqual(report["unknown_claimed_units"], ["fantasma"])
+
+    def test_the_derived_verdict_is_computed_somewhere_at_all(self):
+        """Three documents promised a derived verdict that nothing produced.
+
+        The plugin stores one verification record per entrypoint and says, in
+        its own comment, that PASS-with-BLOCKED is a partial result "and the
+        Host derives it". The contract declares
+        `worst-result-per-finding-and-candidate-partial-is-derived-not-written`
+        and the persona tells the mode the name is derived from the records.
+        `stack.derived_verdicts` existed, was tested, and was called by nothing
+        outside `tests/`. A finding whose tests passed while its linter could
+        not run therefore had no verdict anywhere in this framework: not in the
+        state, not in the report, not anywhere.
+
+        The derivation happens at read time and is never written back, because
+        D6's decision was that `PARTIAL` is derived and the persisted enum stays
+        closed. What the report adds is `partial`, which the bare verdict threw
+        away — `BLOCKED` from one PASS and one BLOCKED is progress, `BLOCKED`
+        from a single BLOCKED is nothing having run.
+        """
+        head = "c" * 40
+
+        def result(finding, command, verdict):
+            return {"finding_id": finding, "candidate_head": head, "command": command,
+                    "candidate_diff_digest": "b" * 64, "result": verdict}
+
+        self._write_state(
+            None,
+            findings=[{"finding_id": "A-01", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "x", "status": "OPEN"},
+                      {"finding_id": "A-02", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "y", "status": "OPEN"},
+                      {"finding_id": "A-03", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "z", "status": "OPEN"},
+                      {"finding_id": "A-04", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "w", "status": "OPEN"}],
+            handoffs=[{"handoff_id": "audit-1", "base_revision": self.base,
+                       "finding_ids": ["A-01", "A-02", "A-03", "A-04"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}],
+            verifications=[result("A-01", "pytest", "PASS"),
+                           result("A-02", "pytest", "PASS"),
+                           result("A-02", "ruff", "BLOCKED"),
+                           result("A-03", "ruff", "BLOCKED"),
+                           result("A-04", "pytest", "FAIL")])
+        before = (self.state / "verification-results.jsonl").read_text()
+        report = state_reconcile.reconcile(self.product, self.workspace)
+        verdicts = report["verifications"]
+
+        self.assertEqual(verdicts["counts"],
+                         {"PASS": 1, "BLOCKED": 1, "FAIL": 1, "PARTIAL": 1})
+        self.assertEqual(
+            {(entry["finding_id"], entry["verdict"]) for entry in verdicts["unverified"]},
+            {("A-02", "PARTIAL"), ("A-03", "BLOCKED"), ("A-04", "FAIL")})
+        partial = next(e for e in verdicts["unverified"] if e["finding_id"] == "A-02")
+        blocked = next(e for e in verdicts["unverified"] if e["finding_id"] == "A-03")
+        self.assertEqual(partial["entries"], 2)
+        self.assertEqual(blocked["entries"], 1)
+        # Derived, not written: the record the mode persisted is untouched.
+        self.assertEqual((self.state / "verification-results.jsonl").read_text(), before)
 
     def test_defects_the_memory_had_closed_are_reported_as_repeats(self):
         """A repeat is not a failure of the ledger; it is a failed prevention.

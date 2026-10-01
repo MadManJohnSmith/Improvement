@@ -1,7 +1,66 @@
 # Cambios
 
+## Segunda auditoría de cierre: siete huecos del mismo tipo — 2026-10-01
+- **Una sola enfermedad, y E6 no la había cerrado del todo.** El framework afirmaba cosas en prosa
+  que ningún código respaldaba. Una auditoría sistemática —AST sobre `scripts/` para código huérfano,
+  fila por fila sobre las cuarenta filas `HECHO` de la matriz, y contraste entre persona, contrato,
+  prompt de Creator y plugin— encontró siete casos más. Todos tienen la misma forma: **la afirmación
+  era cierta del documento y falsa del producto.**
+- **E7 · el veredicto derivado no se derivaba en ningún sitio.** El plugin guarda un registro por
+  entrypoint y dice en su propio comentario que «el Host lo deriva»; el contrato declara
+  `worst-result-per-finding-and-candidate-partial-is-derived-not-written`; la persona se lo dice al
+  modo. `stack.derived_verdicts` existía, tenía regresión y no la llamaba nadie fuera de `tests/`. Un
+  hallazgo verificado en parte no tenía veredicto en ninguna parte del framework. Ahora `state` lo
+  deriva en lectura y añade `partial`: `BLOCKED` con un PASS y un BLOCKED es progreso, `BLOCKED` con
+  un solo BLOCKED es no haber corrido nada, y el veredicto desnudo confundía los dos.
+- **E8 · las métricas se acumulaban y no había forma de preguntarlas.** El controlador escribe un
+  evento `turn` por unidad cerrada; `metrics.summarize` y `metrics.verify` tenían seis regresiones y
+  ninguna llamada. `bootstrap.py metrics --mission` verifica la cadena **antes** de agregar, porque un
+  total calculado sobre un ledger manipulado no es una medición, y declara `NO_DISPONIBLE` lo no
+  registrado: **cero afirmaría que la misión costó nada.**
+- **E9 · al RSI le faltaba la mitad de la reflexión.** El gate rechazaba, imprimía la razón y la
+  tiraba. El siguiente intento partía de cero y pagaba una corrida completa de agente para recibir la
+  misma respuesta: el fallo de repetición que este framework lleva dos unidades pagando, ahora donde
+  más cuesta. `scripts/reflection.py` guarda el rechazo con su holdout antes y después;
+  `bound-skill-gate --buffer` lo registra; **reenviar una candidata ya rechazada contra el mismo
+  corpus se niega sin puntuarla**, porque los mismos bytes sobre el mismo corpus no pueden puntuar
+  distinto. `skill-gate-reflect` da el resumen que debe leer el siguiente intento, y un rechazo de
+  otro corpus no aplica: respondió a otra pregunta.
+- **E10 · la cobertura de stacks no era falsable.** Dos pruebas leían `docs/status.md` y comprobaban
+  que cuatro cadenas aparecieran cerca de un encabezado, con el conjunto probado hardcodeado en el
+  cuerpo del test. **Editar el documento para afirmar una campaña que nunca ocurrió las dejaba
+  verdes**, que es justo el fallo que la unidad decía prevenir. `stack.CAMPAIGN_EVIDENCE` declara la
+  evidencia junto a los comandos y las pruebas exigen las dos direcciones. Canario: falsificar Go en
+  el documento rompe la suite.
+- **E11 y E12 · la cobertura y la operabilidad se publicaban sin sus huecos.** «NNN pruebas en verde»
+  no decía que once regresiones no corren sin `DSH_MODULE_ROOT`, `node`, `bubblewrap` o `jsonschema`;
+  ahora `docs/status.md` nombra cada componente y qué se pierde, y **ningún `skipTest` puede existir
+  sin nombrar un componente que el repositorio no distribuye**. Y cinco comandos que funcionaban —
+  `audit.py archive`, `missions.py reaudit`, `transaction.py install|rollback|uninstall` y
+  `skill-gate-run` — no estaban en `docs/usage.md`; la regresión que los cubre recorre los
+  `add_parser` del repo, así que un subcomando nuevo sin documentar falla ahí.
+- **E13 · el contrato emitido se medía pero no se validaba.** La prueba de presupuesto construía el
+  documento `mode.json` para contar bytes y ahí acababa, así que el generador y
+  `schemas/modes.schema.json` podían separarse en silencio: así rompió la aceptación cuando
+  `candidate_location` se desincronizó. Ahora ambos roles se validan contra el schema, y la
+  comprobación se demuestra no vacía con un `candidate_root` que el schema prohíbe.
+- **E14 · siete funciones públicas sin un solo llamante de producto.** Un análisis AST sobre
+  `scripts/` las encontró: `derived_verdicts`, `validate_verification_results`,
+  `allowed_verification_commands`, `metrics.summarize`, `metrics.verify`, `episodes.stats` y
+  `episodes.read_episodes`. Todas cableadas. `episodes.is_repeat` se **elimina**: con E6 el lector es
+  el plugin, y un segundo lector sin llamantes es una segunda fuente de verdad.
+- **F5 capa B DECLINADO, con motivo medido.** El índice local del codebase duplica el alcance que
+  `dsh-tool-fs-search` ya da a todo modo generado, sus dependencias no son distribuibles en este
+  árbol, y su propio invariante —«el índice es un localizador, no prueba de nada»— lo saca del árbol
+  de lo que el framework acierta. Lo que cambia la decisión queda escrito: una campaña que mida tokens
+  de navegación por encima de lo que cubre la búsqueda, y entonces se construye por la estructura de
+  símbolo que a los modos les falta.
+- **Suite: 755 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).** Cada hueco lleva su canario:
+  quitar la consulta de la memoria, la derivación, el comando de métricas, el chequeo de reenvío, el
+  recuento de repeticiones, la deriva de la memoria o la clave del contrato hace fallar la suite.
+
 ## Cerrar el bucle de la memoria — 2026-10-01
-- **El framework affirming algo que solo estaba escrito.** La auditoría de cierre de la ronda
+- **El framework afirmaba algo que solo estaba escrito.** La auditoría de cierre de la ronda
   anterior encontró que E2 entregaba `episodes.jsonl` y `episodes-index.json` con diecisiete
   regresiones que probaban que el registro funciona, y que **nada leía el índice**: `episodes.recall`
   e `episodes.is_repeat` no los llamaba nadie del producto, solo las pruebas. `docs/usage.md`

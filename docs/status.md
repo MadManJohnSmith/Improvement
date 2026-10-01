@@ -70,6 +70,25 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 - Configurar proveedor en DSH es responsabilidad previa del usuario; el framework no obtiene API keys.
 - El hardening de piloto requiere evidencia real: un prompt o un estado declarativo no acreditan autonomía, carga de skills ni aislamiento.
 
+## Qué pruebas no se ejecutan aquí
+
+La cuenta que se publica («NNN pruebas en verde») no es el total, y decirlo es
+justo lo que la hace publicable. **Once regresiones se saltan** en una máquina
+sin los componentes externos, y todas nombran el componente que falta:
+
+| componente ausente | qué se pierde |
+|---|---|
+| `DSH_MODULE_ROOT` con runtime instalado | las 7 de confinamiento del auditor (`tests/test_auditor_confinement.py`, `EROFS` real contra bwrap), el arranque real de servicios (`tests/test_host_launcher.py`) y la escalada same-mode del plugin |
+| `node` en `PATH` | las regresiones que conducen el módulo del plugin directamente |
+| `bubblewrap` | la recuperación durable de proceso/contenedor |
+| `jsonschema` | la paridad de `acceptance-plan` con su JSON Schema (la validación pura en Python sigue corriendo) |
+
+Ninguna es un skip incondicional, y una regresión que se salta sin nombrar un
+componente que el repositorio no distribuye ya no puede existir:
+`tests/test_architecture_consistency.py` lo comprueba sobre el texto de cada
+`skipTest`.
+
+
 ## C0–C7 — completadas
 
 | Etapa | Estado | Salida requerida |
@@ -190,5 +209,25 @@ porque una prevención que falló es un defecto distinto del primero. El hueco n
 tapó con una frase: se tapó con una regresión de ocho casos canario-comprobada, y con
 otra que ata persona, contrato y plugin para que no vuelvan a divergir sin que nada
 falle.
+
+**Segunda auditoría: la misma enfermedad, siete veces.** Una revisión sistemática —AST sobre
+`scripts/` para código huérfano, fila por fila sobre las cuarenta filas `HECHO` de la matriz, y
+contraste entre persona, contrato, prompt de Creator y plugin— encontró siete afirmaciones más que
+eran ciertas del documento y falsas del producto. **E7:** el veredicto derivado se prometía en tres
+sitios y `stack.derived_verdicts` no lo llamaba nadie, así que un hallazgo verificado en parte no
+tenía veredicto en ninguna parte. **E8:** las métricas se escribían y `metrics.summarize` no las
+agregaba nunca. **E9:** al RSI le faltaba la mitad de la reflexión —el gate rechazaba y tiraba la
+razón, y el siguiente intento pagaba una corrida de agente para recibir la misma respuesta—. **E10:**
+la cobertura de stacks no era falsable; editar el documento para afirmar una campaña que no ocurrió
+dejaba las pruebas verdes. **E11 y E12:** once regresiones no corrían sin runtime y la cuenta no lo
+decía, y cinco comandos que funcionaban no estaban en `docs/usage.md`. **E13:** el contrato emitido se
+medía en bytes pero no se validaba contra su schema. **E14:** siete funciones públicas sin un solo
+llamante de producto, siete cableadas y una eliminada por ser un segundo lector del que ya se ocupa
+el plugin. Todos con canario: romper cualquiera de ellos hace fallar la suite.
+
+**F5 capa B (índice local del codebase) DECLINADO, no pendiente.** El motivo está medido y escrito
+en el borrador: duplica el alcance que `dsh-tool-fs-search` ya da a todo modo generado, sus
+dependencias no son distribuibles en este árbol, y su propio invariante lo saca del árbol de lo que
+el framework acierta.
 
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

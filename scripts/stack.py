@@ -101,6 +101,25 @@ STACKS = {
     },
 }
 
+# Which stacks a real campaign ran end to end, and which project it was.
+#
+# This lives here, in the registry, and not in the documentation or in a test:
+# the previous version was a set hardcoded inside a test that only checked four
+# strings appeared somewhere in `docs/status.md`. Editing the document to claim
+# a campaign that never happened left that test green, which is the one failure
+# mode it was written to prevent. A claim that can be edited without breaking
+# anything is not a claim, and `docs/status.md` is now checked against this.
+#
+# A stack absent from this table is declared, not proven: its verification
+# command is checked for resolvability against a real toolchain, which is what
+# can be verified without one project of every technology, and nothing more.
+CAMPAIGN_EVIDENCE = {
+    "rust": "Syncify (Rust/Tauri/Vue), CI verde en 3 jobs",
+    "python-django": "RehabWeb, 108 pruebas Django reales",
+    "python-generic": "el propio framework sobre sí mismo",
+    "dart-flutter": "LoboApp, 166 pruebas Flutter",
+}
+
 # The exact provision step per missing capability: what a mode (or operator) can
 # do deterministically, always outside the product tree, and how the runtime can
 # be pointed at it. Nothing here executes automatically.
@@ -666,16 +685,30 @@ def derived_verdicts(records):
     entrypoint, and a mode cannot soften a fully capable stack by declaring a
     mixed state. The worse result wins — FAIL over BLOCKED over PASS — because a
     finding is verified only when every entrypoint that could run said PASS.
+
+    The bare verdict loses the distinction that decides what happens next: a
+    finding with one PASS and one BLOCKED derives `BLOCKED`, and so does a
+    finding whose only entrypoint was BLOCKED, but they are not the same
+    situation — the first had a test command that ran and one that could not,
+    the second had none. So the group carries `partial`, and a reader can tell
+    "verified in part" from "not verified at all" with no mode ever writing the
+    word. A group containing a FAIL is not partial, it is failed: calling that
+    partial would soften the one result that must never be softened.
+
+    Returns `{key: {verdict, partial, entries}}`.
     """
-    verdicts = {}
+    order = {'PASS': 1, 'BLOCKED': 2, 'FAIL': 3}
+    groups = {}
     for record in records or []:
         key = (record['finding_id'], record['candidate_head'])
-        current = verdicts.get(key)
-        if current is None:
-            verdicts[key] = record['result']
-            continue
-        order = {'PASS': 1, 'BLOCKED': 2, 'FAIL': 3}
-        verdicts[key] = max(current, record['result'], key=order.get)
+        groups.setdefault(key, []).append(record['result'])
+    verdicts = {}
+    for key, results in groups.items():
+        verdicts[key] = {
+            'verdict': max(results, key=order.get),
+            'partial': 'FAIL' not in results and set(results) == {'PASS', 'BLOCKED'},
+            'entries': len(results),
+        }
     return verdicts
 
 

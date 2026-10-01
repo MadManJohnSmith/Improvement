@@ -344,20 +344,37 @@ class StackPlanTests(unittest.TestCase):
             records = [record(verify, 'FAIL'), record(lint, 'BLOCKED')]
             stack.validate_verification_results(value, records)
             self.assertEqual(
-                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'FAIL'})
+                stack.derived_verdicts(records),
+                {('A-01', 'a' * 40): {'verdict': 'FAIL', 'partial': False,
+                                      'entries': 2}})
 
             # A missing capability is BLOCKED on its own entrypoint while the
             # one that ran still says PASS: that group is partial, and the
-            # derivation says so without anyone writing the word.
+            # derivation says so without anyone writing the word. It is the
+            # case the bare verdict threw away, because it derives BLOCKED
+            # either way.
             records = [record(verify, 'PASS'), record(lint, 'BLOCKED')]
             stack.validate_verification_results(value, records)
             self.assertEqual(
-                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'BLOCKED'})
+                stack.derived_verdicts(records),
+                {('A-01', 'a' * 40): {'verdict': 'BLOCKED', 'partial': True,
+                                      'entries': 2}})
 
             records = [record(verify, 'PASS')]
             stack.validate_verification_results(value, records)
             self.assertEqual(
-                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'PASS'})
+                stack.derived_verdicts(records),
+                {('A-01', 'a' * 40): {'verdict': 'PASS', 'partial': False,
+                                      'entries': 1}})
+
+            # The same BLOCKED the partial group derives, with nothing that ran:
+            # not partial, because nothing was ever half-verified.
+            records = [record(lint, 'BLOCKED')]
+            stack.validate_verification_results(value, records)
+            self.assertEqual(
+                stack.derived_verdicts(records),
+                {('A-01', 'a' * 40): {'verdict': 'BLOCKED', 'partial': False,
+                                      'entries': 1}})
 
             with self.assertRaisesRegex(ValueError, 'veredicto inválido'):
                 stack.validate_verification_results(
@@ -370,7 +387,8 @@ class StackPlanTests(unittest.TestCase):
                     value, [record(verify, 'PASS'), record(lint, 'FAIL')])
             self.assertEqual(
                 stack.derived_verdicts([record(verify, 'PASS', 'A-02')]),
-                {('A-02', 'a' * 40): 'PASS'})
+                {('A-02', 'a' * 40): {'verdict': 'PASS', 'partial': False,
+                                      'entries': 1}})
 
     def test_ready_stack_accepts_pass_or_fail_from_real_entrypoint(self):
         with tempfile.TemporaryDirectory() as tmp:

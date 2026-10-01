@@ -86,6 +86,29 @@ Pieza nueva más importante; diseñar antes de construir. Tres capas con ciclos 
 - **Relación con la memoria de decisiones de §7:** complementaria. La de §7 es el contrato normativo de decisiones técnicas; las capas B/C son herramientas de acceso y recuerdo, sin autoridad.
 - **Criterio de salida:** un ensayo donde un executor encuentra los símbolos pertinentes de un repo mediano vía consulta al índice, con medición de tokens consumidos frente a navegación manual, y con el índice demostrando re-indexado incremental y presupuesto respetado.
 
+**Decisión 2026-10-01 — capa C implementada (E2/E6), capa B DECLINADA con motivo medido.**
+
+- **Capa C** está implementada y en uso: `scripts/episodes.py` (ledger append-only más índice O(1))
+  y, desde E6, **consultada por `workflow_write` en cada escritura de hallazgo**, que estampa
+  `evidence.prior_episode` cuando un arreglo ya verificado había cerrado ese código. Lo que el
+  borrador pedía y no está: la compaction jerárquica y el LRU con TTL. Hay tope de disco e índice,
+  no decaimiento. **Declarado, no oculto.**
+- **Capa B se declina.** Tres razones, en orden de peso:
+  1. **Duplica alcance que los modos ya tienen.** `scripts/composition_contract.py` exige que todo
+     modo generado lleve `@deepseek-ai/dsh-tool-fs-search` con `sampleOverCapGlobResults: false`: los
+     modos ya buscan en todo el producto. Un índice sería una segunda fuente de verdad sobre el
+     producto, que es el mismo antipatrón que este framework lleva tres unidades cerrando —la memoria
+     episódica (E2), la candidata sombra (E4) y el conflicto worktree/confinamiento (D2)—.
+  2. **Sus dependencias no son distribuibles aquí.** `tree_sitter`, `sqlite_vec`, `fastembed` y
+     `onnxruntime` no están instalados y la política prohíbe meter dependencias en este árbol. Es la
+     misma regla que hizo rechazar el motor de `microsoft/skillopt`: se toma el diseño, no la cadena.
+  3. **No es una brecha de corrección sino de ergonomía.** Su propio invariante —«el índice es un
+     localizador, no prueba de nada»— lo sitúa fuera del árbol de aquello que el framework acierta.
+- **Qué cambiaría la decisión:** una campaña real que mida tokens de navegación por encima de lo que
+  `fs-search` cubre. Si aparece, el índice se construye **por la capacidad que a los modos les
+  falta** —estructura e identidad de símbolo, no una copia de la búsqueda— y con salida medida en
+  tokens, como pedía el criterio original.
+
 ## 4. Decisiones abiertas (requieren decisión del mantenedor)
 
 - **D1 — Ubicación de las specs:** dentro del workspace externo de la misión (estado de la misión) vs. dentro del árbol del producto (cuando el producto las debe versionar). Afecta a §14.
