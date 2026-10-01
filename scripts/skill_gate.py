@@ -19,6 +19,13 @@ be handed, and the files carry no `target_mode` and no prompt. Nothing can
 execute them as written, so supplying a runtime would not by itself produce a
 score: the scenarios have to be given an executable form first.
 
+The form to copy already exists. `acceptance_harness._public_input` materializes
+the same idea with a `task`, a bounded fixture and an `evaluated_claim`, and its
+type vocabulary covers all eight types this corpus uses. The two corpora are
+disconnected today -- nothing outside this module reads `library/`, and the
+harness generates its own Host cases -- so wiring them together is authoring
+work over a known template, not new machinery.
+
 Three properties are borrowed from SkillOpt's `evaluation/gate.py` because
 they are easy to get wrong:
 
