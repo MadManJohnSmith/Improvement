@@ -1,5 +1,12 @@
 # Cambios
 
+## Se ejecutó cada comando documentado, y esta vez no había defecto — 2026-09-30
+- Completado el barrido de los comandos que `docs/usage.md` enseña: `bootstrap.py install/accept/stack/state/skill-gate` y `missions.py run-check/verify/reaudit`. Se ejecutaron **fuera del árbol canónico**, con paquetes y proyectos reales, no con fixtures de la suite.
+- **`accept` funciona y se comporta como debe en las dos direcciones.** Con un paquete válido devuelve `ACCEPT_REQUESTED` con digest de manifiesto y número de artefactos; al alterar un `mode.json` para que ya no case con su manifiesto lo retiene nombrando el hash exacto que no cuadra — que es la propiedad que importa, porque un Hash que no se comprueba no es un hash.
+- Los subcomandos que no habían podido ejecutarse **fallan cerrado con un motivo claro** ante una entrada inválida: `Workspace no existe`, `mode-state no es un directorio real`, `Hashes no coinciden`.
+- Se registra como ronda **sin defecto**, y con la misma confianza que las otras: ejecutar lo documentado es lo que encontró los cinco fallos anteriores, así que un barrido limpio también es un resultado que merece quedar escrito en vez de desaparecer.
+- Suite: 633 OK (4 saltadas).
+
 ## El comando documentado de `missions.py` no funcionaba — 2026-09-30
 - **Seguir la documentación al pie de la letra hacía fallar.** `docs/usage.md` describía el contrato de `task.json` con el campo `timeout`, pero el mandato compara `--timeout` contra **`task.timeout_seconds`**. Un `task.json` escrito como lo documenta se rechaza con «Comando o timeout fuera del mandato» y con código 1, aunque el comando sea perfectamente legítimo: el mismo error que un mandato denegado a propósito, que es lo que ese mensaje existe para decir.
 - Se corrigió la documentación, no el código: las regresiones de `test_two_mode_cycle.py` ya usan `timeout_seconds`, o sea que el código es el canónico y el doc estaba solo. Documentar el nombre correcto no es un detalle: la diferencia entre un rechazo honesto y uno por un error de tecleo es justo lo que este comando debe comunicar.
