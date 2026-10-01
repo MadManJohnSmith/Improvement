@@ -108,9 +108,15 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         # path of the maintainer in it. Source and prose are judged the same way,
         # because both ship.
         # Only tracked files are judged, so ignored scratch a tool leaves in the
-        # working tree cannot fail a build that is otherwise clean.
+        # working tree cannot fail a build that is otherwise clean. Tests are
+        # excluded because the guard itself and the negative cases that prove a
+        # path is refused have to contain the string they are refusing.
+        # JSON and YAML were missing from the list until this round: a schema or
+        # a preset is published exactly like a document, and `schemas/_policy.json`
+        # states the same rule the guard was enforcing for prose.
         tracked = subprocess.run(
-            ['git', 'ls-files', '-z', '--', '*.md', '*.mjs', '*.py', '*.sh'],
+            ['git', 'ls-files', '-z', '--', '*.md', '*.mjs', '*.py', '*.sh',
+             '*.json', '*.yml', '*.yaml'],
             cwd=ROOT, capture_output=True, text=True, check=True).stdout
         offenders = [name for name in tracked.split('\0')
                      if name
@@ -212,6 +218,34 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertTrue(declared, 'no subcommands found: the scan is broken')
         missing = sorted(name for name in declared if name not in usage)
         self.assertEqual(missing, [])
+
+    def test_every_flag_the_usage_document_shows_exists(self):
+        """The other half of the check above, one level deeper.
+
+        A subcommand that works but is undocumented is invisible; a flag that is
+        documented and does not exist is worse, because it is discovered at the
+        operator's terminal, on a mission, after the command has been read. The
+        usage document is the only place a flag is taught, so whatever it shows
+        has to exist.
+
+        Scoped to the lines that invoke `bootstrap.py`, which is the surface the
+        document teaches; a flag of `git`, `npm` or `flutter` shown in the same
+        examples is not this repository's to define.
+        """
+        usage = self.read('docs/usage.md')
+        defined = set()
+        for path in sorted((ROOT / 'scripts').glob('*.py')):
+            source = path.read_text()
+            defined.update(re.findall(r"['\"](--[a-z][a-z0-9-]+)['\"]", source))
+        documented = set()
+        for line in usage.splitlines():
+            if 'bootstrap.py' in line:
+                documented.update(
+                    re.findall(r"(?<![\w-])(--[a-z][a-z0-9-]+)", line))
+        self.assertTrue(documented, 'ningún flag encontrado: el escaneo está roto')
+        missing = sorted(flag for flag in documented if flag not in defined)
+        self.assertEqual(missing, [],
+                         f'flags documentadas que bootstrap.py no define: {missing}')
 
     def test_the_skipped_regressions_are_named_where_the_suite_count_is(self):
         """The number that goes green has to say what did not run.

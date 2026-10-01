@@ -270,4 +270,10 @@ los literales de `scripts/` y un segundo test que relee esos literales para que 
 obsoleta —que es como aparecieron `evidence-ledger.jsonl` y `scenarios.jsonl` en su primera corrida—.
 `fixtures/` queda exento por diseño y sujeto a su propia regla de saneado.
 
+**E22 · dos guardarraíles que AGENTS.md pedía y nadie había puesto.** La regla de «sin rutas locales
+del mantenedor» sí se comprobaba, pero solo sobre `*.md`, `*.mjs`, `*.py` y `*.sh`: un schema o un
+preset se publican igual que un documento, y la búsqueda ahora cubre también `*.json` y `*.yml`.
+Y E12 comprobaba que todo subcomando esté documentado pero no que **todo flag documentado exista**,
+que es el fallo que se descubre en la terminal del operador en pleno vuelo. Ambos con canario.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

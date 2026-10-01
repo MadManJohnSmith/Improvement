@@ -31,8 +31,8 @@ SCHEMA_OF = {
     "golden-manifest.json": "generation-manifest",
     "project-manifest.json": "project-manifest",
 }
-# Absolute paths of a machine, not of a project. `/home/alan` in a published
-# fixture is the maintainer's directory; `/opt/app` is not.
+# Absolute paths of a machine, not of a project. `/home/alice` in a published
+# fixture is somebody's directory; `/opt/app` is not.
 LOCAL_PATH = re.compile(
     r"(?<![\w.])/(?:home|Users|root|var/folders)/[\w.-]+"
     r"|[A-Za-z]:\\\\?[\w.\\-]+")

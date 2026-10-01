@@ -17,7 +17,16 @@
   real tiene por forma la cosa que representa; lo que se le exige es estar saneado, y eso lo comprueba
   su propio test. La excepción nombra su directorio y no es una excepción silenciosa.
 - **Canario:** plantar `mode-state/work-items.json` en el árbol rompe la suite y lo nombra.
-- **Suite: 772 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+- **E22 · dos guardarraíles que el propio AGENTS.md pedía y nadie había puesto.** El primero ya
+  existía pero solo miraba `*.md`, `*.mjs`, `*.py` y `*.sh`: un schema o un preset son tan
+  publicables como un documento, y `schemas/_policy.json` declara la misma regla que el guardarraíles
+  aplicaba a la prosa. La ruta del mantenedor ahora se busca también en `*.json` y `*.yml`. Canario:
+  plantar `/home/<mantenedor>` en `improvement-verification.json` rompe la suite. El segundo: E12
+  comprobaba que todo subcomando esté documentado, pero no que **todo flag documentado exista** — un
+  subcomando invisible se descubre leyendo, un flag inexistente se descubre en la terminal del
+  operador, en una misión, después de haber leído el comando. Canario: `--proyecto` en `docs/usage.md`
+  rompe la suite.
+- **Suite: 773 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
 
 ## Quinta auditoría: atribución y enlaces — 2026-10-01
 - **E20 · la atribución se quedaba a un paso del aviso público.** Las 25 skills de `library/`
