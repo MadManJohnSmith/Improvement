@@ -126,6 +126,25 @@ def anchored_findings(state):
     return {"anchored": anchored, "unanchored": unanchored}
 
 
+def audit_scopes(state):
+    """How much of the ledger came from complete audits and how much from partial ones.
+
+    An audit that names the whole project has to observe before it reads the
+    queue, or it re-reports what the queue already had. That distinction is a
+    claim until it is countable, and the handoff_id prefix carries it.
+    """
+    counts = {"complete": 0, "incremental": 0}
+    for record in _read_jsonl(state / "handoffs.jsonl"):
+        handoff_id = record.get("handoff_id")
+        if not isinstance(handoff_id, str):
+            continue
+        if handoff_id.startswith("audit-complete-"):
+            counts["complete"] += 1
+        elif handoff_id.startswith("audit-"):
+            counts["incremental"] += 1
+    return counts
+
+
 def closed_findings(state):
     """Findings the ledger still calls OPEN although their work item is VERIFIED.
 
@@ -172,6 +191,7 @@ def reconcile(product, workspace):
     report = {
         "state": str(state),
         "anchors": anchored_findings(state),
+        "audit_scopes": audit_scopes(state),
         "closed_findings": closed_findings(state),
         "uncovered_findings": uncovered_findings(state),
         "limits": LIMITS,

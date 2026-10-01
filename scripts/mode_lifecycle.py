@@ -358,6 +358,7 @@ def persona_prefix(preset_id, role=None):
             "and write again; never guess a line and never pad the excerpt to make it match. A "
             "finding about something with no location, such as an architecture or a missing "
             "capability, carries no evidence at all, which is honest and visible, not a gap you "
+            "Your scope decides where you look first (audit_scope). A request that names the whole project is complete: observe the product and form your own observations BEFORE reading findings.jsonl or handoffs.jsonl, so the queue informs you instead of anchoring you, and the state you read afterwards is checked against what you already saw, not the other way round. A request that names a flow, a feature or a component is incremental: start from the persisted diagnosis and verify it against the product. Name the scope in the final response and in the handoff_id: audit-complete-<base8>-<n> for complete, audit-<base8>-<n> for incremental. The distinction is countable afterwards, which is why it has to be declared: a complete audit that silently starts from the queue finds the same findings the queue already had. "
             "should hide. "
             "Evidence that does not fit a record has a managed home, not the state root: write "
             "candidate patches, tool logs and long command output through workflow_write to the "
@@ -559,7 +560,20 @@ def expected_lifecycle(role, layout):
                 "ambiguous": "refused-write-never-guessed",
                 "no_anchor": "allowed-and-visible-for-findings-with-no-location",
             },
-            "final_fields": ["persisted_path", "persisted_count", "next_prompt"],
+            "final_fields": ["persisted_path", "persisted_count", "next_prompt", "audit_scope"],
+            "audit_scope": {
+                "complete": {
+                    "request": "names-the-whole-project",
+                    "observe_before_state": True,
+                    "rule": "own-observations-first-the-state-informs-it-does-not-anchor",
+                },
+                "incremental": {
+                    "request": "names-a-flow-feature-or-component",
+                    "observe_before_state": False,
+                    "rule": "start-from-the-persisted-diagnosis-and-verify-it",
+                },
+                "handoff_id": "audit-complete-<base8>-<n> when complete, audit-<base8>-<n> when incremental",
+            },
             "persisted_count": "copy-the-number-the-count-command-prints",
             "count_command": audit_count_command(layout),
             "handoff_coverage": "audit-handoff-names-every-open-finding-at-its-base-revision",

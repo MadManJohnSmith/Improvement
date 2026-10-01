@@ -512,6 +512,28 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertTrue(any("A-03" in name for name in dropped))
             self.assertTrue(any("A-04" in name for name in dropped))
 
+    def test_complete_audit_observes_before_it_reads_the_queue(self):
+        """D10: reading the state first is anchoring, not diligence.
+
+        The template used to put the state read before the audit, which inverts
+        what a complete review needs: form your own observations, then check the
+        persisted diagnosis against them. An incremental review is the opposite
+        case and keeps the order it had. The scope is declared in the response
+        and in the handoff id so the ledger can be counted afterwards.
+        """
+        layout = {"session_root": "P", "product_root": "P",
+                  "workspace_root": "P-workspace", "state_root": "P-workspace/mode-state"}
+        scope = mode_lifecycle.expected_lifecycle("auditor", layout)["audit_handoff"]["audit_scope"]
+        self.assertTrue(scope["complete"]["observe_before_state"])
+        self.assertFalse(scope["incremental"]["observe_before_state"])
+        self.assertIn("audit-complete-", scope["handoff_id"])
+        self.assertIn("audit_scope", mode_lifecycle.expected_lifecycle(
+            "auditor", layout)["audit_handoff"]["final_fields"])
+        prefix = mode_lifecycle.persona_prefix("project-auditor")
+        self.assertIn("does-not-anchor", scope["complete"]["rule"])
+        self.assertIn("BEFORE reading", prefix)
+        self.assertIn("instead of anchoring you", prefix)
+
     def test_persona_requires_verbatim_candidate_persistence(self):
         prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
         self.assertIn("persist it verbatim, field-for-field", prefix)

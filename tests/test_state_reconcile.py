@@ -205,6 +205,31 @@ class StateReconcileTests(unittest.TestCase):
         with self.assertRaisesRegex(state_reconcile.ReconcileError, "solo se retira una INTEGRATED"):
             state_reconcile.retire(self.product, self.workspace)
 
+    def test_audit_scope_is_counted_from_the_handoff_id(self):
+        """A complete audit that starts from the queue re-reports the queue.
+
+        The distinction between observing first and verifying first is a claim
+        in the prompt; putting it in the handoff id is what makes it countable
+        afterwards, and a ledger that only ever says "audit-1" cannot say which
+        kind of review produced it.
+        """
+        self._write_state(
+            None,
+            findings=[{"finding_id": "A-01", "base_revision": self.base,
+                       "severity": "LOW", "summary": "x", "status": "OPEN"}],
+            handoffs=[{"handoff_id": "audit-complete-abcdef12-1", "base_revision": self.base,
+                       "finding_ids": ["A-01"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."},
+                      {"handoff_id": "audit-abcdef12-2", "base_revision": self.base,
+                       "finding_ids": ["A-01"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."},
+                      {"handoff_id": "repair-1", "base_revision": self.base,
+                       "finding_ids": ["A-01"], "next_prompt": "Repara A-01; no publiques."}])
+        report = state_reconcile.reconcile(self.product, self.workspace)
+        self.assertEqual(report["audit_scopes"], {"complete": 1, "incremental": 1})
+        self.assertEqual(report["closed_findings"], [])
+        self.assertEqual(report["uncovered_findings"], [])
+
     def test_anchor_ratio_is_reported_without_touching_the_ledger(self):
         self._write_state(
             None,

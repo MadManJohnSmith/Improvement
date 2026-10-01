@@ -1,5 +1,10 @@
 # Cambios
 
+## Distinguir la auditoría completa de la incremental — 2026-09-30
+- **La plantilla ordenaba leer el estado antes de auditar**, que es justo lo contrario de lo que necesita una revisión completa: el modelo se ancla a la cola y vuelve a encontrar lo que la cola ya tenía. Una petición que nombra el proyecto entero ahora obliga a formar observaciones propias primero y a contrastar el diagnóstico persistido con ellas; una petición que nombra un flujo, una característica o un componente sigue partiendo del diagnóstico, que es lo correcto para una incremental.
+- El alcance se declara en la respuesta y viaja en el `handoff_id` (`audit-complete-<base8>-<n>` frente a `audit-<base8>-<n>`), y `bootstrap.py state` cuenta ambos. Sin eso la distinción era una frase del prompt, y una frase del prompt no se puede auditar a posteriori.
+- Suite: 621 OK (3 saltadas).
+
 ## La evidencia grande tiene casa propia y topes — 2026-09-30
 - **Un parche de 4,0 MB y un log de 5,8 MB acababan archivados como `unexpected-evidence`.** No era un defecto del preflight: un registro de hallazgo vive en 4 KiB y un artefacto grande no cabe, así que la única dirección posible era la raíz del estado — donde el preflight la trata como fichero intruso y la archiva con recibo. Trabajo legítimo tratado como basura por no tener dónde vivir.
 - Ahora los parches de candidata, los logs de herramienta y la salida larga de comandos van a `real_stack_verification.artifacts.root`: un hermano de `mode-state` dentro del mismo workspace, con topes propios (8 MiB por fichero, 256 MiB totales, 200 ficheros) comprobados **antes** de escribir y nombre seguro. Lo que se descarte deja recibo en `overflows.jsonl`. Los resultados de verificación nunca van ahí: siguen en `mode-state`, porque son registros que preflight y Host validan.
