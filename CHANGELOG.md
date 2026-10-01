@@ -1,5 +1,11 @@
 # Cambios
 
+## Las 51 comprobaciones del self-check ya no son código muerto — 2026-09-30
+- `verify-workflow-write.mjs` **no lo invocaba nadie**: 51 checks —integridad del plan de capacidades, estrictez de schema, denegaciones del sandbox, y el barrido M7/M9 de escalada— que solo se ejecutaban a mano. Un script de verificación que nadie corre se pudre en silencio, y este respaldaba justo las afirmaciones de seguridad del repositorio.
+- **Al arreglar la ruta del mantenedor en la entrada anterior se había introducido una pérdida de alcance**, y se corrigió aquí: el script pasó a fallar cerrado sin `DSH_TOOL_BASH`, con lo cual **los 32 checks que solo necesitan node nunca llegaban a ejecutarse**. Ahora el barrido M9 es un bloque condicionado: sin runtime imprime `SKIP` y los otros 33 se siguen corriendo. Perder verificación por una variable de entorno ausente sería exactamente el `skip` que esta serie de commits lleva eliminado.
+- Una regresión nueva lo ejecuta dentro de la suite y exige al menos 33 `PASS`, con lo que los 51 dejan de ser código muerto. Se comprobó en las dos direcciones: **con runtime los saltados bajan de 4 a 2** y la prueba corre; y al forzar un check a fallar la prueba falla, luego no es vacía.
+- Suite: 632 OK (4 saltadas sin runtime, 2 con `DSH_MODULE_ROOT`).
+
 ## Auditoría de los `skip`: solo dos ocultaban defectos — 2026-09-30
 - Un `skip` que se activa por defecto no es una prueba, es una ausencia de prueba, y ya demostró que puede esconder un bug real. Se revisaron **las doce** declaradas en la suite en vez de dar por bueno el resto. Resultado: **solo dos** ocultaban algo —las dos de runtime vivo de la entrada anterior—. Las demás se ejecutan de verdad en esta máquina.
 - Las siete de `test_workflow_write_plugin.py` que dependen de `node` **corren** (`node` está en el PATH) y la de reinicio de Host en `test_recovery_durable.py` **también**, porque bubblewrap está instalado. La de paridad JSON Schema se salta por `jsonschema` ausente, que es una dependencia opcional legitimí1a: se comprobó su contenido a mano y **las tres validadores coinciden** en los cuatro casos (plan válido y los tres campos con `" \t"`), así que el `skip` no esconde una discrepancia.

@@ -9,6 +9,7 @@ plus the M7 workflow_write compatibility path and filesystem denial.
 DSH_MODULE_ROOT=/absolute/node_modules python3 -B -m unittest discover -s tests
 """
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -1288,6 +1289,44 @@ class WorkflowWritePluginTest(unittest.TestCase):
                         'a state write outside <workspace>/mode-state must be denied')
         self.assertTrue(report['productWrite']['unchanged'],
                         'the denied product write still mutated the product')
+
+    def test_selfcheck_script_passes_its_own_checks(self):
+        """The self-check runs here, so it cannot rot into a script nobody runs.
+
+        `verify-workflow-write.mjs` holds 51 checks over the plugin, including
+        the managed-plan integrity and schema-strictness denials. Nothing invoked
+        it, so it was free to drift. It needs `node` plus the runtime's
+        `dsh-tools`; without that it now reports SKIP for the M9 bash sweep and
+        still asserts the 33 checks that only need a simulated context.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the self-check')
+        env = dict(os.environ)
+        runtime_root = env.get('DSH_MODULE_ROOT')
+        tools_index = None
+        if runtime_root:
+            candidate = Path(runtime_root) / '@deepseek-ai/dsh-tools/lib/index.js'
+            if candidate.is_file():
+                tools_index = str(candidate)
+        if tools_index is None:
+            self.skipTest('Set DSH_MODULE_ROOT to a runtime with @deepseek-ai/dsh-tools')
+        env['DSH_TOOLS_INDEX'] = tools_index
+        bash_index = Path(runtime_root) / '@deepseek-ai/dsh-tool-bash/lib/index.js'
+        if bash_index.is_file():
+            env['DSH_TOOL_BASH'] = str(bash_index)
+        else:
+            env.pop('DSH_TOOL_BASH', None)
+        finished = subprocess.run(
+            [node, str(FRAMEWORK / 'scripts/dsh-plugins/verify-workflow-write.mjs')],
+            capture_output=True, text=True, timeout=180, env=env)
+        output = finished.stdout + finished.stderr
+        self.assertEqual(finished.returncode, 0, output[-3000:])
+        self.assertIn('TODO OK', output)
+        self.assertNotIn('\nFAIL  ', output, output[-2000:])
+        # The 33 context-only checks must run with node alone; losing them to a
+        # missing runtime path is how verification goes quiet.
+        self.assertGreaterEqual(output.count('PASS  '), 33, output[-2000:])
 
 
 if __name__ == '__main__':
