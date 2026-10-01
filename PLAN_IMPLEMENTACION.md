@@ -80,7 +80,7 @@ pendiente con su criterio de cierre; ninguna está implícita en otro estado `HE
 | D8 | Vista derivada de hallazgos cerrados por work item VERIFIED | HECHO 2026-09-30 | `bootstrap.py state` nombra `closed_findings` y `uncovered_findings` sin reescribir el ledger |
 | D9 | Directorio de evidencia fuera de `mode-state` para parches y logs grandes | HECHO 2026-09-30 | Raíz gestionada `<workspace>/evidence` con topes propios (8 MiB/fichero, 256 MiB, 200 ficheros, nombre seguro) y recibo en `overflows.jsonl` al descarter; `workflow_write` la acepta y sigue negando todo lo demás |
 | D10 | Plantilla que distinga auditoría completa de incremental (anti-anclaje) | HECHO 2026-09-30 | `audit_scope` en el contrato y la persona: en completa se observa antes de leer la cola, en incremental se parte del diagnóstico; el alcance viaja en el `handoff_id` y `bootstrap.py state` cuenta ambos |
-| D11 | Paquete de memoria F5, RSI y disparador por commit | PENDIENTE | Retomados por decisión del titular; el diseño de partida es `docs/external-orchestration-draft.md` |
+| D11 | Paquete de memoria F5, RSI y disparador por commit | PARCIAL 2026-09-30 | El gate de RSI está implementado y probado (`scripts/skill_gate.py`, `bootstrap.py skill-gate`): holdout disjunto, aceptación solo por mejora estricta, rechazo por regresión en entrenamiento y abstención sin evidencia. Falta correr los escenarios contra un modo DSH real, sin lo cual ningún cambio de biblioteca ha pasado por él, y siguen sin decidir F5 (memoria episódica e índice) y el disparador por commit |
 | D12 | Publicación de la beta (tag y push) | BLOQUEADO | G6 requiere autorización de destino |
 
 ## Dependencias

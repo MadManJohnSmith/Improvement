@@ -98,6 +98,19 @@ nombre que no era el del repo y hubo que reescribir la historia con
 mano los SHA anotados en los artefactos. El framework no hace commits, así que esta
 regla es suya; el trabajo de reparar el efecto ya no existe.
 
+### Decidir si un cambio de biblioteca de skills entra
+
+```bash
+python3 -B scripts/bootstrap.py skill-gate --baseline baseline.json --candidate candidate.json
+```
+
+Un fichero de observaciones por escenario, `{"scenarios": {"SC-107": "PASS", ...}}`, produced por una corrida real
+—aquí no se ejecuta nada, porque correr escenarios contra un agente necesita el runtime. El gate acepta el
+candidato solo si el holdout mejora **estrictamente**, lo rechaza si pierde en la partición de entrenamiento aunque
+el holdout suba, y se abstiene —no acepta, no rechaza— si el slice de validación no es disjunto o no hay
+observaciones. El reparto sale del digest del `scenario_id`, así que es el mismo en cada corrida y un cambio no
+puede elegir a qué escenarios le toca juzgarlo.
+
 ### Cuando el estado y el repositorio dejan de contarse (operador)
 
 El mismo comando sin `--retire` ni `--repoint` es un informe, no modifica nada:

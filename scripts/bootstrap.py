@@ -1402,6 +1402,17 @@ def main():
     p_purge.add_argument("--confirm", action="store_true",
                          help="Confirmar la eliminación destructiva")
 
+    # skill-gate
+    p_gate = sub.add_parser(
+        "skill-gate",
+        help="Decidir si un cambio de la biblioteca de skills mejora el holdout")
+    p_gate.add_argument("--baseline", required=True,
+                        help="Observaciones de la biblioteca actual (JSON)")
+    p_gate.add_argument("--candidate", required=True,
+                        help="Observaciones de la biblioteca candidata (JSON)")
+    p_gate.add_argument("--library", default=str(FRAMEWORK / "library"))
+    p_gate.add_argument("--val-fraction", type=float, default=0.3)
+
     # state
     p_state = sub.add_parser(
         "state",
@@ -1485,6 +1496,15 @@ def main():
                 Path(args.workspace).resolve(),
                 confirm=args.confirm,
             )
+
+        elif args.command == "skill-gate":
+            import skill_gate
+            verdict = skill_gate.evaluate_gate(
+                Path(args.baseline), Path(args.candidate), Path(args.library),
+                args.val_fraction)
+            result = {"result": "RESOLVED" if verdict["action"] == "accept"
+                      else ("ABSTAINED" if verdict["action"] == "abstain" else "RETAINED"),
+                      "gate": verdict}
 
         elif args.command == "state":
             project = Path(args.project).resolve()
