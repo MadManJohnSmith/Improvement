@@ -249,4 +249,15 @@ mostraba el comando declarado sin su argumento, y los bytes del archivo y el pla
 demostraron que no era así. **La sospecha era del renderizado, no del framework** — y el fallo que
 buscaba sigue siendo alcanzable, que es exactamente lo que la regresión de E15 impide.
 
+**Cuarta auditoría: las dos poblaciones que nadie leía.** **E18:** los golden manifests de
+`fixtures/` existen, según su propio README, para validar los generadores y los validadores, y sus
+ficheros no llevan rutas ni credenciales — y ninguna prueba, validador ni módulo abría nada bajo
+`fixtures/`. Los cuatro manifiestos validan hoy contra sus schemas y se comprueban en cada corrida,
+igual que el saneado que el README daba por hecho. **E19:** `prepare_project_skills` copiaba las
+skills **sin parsearlas** y seleccionaba directorios por la mera presencia de `SKILL.md`, así que una
+skill que ningún cargador leería se instalaba sin decir nada y un directorio con contenido sin
+`SKILL.md` se quedaba atrás sin que el resultado lo nombrara. Ahora falla cerrado en los dos casos y
+comprueba las cinco skills reales del repositorio. La prueba que cubría ese camino usaba una skill
+con saltos de línea literales que solo pasaba porque nadie la leía.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

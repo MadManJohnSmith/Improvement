@@ -1,5 +1,32 @@
 # Cambios
 
+## Cuarta auditoría: las dos poblaciones que nadie leía — 2026-10-01
+- **E18 · los fixtures dorados no los leía nadie.** `fixtures/README.md` afirma que sus golden
+  manifests «sirven exclusivamente para validar generadores y validadores de contratos (C0–C3)» y
+  que sus ficheros no llevan «rutas de usuario, claves, tokens ni sesiones». Ninguna prueba, ningún
+  validador y ningún módulo abría nada bajo `fixtures/`: eran decoración, y el saneado era una
+  frase. Un golden manifest que nada valida es exactamente el artefacto que se deriva en silencio
+  cuando el contrato para el que se escribió se mueve —el fallo que el golden file existe para
+  evitar, reproducido por el golden file—. Los cuatro manifiestos validan hoy contra sus schemas, y
+  ahora se comprueban en cada corrida, junto con el nombre de quien se saltaría el saneado.
+- **E19 · el instalador de skills perdía skills y lo informaba como un éxito.** `prepare_project_skills`
+  seleccionaba directorios con `SKILL.md` y copiaba el resto **sin parsearlos**: un `SKILL.md` sin
+  frontmatter, o que declara un nombre distinto del directorio en el que se instala, se copiaba al
+  proyecto del usuario y luego no lo descubría nadie, con un resultado de instalación que informaba
+  éxito. Peor: un directorio con contenido y sin `SKILL.md` no se seleccionaba, así que no se
+  copiaba, y **nada en el resultado decía que se había quedado atrás** —justo lo que la arquitectura
+  prohíbe cuando habla del preflight: que ninguna pérdida sea descubrible solo por cross-referencia.
+  Ahora falla cerrado y nombra el directorio; un directorio vacío, que no pierde nada, se deja pasar.
+  Y las cinco skills que el framework instala en cada proyecto se comprueban ellas mismas: frontmatter
+  que un cargador lee, nombre igual al directorio, descripción dentro de presupuesto, ningún enlace.
+  La arquitectura ya lo exigía —«todo `SKILL.md` exige frontmatter mínimo con `name` idéntico al
+  directorio y `description` no vacía»— y solo lo comprobaba el validador de las skills generadas.
+- **La prueba que cubría ese camino usaba una skill que ningún cargador habría leído.** Escribía
+  `---\nname: demo…` con saltos de línea literales, y el instalador no la parseaba, así que las dos
+  cosas se compensaban. Al parsear de verdad, esa prueba falla: la carga sintética pasa a llevar
+  frontmatter real.
+- **Suite: 768 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+
 ## Tercera auditoría: lo que solo se comprobaba contra un fixture — 2026-10-01
 - **Cambio de dirección, no de método.** Las dos rondas anteriores buscaron afirmaciones de prosa
   que ningún código respaldaba. Esta tercera auditoría mira por el otro extremo: qué reglas del repositorio

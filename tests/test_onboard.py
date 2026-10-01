@@ -1,6 +1,7 @@
 """Ejecutar con python3 -B -m unittest discover -s tests -v."""
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -34,7 +35,7 @@ class OnboardTest(unittest.TestCase):
             workspace.mkdir()
             source = root / 'skills'
             (source / 'demo').mkdir(parents=True)
-            content = '---\\nname: demo\\ndescription: "demo"\\n---\\n'
+            content = '---\nname: demo\ndescription: "demo"\n---\n'
             (source / 'demo' / 'SKILL.md').write_text(content)
             self.assertIn('DRY-RUN', onboard.prepare_project_skills(workspace, source))
             self.assertIn('CREADO', onboard.prepare_project_skills(workspace, source, apply=True))
@@ -59,6 +60,84 @@ class OnboardTest(unittest.TestCase):
                 onboard.prepare_project_skills(workspace, source, apply=True, update=True)
             with self.assertRaises(ValueError):
                 onboard.prepare_project_skills(onboard.FRAMEWORK, source, apply=True)
+
+    def test_a_skill_that_would_not_load_is_refused_before_it_is_copied(self):
+        """What the installer used to do silently, it now refuses to do.
+
+        The five skills the framework ships are copied verbatim into every
+        user's project, and the copy path never parsed them: a `SKILL.md`
+        without frontmatter, or one naming something other than its own
+        directory, would be installed and then never discovered, with an install
+        result that reported success. A populated directory without a
+        `SKILL.md` was worse still — it was not selected, so it was not copied,
+        and nothing in the result said it had been left behind.
+        """
+        def source_with(skill_md=None, *, under=None, extra=None):
+            root = Path(tempfile.mkdtemp(prefix='skills-src-', dir='/tmp'))
+            self.addCleanup(shutil.rmtree, root, True)
+            source = root / 'skills'
+            source.mkdir()
+            if skill_md is not None:
+                (source / 'demo').mkdir()
+                (source / 'demo' / 'SKILL.md').write_text(skill_md, encoding='utf-8')
+            if under is not None:
+                (source / under).mkdir()
+                (source / under / 'notes.txt').write_text('contenido', encoding='utf-8')
+            if extra is not None:
+                (source / extra).mkdir()
+            return source
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / 'workspace'
+            workspace.mkdir()
+            cases = [
+                ('frontmatter ausente', '---\nname: demo\n', None),
+                ('nombre distinto del directorio',
+                 '---\nname: otro\ndescription: "x"\n---\n', None),
+                ('descripción ausente', '---\nname: demo\n---\n', None),
+            ]
+            for label, content, _ in cases:
+                with self.subTest(caso=label):
+                    source = source_with(content)
+                    with self.assertRaises(ValueError) as caught:
+                        onboard.prepare_project_skills(workspace, source)
+                    self.assertIn('demo', str(caught.exception))
+                    self.assertEqual(list(workspace.iterdir()), [],
+                                     'una skill ilegible no debe dejar nada instalado')
+            # A directory with content and no SKILL.md is a loss, and is named.
+            source = source_with(None, under='sin-skill')
+            with self.assertRaises(ValueError) as caught:
+                onboard.prepare_project_skills(workspace, source)
+            self.assertIn('sin-skill', str(caught.exception))
+            # An empty one loses nothing and is left alone.
+            source = source_with('---\nname: demo\ndescription: "d"\n---\n', extra='vacia')
+            self.assertIn('DRY-RUN', onboard.prepare_project_skills(workspace, source))
+
+    def test_the_skills_this_framework_ships_are_the_ones_it_can_load(self):
+        """The population the installer proves nothing about, checked directly.
+
+        `test_prepare_project_skills_is_external_and_no_clobber` installs a
+        synthetic skill, so every property the real five rely on — frontmatter
+        that parses, a name equal to the directory it ships in, a description
+        inside the budget a loader will read — was true of the fixtures and
+        unchecked in the repository.
+        """
+        source = onboard.FRAMEWORK / 'skills'
+        names = sorted(p.name for p in source.iterdir() if p.is_dir())
+        self.assertTrue(names, 'skills/ vacío: el escaneo está roto')
+        for name in names:
+            with self.subTest(skill=name):
+                skill_md = source / name / 'SKILL.md'
+                self.assertFalse(skill_md.is_symlink())
+                match = onboard.SKILL_FRONTMATTER.match(
+                    skill_md.read_text(encoding='utf-8'))
+                self.assertIsNotNone(match, f'{name}: frontmatter que un cargador no leería')
+                self.assertEqual(match.group(1), name)
+                self.assertLessEqual(len(match.group(2)), 512)
+                for part in (source / name).rglob('*'):
+                    self.assertFalse(part.is_symlink(), f'{name}: {part.name}')
+                    if part.is_file():
+                        self.assertNotIn('/home/', part.read_text(encoding='utf-8'))
 
     def test_skill_destination_symlinks_fail_closed(self):
         for relative in ('.agents', '.agents/skills'):

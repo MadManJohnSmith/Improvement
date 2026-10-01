@@ -31,6 +31,26 @@ def checked(raw):
     return p
 
 
+# The minimum frontmatter a skill loader needs in order to discover it. The
+# same shape the library skills are held to, parsed the same way: a strict
+# prefix rather than a YAML parser, because this tree carries no dependencies
+# and a permissive parser here would accept documents a loader will not.
+SKILL_FRONTMATTER = re.compile(r'\A---\nname: (\S+)\ndescription: "(.+)"\n---\n')
+
+
+def skill_identity(skill_md):
+    """The name a SKILL.md declares, or None when it declares none.
+
+    A skill whose frontmatter does not parse, or whose name disagrees with the
+    directory it ships in, is copied into a user's project and then never loads.
+    Nothing downstream would say so, so it is said here, before the copy.
+    """
+    if not skill_md.is_file():
+        return None
+    match = SKILL_FRONTMATTER.match(skill_md.read_text(encoding='utf-8'))
+    return match.group(1) if match else None
+
+
 def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False, update=False):
     """Copy complete skill trees; identical repeats are safe, updates keep backups."""
     import shutil
@@ -55,7 +75,26 @@ def prepare_project_skills(workspace, source=FRAMEWORK / 'skills', apply=False, 
             files[str(p.relative_to(root))] = p.read_bytes()
         return files
 
-    names = sorted(p.name for p in source.iterdir() if p.is_dir() and (p / 'SKILL.md').is_file())
+    candidates = sorted(p.name for p in source.iterdir() if p.is_dir())
+    names, unusable = [], []
+    for name in candidates:
+        identity = skill_identity(source / name / 'SKILL.md')
+        if identity is None:
+            # An empty directory loses nothing. A populated one is a skill that
+            # would not be installed and nothing in the result would say so,
+            # which is the one outcome the install is not allowed to have.
+            if any((source / name).iterdir()):
+                unusable.append(name)
+            continue
+        if identity != name:
+            raise ValueError(
+                f'Skill {name} declara el nombre {identity!r} y se descubriría con ese; '
+                'el directorio y el nombre tienen que coincidir')
+        names.append(name)
+    if unusable:
+        raise ValueError(
+            f'Directorios con contenido y sin SKILL.md legible, no instalados: '
+            f'{", ".join(unusable)}')
     if not names:
         raise ValueError('No hay skills portables en el origen')
     target = checked(workspace / '.agents' / 'skills')
