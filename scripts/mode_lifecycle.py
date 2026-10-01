@@ -33,6 +33,16 @@ RECORD_BYTE_LIMIT = 4_096
 # small enough that adding it to a record never pushes the record over its cap.
 ANCHOR_EXCERPT_MAX_BYTES = 240
 ANCHOR_PATH_MAX_BYTES = 4_096
+# Evidence that does not fit a 4 KiB record — candidate patches, tool logs,
+# long command output — used to be written into the state root, where the
+# preflight archived it as unexpected evidence: legitimate work treated as a
+# stray file because it had nowhere else to live. It gets its own managed root
+# with its own caps, outside the strict state files.
+EVIDENCE_DIR_NAME = "evidence"
+EVIDENCE_FILE_BYTE_LIMIT = 8 * 1024 * 1024
+EVIDENCE_TOTAL_BYTE_LIMIT = 256 * 1024 * 1024
+EVIDENCE_FILE_LIMIT = 200
+EVIDENCE_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
 LEGACY_FILE_BYTE_LIMIT = 8 * 1024 * 1024
 LEGACY_TOTAL_BYTE_LIMIT = 32 * 1024 * 1024
 LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -349,6 +359,14 @@ def persona_prefix(preset_id, role=None):
             "finding about something with no location, such as an architecture or a missing "
             "capability, carries no evidence at all, which is honest and visible, not a gap you "
             "should hide. "
+            "Evidence that does not fit a record has a managed home, not the state root: write "
+            "candidate patches, tool logs and long command output through workflow_write to the "
+            "evidence root declared in mode-lifecycle (real_stack_verification.artifacts: a sibling "
+            "of mode-state inside the same workspace, names matching '" + EVIDENCE_NAME_PATTERN + "'). "
+            "Verification results never live there: they stay in mode-state, because they are records "
+            "the preflight and the Host validate. When the artifact budget is refused, leave the "
+            "older artifact in place, add the receipt to overflows.jsonl naming what you dropped, and "
+            "keep the state record you were summarizing. "
             "The audit handoff MUST name every finding "
             "that findings.jsonl leaves OPEN at that same base_revision, and no other: "
             "workflow_write refuses a handoff that omits one or names a finding that is not "
@@ -488,6 +506,16 @@ def expected_lifecycle(role, layout):
             "verification_identity": "candidate-diff-digest-must-match-work-items",
             "verdict_per_entrypoint": "PASS-FAIL-BLOCKED-only-no-partial-value",
             "derived_verdict": "worst-result-per-finding-and-candidate-partial-is-derived-not-written",
+            "artifacts": {
+                "root": f"{layout['workspace_root']}/{EVIDENCE_DIR_NAME}",
+                "holds": ["candidate-patches", "tool-logs", "long-command-output"],
+                "never": "verification-results-stay-in-mode-state",
+                "naming": EVIDENCE_NAME_PATTERN,
+                "per_file_bytes": EVIDENCE_FILE_BYTE_LIMIT,
+                "total_bytes": EVIDENCE_TOTAL_BYTE_LIMIT,
+                "file_limit": EVIDENCE_FILE_LIMIT,
+                "overflow": "receipt-in-overflows-jsonl-before-dropping",
+            },
         },
         "startup": {
             "startup_workdir": "session-cwd-only",

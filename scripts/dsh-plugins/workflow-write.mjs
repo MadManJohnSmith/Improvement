@@ -73,6 +73,11 @@ const FINDINGS_BYTE_LIMIT = 262144;
 const ANCHORED_FILE_BYTE_LIMIT = 1048576;
 const ANCHOR_EXCERPT_MIN = 8;
 const STATE_DIR_NAME = 'mode-state';
+const EVIDENCE_DIR_NAME = 'evidence';
+const EVIDENCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/u;
+const EVIDENCE_FILE_LIMIT = 200;
+const EVIDENCE_TOTAL_BYTES = 268435456;
+const EVIDENCE_FILE_BYTES = 8388608;
 const AUDIT_NEXT_PROMPT = 'Repara los hallazgos de la auditoría; no publiques.';
 const REVISION = /^[0-9a-f]{40,64}$/u;
 const FINDING_KEYS = ['base_revision', 'finding_id', 'severity', 'status', 'summary'];
@@ -136,7 +141,7 @@ async function managedStateRoot(ctx, cwd, signal) {
   return `${workspaces[0]}/${STATE_DIR_NAME}`;
 }
 
-async function assertStateWrite(ctx, target, stateRoot) {
+async function assertStateWrite(ctx, target, stateRoot, evidenceRoot, content) {
   if (typeof ctx.fs.processPath !== 'function') return;
   const resolved = ctx.fs.processPath(target);
   if (typeof resolved !== 'string') return;
@@ -147,9 +152,51 @@ async function assertStateWrite(ctx, target, stateRoot) {
     throw new Error('workflow_write: ruta de escritura de estado no canónica; denegado sin reintento');
   }
   const candidate = asPosixPath(resolved);
-  if (candidate !== stateRoot && !candidate.startsWith(`${stateRoot}/`)) {
+  const inState = candidate === stateRoot || candidate.startsWith(`${stateRoot}/`);
+  const inEvidence = evidenceRoot
+    && (candidate === evidenceRoot || candidate.startsWith(`${evidenceRoot}/`));
+  if (!inState && !inEvidence) {
     throw new Error(`workflow_write: la escritura de estado sale de ${stateRoot}: ${candidate}; `
       + 'denegado sin reintento');
+  }
+  if (inEvidence) await assertEvidenceBudget(ctx, candidate, evidenceRoot, content);
+}
+
+/**
+ * Evidence that outgrows a 4 KiB record is still evidence, so it has a managed
+ * home with its own caps instead of being written into the state root, where
+ * the preflight would archive it as a stray file. The caps are checked before
+ * the write, not after: an artifact the budget cannot hold is refused with a
+ * reason the persona can receipt, never silently dropped.
+ */
+async function assertEvidenceBudget(ctx, candidate, evidenceRoot, content) {
+  const name = candidate.slice(evidenceRoot.length + 1);
+  if (!EVIDENCE_NAME.test(name)) {
+    throw new Error(`workflow_write: nombre de evidencia no seguro: ${name}`);
+  }
+  const size = Buffer.byteLength(typeof content === 'string' ? content : '', 'utf8');
+  if (size > EVIDENCE_FILE_BYTES) {
+    throw new Error(`workflow_write: el artefacto ocupa ${size} bytes y el tope por fichero es `
+      + `${EVIDENCE_FILE_BYTES}; resume la evidencia en el estado y guarda solo lo imprescindible`);
+  }
+  const entries = await ctx.fs.listDir(await ctx.fs.resolve('.', {cwd: evidenceRoot})).catch(() => []);
+  let total = 0;
+  let count = 0;
+  for (const entry of entries) {
+    if (entry?.type !== 'file') continue;
+    const other = asPosixPath(ctx.fs.processPath(entry.target));
+    if (other === candidate) continue;
+    const info = await ctx.fs.stat(entry.target).catch(() => undefined);
+    total += typeof info?.size === 'number' ? info.size : 0;
+    count += 1;
+  }
+  if (count + 1 > EVIDENCE_FILE_LIMIT) {
+    throw new Error(`workflow_write: la raíz de evidencia ya tiene ${count} ficheros `
+      + `(tope ${EVIDENCE_FILE_LIMIT}); registra el descarte en overflows.jsonl y retira lo obsoleto`);
+  }
+  if (total > EVIDENCE_TOTAL_BYTES - EVIDENCE_FILE_BYTES) {
+    throw new Error(`workflow_write: la raíz de evidencia ya ocupa ${total} bytes `
+      + `(tope ${EVIDENCE_TOTAL_BYTES}); registra el descarte en overflows.jsonl y retira lo obsoleto`);
   }
 }
 
@@ -643,7 +690,11 @@ export function apply(ctx, config) {
       // Una sesión gestionada declara su raíz de estado; la herramienta la
       // impone en vez de confiar en que el modelo respete el contrato (SR-3).
       const stateRoot = await managedStateRoot(ctx, cwd, exec.signal);
-      if (stateRoot) await assertStateWrite(ctx, target, stateRoot);
+      if (stateRoot) {
+        await assertStateWrite(ctx, target, stateRoot,
+          `${stateRoot.slice(0, -STATE_DIR_NAME.length)}${EVIDENCE_DIR_NAME}`,
+          args.content);
+      }
       await validateManagedVerification(ctx, target, args.content, exec.signal);
       await validateManagedHandoff(ctx, target, args.content, exec.signal);
       // The findings gate resolves every anchor and returns the rewritten

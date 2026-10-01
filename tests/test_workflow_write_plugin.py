@@ -508,6 +508,91 @@ process.stdout.write(JSON.stringify(report));
 '''
 
 
+EVIDENCE_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), size: info.size,
+            type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const spec = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const report = {};
+for (const [name, item] of Object.entries(spec.cases)) {
+  const targetPath = path.join(session, item.path);
+  fs.rmSync(targetPath, {force: true});
+  const outcome = await attempt(session, item.path, item.content);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    written: fs.existsSync(targetPath)};
+}
+report.presentAfter = fs.existsSync(path.join(session, 'Improvement-workspace/evidence/kept.log'));
+process.stdout.write(JSON.stringify(report));
+'''
+
+
 class WorkflowWritePluginTest(unittest.TestCase):
     def _signed_plan(self, workspace, stacks, product=None):
         """Plan bytes signed the way the Host signs them and read back by the Host.
@@ -637,6 +722,78 @@ class WorkflowWritePluginTest(unittest.TestCase):
                 self.assertFalse(
                     outcome["written"],
                     f'{name} reached writeText: {outcome["onDisk"]!r}')
+
+    def test_oversized_evidence_has_a_managed_home_with_its_own_caps(self):
+        """D9: legitimate artifacts had nowhere to live, so the preflight archived them.
+
+        A 4.0 MB candidate patch and a 5.8 MB formatter log were found in the
+        state root as `unexpected-evidence`: real work treated as a stray file
+        because a 4 KiB record cannot hold it. They now have a declared root
+        with its own caps — and anything outside the state root or that root is
+        still refused, so the accommodation did not widen the writable surface.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-evidence-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        product.mkdir(parents=True)
+        (product / 'stack.py').write_text('CANONICAL = True\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            json.dumps({'version': 1, 'product': str(product),
+                        'workspace': str(workspace), 'stacks': []}))
+        (workspace / 'mode-state').mkdir()
+        (workspace / 'evidence').mkdir()
+
+        cases = {
+            "artifact": {"path": "Improvement-workspace/evidence/candidate-repair.patch",
+                         "content": "diff --git a/x b/x\n"},
+            "unsafe_name": {"path": "Improvement-workspace/evidence/../escape.log",
+                            "content": "x\n"},
+            "nested": {"path": "Improvement-workspace/evidence/sub/deep.log", "content": "x\n"},
+            "outside_workspace": {"path": "Improvement-workspace/notes.md", "content": "x\n"},
+            "into_product": {"path": "Improvement/stolen.py", "content": "x\n"},
+            "too_big": {"path": "Improvement-workspace/evidence/huge.log",
+                        "content": "x" * (8 * 1024 * 1024 + 1)},
+            "state_still_allowed": {
+                "path": "Improvement-workspace/mode-state/work-items.json",
+                "content": '{"schema_version":1,"candidate":null,"items":[]}'},
+        }
+        (session / 'fixture.json').write_text(json.dumps({"cases": cases}))
+        driver = root / 'evidence-driver.mjs'
+        driver.write_text(EVIDENCE_DRIVER.replace(
+            'PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run(
+            [node, driver.as_posix(), session.as_posix()],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        self.assertTrue(report["artifact"]["ok"], report["artifact"])
+        self.assertTrue(report["artifact"]["written"], report["artifact"])
+        self.assertTrue(report["state_still_allowed"]["ok"], report["state_still_allowed"])
+        # The traversal spelling is refused by the runtime that keeps `..` in
+        # processPath; a driver that canonicalizes first is caught by the
+        # containment check instead, which is the same refusal with a path.
+        for name, expected in (("unsafe_name", "sale de"),
+                               ("outside_workspace", "sale de"),
+                               ("into_product", "sale de"),
+                               ("too_big", "tope por fichero")):
+            with self.subTest(case=name):
+                outcome = report[name]
+                self.assertFalse(outcome["ok"], outcome)
+                self.assertIn(expected, outcome["error"])
+                self.assertFalse(outcome["written"], f'{name} reached writeText')
+        # A nested path is not a valid artifact name: the cap counts files
+        # directly under the root, so a subdirectory would escape that count.
+        self.assertFalse(report["nested"]["ok"], report["nested"])
+        self.assertIn("no seguro", report["nested"]["error"])
+        self.assertEqual((product / 'stack.py').read_text(), 'CANONICAL = True\n')
+        self.assertFalse((workspace / 'notes.md').exists())
 
     def test_finding_anchor_is_located_by_the_tool_not_claimed_by_the_mode(self):
         """The one field of a finding a machine can check.
