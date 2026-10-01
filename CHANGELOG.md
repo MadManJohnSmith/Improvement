@@ -1,5 +1,12 @@
 # Cambios
 
+## Las cinco skills son código vivo, contra lo que parecía — 2026-09-30
+- **Ronda de verificación sin defecto, y con una sospecha descartada.** Cuatro de las cinco skills de `skills/` —`workflow-proportional-delivery`, `workflow-safe-validation`, `workflow-bounded-acceptance` y `workflow-evidence-management`— no las referencia **ningún** código, prueba ni documento, y sus nombres siguen el patrón `workflow-*` de los modos genéricos que la generación sustituyó. Con la lección de `templates/` en la mano, la conclusión fácil habría sido borrarlas.
+- **Es la conclusión equivocada, y se comprueba antes de actuar.** El commit que retiró los 21 artefactos heredados (`c8aed51`) eliminó los tres modos genéricos **y dejó deliberadamente estas skills**, declarando en su propio mensaje que el conjunto canónico incluía «5 general skills». Además `onboard.prepare_project_skills` usa `FRAMEWORK / 'skills'` como origen por defecto, así que no son contenido inerte: se instalan en el workspace del proyecto destino.
+- Comprobado de verdad, con la operación documentada: el dry-run encuentra **5 cambios** y la aplicación instala las cinco en `<workspace>/.agents/skills/`. Se dejan intactas.
+- La diferencia con `templates/` es la que decide: allí los marcadores `{{...}}` no los sustituía nadie, y aquí hay un consumidor real. **Un archivo sin referencias no es un archivo muerto**, y esta ronda deja ambas cosas comprobadas para que la siguiente no vuelva a sospechar de lo mismo.
+- Suite: 633 OK (4 saltadas).
+
 ## `templates/` era un árbol muerto del diseño que lo sustituyó — 2026-09-30
 - **Seis ficheros versionados que nada podía leer.** `templates/` contenía `{{PROJECT_NAME}}`, `{{PLUGIN_NAME}}` y `{{SKILL_NAME}}` como marcadores, y **ningún código sustituye esas variables**: no aparecen en `scripts/`, en `tests/` ni en la documentación. El árbol es la etapa anterior a los modos generados por proyecto, y el propio repo ya tiene la regla y la prueba para esto: los modos genéricos que la generación sustituyó están en la lista de «no debe existir».
 - Editar un fichero así es la forma clásica de perder tiempo: parece el punto de entrada de la generación y no lo es. Un `templates/modes/auditor.md` sugiere que ahí se cambia el comportamiento del auditor, cuando el auditor real lo genera Creator en `creator-runs/<id>/generated/modes/<Proyecto>-auditor/`. Los `templates/` de `docs/creator-preset-spec.md` son **otra cosa**: allí se describe el `templates/` del *paquete generado*, no este árbol del repositorio.
