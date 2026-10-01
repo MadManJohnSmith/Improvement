@@ -1,5 +1,21 @@
 # Cambios
 
+## Quinta auditoría: atribución y enlaces — 2026-10-01
+- **E20 · la atribución se quedaba a un paso del aviso público.** Las 25 skills de `library/`
+  declaran en su `## Procedencia` de qué upstream se adaptaron —`obra/superpowers` y
+  `addyosmani/agent-skills`, ambos MIT, con revisión fijada—, y `docs/status.md` afirmaba que esa
+  atribución MIT **ya estaba hecha**. `THIRD_PARTY_NOTICES.md`, el único fichero que alguien que
+  redistribuye este repositorio va a abrir para saber qué se atribuye, nombraba un tercer upstream y
+  ni una palabra de los otros dos: sin licencia, sin copyright y sin revisión. La cadena de
+  atribución se detenía un paso antes del único paso que un lector vería, y la prueba que la cubría se
+  satisfacía con la palabra «MIT». Ahora el aviso lleva los tres upstreams con su revisión, su
+  licencia y su texto MIT completo, y la regresión exige upstream **y** revisión para todo lo que la
+  biblioteca declara: canario, recortar la revisión en el aviso rompe la suite.
+- **Enlaces internos: cero rotos.** Recorridos todos los `.md` del árbol, cada enlace relativo
+  apunta a un fichero que existe. No hay regresión porque no hay nada que prevenir hoy; queda
+  anotado para que una ronda futura sepa que esa comprobación se hizo y con qué resultado.
+- **Suite: 769 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+
 ## Cuarta auditoría: las dos poblaciones que nadie leía — 2026-10-01
 - **E18 · los fixtures dorados no los leía nadie.** `fixtures/README.md` afirma que sus golden
   manifests «sirven exclusivamente para validar generadores y validadores de contratos (C0–C3)» y

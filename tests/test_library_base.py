@@ -152,6 +152,38 @@ class LibraryContentTest(unittest.TestCase):
                                 f"{entry['name']}: license not acknowledged "
                                 "in Procedencia")
 
+    def test_every_upstream_a_skill_names_reaches_the_public_notices(self):
+        """The attribution chain has to arrive somewhere a reader can see it.
+
+        Every base and catalog skill declares what it was adapted from, and the
+        test above was satisfied by the word "MIT" alone. Nothing carried those
+        names any further, so `THIRD_PARTY_NOTICES.md` — the file that exists
+        precisely so a redistributor can see what is attributed — named one
+        upstream while the library credited two more, and `docs/status.md`
+        claimed the attribution was already there. The chain stopped one step
+        short of the only step a reader of the repository would ever see.
+
+        Both halves are required: the upstream, and the revision it was read at,
+        because "adapted from" without a pin cannot be checked by anyone.
+        """
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        declared = set()
+        for _kind, entry, d in self.entries:
+            provenance = (d / "SKILL.md").read_text(encoding="utf-8").split(
+                "## Procedencia", 1)[1]
+            for source, revision in re.findall(
+                    r"([\w.-]+/[\w.-]+)@([0-9a-f]{7,40})", provenance):
+                declared.add((source, revision))
+        self.assertTrue(declared, "ningún upstream declarado: el escaneo está roto")
+        for source, revision in sorted(declared):
+            with self.subTest(source=source):
+                self.assertIn(source, notices,
+                              f"{source} se usa en la biblioteca y no aparece en "
+                              "THIRD_PARTY_NOTICES.md")
+                self.assertIn(revision, notices,
+                              f"{source} aparece sin la revisión {revision} que "
+                              "la biblioteca declara")
+
     def test_catalog_activation_criteria_coupled_to_content(self):
         """Un criterio de activación declarado debe estar en el contenido, verbatim."""
         for _kind, entry, d in self.entries:

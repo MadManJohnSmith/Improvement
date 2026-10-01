@@ -64,7 +64,9 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 
 ## Límites vigentes
 
-- `THIRD_PARTY_NOTICES.md` incorporado para atribución MIT de jsmastery-pro/skills.
+- `THIRD_PARTY_NOTICES.md` incorporado para atribución MIT de jsmastery-pro/skills, y ampliado a
+  `obra/superpowers` y `addyosmani/agent-skills`, que son los upstreams que la propia biblioteca
+  declara en cada `## Procedencia` y que hasta ahora no llegaban al aviso público (E20).
 - Publicación remota y release público requieren autorización del titular según la política de distribución.
 - La pérdida física de energía y descendientes remotos hostiles no tienen garantía total.
 - Configurar proveedor en DSH es responsabilidad previa del usuario; el framework no obtiene API keys.
