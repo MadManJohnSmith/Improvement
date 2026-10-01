@@ -57,8 +57,19 @@ CHECK = r'''
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import yaml from '/inputs/node_modules/yaml/dist/index.js';
-import {runProfile} from '/inputs/node_modules/@deepseek-ai/dsh/lib/profile-boot.js';
-import {loadLayeredEnv} from '/inputs/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js';
+// The profile-boot entrypoint is resolved from the installed runtime instead of
+// being hardcoded: 0.1.5-alpha.1 ships content-hashed chunk names only
+// (profile-boot-<hash>.js) while 0.2.x adds the stable lib/profile-boot.js, so a
+// fixed path silently breaks the probe on whichever version it does not match.
+const DSH_LIB = '/inputs/node_modules/@deepseek-ai/dsh/lib';
+const profileBoot = ['profile-boot.js',
+  ...fs.readdirSync(DSH_LIB).filter((n) => n.startsWith('profile-boot-'))
+    .map((n) => `${DSH_LIB}/${n}`)]
+  .map((n) => (n.startsWith('/') ? n : `${DSH_LIB}/${n}`))
+  .find((n) => fs.existsSync(n));
+if (profileBoot === undefined) throw new Error('dsh runtime has no profile-boot entrypoint');
+const {runProfile} = await import(profileBoot);
+const {loadLayeredEnv} = await import('/inputs/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js');
 process.stdout.write = () => true;
 const report = {};
 let boot;
@@ -1214,6 +1225,15 @@ class WorkflowWritePluginTest(unittest.TestCase):
         runtime = __import__('os').environ.get('DSH_MODULE_ROOT')
         if not runtime:
             self.skipTest('Set DSH_MODULE_ROOT to installed runtime; no installation/fallback')
+        # This probe mounts a per-agent preset row, and that plugin
+        # (`@deepseek-ai/dsh-agent-preset`) only ships from 0.1.7-alpha.1 on. An
+        # older runtime cannot run the probe at all, so say which version is
+        # needed instead of failing on a module Node cannot resolve.
+        preset_plugin = Path(runtime) / '@deepseek-ai' / 'dsh-agent-preset' / 'package.json'
+        if not preset_plugin.is_file():
+            self.skipTest(
+                'runtime lacks @deepseek-ai/dsh-agent-preset (needs 0.1.7-alpha.1+); '
+                f'found {Path(runtime).name}')
         root = Path(__import__('tempfile').mkdtemp(prefix='workflow-write-', dir='/tmp'))
         presets = root / 'presets'
         base = presets / 'write-fixture'
