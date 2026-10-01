@@ -39,8 +39,10 @@ operador hizo commit, fast-forward y push.
 
 ## Límites conocidos
 
-- No hay CAS ni lease multiarchivo: la actualización ordinaria de `mode-state` no es
-  atómica ante escritura concurrente.
+- `mode-state` lleva un lease por fichero, así que dos sesiones ya no se pisan al
+  reemplazar el mismo fichero. Lo que **no** existe es atomicidad por lotes: reemplazar
+  los cinco ficheros sigue siendo cinco escrituras, y el framework lo declara en vez de
+  fingir.
 - La frontera de solo lectura del auditor es contractual y la impone la herramienta de
   escritura, no un sandbox de kernel.
 - Multiarchivo monorepos: se detecta una tecnología por subdirectorio; un mismo árbol con

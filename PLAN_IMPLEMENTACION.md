@@ -70,7 +70,7 @@ pendiente con su criterio de cierre; ninguna está implícita en otro estado `HE
 
 | ID | Qué falta | Estado | Cierre |
 |---|---|---|---|
-| D1 | CAS/lease o escritura atómica multiarchivo de `mode-state` | PENDIENTE | Escritura completa de una sesión gestionada que no pueda quedar a medias ante concurrencia, con regresión de interrupción |
+| D1 | CAS/lease o escritura atómica multiarchivo de `mode-state` | PARCIAL 2026-09-30 | Lease por fichero con TTL de 30 s: cierra el reemplazo concurrente del mismo fichero. La atomicidad del lote de cinco ficheros **no** se cierra —el backend no ofrece transacción— y sigue declarada en `write_method` |
 | D2 | Confinamiento mecánico de bash del auditor | PENDIENTE | Hoy la frontera la impone la herramienta de escritura, no un sandbox; cerrarlo es una decisión de diseño, no un parche |
 | D3 | Gate de reconteo `persisted_count` contra el fichero | HECHO 2026-09-30 | `count_command` central que recalcula el conjunto abierto desde el fichero e imprime el número; el handoff debe cubrir exactamente ese conjunto y `workflow_write` lo rechaza si no |
 | D4 | Aviso y re-apuntado asistidos ante reescritura de commits tras integrar | HECHO 2026-09-30 | `bootstrap.py state` lo detecta (`integrated_head_rewritten`) y `--repoint` solo acepta revisión ancestro del HEAD canónico con producto limpio, con recibo en `overflows.jsonl` |

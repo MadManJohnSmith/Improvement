@@ -1,5 +1,10 @@
 # Cambios
 
+## Un lease por fichero para que dos sesiones no se pisen — 2026-09-30
+- **Nada del backend de ficheros convierte un reemplazo de cinco ficheros en una transacción**, así que la no atomicidad por lotes se sigue declarando: `write_method: workflow_write-full-replacement-not-atomic` no cambia. Lo que sí se cierra es el fallo más estrecho que esa declaración permitía — dos sesiones reemplazando el mismo fichero a la vez, la segunda descartando una escritura que nunca vio.
+- `workflow_write` toma un lease por fichero antes de `writeText` y lo libera después, con TTL de 30 s para que una sesión muerta no deje el estado bloqueado para siempre; un lease vivo de otra sesión deniega la escritura nombrando el titular y su antigüedad, y uno caducado se toma. El preflight ignora `<stateRoot>/.leases` con nota: sin eso, instalar fallaría porque una commences a mitad de escritura, y el nombre empieza por punto, que la regla de seguridad del estado rechaza. Regresión con los cinco casos: lease ajeno vivo deniega, caducado se toma, el titular reentra, la escritura lo deja en `released`, y la raíz de evidencia no toma ninguno porque no es estado. Una sesión sin identidad no toma lease: un candado que todos tienen no es un candado.
+- Suite: 625 OK (3 saltadas).
+
 ## El hallazgo dice por qué existe y qué lo impediría — 2026-09-30
 - **`cause` y `prevention`**, cada una de 1 a 256 bytes: por qué existe el defecto y qué impediría que volviera. Es lo que convierte una lista de hallazgos en trabajo prevenible, y ambas están acotadas porque el registro entero vive en 4.096 B.
 - **`evidence.fingerprint` calculado sobre el código citado**, no sobre la redacción. La clave de deduplicación es `(finding_id, base_revision)`, así que una reauditoría que describe la misma línea con otras palabras generaba un segundo registro y la cola crecía con duplicados invisibles; ahora «mismo defecto, otras palabras» comparte fingerprint y se puede contar. Lo calcula la herramienta, que también rechaza que el modo lo escriba.

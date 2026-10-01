@@ -48,6 +48,9 @@ EVIDENCE_NAME_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
 LEGACY_FILE_BYTE_LIMIT = 8 * 1024 * 1024
 LEGACY_TOTAL_BYTE_LIMIT = 32 * 1024 * 1024
 LEGACY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# Ephemeral entries the live state owns but never carries: a write lease says who is
+# replacing a file right now, which is meaningless once the session is gone.
+EPHEMERAL_NAMES = {".leases"}
 _LIFECYCLE_FENCE = "mode-lifecycle"
 SUCCESS_SENTINEL = "__IMPROVEMENT_LAYOUT_OK__"
 
@@ -363,14 +366,12 @@ def persona_prefix(preset_id, role=None):
             "Your scope decides where you look first (audit_scope). A request that names the whole project is complete: observe the product and form your own observations BEFORE reading findings.jsonl or handoffs.jsonl, so the queue informs you instead of anchoring you, and the state you read afterwards is checked against what you already saw, not the other way round. A request that names a flow, a feature or a component is incremental: start from the persisted diagnosis and verify it against the product. Name the scope in the final response and in the handoff_id: audit-complete-<base8>-<n> for complete, audit-<base8>-<n> for incremental. The distinction is countable afterwards, which is why it has to be declared: a complete audit that silently starts from the queue finds the same findings the queue already had. "
             "Say why the defect exists and what would stop it coming back: `cause` and `prevention`, each at most 256 bytes. They are what turns a list of findings into work that can be prevented, and they are bounded because the record as a whole is: if the write is refused for exceeding the record cap, shorten the summary first and keep the cause. `evidence.fingerprint` is not yours to write: it identifies the quoted code, so the same defect described in different words is the same defect instead of a second record. "
             "should hide. "
-            "Evidence that does not fit a record has a managed home, not the state root: write "
-            "candidate patches, tool logs and long command output through workflow_write to the "
-            "evidence root declared in mode-lifecycle (real_stack_verification.artifacts: a sibling "
-            "of mode-state inside the same workspace, names matching '" + EVIDENCE_NAME_PATTERN + "'). "
-            "Verification results never live there: they stay in mode-state, because they are records "
-            "the preflight and the Host validate. When the artifact budget is refused, leave the "
-            "older artifact in place, add the receipt to overflows.jsonl naming what you dropped, and "
-            "keep the state record you were summarizing. "
+            "Large evidence has a managed home: write candidate patches, tool logs and "
+            "long command output through workflow_write to the evidence root declared in "
+            "mode-lifecycle (real_stack_verification.artifacts), a sibling of mode-state with "
+            "names matching '" + EVIDENCE_NAME_PATTERN + "'. Verification results never live "
+            "there. On a refused budget, keep the older artifact, receipt the drop in "
+            "overflows.jsonl, and keep the state record you were summarizing. "
             "The audit handoff MUST name every finding "
             "that findings.jsonl leaves OPEN at that same base_revision, and no other: "
             "workflow_write refuses a handoff that omits one or names a finding that is not "
@@ -519,6 +520,7 @@ def expected_lifecycle(role, layout):
                 "total_bytes": EVIDENCE_TOTAL_BYTE_LIMIT,
                 "file_limit": EVIDENCE_FILE_LIMIT,
                 "overflow": "receipt-in-overflows-jsonl-before-dropping",
+                "lease": "per-file-before-write-30s-ttl-covers-the-same-file-not-batch-atomicity",
             },
         },
         "startup": {
@@ -1128,7 +1130,9 @@ def initialize_state(state, descriptor, archive_root=None):
     notes = []
     if state.exists():
         existing = {entry.name for entry in state.iterdir()}
-        for name in existing - allowed:
+        for name in existing & EPHEMERAL_NAMES:
+            notes.append({"file": name, "reason": "ephemeral-lease-directory-ignored"})
+        for name in existing - allowed - EPHEMERAL_NAMES:
             if not LEGACY_NAME.fullmatch(name):
                 raise ValueError(f"unsafe legacy mode-state name: {name!r}")
             legacy[name] = _preflight_file(state / name, LEGACY_FILE_BYTE_LIMIT)

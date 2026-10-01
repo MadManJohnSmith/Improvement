@@ -593,6 +593,113 @@ process.stdout.write(JSON.stringify(report));
 '''
 
 
+LEASE_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), size: info.size,
+            type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: 'update', before: null, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content, sessionId) {
+  const definition = makeCtx(root);
+  const session = {id: sessionId, header: {cwd: root}};
+  const exec = {agent: {session}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const findings = 'Improvement-workspace/mode-state/findings.jsonl';
+const artifact = 'Improvement-workspace/evidence/note.log';
+const leasePath = path.join(session, 'Improvement-workspace/mode-state/.leases/findings.jsonl.json');
+const finding = {finding_id: 'A-01', base_revision: 'a'.repeat(40), severity: 'HIGH',
+                 summary: 'Missing validation', status: 'OPEN'};
+const report = {};
+
+const hold = (lease) => {
+  fs.mkdirSync(path.dirname(leasePath), {recursive: true});
+  fs.writeFileSync(leasePath, JSON.stringify(lease));
+};
+
+hold({target: 'findings.jsonl', session: 'other-session', acquired_at: Date.now() - 5000,
+      expires_at: Date.now() + 25000, state: 'held'});
+report.held_by_other = await attempt(session, findings, JSON.stringify(finding) + '\n', 'me');
+report.heldError = fs.existsSync(leasePath) ? JSON.parse(fs.readFileSync(leasePath, 'utf8')).session : null;
+
+hold({target: 'findings.jsonl', session: 'other-session', acquired_at: Date.now() - 60000,
+      expires_at: Date.now() - 30000, state: 'held'});
+report.expired = await attempt(session, findings, JSON.stringify(finding) + '\n', 'me');
+
+hold({target: 'findings.jsonl', session: 'me', acquired_at: Date.now() - 5000,
+      expires_at: Date.now() + 25000, state: 'held'});
+report.held_by_self = await attempt(session, findings, JSON.stringify(finding) + '\n', 'me');
+report.leaseAfterWrite = JSON.parse(fs.readFileSync(leasePath, 'utf8'));
+
+fs.rmSync(path.join(session, artifact), {force: true});
+report.artifact = await attempt(session, artifact, 'log\n', 'me');
+report.artifactLease = fs.existsSync(
+  path.join(session, 'Improvement-workspace/mode-state/.leases/note.log.json'));
+report.anonymous = await attempt(session, 'Improvement-workspace/mode-state/work-items.json',
+                                 '{"schema_version":1,"candidate":null,"items":[]}', null);
+process.stdout.write(JSON.stringify(report));
+'''
+
+
 class WorkflowWritePluginTest(unittest.TestCase):
     def _signed_plan(self, workspace, stacks, product=None):
         """Plan bytes signed the way the Host signs them and read back by the Host.
@@ -959,6 +1066,58 @@ class WorkflowWritePluginTest(unittest.TestCase):
                 self.assertFalse(report[name]["ok"], report[name])
                 self.assertIn(expected, report[name]["error"])
                 self.assertFalse(report[name]["written"])
+
+    def test_a_live_lease_from_another_session_denies_the_replacement(self):
+        """D1: the write was never atomic, and a concurrent one could interleave.
+
+        Nothing the filesystem backend offers turns a five-file replacement
+        into a transaction, so the declared non-atomicity across files stays.
+        What the lease closes is the narrower failure it made possible: one
+        session replacing a file another session is replacing, the second
+        discarding a write it never saw. It is taken before writeText, released
+        after it, expires so a dead session cannot wedge the state, and a
+        session that cannot be identified takes no lease rather than a shared
+        one.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-lease-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        product.mkdir(parents=True)
+        (product / 'stack.py').write_text('CANONICAL = True\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            self._signed_plan(workspace, [], product=str(product)))
+        (workspace / 'mode-state').mkdir()
+        (workspace / 'evidence').mkdir()
+
+        driver = root / 'lease-driver.mjs'
+        driver.write_text(LEASE_DRIVER.replace('PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run([node, driver.as_posix(), session.as_posix()],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        self.assertFalse(report["held_by_other"]["ok"], report["held_by_other"])
+        self.assertIn("otra sesión", report["held_by_other"]["error"])
+        # The refused write left the holder's lease alone.
+        self.assertEqual(report["heldError"], "other-session")
+        # An expired lease is takeable: a session that died holding one must
+        # not wedge the state forever.
+        self.assertTrue(report["expired"]["ok"], report["expired"])
+        # The holder may re-enter its own write.
+        self.assertTrue(report["held_by_self"]["ok"], report["held_by_self"])
+        self.assertEqual(report["leaseAfterWrite"]["state"], "released")
+        # The evidence root is not state, so no lease is taken for it.
+        self.assertTrue(report["artifact"]["ok"], report["artifact"])
+        self.assertFalse(report["artifactLease"])
+        # No session identity, no lease: a lock everybody holds is no lock.
+        self.assertTrue(report["anonymous"]["ok"], report["anonymous"])
+        self.assertEqual((product / 'stack.py').read_text(), 'CANONICAL = True\n')
 
     def test_audit_handoff_must_name_every_open_finding_at_its_base(self):
         """A1: `persisted_count` was a claim about itself with nothing behind it.

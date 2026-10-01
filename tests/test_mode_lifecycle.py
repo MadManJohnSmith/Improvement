@@ -551,6 +551,32 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertTrue(any("A-03" in name for name in dropped))
             self.assertTrue(any("A-04" in name for name in dropped))
 
+    def test_preflight_ignores_the_live_lease_directory(self):
+        """A lease says who is replacing a file right now.
+
+        The state root holds it, so the preflight would otherwise see an
+        unexpected entry, and the name starts with a dot, which its safety rule
+        refuses outright: installing would fail because a mode had been mid
+        write. The directory is ephemeral by construction and is skipped with
+        a note instead of being archived as stray evidence.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            (state / ".leases").mkdir(parents=True)
+            (state / ".leases" / "findings.jsonl.json").write_text(
+                '{"target":"findings.jsonl","session":"s1","state":"held"}\n')
+            report = initialize_state(
+                state, {"schema_version": 1, "project_id": "p",
+                        "product_root": "Product",
+                        "state_root": "Product-workspace/mode-state"},
+                root / "archive")
+            self.assertTrue(any(note.get("reason") ==
+                                "ephemeral-lease-directory-ignored"
+                                for note in report["dropped"]))
+            self.assertEqual(report["archive"], None)
+            self.assertTrue((state / ".leases" / "findings.jsonl.json").exists())
+
     def test_complete_audit_observes_before_it_reads_the_queue(self):
         """D10: reading the state first is anchoring, not diligence.
 

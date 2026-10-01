@@ -73,6 +73,8 @@ const FINDINGS_BYTE_LIMIT = 262144;
 const ANCHORED_FILE_BYTE_LIMIT = 1048576;
 const ANCHOR_EXCERPT_MIN = 8;
 const STATE_DIR_NAME = 'mode-state';
+const LEASE_DIR_NAME = '.leases';
+const LEASE_TTL_MS = 30000;
 const EVIDENCE_DIR_NAME = 'evidence';
 const EVIDENCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/u;
 const EVIDENCE_FILE_LIMIT = 200;
@@ -298,6 +300,74 @@ async function validateManagedVerification(ctx, target, content, signal) {
     }
     decided.set(key, record.result);
   });
+}
+
+function targetPathUnder(root, target) {
+  if (typeof target?.targetKey !== 'string') return null;
+  const candidate = asPosixPath(target.targetKey);
+  if (!candidate.startsWith(`${root}/`)) return null;
+  const relative = candidate.slice(root.length + 1);
+  return relative.length > 0 && !relative.includes('/') ? relative : null;
+}
+
+/**
+ * A per-file lease, so two sessions cannot interleave a replacement of the
+ * same state file.
+ *
+ * `write_method` is already declared non-atomic across files, and nothing the
+ * filesystem backend offers can make a five-file replacement one transaction.
+ * What it *can* stop is the narrower and more common failure: one session
+ * reading a half-written file while another replaces it, or the last writer
+ * silently discarding a write it never saw. The lease is taken before
+ * writeText and released after it, and an expired lease may be taken over, so
+ * a session that dies holding one cannot wedge the state forever.
+ */
+function leaseIdentity(exec) {
+  const session = exec?.agent?.session;
+  const id = session?.id || session?.sessionId || session?.header?.sessionId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+async function acquireLease(ctx, stateRoot, relative, session, now) {
+  const leaseDir = `${stateRoot}/${LEASE_DIR_NAME}`;
+  const leasePath = `${leaseDir}/${relative}.json`;
+  const target = await ctx.fs.resolve(`${LEASE_DIR_NAME}/${relative}.json`, {
+    cwd: `${stateRoot}/`, signal: undefined,
+  }).catch(() => null);
+  if (!target) return null;
+  let held = null;
+  try {
+    held = JSON.parse(await ctx.fs.readText(target));
+  } catch {
+    held = null;
+  }
+  if (held && held.state === 'held' && held.session !== session
+      && typeof held.expires_at === 'number' && held.expires_at > now) {
+    throw new Error(`workflow_write: ${relative} está siendo escrito por otra sesión `
+      + `(arrendada ${Math.max(0, Math.round((now - held.acquired_at) / 1000))} s atrás); `
+      + 'denegado sin reintento');
+  }
+  const lease = {
+    target: relative,
+    session,
+    acquired_at: now,
+    expires_at: now + LEASE_TTL_MS,
+    state: 'held',
+  };
+  await ctx.fs.writeText(target, `${JSON.stringify(lease)}\n`, undefined, undefined, undefined);
+  return {target, lease};
+}
+
+async function releaseLease(ctx, lease, now) {
+  if (!lease) return;
+  try {
+    await ctx.fs.writeText(lease.target, `${JSON.stringify({
+      ...lease.lease, state: 'released', released_at: now,
+    })}\n`, undefined, undefined, undefined);
+  } catch {
+    // A lease nobody released simply expires; failing the write here would
+    // report a successful write as an error.
+  }
 }
 
 /**
@@ -733,11 +803,26 @@ export function apply(ctx, config) {
       // computed, not the one the mode wrote.
       const anchored = await validateManagedFindings(ctx, target, args.content, exec.signal);
       const content = anchored ?? args.content;
+      // The lease only covers a replacement of one state file: an unidentified
+      // session takes no lease rather than a shared one, because a lock
+      // everybody holds is a lock nobody holds.
+      const session = leaseIdentity(exec);
+      const relative = stateRoot && targetPathUnder(stateRoot, target);
+      const now = Date.now();
+      let lease = null;
+      if (session && relative) {
+        lease = await acquireLease(ctx, stateRoot, relative, session, now);
+      }
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el
       // marcador [sandbox: ...] cuando son denegaciones; envolver aquí cualquier
       // fallo los falsearía como denegaciones de política.
-      const outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
+      let outcome;
+      try {
+        outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
+      } finally {
+        await releaseLease(ctx, lease, Date.now());
+      }
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec);
       return { path: target.displayPath, operation: outcome.operation, before: outcome.before, after: outcome.after };
     },
