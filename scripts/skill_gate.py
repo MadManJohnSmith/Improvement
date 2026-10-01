@@ -45,6 +45,46 @@ from pathlib import Path
 ACTIONS = ("accept", "reject", "abstain")
 
 
+def evaluate_bound_gate(baseline_path, candidate_path, corpus_path,
+                        baseline_digest, candidate_digest, val_fraction=0.3,
+                        library=None):
+    """Strict gate over complete observations bound to corpus and candidates."""
+    import corpus_compiler
+
+    corpus = corpus_compiler.load_corpus(corpus_path)
+    baseline_payload, baseline = corpus_compiler.load_bound_observations(
+        baseline_path, corpus, baseline_digest)
+    candidate_payload, candidate = corpus_compiler.load_bound_observations(
+        candidate_path, corpus, candidate_digest)
+    reasons = []
+    if (baseline_payload["provider"]["status"] != "available" or
+            candidate_payload["provider"]["status"] != "available"):
+        action = "abstain"
+        reasons.append("provider unavailable; no execution evidence")
+    else:
+        scenarios = [{"scenario_id": case["case_id"],
+                      "skill": case["target_skill"], "type": case["type"],
+                      # The oracle remains Host-side; never part of public cases.
+                      "expected": expected}
+                     for case, expected in zip(corpus["cases"],
+                         corpus_compiler.expected_verdicts(
+                             library or Path(corpus_path).resolve().parent / "library",
+                             corpus))]
+        report = _evaluate_loaded(baseline, candidate, scenarios, val_fraction)
+        action, reasons = report["action"], report["reasons"]
+    result = {
+        "schema_version": corpus_compiler.SCHEMA_VERSION,
+        "compiler_version": corpus["compiler_version"],
+        "corpus_digest": corpus["corpus_digest"],
+        "baseline_candidate_digest": baseline_digest,
+        "candidate_digest": candidate_digest,
+        "action": action,
+        "reasons": reasons,
+    }
+    return corpus_compiler.validate_bound_report(
+        result, corpus["corpus_digest"], candidate_digest)
+
+
 def load_scenarios(library):
     """Every scenario in the library, with the skill it belongs to."""
     library = Path(library)
@@ -119,12 +159,8 @@ def _intersects(train, validation):
     return sorted(train_ids & {scenario["scenario_id"] for scenario in validation})
 
 
-def evaluate_gate(baseline_path, candidate_path, library, val_fraction=0.3):
-    """Accept the candidate only if it strictly improves held-out and holds the rest."""
-    scenarios = load_scenarios(library)
+def _evaluate_loaded(baseline, candidate, scenarios, val_fraction=0.3):
     train, validation = split_scenarios(scenarios, val_fraction)
-    baseline = load_observations(baseline_path)
-    candidate = load_observations(candidate_path)
     base_train = score(baseline, train)
     base_val = score(baseline, validation)
     cand_train = score(candidate, train)
@@ -185,3 +221,33 @@ def evaluate_gate(baseline_path, candidate_path, library, val_fraction=0.3):
         },
     })
     return report
+
+
+def evaluate_gate(baseline_path, candidate_path, library, val_fraction=0.3):
+    """Legacy unbound gate retained for existing callers."""
+    return _evaluate_loaded(load_observations(baseline_path),
+                            load_observations(candidate_path),
+                            load_scenarios(library), val_fraction)
+
+
+def commit_trigger_check(changed_paths, report_path, corpus_digest,
+                         candidate_digest):
+    """Fail closed for relevant changes unless a bound report accepts them."""
+    import corpus_compiler
+
+    relevant = any(path == "library" or path.startswith(("library/", "scripts/skill_gate.py",
+                   "scripts/corpus_compiler.py", "schemas/executable-corpus.schema.json",
+                   "schemas/corpus-observations.schema.json",
+                   "schemas/bound-gate-report.schema.json")) for path in changed_paths)
+    if not relevant:
+        return {"required": False, "accepted": True}
+    if report_path is None:
+        raise ValueError("relevant corpus changes require a bound accepting gate report")
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid gate report: {exc}") from exc
+    corpus_compiler.validate_bound_report(report, corpus_digest, candidate_digest)
+    if report["action"] != "accept":
+        raise ValueError(f"bound gate did not accept: {report['action']}")
+    return {"required": True, "accepted": True}

@@ -104,12 +104,35 @@ regla es suya; el trabajo de reparar el efecto ya no existe.
 python3 -B scripts/bootstrap.py skill-gate --baseline baseline.json --candidate candidate.json
 ```
 
-Un fichero de observaciones por escenario, `{"scenarios": {"SC-107": "PASS", ...}}`, produced por una corrida real
+Un fichero de observaciones por escenario, `{"scenarios": {"SC-107": "PASS", ...}}`, producido por una corrida real
 —aquí no se ejecuta nada, porque correr escenarios contra un agente necesita el runtime. El gate acepta el
 candidato solo si el holdout mejora **estrictamente**, lo rechaza si pierde en la partición de entrenamiento aunque
 el holdout suba, y se abstiene —no acepta, no rechaza— si el slice de validación no es disjunto o no hay
 observaciones. El reparto sale del digest del `scenario_id`, así que es el mismo en cada corrida y un cambio no
 puede elegir a qué escenarios le toca juzgarlo.
+### Compilar el corpus y ligar el gate a lo que se midió
+El `skill-gate` anterior acepta un mapa suelto: no sabe qué corpus produjo esas observaciones ni a qué candidato
+pertenecen, así que el mismo JSON vale para dos corridas distintas. Para una decisión de publicación usa la vía
+ligada, que sí comprueba identidades:
+```bash
+python3 -B scripts/bootstrap.py compile-corpus --output /ruta/externa/corpus.json
+python3 -B scripts/bootstrap.py bound-skill-gate --corpus /ruta/externa/corpus.json \
+  --baseline /ruta/externa/baseline.json --candidate /ruta/externa/candidata.json \
+  --baseline-digest <sha256> --candidate-digest <sha256> --report /ruta/externa/informe.json
+```
+`compile-corpus` convierte los 55 escenarios de `library/` en casos ejecutables: `task`, fixture y
+`evaluated_claim`, con `target` apuntando a la skill. **El veredicto esperado no viaja en el caso público** —se
+deriva en el Host y solo se usa si el `corpus_digest` recalculado coincide con el declarado, de modo que un corpus
+editado después de compilar se rechaza en vez de puntuarse—. Cada observación va ligada a corpus, candidato y
+versión de compilador, tiene que ser completa y única, y un proveedor `unavailable` no puede declararlas: ahí el
+gate se abstiene. Para atar esto a un commit o a un CI:
+```bash
+python3 -B scripts/bootstrap.py skill-gate-commit-check --changed-path library/base/... \
+  --report /ruta/externa/informe.json --corpus-digest <sha256> --candidate-digest <sha256>
+```
+Falla cerrado si el cambio toca el corpus o el gate y el informe no lo acepta. **Un `abstain` bloquea igual que un
+`reject`**: la abstención no es permiso. Y los cambios que no tocan el corpus no se bloquean, porque una puerta
+que para todos los commits es una puerta que la gente desactiva.
 
 ### Cuando el estado y el repositorio dejan de contarse (operador)
 

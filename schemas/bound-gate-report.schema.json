@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:bound-gate-report:1",
+  "title": "Identity-bound skill gate report",
+  "x-owner": "host",
+  "type": "object",
+  "required": ["schema_version", "compiler_version", "corpus_digest", "baseline_candidate_digest", "candidate_digest", "action", "reasons"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "compiler_version": {"type": "string", "minLength": 1},
+    "corpus_digest": {"$ref": "#/$defs/digest"},
+    "baseline_candidate_digest": {"$ref": "#/$defs/digest"},
+    "candidate_digest": {"$ref": "#/$defs/digest"},
+    "action": {"enum": ["accept", "reject", "abstain"]},
+    "reasons": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

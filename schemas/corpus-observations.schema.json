@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:corpus-observations:1",
+  "title": "Bound executable-corpus observations",
+  "x-owner": "host",
+  "type": "object",
+  "required": ["schema_version", "compiler_version", "corpus_digest", "candidate_digest", "provider", "observations"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "compiler_version": {"type": "string", "minLength": 1},
+    "corpus_digest": {"$ref": "#/$defs/digest"},
+    "candidate_digest": {"$ref": "#/$defs/digest"},
+    "provider": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["available", "unavailable"]},
+        "name": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "available"}}}, "then": {"required": ["name"]}}
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/observation"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "observation": {
+      "type": "object",
+      "required": ["case_id", "verdict", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "verdict": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_COVERED"]},
+        "evidence": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    }
+  }
+}

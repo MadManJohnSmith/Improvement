@@ -49,8 +49,12 @@ for (const path of ['/inputs/product/source.txt', '/inputs/product/new.txt',
     return true;
   });
 }
-const run = async command => await ctx.shell.run(
-  ctx.shell.resolve({command, sandboxPolicy:policy}));
+const run = async command => {
+  const request = ctx.shell.resolve({command, sandboxPolicy:policy});
+  if (typeof ctx.shell.run === 'function') return await ctx.shell.run(request);
+  const execution = await ctx.shell.execute(request);
+  return await execution.result();
+};
 const success = await run(`test "$PWD" = '${process.argv[3]}' && printf bash-evidence > /state/bash.txt && /bin/sh -c "printf child-evidence"`);
 assert.equal(success.exitCode, 0, JSON.stringify(success));
 assert(success.stdout.text.includes('child-evidence'));

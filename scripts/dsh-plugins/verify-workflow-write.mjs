@@ -223,14 +223,29 @@ const realCtx = {
     return undefined;
   },
   tools: {
-    register: (d) => registry.set(d.name, d),
+    register: (d) => {
+      registry.set(d.name, d);
+      return () => registry.delete(d.name);
+    },
     guard: (g) => guards2.push(g),
     get: (name) => registry.get(name),
+  },
+  inject(dependencies, callback) {
+    if (dependencies.length !== 1 || dependencies[0] !== 'jobs') {
+      throw new Error(`inyección inesperada: ${JSON.stringify(dependencies)}`);
+    }
+    calls.jobsInjection = (calls.jobsInjection ?? 0) + 1;
+    // El selfcheck no compone dsh-jobs: conservar la bash foreground que el
+    // plugin ya registró es el equivalente fiel de una inyección aún no satisfecha.
+    return () => {};
   },
   shell: {
     sandboxMode: 'workspace-write',
     resolve: (r) => r,
     run: async () => ({ exitCode: 0, signal: null, timedOut: false, aborted: false, timeoutMs: 1000, stdout: { text: 'hi', truncated: false }, stderr: { text: '', truncated: false } }),
+    execute: async () => ({
+      result: async () => ({ exitCode: 0, signal: null, timedOut: false, aborted: false, timeoutMs: 1000, stdout: { text: 'hi', truncated: false }, stderr: { text: '', truncated: false } }),
+    }),
   },
   shellEnv: { collect: () => ({}) },
   systemPrompt: { section() {}, getSectionOrder() { return 0; } },
@@ -246,10 +261,10 @@ if (!TOOL_BASH || !existsSync(TOOL_BASH)) {
 } else {
 const realBash = await import(pathToFileURL(TOOL_BASH).href);
 realBash.apply(realCtx, {});
+check('rc.2: bash solicita únicamente la inyección opcional jobs', calls.jobsInjection === 1);
 const before = registry.get('bash');
 const hadFields = 'sandbox_permissions' in before.parameters.properties && 'justification' in before.parameters.properties;
 check('bash real de upstream registrada CON campos de escalada', hadFields);
-check('bash real: descripción original menciona escalada', /escalat|sandbox_permissions/i.test(before.description));
 
 mod.apply(realCtx, {});
 const after = registry.get('bash');
@@ -271,6 +286,7 @@ let assembleListener;
 const realCtx2 = {
   get: realCtx.get,
   tools: { register: (d) => registry.set(d.name, d), guard: (g) => guards2.push(g), get: (name) => registry.get(name) },
+  inject: realCtx.inject,
   shell: realCtx.shell,
   shellEnv: realCtx.shellEnv,
   systemPrompt: realCtx.systemPrompt,

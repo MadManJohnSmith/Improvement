@@ -1413,6 +1413,31 @@ def main():
     p_gate.add_argument("--library", default=str(FRAMEWORK / "library"))
     p_gate.add_argument("--val-fraction", type=float, default=0.3)
 
+    p_compile = sub.add_parser(
+        "compile-corpus", help="Compilar el corpus ejecutable Host")
+    p_compile.add_argument("--library", default=str(FRAMEWORK / "library"))
+    p_compile.add_argument("--output", required=True)
+
+    p_bound = sub.add_parser(
+        "bound-skill-gate", help="Evaluar observaciones ligadas a corpus/candidatos")
+    p_bound.add_argument("--baseline", required=True)
+    p_bound.add_argument("--candidate", required=True)
+    p_bound.add_argument("--corpus", required=True)
+    p_bound.add_argument("--library", default=str(FRAMEWORK / "library"))
+    p_bound.add_argument("--baseline-digest", required=True)
+    p_bound.add_argument("--candidate-digest", required=True)
+    p_bound.add_argument("--val-fraction", type=float, default=0.3)
+    p_bound.add_argument("--report", required=True)
+
+    p_trigger = sub.add_parser(
+        "skill-gate-commit-check",
+        help="Exigir reporte ligado aceptado cuando cambie el corpus")
+    p_trigger.add_argument("--changed-path", action="append", default=[])
+    p_trigger.add_argument("--changed-paths-file")
+    p_trigger.add_argument("--report")
+    p_trigger.add_argument("--corpus-digest", required=True)
+    p_trigger.add_argument("--candidate-digest", required=True)
+
     # state
     p_state = sub.add_parser(
         "state",
@@ -1427,6 +1452,9 @@ def main():
 
     args = parser.parse_args()
 
+    # Only decision commands set a non-zero exit; the rest keep exit 0 and let
+    # the caller read `result`. See the bound-skill-gate branch below.
+    exit_code = 0
     try:
         if args.command == "install":
             project = Path(args.project).resolve()
@@ -1506,6 +1534,43 @@ def main():
                       else ("ABSTAINED" if verdict["action"] == "abstain" else "RETAINED"),
                       "gate": verdict}
 
+        elif args.command == "compile-corpus":
+            import corpus_compiler
+            corpus = corpus_compiler.compile_corpus(Path(args.library))
+            corpus_compiler.write_corpus(corpus, Path(args.output))
+            result = {"result": "RESOLVED", "corpus": corpus}
+
+        elif args.command == "bound-skill-gate":
+            import corpus_compiler
+            import skill_gate
+            report = skill_gate.evaluate_bound_gate(
+                Path(args.baseline), Path(args.candidate), Path(args.corpus),
+                args.baseline_digest, args.candidate_digest, args.val_fraction,
+                Path(args.library))
+            Path(args.report).write_text(json.dumps(
+                report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8")
+            result = {"result": "RESOLVED" if report["action"] == "accept"
+                      else ("ABSTAINED" if report["action"] == "abstain"
+                            else "RETAINED"), "gate": report}
+            # This is a decision command, so the exit code has to carry the
+            # decision: a CI step that only reads `$?` would otherwise see a
+            # rejected candidate as a successful run. The legacy `skill-gate`
+            # keeps its exit 0 because changing a published command's contract
+            # would break callers that already read the report instead.
+            exit_code = 0 if report["action"] == "accept" else 1
+
+        elif args.command == "skill-gate-commit-check":
+            import skill_gate
+            changed = list(args.changed_path)
+            if args.changed_paths_file:
+                changed.extend(Path(args.changed_paths_file).read_text(
+                    encoding="utf-8").splitlines())
+            result = skill_gate.commit_trigger_check(
+                changed, Path(args.report) if args.report else None,
+                args.corpus_digest, args.candidate_digest)
+            result["result"] = "RESOLVED"
+
         elif args.command == "state":
             project = Path(args.project).resolve()
             workspace = (
@@ -1528,6 +1593,8 @@ def main():
     except (OSError, ValueError) as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

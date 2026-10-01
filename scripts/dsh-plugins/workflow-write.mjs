@@ -328,7 +328,7 @@ function leaseIdentity(exec) {
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
-async function acquireLease(ctx, stateRoot, relative, session, now) {
+async function acquireLease(ctx, stateRoot, relative, session, now, policy) {
   const leaseDir = `${stateRoot}/${LEASE_DIR_NAME}`;
   const leasePath = `${leaseDir}/${relative}.json`;
   const target = await ctx.fs.resolve(`${LEASE_DIR_NAME}/${relative}.json`, {
@@ -354,16 +354,16 @@ async function acquireLease(ctx, stateRoot, relative, session, now) {
     expires_at: now + LEASE_TTL_MS,
     state: 'held',
   };
-  await ctx.fs.writeText(target, `${JSON.stringify(lease)}\n`, undefined, undefined, undefined);
+  await ctx.fs.writeText(target, `${JSON.stringify(lease)}\n`, undefined, undefined, policy);
   return {target, lease};
 }
 
-async function releaseLease(ctx, lease, now) {
+async function releaseLease(ctx, lease, now, policy) {
   if (!lease) return;
   try {
     await ctx.fs.writeText(lease.target, `${JSON.stringify({
       ...lease.lease, state: 'released', released_at: now,
-    })}\n`, undefined, undefined, undefined);
+    })}\n`, undefined, undefined, policy);
   } catch {
     // A lease nobody released simply expires; failing the write here would
     // report a successful write as an error.
@@ -811,7 +811,7 @@ export function apply(ctx, config) {
       const now = Date.now();
       let lease = null;
       if (session && relative) {
-        lease = await acquireLease(ctx, stateRoot, relative, session, now);
+        lease = await acquireLease(ctx, stateRoot, relative, session, now, policy);
       }
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el
@@ -821,7 +821,7 @@ export function apply(ctx, config) {
       try {
         outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
       } finally {
-        await releaseLease(ctx, lease, Date.now());
+        await releaseLease(ctx, lease, Date.now(), policy);
       }
       ctx.emit('fs/observed', target, { kind: 'present', version: outcome.version }, exec);
       return { path: target.displayPath, operation: outcome.operation, before: outcome.before, after: outcome.after };
