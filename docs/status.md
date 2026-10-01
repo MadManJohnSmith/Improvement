@@ -176,4 +176,19 @@ registra el worktree en el `.git` del producto, que en una sesión confinada es 
 lectura. Cerrarlo exige que el Host aprovisione la candidata fuera de la sesión confinada.
 Todo está fijado en `tests/test_auditor_confinement.py` contra el runtime real.
 
+**E6: la memoria se escribía y nadie la leía.** La auditoría de cierre de este
+ronda encontró que `episodes.py` escribía `episodes.jsonl` y `episodes-index.json`
+con diecisiete regresiones que probaban que el registro funciona, y que ningún camino
+de producto leía el índice: la documentación decía «el auditor lo consulta antes de
+persistir un hallazgo» y era cierto de una frase y falso del framework. `workflow_write`
+calculaba la firma exacta con la que la memoria se indexa y la descartaba. Todas las
+pruebas de aquel día eran verdaderas; ninguna era sobre lo que la unidadservía para.
+Ahora la consulta ocurre en la misma escritura que el ancla: si la firma está en el
+índice, el registro lleva `evidence.prior_episode` con la unidad que lo cerró y el
+arreglo que funcionó, y `bootstrap.py state` cuenta esas repeticiones en `repeats`
+porque una prevención que falló es un defecto distinto del primero. El hueco no se
+tapó con una frase: se tapó con una regresión de ocho casos canario-comprobada, y con
+otra que ata persona, contrato y plugin para que no vuelvan a divergir sin que nada
+falle.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

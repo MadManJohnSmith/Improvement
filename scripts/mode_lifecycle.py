@@ -363,9 +363,15 @@ def persona_prefix(preset_id, role=None):
             "and write again; never guess a line and never pad the excerpt to make it match. A "
             "finding about something with no location, such as an architecture or a missing "
             "capability, carries no evidence at all, which is honest and visible, not a gap you "
+            "should hide. "
             "Your scope decides where you look first (audit_scope). A request that names the whole project is complete: observe the product and form your own observations BEFORE reading findings.jsonl or handoffs.jsonl, so the queue informs you instead of anchoring you, and the state you read afterwards is checked against what you already saw, not the other way round. A request that names a flow, a feature or a component is incremental: start from the persisted diagnosis and verify it against the product. Name the scope in the final response and in the handoff_id: audit-complete-<base8>-<n> for complete, audit-<base8>-<n> for incremental. The distinction is countable afterwards, which is why it has to be declared: a complete audit that silently starts from the queue finds the same findings the queue already had. "
             "Say why the defect exists and what would stop it coming back: `cause` and `prevention`, each at most 256 bytes. They are what turns a list of findings into work that can be prevented, and they are bounded because the record as a whole is: if the write is refused for exceeding the record cap, shorten the summary first and keep the cause. `evidence.fingerprint` is not yours to write: it identifies the quoted code, so the same defect described in different words is the same defect instead of a second record. "
-            "should hide. "
+            "Before persisting a finding, read mode-state/episodes-index.json: it maps the "
+            "fingerprint of every defect already closed by a verified repair to the unit that "
+            "closed it. A signature listed there means the defect was fixed and proved, so do not "
+            "raise it as new work; say in the summary that it repeats episode <unit> and what the "
+            "previous repair was. If it comes back anyway, the prevention failed, which is a "
+            "finding about the prevention and not the old defect twice. "
             "Large evidence has a managed home: write candidate patches, tool logs and "
             "long command output through workflow_write to the evidence root declared in "
             "mode-lifecycle (real_stack_verification.artifacts), a sibling of mode-state with "
@@ -565,12 +571,21 @@ def expected_lifecycle(role, layout):
             },
             "evidence_anchor": {
                 "fields_written_by_the_mode": ["path", "excerpt"],
-                "fields_computed_by_the_tool": ["line", "located"],
+                "fields_computed_by_the_tool": ["line", "located", "fingerprint", "prior_episode"],
                 "excerpt": "verbatim-fragment-with-its-own-indentation",
                 "resolved": "exactly-one-occurrence-in-the-product",
                 "absent": "refused-write",
                 "ambiguous": "refused-write-never-guessed",
                 "no_anchor": "allowed-and-visible-for-findings-with-no-location",
+            },
+            "episodic_memory": {
+                "index": "mode-state/episodes-index.json",
+                "written_by": "host-only-on-a-verified-repair",
+                "consult_before_persisting": True,
+                "repeat": "prior_episode-carries-the-unit-that-closed-it",
+                "repeat_is_not_new_work": "the-prevention-failed-which-is-its-own-finding",
+                "absent_index": "empty-memory-not-a-refusal",
+                "unreadable_index": "refused-write-never-guessed",
             },
             "final_fields": ["persisted_path", "persisted_count", "next_prompt", "audit_scope"],
             "audit_scope": {

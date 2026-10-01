@@ -712,6 +712,95 @@ process.stdout.write(JSON.stringify(report));
 '''
 
 
+MEMORY_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), size: info.size,
+            type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const spec = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const relative = 'Improvement-workspace/mode-state/findings.jsonl';
+const targetPath = path.join(session, relative);
+const indexPath = path.join(session, 'Improvement-workspace/mode-state/episodes-index.json');
+const report = {};
+for (const [name, item] of Object.entries(spec)) {
+  fs.rmSync(targetPath, {force: true});
+  fs.rmSync(indexPath, {force: true});
+  if (item.index !== null) fs.writeFileSync(indexPath, item.index, 'utf8');
+  const outcome = await attempt(session, relative, item.content);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    written: fs.existsSync(targetPath),
+    onDisk: fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : null};
+}
+process.stdout.write(JSON.stringify(report));
+'''
+
+
 class WorkflowWritePluginTest(unittest.TestCase):
     def _signed_plan(self, workspace, stacks, product=None):
         """Plan bytes signed the way the Host signs them and read back by the Host.
@@ -1074,6 +1163,116 @@ class WorkflowWritePluginTest(unittest.TestCase):
         for name, expected in (("fingerprint_claimed", "los calcula la herramienta"),
                                ("cause_too_long", "cause debe ser texto"),
                                ("record_over_cap", "tope del registro")):
+            with self.subTest(case=name):
+                self.assertFalse(report[name]["ok"], report[name])
+                self.assertIn(expected, report[name]["error"])
+                self.assertFalse(report[name]["written"])
+
+    def test_a_defect_the_memory_already_closed_is_marked_as_a_repeat(self):
+        """E2 closed the ledger; nothing read it, so the auditor repeated itself.
+
+        The Host writes `episodes-index.json` and stamps a fingerprint on every
+        finding, and before this the two never met: the write path computed the
+        exact key the memory is indexed by and dropped it on the floor. An
+        auditor met the same defect every session, produced a finding every
+        session, and the queue grew a duplicate each time — the most expensive
+        failure a framework like this has, invisible because the ledger itself
+        worked.
+
+        So the repeat is stamped by the tool, from the fingerprint it already
+        computes, and the memory is read on the write path. A mode that writes
+        `prior_episode` is refused: the one claim the memory has to make cannot
+        be the mode's. An absent index is an empty memory, not a refusal — a
+        workspace that never closed a unit has nothing to remember. An index
+        that is there and unreadable is refused, because the alternative is
+        guessing "new", which is the answer that produces the duplicates.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        import hashlib
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-memory-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        (product / 'src').mkdir(parents=True)
+        (product / 'src' / 'api.py').write_text(
+            'def create_user(payload):\n    return payload\n'
+            '\n\ndef delete_user(user_id):\n    return None\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            self._signed_plan(workspace, [], product=str(product)))
+
+        def fingerprint(excerpt):
+            return hashlib.sha256(
+                f"src/api.py\n{excerpt}".encode('utf-8')).hexdigest()
+
+        quoted = 'def create_user(payload):'
+        other = 'def delete_user(user_id):'
+        base = 'a' * 40
+
+        def finding(**overrides):
+            record = {'finding_id': 'A-01', 'base_revision': base, 'severity': 'HIGH',
+                      'summary': 'Missing validation', 'status': 'OPEN',
+                      'evidence': {'path': 'src/api.py', 'excerpt': quoted}}
+            return json.dumps({**record, **overrides}, ensure_ascii=False) + '\n'
+
+        def index_for(signature, verdict='PASS', unit='U-7'):
+            return json.dumps({'version': 1, 'signatures': {signature: [
+                {'unit': unit, 'verdict': verdict, 'evidence': 'verification.jsonl#U-7',
+                 'repair': 'Validate the payload against the route schema'}]}})
+
+        cases = {
+            # The memory has this exact code closed by a proven repair.
+            "repeat": {'index': index_for(fingerprint(quoted)),
+                       'content': finding(summary='Still no validation on create')},
+            # Same defect, different wording: the fingerprint is the code, so
+            # this is still a repeat and not a second record.
+            "repeat_other_wording": {'index': index_for(fingerprint(quoted)),
+                                     'content': finding(summary='The endpoint accepts anything')},
+            # Different code: the memory has never seen it.
+            "novel": {'index': index_for(fingerprint(quoted)),
+                      'content': finding(evidence={'path': 'src/api.py', 'excerpt': other})},
+            # No index at all: nothing to remember, and the audit still lands.
+            "empty_memory": {'index': None, 'content': finding()},
+            # An attempt that did not verify is not remembered, so a FAIL entry
+            # is not a reason to call the defect closed.
+            "unproven_episode": {'index': index_for(fingerprint(quoted), verdict='FAIL'),
+                                 'content': finding()},
+            # The mode claiming its own history.
+            "claimed_prior_episode": {
+                'index': index_for(fingerprint(quoted)),
+                'content': finding(evidence={'path': 'src/api.py', 'excerpt': quoted,
+                                             'prior_episode': {'unit': 'U-1'}})},
+            # A memory the tool cannot read is a memory it would have to guess.
+            "corrupt_index": {'index': '{not json', 'content': finding()},
+            "shapeless_index": {'index': json.dumps({'version': 1}), 'content': finding()},
+        }
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'memory-driver.mjs'
+        driver.write_text(MEMORY_DRIVER.replace('PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run([node, driver.as_posix(), session.as_posix()],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        for name in ("repeat", "repeat_other_wording"):
+            with self.subTest(case=name):
+                self.assertTrue(report[name]["ok"], report[name])
+                landed = json.loads(report[name]["onDisk"])
+                self.assertEqual(landed["evidence"]["prior_episode"]["unit"], "U-7")
+                self.assertEqual(landed["evidence"]["prior_episode"]["repair"],
+                                 'Validate the payload against the route schema')
+                self.assertRegex(landed["evidence"]["fingerprint"], r'^[0-9a-f]{64}$')
+        for name in ("novel", "empty_memory", "unproven_episode"):
+            with self.subTest(case=name):
+                self.assertTrue(report[name]["ok"], report[name])
+                self.assertNotIn("prior_episode", json.loads(report[name]["onDisk"])["evidence"])
+        for name, expected in (("claimed_prior_episode", "los calcula la herramienta"),
+                               ("corrupt_index", "no es JSON"),
+                               ("shapeless_index", "sin tabla de firmas")):
             with self.subTest(case=name):
                 self.assertFalse(report[name]["ok"], report[name])
                 self.assertIn(expected, report[name]["error"])

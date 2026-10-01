@@ -126,6 +126,30 @@ def anchored_findings(state):
     return {"anchored": anchored, "unanchored": unanchored}
 
 
+def repeat_findings(state):
+    """OPEN findings the memory had already closed by a verified repair.
+
+    `prior_episode` is stamped by the write tool, not claimed by the mode, from
+    the same fingerprint it uses to make a finding countable, so this counts
+    defects that came back rather than ones an auditor called new. A non-zero
+    number here is not a failure of the ledger: it is the prevention failing
+    where the repair worked, which is a different defect from the first one and
+    only visible because the memory is consulted.
+    """
+    repeats, units = 0, set()
+    for record in latest_findings(state).values():
+        if record.get("status") != "OPEN":
+            continue
+        evidence = record.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+        prior = evidence.get("prior_episode")
+        if isinstance(prior, dict) and isinstance(prior.get("unit"), str) and prior["unit"]:
+            repeats += 1
+            units.add(prior["unit"])
+    return {"open": repeats, "prior_units": sorted(units)}
+
+
 def audit_scopes(state):
     """How much of the ledger came from complete audits and how much from partial ones.
 
@@ -191,6 +215,7 @@ def reconcile(product, workspace):
     report = {
         "state": str(state),
         "anchors": anchored_findings(state),
+        "repeats": repeat_findings(state),
         "audit_scopes": audit_scopes(state),
         "closed_findings": closed_findings(state),
         "uncovered_findings": uncovered_findings(state),

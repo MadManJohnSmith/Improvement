@@ -1,5 +1,42 @@
 # Cambios
 
+## Cerrar el bucle de la memoria — 2026-10-01
+- **El framework affirming algo que solo estaba escrito.** La auditoría de cierre de la ronda
+  anterior encontró que E2 entregaba `episodes.jsonl` y `episodes-index.json` con diecisiete
+  regresiones que probaban que el registro funciona, y que **nada leía el índice**: `episodes.recall`
+  e `episodes.is_repeat` no los llamaba nadie del producto, solo las pruebas. `docs/usage.md`
+  decía «el auditor lo consulta antes de persistir un hallazgo y marca las repeticiones con su
+  episodio previo» y eso era cierto de una frase y falso del framework. Peor: `workflow_write`
+  calculaba la firma exacta con la que la memoria se indexa —`sha256(path\nfragmento)`— y la
+  tiraba. El auditor se encontraba el mismo defecto cada sesión, producía un hallazgo cada sesión
+  y la cola crecía un duplicado cada vez: el fallo de memoria más caro que tiene este framework,
+  invisible porque el registro en sí sí funcionaba. **Todas las pruebas de aquel día eran
+  verdaderas; ninguna era sobre lo que la unidad servía para.**
+- **E6 · la consulta ocurre en la escritura, no en la confianza del modo.** `workflow_write` busca
+  la firma en `episodes-index.json` y, si está, estampa `evidence.prior_episode` con la unidad
+  que lo cerró y el arreglo que funcionó. Tres decisiones y sus alternativas: un modo **no**
+  puede escribir `prior_episode` —la única afirmación sobre la memoria que no puede ser suya es
+  «mi defecto ya está arreglado»—, un índice **ausente** es memoria vacía y no motivo para
+  rechazar (un workspace que nunca cerró una unidad no tiene nada que recordar, y negarle la
+  primera auditoría de cada proyecto sería un precio absurdo), y un índice **presente e ilegible**
+  falla cerrado, porque la alternativa es adivinar «nuevo», que es exactamente la respuesta que
+  produce los duplicados. Un intento con veredicto distinto de `PASS` no cuenta como memoria.
+- **Una repetición no es trabajo nuevo.** `prior_episode` hace visible la prevención que falló
+  donde el arreglo funcionó, y `bootstrap.py state` cuenta esos `OPEN` en `repeats` con la unidad
+  que los cerró. El tope de 4.096 B por registro se vuelve a medir **sobre el registro que va a
+  aterrizar**, no sobre lo que el modo escribió: ancla, firma y memoria se añaden después del
+  primer cálculo, y un registro que cabía en papel podía no caber en disco.
+- **Dos defectos de texto encontrados de paso.** La persona del auditor tenía la frase «no a gap
+  you should hide» partida en dos con mil quinientos caracteres de otro texto en medio, y
+  `ARQUITECTURA_FLUJO_AGENTES.md` tenía dos párrafos pegados sin salto. Ninguno rompía una
+  prueba; los dos mandaban basura al modelo o al lector.
+- **Regresiones.** Ocho casos sobre el plugin (repetición con otra redacción, código nuevo,
+  memoria vacía, episodio sin verificar, `prior_episode` autodeclarado, índice corrupto e índice
+  sin tabla de firmas), una sobre el recuento de `repeats`, y una que ata persona, contrato y
+  plugin para que no vuelvan a divergir en silencio. Las tres comprobadas con canario: quitando
+  la consulta, hardcodeando el recuento y renombrando la clave del contrato, cada una falla.
+- **Suite: 746 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+
 ## Cerrar el framework: D1, D2, D11 y F5, más cinco unidades nuevas — 2026-10-01
 - **Cinco decisiones tomadas y ejecutadas, no cinco ideas.** La matriz de `PLAN_IMPLEMENTACION.md`
   queda con D1, D2, D11 y F5 cerradas y cinco unidades nuevas (E1–E5) en `HECHO`. Ninguna se

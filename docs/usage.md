@@ -129,8 +129,13 @@ en el hot path de cada lectura.
 en O(1) a «¿esto ya se arregló?». Dos reglas lo hacen útil en vez de duplicar el ledger: la firma
 es el **fingerprint** del hallazgo, no su redacción, y **solo se recuerda un arreglo verificado**,
 porque recordar un intento fallido enseña a la siguiente sesión a repetirlo. Solo el Host escribe
-el registro; el auditor lo consulta antes de persistir un hallazgo y marca las repeticiones con su
-episodio previo.
+el registro; **la consulta no depende de que el modo la haga**: `workflow_write` calcula el
+`fingerprint` del fragmento que va a anclar, lo busca en el índice y, si estaba, estampa
+`evidence.prior_episode` con la unidad que lo cerró y el arreglo que funcionó. Un modo que
+escriba ese campo se rechaza, porque la afirmación «mi defecto ya está arreglado» no puede ser
+suya. Un índice ausente es memoria vacía; uno presente e ilegible falla cerrado. `bootstrap.py
+state` cuenta los `OPEN` con `prior_episode` en `repeats`: esa cifra no es un fallo del ledger,
+es una prevención que falló donde el arreglo funcionó.
 
 ### La candidata es un repositorio sombra, no un worktree
 Un `git worktree` guarda índice y HEAD en el `.git/worktrees/` **del producto**, así que con el

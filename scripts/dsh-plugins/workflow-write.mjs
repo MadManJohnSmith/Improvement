@@ -73,6 +73,9 @@ const FINDINGS_BYTE_LIMIT = 262144;
 const ANCHORED_FILE_BYTE_LIMIT = 1048576;
 const ANCHOR_EXCERPT_MIN = 8;
 const STATE_DIR_NAME = 'mode-state';
+const EPISODE_INDEX_NAME = 'episodes-index.json';
+const EPISODE_INDEX_BYTE_LIMIT = 4194304;
+const EPISODE_UNIT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const LEASE_DIR_NAME = '.leases';
 const LEASE_TTL_MS = 30000;
 const EVIDENCE_DIR_NAME = 'evidence';
@@ -466,6 +469,70 @@ async function readProductFile(ctx, productPath, relative, signal) {
   return text;
 }
 
+/**
+ * The episodic memory, indexed by the fingerprint of a defect already closed
+ * by a verified repair.
+ *
+ * The Host writes this index and nothing else reads it, which made the memory
+ * a ledger nobody consults: the auditor re-reported a fixed defect every
+ * session and the record grew a duplicate each time. This is the reader.
+ *
+ * An index that is not there is an empty memory, not a failure -- a workspace
+ * that never closed a unit has nothing to remember, and refusing the audit for
+ * that would break the first session of every project. An index that is there
+ * and unreadable is refused, because the tool would then be guessing whether a
+ * defect is new, and "new" is the answer that produces exactly the duplicates
+ * the memory exists to stop.
+ */
+async function readEpisodeIndex(ctx, workspacePath, signal) {
+  const target = await ctx.fs.resolve(`mode-state/${EPISODE_INDEX_NAME}`, {
+    cwd: workspacePath, signal,
+  });
+  const info = await ctx.fs.stat(target, signal);
+  if (info?.type !== 'file') return {};
+  if (typeof info.size === 'number' && info.size > EPISODE_INDEX_BYTE_LIMIT) {
+    throw new Error(`episodes-index.json excede el límite legible: ${info.size} bytes`);
+  }
+  const text = await ctx.fs.readText(target, signal);
+  if (typeof text !== 'string') {
+    throw new Error('episodes-index.json no se puede leer');
+  }
+  let value;
+  try { value = JSON.parse(text); } catch {
+    throw new Error('episodes-index.json no es JSON: la memoria no se puede leer');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || !value.signatures || typeof value.signatures !== 'object'
+      || Array.isArray(value.signatures)) {
+    throw new Error('episodes-index.json sin tabla de firmas: la memoria no se puede leer');
+  }
+  for (const [signature, entries] of Object.entries(value.signatures)) {
+    if (!/^[0-9a-f]{64}$/u.test(signature) || !Array.isArray(entries)) {
+      throw new Error(`episodes-index.json con firma ilegible: ${signature}`);
+    }
+  }
+  return value.signatures;
+}
+
+/**
+ * The last proven repair of a defect, or null when the memory has never seen
+ * this code. The entry is echoed rather than summarised so the auditor can
+ * name what was done instead of re-deriving it.
+ */
+function recallEpisode(signatures, fingerprint) {
+  const entries = signatures[fingerprint];
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)
+        && typeof entry.unit === 'string' && EPISODE_UNIT.test(entry.unit)
+        && entry.verdict === 'PASS') {
+      return {unit: entry.unit, evidence: entry.evidence ?? null, repair: entry.repair ?? null};
+    }
+  }
+  return null;
+}
+
 async function validateManagedFindings(ctx, target, content, signal) {
   if (typeof ctx.fs.processPath !== 'function' || typeof ctx.fs.readText !== 'function') return undefined;
   const rawTargetPath = await ctx.fs.processPath(target);
@@ -483,6 +550,7 @@ async function validateManagedFindings(ctx, target, content, signal) {
   const plan = await loadSignedPlan(ctx, workspacePath, signal);
   const productPath = typeof plan.product === 'string' ? plan.product.replace(/\/+$/, '') : null;
   if (!productPath) throw new Error('capability-plan no declara el producto');
+  const episodes = await readEpisodeIndex(ctx, workspacePath, signal);
 
   const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
   if (lines.length === 1 && lines[0] === '') return undefined;
@@ -532,14 +600,18 @@ async function validateManagedFindings(ctx, target, content, signal) {
     const evidenceKeys = Object.keys(evidence).sort();
     if (evidenceKeys.length < 2
         || !evidenceKeys.includes('excerpt') || !evidenceKeys.includes('path')
-        || evidenceKeys.some((key) => !['excerpt', 'fingerprint', 'line', 'located', 'path'].includes(key))) {
+        || evidenceKeys.some((key) => !['excerpt', 'fingerprint', 'line', 'located', 'path',
+          'prior_episode'].includes(key))) {
       throw new Error(`finding ${index}: evidence debe llevar exactamente path y excerpt`);
     }
-    // line, located and fingerprint are computed here; a mode that writes them
-    // is claiming an identity or a location it did not derive.
-    if ('line' in evidence || 'located' in evidence || 'fingerprint' in evidence) {
-      throw new Error(`finding ${index}: evidence.line, evidence.located y evidence.fingerprint `
-        + 'los calcula la herramienta');
+    // line, located, fingerprint and prior_episode are computed here; a mode
+    // that writes them is claiming an identity, a location or a history it did
+    // not derive. prior_episode in particular would be the mode declaring its
+    // own defect already fixed, which is the one claim the memory must make.
+    if ('line' in evidence || 'located' in evidence || 'fingerprint' in evidence
+        || 'prior_episode' in evidence) {
+      throw new Error(`finding ${index}: evidence.line, evidence.located, evidence.fingerprint `
+        + 'y evidence.prior_episode los calcula la herramienta');
     }
     if (typeof evidence.path !== 'string' || evidence.path.length === 0
         || typeof evidence.excerpt !== 'string'
@@ -555,6 +627,9 @@ async function validateManagedFindings(ctx, target, content, signal) {
       throw new Error(`finding ${index} (${record.finding_id}): el excerpt aparece ${matches.length} veces en ${evidence.path}; `
         + 'cita un fragmento que sea único');
     }
+    const fingerprint = createHash('sha256')
+      .update(`${evidence.path}\n${evidence.excerpt.trimEnd()}`, 'utf8').digest('hex');
+    const priorEpisode = recallEpisode(episodes, fingerprint);
     const computed = {
       finding_id: record.finding_id,
       base_revision: record.base_revision,
@@ -567,14 +642,27 @@ async function validateManagedFindings(ctx, target, content, signal) {
         // Identity of the quoted code, not of the wording: two audits that
         // describe the same line differently share a fingerprint, which is
         // what makes "same defect, other words" countable.
-        fingerprint: createHash('sha256')
-          .update(`${evidence.path}\n${evidence.excerpt.trimEnd()}`, 'utf8').digest('hex'),
+        fingerprint,
         line: matches[0],
         located: true,
+        // What the memory already knows about this exact code. Absent means
+        // the memory has never seen it; present means the defect was closed by
+        // a verified repair, and the finding that says so again is a
+        // repetition someone has to look at rather than new work.
+        ...(priorEpisode ? {prior_episode: priorEpisode} : {}),
       },
     };
     if (record.cause !== undefined) computed.cause = record.cause;
     if (record.prevention !== undefined) computed.prevention = record.prevention;
+    // The cap was checked against what the mode wrote, but the anchor, the
+    // fingerprint and the memory are added here, so a record that fitted on
+    // paper can still land over the limit. Measuring the record that is about
+    // to land is the only measurement that is about it.
+    const landed = Buffer.byteLength(JSON.stringify(computed), 'utf8');
+    if (landed + 32 > RECORD_BYTE_LIMIT) {
+      throw new Error(`finding ${index} ocupa ${landed} bytes ya anclado y el tope del registro es `
+        + `${RECORD_BYTE_LIMIT}; acorta summary, cause o prevention`);
+    }
     rewritten.push(computed);
   }
   return rewritten.map((record) => JSON.stringify(record)).join('\n') + '\n';

@@ -165,8 +165,11 @@ La memoria se aplica también a sí misma: las unidades de endurecimiento nacier
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
-silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**743 pruebas en verde**.
+silenciosa de registros en el preflight, corregida con regresión. La segunda auditoría de
+la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
+leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
+lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **746 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 

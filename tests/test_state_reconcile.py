@@ -247,6 +247,40 @@ class StateReconcileTests(unittest.TestCase):
         self.assertEqual(report["anchors"], {"anchored": 1, "unanchored": 1})
         self.assertEqual((self.state / "findings.jsonl").read_text(), before)
 
+    def test_defects_the_memory_had_closed_are_reported_as_repeats(self):
+        """A repeat is not a failure of the ledger; it is a failed prevention.
+
+        The write tool stamps `prior_episode` on a finding whose fingerprint the
+        episodic memory already closed by a verified repair. Counting those OPEN
+        findings is the only place a prevention that did not work becomes
+        visible, and it is countable without reading the product — the same
+        property `anchors` has. A finding the ledger already resolved is not a
+        repeat anyone has to look at, so the count is over OPEN ones only.
+        """
+        prior = {"unit": "U-7", "evidence": "verification.jsonl#U-7",
+                 "repair": "Validate the payload against the route schema"}
+        self._write_state(
+            None,
+            findings=[{"finding_id": "A-01", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "x", "status": "OPEN",
+                       "evidence": {"path": "a.txt", "excerpt": "one", "line": 1,
+                                    "located": True, "prior_episode": prior}},
+                      {"finding_id": "A-02", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "y", "status": "RESOLVED",
+                       "evidence": {"path": "b.txt", "excerpt": "two", "line": 3,
+                                    "located": True, "prior_episode": prior}},
+                      {"finding_id": "A-03", "base_revision": self.base,
+                       "severity": "HIGH", "summary": "z", "status": "OPEN",
+                       "evidence": {"path": "c.txt", "excerpt": "three", "line": 5,
+                                    "located": True}}],
+            handoffs=[{"handoff_id": "audit-1", "base_revision": self.base,
+                       "finding_ids": ["A-01", "A-02", "A-03"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}])
+        before = (self.state / "findings.jsonl").read_text()
+        report = state_reconcile.reconcile(self.product, self.workspace)
+        self.assertEqual(report["repeats"], {"open": 1, "prior_units": ["U-7"]})
+        self.assertEqual((self.state / "findings.jsonl").read_text(), before)
+
     def test_uncovered_findings_name_what_no_handoff_ever_took(self):
         self._write_state(
             None,

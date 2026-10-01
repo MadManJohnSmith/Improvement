@@ -929,6 +929,42 @@ class ModeLifecycleTests(unittest.TestCase):
         prefix = mode_lifecycle.persona_prefix("project-continuous-repair")
         self.assertIn("digest16, full_base and declared_base", prefix)
 
+    def test_the_memory_the_contract_promises_is_the_memory_the_tool_consults(self):
+        """A promised behaviour with no mechanical counterpart is a lie in a doc.
+
+        E2 shipped a ledger, an index and seventeen regressions proving the
+        ledger works — and nothing read the index, so the whole promise of the
+        unit ("the auditor consults it before persisting a finding") was true of
+        a sentence in `usage.md` and of a docstring, and false of the product.
+        Every test that passed on that day was true; none of them was about the
+        thing the unit was for.
+
+        So the contract is pinned against the plugin source: each field the mode
+        is told the tool computes has to be computed there, and the memory the
+        persona tells the auditor to read has to be named in the contract. Drop
+        either side and this fails, which is the only warning the gap had.
+        """
+        contract = mode_lifecycle.expected_lifecycle(
+            "auditor", {"session_root": "tmpXXXXXXXXXX", "product_root": "project",
+                        "workspace_root": "project-workspace",
+                        "state_root": "project-workspace/mode-state"})
+        anchor = contract["audit_handoff"]["evidence_anchor"]
+        memory = contract["audit_handoff"]["episodic_memory"]
+        self.assertEqual(anchor["fields_written_by_the_mode"], ["path", "excerpt"])
+        for field in ("line", "located", "fingerprint", "prior_episode"):
+            self.assertIn(field, anchor["fields_computed_by_the_tool"], field)
+        self.assertIs(memory["consult_before_persisting"], True)
+        self.assertEqual(memory["index"], "mode-state/episodes-index.json")
+        # The persona has to ask for the consultation, or the contract asks for
+        # a behaviour nobody performs.
+        self.assertIn("episodes-index.json",
+                      mode_lifecycle.persona_prefix("project-auditor", "auditor"))
+        source = (Path(__file__).resolve().parents[1]
+                  / "scripts/dsh-plugins/workflow-write.mjs").read_text(encoding="utf-8")
+        self.assertIn("readEpisodeIndex", source)
+        for field in ("line", "located", "fingerprint", "prior_episode"):
+            self.assertIn(field, source, field)
+
     def test_emitted_repair_contract_fits_the_support_file_budget(self):
         """The contract is emitted into mode.json, a budgeted support file.
 
