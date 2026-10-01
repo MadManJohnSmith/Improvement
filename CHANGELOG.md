@@ -26,7 +26,17 @@
   subcomando invisible se descubre leyendo, un flag inexistente se descubre en la terminal del
   operador, en una misión, después de haber leído el comando. Canario: `--proyecto` en `docs/usage.md`
   rompe la suite.
-- **Suite: 773 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+- **E23 · la promesa de privacidad se comprobaba contra un fichero sin secretos.** El README dice que
+  el framework «nunca lee ni pide tus API keys: solo comprueba que las variables existen», y
+  `_read_settings_structure` documenta que parsea estructura. Pero el fixture que usan todos los casos
+  de este módulo escribe un `settings.yaml` **sin ningún valor de llave**, así que la promesa se
+  verificaba contra un fichero que no tenía nada que filtrar: la afirmación seguiría siendo cierta
+  aunque la función devolviera el documento entero. La nueva regresión pone secretos en el fichero —
+  bajo varios nombres de campo plausibles, para no depender de los que el runtime use— y exige que
+  ninguno aparezca en lo devuelto, mientras comprueba que la estructura del proveedor sigue siendo la
+  que el chequeo existe para obtener. Canario: un parser que filtra el fichero crudo hace fallar los
+  tres modos de la aserción.
+- **Suite: 774 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
 
 ## Quinta auditoría: atribución y enlaces — 2026-10-01
 - **E20 · la atribución se quedaba a un paso del aviso público.** Las 25 skills de `library/`

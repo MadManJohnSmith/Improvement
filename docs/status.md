@@ -276,4 +276,11 @@ preset se publican igual que un documento, y la búsqueda ahora cubre también `
 Y E12 comprobaba que todo subcomando esté documentado pero no que **todo flag documentado exista**,
 que es el fallo que se descubre en la terminal del operador en pleno vuelo. Ambos con canario.
 
+**E23 · la promesa de privacidad contra un fichero sin secretos.** El README afirma que el framework
+nunca lee ni pide API keys, y el chequeo de proveedor documenta que solo devuelve estructura. El
+fixture que usan todos esos casos escribe un `settings.yaml` sin ningún valor de llave: la promesa se
+comprobaba contra un fichero que no tenía nada que filtrar, y habría seguido cumpliéndose aunque la
+función devolviera el documento entero. Ahora hay secretos en el fixture, bajo varios nombres de
+campo, y ninguno puede aparecer en lo devuelto.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

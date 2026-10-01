@@ -1050,6 +1050,51 @@ class DshLifecycleTests(unittest.TestCase):
         self.assertEqual(status["source"], "fallback")
         self.assertIn("llave TEST_PROV_KEY ausente", str(status["skipped"]))
 
+    def test_the_provider_check_returns_structure_and_never_a_value(self):
+        """The promise the README makes, checked where a secret actually is.
+
+        The README says the framework never reads or asks for API keys, only
+        checks that the variables exist, and `_read_settings_structure` says it
+        parses structure only. The fixture every other case here uses writes a
+        `settings.yaml` containing no key value at all, so the promise was being
+        checked against a file that had nothing to leak: the assertion would
+        hold even if the function returned the whole document.
+
+        So this one puts secrets in the file — under several plausible field
+        names, so it does not depend on which ones the runtime happens to use —
+        and requires the parsed result to carry none of them, while still
+        carrying the provider structure the check exists to obtain.
+        """
+        secrets = ("VALOR-SECRETO-DE-PRUEBA", "Bearerprobe.abcdefghijklmnop")
+        with tempfile.TemporaryDirectory() as tmp:
+            home = _write_dsh_home(tmp)
+            settings = home / "settings.yaml"
+            settings.write_text(
+                settings.read_text(encoding="utf-8")
+                + "      apiKey: " + secrets[0] + "\n"
+                + "      token: " + secrets[0] + "\n"
+                + "      headers: Authorization: " + secrets[1] + "\n",
+                encoding="utf-8")
+            written = settings.read_text(encoding="utf-8")
+            for secret in secrets:
+                self.assertIn(secret, written,
+                              "el fixture no contiene el secreto: no probaría nada")
+            _default, providers = cc._read_settings_structure(home)
+
+        flattened = repr(providers)
+        for secret in secrets:
+            with self.subTest(secret=secret[:12]):
+                self.assertNotIn(secret, flattened,
+                                 "la estructura del proveedor devolvió un valor")
+        # Non-vacuity: the structure was really parsed, and it is structural —
+        # there is nowhere for a value to have come from.
+        self.assertIn("testprov", providers)
+        self.assertEqual(providers["testprov"]["api_key_env"], "TEST_PROV_KEY")
+        for provider, fields in providers.items():
+            with self.subTest(provider=provider):
+                self.assertLessEqual(
+                    set(fields), {"api_key_env", "models", "first_model"})
+
     def test_provider_status_stops_when_no_provider_is_usable(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
