@@ -159,14 +159,14 @@ cuyo HEAD sigue siendo su base y el arreglo vive en el diff sin commitear; `cand
 no lo distingue de la revisión anterior al arreglo. Medido sobre el estado real, los siete
 registros llevaban dos cabezas, ambas anteriores a los cambios que decían verificar. Ahora
 cada registro lleva el digest del diff verificado y tres sitios lo comprueban. Suite del
-propio framework: **606 pruebas en verde**.
+propio framework: **632 pruebas en verde**.
 
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
 silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**606 pruebas en verde**.
+**632 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 
@@ -205,8 +205,9 @@ intervención, desde un clon de GitHub y sin contaminación previa; el ciclo
 auditor→reparador→integración en tres campañas reales; verificación ejecutada contra el
 entrypoint real del producto (Flutter y Django, sin stubs) con la evidencia persistida y
 validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo. Licencia
-Apache-2.0 elegida (G0). Lo que queda para la versión estable está en el
-[plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): la etiqueta de la beta (G6).
+Apache-2.0 elegida (G0) y la etiqueta de la beta publicada (G6, `v0.1.0-beta`). Lo que queda
+para la versión estable está en el
+[plan de lanzamiento](docs/plans/10-lanzamiento-publico.md).
 
 **Para reportar tu experiencia**, comparte tu `mode-state` (`findings.jsonl`,
 `handoffs.jsonl`, `verification-results.jsonl` — sin código de tu producto), los turnos
@@ -221,7 +222,7 @@ formato que el framework ya produce.
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
 - [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
-- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.md) (borrador sin publicar)
+- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.md) (publicada el 2026-09-30)
 
 ## Licencia
 

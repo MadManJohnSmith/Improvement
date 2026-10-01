@@ -67,23 +67,16 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertIn('C0', status)
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
-    def test_operational_docs_have_no_maintainer_home_path(self):
-        for relative in (
-            'README.md', 'AGENTS.md', 'PLAN_IMPLEMENTACION.md',
-            'docs/usage.md', 'docs/setup-dsh.md', 'docs/creator-preset-spec.md',
-            'docs/audit-contract.md',
-        ):
-            with self.subTest(relative=relative):
-                self.assertNotIn('/home/alan', self.read(relative))
-
-    def test_no_versioned_source_carries_a_maintainer_home_path(self):
-        # The rule is about publishable files, not only about prose: a script that
-        # defaults to one maintainer's checkout is a path that silently breaks for
-        # everyone else, and it puts a local identity into a released artifact.
+    def test_no_versioned_file_carries_a_maintainer_home_path(self):
+        # The rule is about publishable files, not only about the documents an
+        # earlier round happened to list: a hand-kept list rots the moment a new
+        # file lands, and the CHANGELOG sat outside it for months with a workspace
+        # path of the maintainer in it. Source and prose are judged the same way,
+        # because both ship.
         # Only tracked files are judged, so ignored scratch a tool leaves in the
         # working tree cannot fail a build that is otherwise clean.
         tracked = subprocess.run(
-            ['git', 'ls-files', '-z', '--', '*.mjs', '*.py', '*.sh'],
+            ['git', 'ls-files', '-z', '--', '*.md', '*.mjs', '*.py', '*.sh'],
             cwd=ROOT, capture_output=True, text=True, check=True).stdout
         offenders = [name for name in tracked.split('\0')
                      if name

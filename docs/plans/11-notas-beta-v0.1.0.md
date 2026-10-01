@@ -1,8 +1,7 @@
 # v0.1.0-beta — notas de publicación
 
-> **Borrador preparado, no publicado.** Publicar (tag `v0.1.0-beta` y push) requiere
-> autorización del titular. G0 —la licencia— está cerrada: Apache-2.0, con `LICENSE` en la
-> raíz.
+> **Publicada el 2026-09-30** con el tag `v0.1.0-beta`, por autorización del titular. G0
+> —la licencia— está cerrada: Apache-2.0, con `LICENSE` en la raíz.
 
 ## Qué es
 
@@ -21,7 +20,7 @@ operador hizo commit, fast-forward y push.
 | Syncify | Rust / Tauri / Vue | 77 (114 registros) | 67 (61 PASS, 6 BLOCKED) | CI verde en 3 jobs, 15 commits |
 | RehabWeb | Django / Vue | 45, 6 CRITICAL | 4 | 108 pruebas Django reales en verde |
 | LoboApp | Flutter / Android | 14 (9 + 5 en reauditoría) | 14 PASS con `flutter test` | 166 pruebas Flutter y `flutter analyze` sin incidencias |
-| Improvement (self-test) | Python / unittest | 8 (7 + 1 en reauditoría) | 14 PASS con la suite del propio proyecto | 606 pruebas en verde |
+| Improvement (self-test) | Python / unittest | 8 (7 + 1 en reauditoría) | 14 PASS con la suite del propio proyecto | 632 pruebas en verde |
 
 ## Lo que hay que saber antes de usarlo
 
@@ -48,7 +47,7 @@ operador hizo commit, fast-forward y push.
 - Multiarchivo monorepos: se detecta una tecnología por subdirectorio; un mismo árbol con
   dos manifiestos de ecosistema distinto no se cubre.
 - En este entorno DSH se cae cada varios minutos. Los turnos se relanzan y el trabajo se
-  recupera, pero una campaign larga cuesta más tiempo del que el framework asume.
+  recupera, pero una campaña larga cuesta más tiempo del que el framework asume.
 
 ## Qué buscar en la beta
 

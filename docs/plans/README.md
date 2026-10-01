@@ -22,7 +22,7 @@ Estos documentos descomponen la arquitectura aprobada en iteraciones adaptables.
 9. [08 — C7: promoción y distribución](08-c7-promocion.md)
 10. [09 — protocolo de adaptación y aprendizaje](09-adaptacion.md)
 11. [10 — lanzamiento público beta](10-lanzamiento-publico.md)
-12. [11 — notas de la beta v0.1.0](11-notas-beta-v0.1.0.md) — borrador preparado, sin publicar
+12. [11 — notas de la beta v0.1.0](11-notas-beta-v0.1.0.md) — publicada el 2026-09-30 con el tag `v0.1.0-beta`
 
 ## Cómo usar los planes
 
