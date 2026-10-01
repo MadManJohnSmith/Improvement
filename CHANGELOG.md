@@ -1,5 +1,11 @@
 # Cambios
 
+## `templates/` era un árbol muerto del diseño que lo sustituyó — 2026-09-30
+- **Seis ficheros versionados que nada podía leer.** `templates/` contenía `{{PROJECT_NAME}}`, `{{PLUGIN_NAME}}` y `{{SKILL_NAME}}` como marcadores, y **ningún código sustituye esas variables**: no aparecen en `scripts/`, en `tests/` ni en la documentación. El árbol es la etapa anterior a los modos generados por proyecto, y el propio repo ya tiene la regla y la prueba para esto: los modos genéricos que la generación sustituyó están en la lista de «no debe existir».
+- Editar un fichero así es la forma clásica de perder tiempo: parece el punto de entrada de la generación y no lo es. Un `templates/modes/auditor.md` sugiere que ahí se cambia el comportamiento del auditor, cuando el auditor real lo genera Creator en `creator-runs/<id>/generated/modes/<Proyecto>-auditor/`. Los `templates/` de `docs/creator-preset-spec.md` son **otra cosa**: allí se describe el `templates/` del *paquete generado*, no este árbol del repositorio.
+- Borrado con `git rm`, **con el historial intacto**: los commits que lo tocaron siguen siendo alcanzables, que es la razón por la que la regla dice «Git conserva la historia». Las seis rutas se añaden a la prueba que ya exigía la retirada de los modos genéricos, y se comprobó que reintroducir una de ellas hace fallar la suite.
+- Suite: 633 OK (4 saltadas).
+
 ## Se ejecutó cada comando documentado, y esta vez no había defecto — 2026-09-30
 - Completado el barrido de los comandos que `docs/usage.md` enseña: `bootstrap.py install/accept/stack/state/skill-gate` y `missions.py run-check/verify/reaudit`. Se ejecutaron **fuera del árbol canónico**, con paquetes y proyectos reales, no con fixtures de la suite.
 - **`accept` funciona y se comporta como debe en las dos direcciones.** Con un paquete válido devuelve `ACCEPT_REQUESTED` con digest de manifiesto y número de artefactos; al alterar un `mode.json` para que ya no case con su manifiesto lo retiene nombrando el hash exacto que no cuadra — que es la propiedad que importa, porque un Hash que no se comprueba no es un hash.

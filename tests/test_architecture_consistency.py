@@ -32,6 +32,15 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             'skills/workflow-auditor/SKILL.md',
             'skills/workflow-complete-auditor/SKILL.md',
             'skills/workflow-continuous-repair/SKILL.md',
+            # Placeholders for the generic modes that generation replaced. No
+            # code substitutes {{PROJECT_NAME}} or {{SKILL_NAME}}, so the tree
+            # could only mislead someone into editing a file nothing reads.
+            'templates/modes/auditor.md',
+            'templates/modes/continuous-repair.md',
+            'templates/modes/mode-contract.template.json',
+            'templates/contracts/plugin-contract.template.json',
+            'templates/skills/SKILL.md.template',
+            'templates/skills/skill-contract.template.json',
             'tests/test_dsh_launchers.py',
             'tests/test_dsh_preset_mapping.py',
         ]
