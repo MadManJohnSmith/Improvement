@@ -1,5 +1,24 @@
 # Cambios
 
+## Sexta auditoría: la regla del árbol canónico, sin comprobación — 2026-10-01
+- **E21 · «no basta con ignorarlos en Git» no lo comprobaba nadie.** `AGENTS.md` exige que proyectos,
+  informes de sesión, logs, capturas, candidatas, salidas y cachés vivan **fuera** de este
+  repositorio, y dice expresamente que ignorarlos en Git no es la regla: la regla es la ausencia. El
+  `.gitignore` cubría los nombres habituales y nada más: no había ninguna comprobación de que el árbol
+  canónico no contenga un artefacto de ejecución. El vocabulario del control no es inventado, son los
+  nombres que el propio producto escribe, leídos de los literales de `scripts/`.
+- **El control encontró dos artefactos que la lista escrita a mano se había dejado.**
+  `evidence-ledger.jsonl` y `scenarios.jsonl` se escriben dentro de un run y no estaban en el
+  inventario; eso es exactamente lo que un guardarraíles copiado a mano detecta tarde, y por eso hay
+  un segundo test que relee los literales de `scripts/` y exige que la copia los cubra. Un fichero
+  nuevo de estado que el producto empiece a escribir rompe la suite en vez de dejar el control
+  vigilando ayer.
+- **`fixtures/` queda exento de esta regla, y sujeto a la suya.** Un golden manifest de un proyecto
+  real tiene por forma la cosa que representa; lo que se le exige es estar saneado, y eso lo comprueba
+  su propio test. La excepción nombra su directorio y no es una excepción silenciosa.
+- **Canario:** plantar `mode-state/work-items.json` en el árbol rompe la suite y lo nombra.
+- **Suite: 772 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+
 ## Quinta auditoría: atribución y enlaces — 2026-10-01
 - **E20 · la atribución se quedaba a un paso del aviso público.** Las 25 skills de `library/`
   declaran en su `## Procedencia` de qué upstream se adaptaron —`obra/superpowers` y

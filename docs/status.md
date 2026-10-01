@@ -262,4 +262,12 @@ skill que ningún cargador leería se instalaba sin decir nada y un directorio c
 comprueba las cinco skills reales del repositorio. La prueba que cubría ese camino usaba una skill
 con saltos de línea literales que solo pasaba porque nadie la leía.
 
+**Sexta ronda: la regla del árbol canónico, sin comprobación (E21).** `AGENTS.md` exige que los
+artefactos de ejecución vivan fuera del repositorio y dice expresamente que ignorarlos en Git no
+basta, pero solo había `.gitignore`: nada impedía que un `work-items.json` o un `mode-state/` se
+quedaran dentro. Ahora la suite falla por nombre ante cualquiera de ellos, con el vocabulario leído de
+los literales de `scripts/` y un segundo test que relee esos literales para que la copia no se quede
+obsoleta —que es como aparecieron `evidence-ledger.jsonl` y `scenarios.jsonl` en su primera corrida—.
+`fixtures/` queda exento por diseño y sujeto a su propia regla de saneado.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
