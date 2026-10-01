@@ -114,9 +114,16 @@ pendiente de autorización del titular**, sin lo cual el repositorio puede insta
 no se anuncia.
 
 **Trabajo abierto, según la «Deuda declarada» de `PLAN_IMPLEMENTACION.md`:** queda D2
-—el confinamiento mecánico de bash no se cierra sin el runtime DSH instalado y una lista
+—el confinamiento mecánico de bash no se cierra con un parche de composición, y una lista
 negra no es confinamiento— y D11 a medias, con el gate de holdout implementado y probado
 pero sin una corrida real de los 55 escenarios contra un modo. D12 es la publicación. El
 resto de la tabla está cerrada con regresión propia.
+
+La premisa con la que se registró D2 era falsa y está corregida con evidencia: el runtime
+DSH está instalado y **sí** ofrece confinamiento mecánico (`dsh-sandbox-policy` con
+`read-only` por defecto, `dsh-bash-sandbox` sobre bwrap, denegación `EROFS` comprobada en
+esta máquina). El bloqueo real es de diseño —un modo no puede declarar su propia política,
+`read-only` le negaría sus propias escrituras de estado, y `git worktree add` necesita
+escribir en el `.git` del producto—, no de capacidad del runtime.
 
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
