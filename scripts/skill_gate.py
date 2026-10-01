@@ -8,9 +8,16 @@ refused: a scenario nobody executes cannot tell an improvement from a
 regression.
 
 This module is that decision and nothing else. The observations come from
-outside — running scenarios against an agent needs a runtime — so the gate
-takes two result files and answers one question: does the candidate beat the
-baseline on held-out scenarios without losing anything on the rest?
+outside, so the gate takes two result files and answers one question: does the
+candidate beat the baseline on held-out scenarios without losing anything on
+the rest?
+
+The corpus is not yet runnable, which is a stronger obstacle than "no runtime".
+Each `input` is a table of declarative assertions about a situation -- keys like
+`contract_declared: true` or `attempted_write: true` -- not a task an agent can
+be handed, and the files carry no `target_mode` and no prompt. Nothing can
+execute them as written, so supplying a runtime would not by itself produce a
+score: the scenarios have to be given an executable form first.
 
 Three properties are borrowed from SkillOpt's `evaluation/gate.py` because
 they are easy to get wrong:
