@@ -110,6 +110,36 @@ candidato solo si el holdout mejora **estrictamente**, lo rechaza si pierde en l
 el holdout suba, y se abstiene —no acepta, no rechaza— si el slice de validación no es disjunto o no hay
 observaciones. El reparto sale del digest del `scenario_id`, así que es el mismo en cada corrida y un cambio no
 puede elegir a qué escenarios le toca juzgarlo.
+### Cuando una sesión se parte en dos: qué se sabe al arrancar
+`mode-state` son cinco ficheros, y reemplazarlos son cinco escrituras. Una caída entre dos dejaba
+`findings.jsonl` diciendo una cosa y `work-items.json` otra, sin que nada lo notara. Ahora el
+framework escribe un marcador antes de la primera escritura de una unidad y lo reconcilia al
+arrancar, así que una unidad a medias se nombra en vez de creerse:
+```bash
+python3 -B scripts/bootstrap.py state --project <producto>
+```
+Un `state_commit` con `TORN` significa estado partido y dice **qué fichero** falta o está
+alterado; con `COMPLETE_UNCLOSED` significa que la unidad escribió todo y murió antes de cerrar,
+así que el marcador se limpia y no hay nada que reparar. **No es atomicidad** —sigue habiendo cinco
+escrituras—: es detección y recuperación, que es lo que se puede comprar sin poner el log entero
+en el hot path de cada lectura.
+
+### Lo que el framework ya sabe de tu proyecto
+`mode-state/episodes.jsonl` guarda un registro por unidad cerrada y `episodes-index.json` responde
+en O(1) a «¿esto ya se arregló?». Dos reglas lo hacen útil en vez de duplicar el ledger: la firma
+es el **fingerprint** del hallazgo, no su redacción, y **solo se recuerda un arreglo verificado**,
+porque recordar un intento fallido enseña a la siguiente sesión a repetirlo. Solo el Host escribe
+el registro; el auditor lo consulta antes de persistir un hallazgo y marca las repeticiones con su
+episodio previo.
+
+### La candidata es un repositorio sombra, no un worktree
+Un `git worktree` guarda índice y HEAD en el `.git/worktrees/` **del producto**, así que con el
+producto en solo lectura —que es lo que el sandbox impone— hasta `git add` falla dentro de la
+candidata. Por eso la candidata se crea en `<workspace>/candidates/repair-<digest16>` con **su
+propio `.git`**: una sola raíz escribible cubre candidata y estado, y el producto queda en solo
+lectura real. La integración ya no es una rama que fusionar sino el patch que produce
+`candidate_diff_command`, y lo aplica el operador.
+
 ### Compilar el corpus y ligar el gate a lo que se midió
 El `skill-gate` anterior acepta un mapa suelto: no sabe qué corpus produjo esas observaciones ni a qué candidato
 pertenecen, así que el mismo JSON vale para dos corridas distintas. Para una decisión de publicación usa la vía

@@ -1429,6 +1429,14 @@ def main():
     p_bound.add_argument("--val-fraction", type=float, default=0.3)
     p_bound.add_argument("--report", required=True)
 
+    p_run = sub.add_parser(
+        "skill-gate-run", help="Ejecutar el corpus contra un modo real")
+    p_run.add_argument("--corpus", required=True)
+    p_run.add_argument("--output", required=True)
+    p_run.add_argument("--candidate-digest", required=True)
+    p_run.add_argument("--mode", default="")
+    p_run.add_argument("--timeout", type=int, default=900)
+
     p_trigger = sub.add_parser(
         "skill-gate-commit-check",
         help="Exigir reporte ligado aceptado cuando cambie el corpus")
@@ -1559,6 +1567,28 @@ def main():
             # keeps its exit 0 because changing a published command's contract
             # would break callers that already read the report instead.
             exit_code = 0 if report["action"] == "accept" else 1
+
+        elif args.command == "skill-gate-run":
+            import corpus_compiler
+            import skill_gate_run
+            corpus = corpus_compiler.load_corpus(Path(args.corpus))
+            try:
+                client = skill_gate_run.resolve_session()
+                payload = skill_gate_run.run_corpus(
+                    client, corpus, mode=args.mode,
+                    candidate_digest=args.candidate_digest,
+                    provider_name=getattr(client, "provider_name", "dsh"),
+                    timeout=args.timeout)
+            except skill_gate_run.RunnerUnavailable as error:
+                # Abstain and name the missing piece. Inventing observations
+                # here would be the one thing the gate must never do.
+                print(json.dumps({"result": "ABSTAINED", "reason": str(error)}),
+                      file=sys.stderr)
+                sys.exit(1)
+            skill_gate_run.write_observations(payload, Path(args.output))
+            result = {"result": "RESOLVED", "corpus_digest": corpus["corpus_digest"],
+                      "observations": len(payload["observations"]),
+                      "output": args.output}
 
         elif args.command == "skill-gate-commit-check":
             import skill_gate

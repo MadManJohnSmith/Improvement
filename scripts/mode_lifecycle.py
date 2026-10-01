@@ -473,7 +473,8 @@ def persona_prefix(preset_id, role=None):
             "generated provision_command after substituting the three validated "
             "placeholders and nothing else: digest16, full_base and declared_base "
             "(the declared base of the selected findings, unchanged after a re-anchor). "
-            "candidate_root is ${session-cwd}/<candidate-name>; never resolve it under the product. "
+            "candidate_root is <workspace>/candidates/repair-<digest16>, a shadow repo "
+            "with own .git, never sharing the product .git. "
             "The command may inspect the full worktree list only to match that target path and target "
             "branch. Never validate assumptions about, modify, delete, or let unrelated candidates "
             "block provisioning; unrelated_candidates is ignore-preserve. After provisioning, verify "
@@ -600,12 +601,12 @@ def expected_lifecycle(role, layout):
                 "verify_after_each_phase": True,
                 "on_drift": "RETAINED-no-further-action",
             },
-            "candidate_location": "sibling-of-product-from-session-cwd",
+            "candidate_location": "shadow-repo-under-workspace",
             "identity": "sha256(full-base-lf-sorted-unique-finding-ids)",
             "directory_template": f"{layout['product_root']}-repair-<digest16>",
             "branch_template": "dsh/repair-<digest16>",
-            "candidate_root": "${session-cwd}/<candidate-name>",
-            "forbidden_candidate_location": "under-product-root",
+            "candidate_root": "${session-cwd}/<workspace>/candidates/repair-<digest16>",
+            "forbidden_candidate_location": "under-product-root-or-git",
             "candidate_workdir": f"{layout['product_root']}-repair-<digest16>",
             "provision_workdir": "omitted-session-cwd",
             "provision_command": repair_provision_command(layout),

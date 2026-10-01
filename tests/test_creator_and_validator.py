@@ -946,13 +946,13 @@ class CreatorTests(Base):
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
         self.assertIn("`unrelated_candidates: ignore-preserve`", prompt)
         self.assertIn("prohibido validar supuestos\nsobre candidatas ajenas", prompt)
-        self.assertIn("`candidate_root` exacto\n`${session-cwd}/<candidate-name>`", prompt)
-        self.assertIn("`provision_workdir: omitted-session-cwd`", prompt)
+        self.assertIn("<workspace>/candidates/repair-<digest16>", prompt)
+        self.assertIn("omitted-session-cwd", prompt)
         self.assertIn("Provisiona desde el cwd de sesión con `workdir` omitido", prompt)
-        self.assertIn('candidate="$PWD/<candidate-name>"', prompt)
-        self.assertIn("porque `git -C` cambiaría la resolución", prompt)
+        self.assertIn("repositorio sombra con su propio `.git`", prompt)
+        self.assertIn("índice y HEAD en el `.git/worktrees/` del producto", prompt)
         self.assertIn("prohibido crear o aceptar una candidata bajo\n`./project/...`", prompt)
-        self.assertIn("`project-repair-<digest16>` relativo al cwd de sesión, nunca `.`", prompt)
+        self.assertIn("La integración es el patch que produce\n`candidate_diff_command`", prompt)
         self.assertIn("Nunca\nmerge/push/publish", prompt)
         self.assertIn("candidate_commit", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
@@ -2012,11 +2012,11 @@ class ValidatorTests(Base):
             "canonical-product-write", "write-tool", "edit-tool", "merge", "push", "publish"])
         self.assertEqual(contract["provision"], "git-worktree-add-or-exact-safe-reuse")
         self.assertEqual(contract["candidate_location"],
-                         "sibling-of-product-from-session-cwd")
+                         "shadow-repo-under-workspace")
         self.assertEqual(contract["candidate_root"],
-                         "${session-cwd}/<candidate-name>")
+                         "${session-cwd}/<workspace>/candidates/repair-<digest16>")
         self.assertEqual(contract["forbidden_candidate_location"],
-                         "under-product-root")
+                         "under-product-root-or-git")
         self.assertEqual(contract["candidate_workdir"],
                          "project-repair-<digest16>")
         self.assertEqual(contract["provision_workdir"], "omitted-session-cwd")
@@ -2105,7 +2105,7 @@ class ValidatorTests(Base):
         self.assertIn("status PROVISIONED", repair_prefix)
         self.assertIn("make no code change at all and report RETAINED", repair_prefix)
         self.assertIn("recover it with the recording command", repair_prefix)
-        self.assertIn("candidate_root is ${session-cwd}/<candidate-name>", repair_prefix)
+        self.assertIn("candidate_root is <workspace>/candidates/repair-<digest16>", repair_prefix)
         self.assertIn("workdir exactly equal to the candidate_workdir", repair_prefix)
         self.assertIn("never '.'", repair_prefix)
         composition.write_text(composition.read_text().replace(

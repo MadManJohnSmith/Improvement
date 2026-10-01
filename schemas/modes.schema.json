@@ -256,7 +256,7 @@
           "type": "object",
           "properties": {
             "candidate_location": {
-              "const": "sibling-of-product-from-session-cwd"
+              "const": "shadow-repo-under-workspace"
             },
             "directory_template": {
               "type": "string",
@@ -266,10 +266,10 @@
               "const": "dsh/repair-<digest16>"
             },
             "candidate_root": {
-              "const": "${session-cwd}/<candidate-name>"
+              "const": "${session-cwd}/<workspace>/candidates/repair-<digest16>"
             },
             "forbidden_candidate_location": {
-              "const": "under-product-root"
+              "const": "under-product-root-or-git"
             },
             "candidate_workdir": {
               "type": "string",

@@ -67,6 +67,28 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertIn('C0', status)
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
+    def test_status_documents_have_no_trailing_whitespace(self):
+        # A status file that is one character per line is still valid markdown to
+        # every reader and to the tests, and it is unreadable to a person. This
+        # happened once here: assigning a string to a list slice inserts one
+        # character per element, and nothing else noticed.
+        for name in ('docs/status.md', 'PLAN_IMPLEMENTACION.md', 'README.md',
+                     'CHANGELOG.md'):
+            with self.subTest(name=name):
+                text = self.read(name)
+                offenders = [index for index, line in enumerate(text.split('\n'), 1)
+                             if line != line.rstrip()]
+                self.assertEqual(offenders[:5], [], f"{name}: {offenders[:5]}")
+                self.assertNotIn('\n \n', text)
+
+    def test_a_status_document_is_not_one_character_per_line(self):
+        for name in ('docs/status.md', 'PLAN_IMPLEMENTACION.md'):
+            with self.subTest(name=name):
+                lines = self.read(name).split('\n')
+                single = sum(1 for line in lines if len(line.strip()) == 1)
+                self.assertLess(single, len(lines) * 0.01,
+                                f"{name}: {single} líneas de un solo carácter")
+
     def test_a_launch_plan_with_every_gate_closed_is_not_still_en_curso(self):
         # The gate table and the plan header are two places stating the same
         # thing, and they drifted: all seven gates read HECHO while the header

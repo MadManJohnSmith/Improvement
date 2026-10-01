@@ -328,6 +328,59 @@ function leaseIdentity(exec) {
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
+// E1: the managed state is five files, so replacing them is five writes and a
+// crash between them leaves a state that reads as true and is not. A marker
+// written before the first write of a unit and cleared when the unit closes
+// makes the partial unit nameable at startup. It is not atomicity -- it is the
+// difference between a torn state being noticed and being believed.
+const COMMIT_MARKER_NAME = '.commit.json';
+
+// The unit a managed write belongs to. A handoff id when the mode declared one,
+// so the marker names the same unit the state does; the file being written
+// otherwise, because a unit that only the tool can identify is a unit nobody
+// can reconcile against.
+function commitUnitId(exec, relative) {
+  const session = exec?.agent?.session;
+  const handoff = session?.header?.handoffId || session?.handoffId;
+  return typeof handoff === 'string' && handoff.length > 0 ? handoff : relative;
+}
+
+async function readCommitMarker(ctx, stateRoot, policy) {
+  const target = await ctx.fs.resolve(COMMIT_MARKER_NAME, { cwd: `${stateRoot}/` })
+    .catch(() => null);
+  if (!target) return null;
+  try {
+    const value = JSON.parse(await ctx.fs.readText(target));
+    return value?.version === 1 && typeof value?.unit === 'string' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCommitMarker(ctx, stateRoot, marker, policy) {
+  const target = await ctx.fs.resolve(COMMIT_MARKER_NAME, { cwd: `${stateRoot}/` });
+  await ctx.fs.writeText(target, `${JSON.stringify(marker)}\n`, undefined, undefined, policy);
+}
+
+async function openCommit(ctx, stateRoot, unit, session, now, policy) {
+  const existing = await readCommitMarker(ctx, stateRoot, policy);
+  if (existing && existing.unit === unit) return existing;
+  const marker = { version: 1, unit, session: session ?? null,
+    opened_at: now, files: [] };
+  await writeCommitMarker(ctx, stateRoot, marker, policy);
+  return marker;
+}
+
+async function recordCommitWrite(ctx, stateRoot, relative, content, policy) {
+  const marker = await readCommitMarker(ctx, stateRoot, policy);
+  if (!marker) return;
+  const digest = createHash('sha256').update(content, 'utf8').digest('hex');
+  const files = marker.files.filter((item) => item.path !== relative);
+  files.push({ path: relative, sha256: digest });
+  marker.files = files.sort((a, b) => (a.path < b.path ? -1 : 1));
+  await writeCommitMarker(ctx, stateRoot, marker, policy);
+}
+
 async function acquireLease(ctx, stateRoot, relative, session, now, policy) {
   const leaseDir = `${stateRoot}/${LEASE_DIR_NAME}`;
   const leasePath = `${leaseDir}/${relative}.json`;
@@ -809,6 +862,13 @@ export function apply(ctx, config) {
       const session = leaseIdentity(exec);
       const relative = stateRoot && targetPathUnder(stateRoot, target);
       const now = Date.now();
+      // E1: a managed write names the unit it belongs to before it lands, so a
+      // crash between two of the five state files is a state the Host can name
+      // instead of one it believes. The unit is the handoff the audit is
+      // closing, and the lease path already knows which file is being touched.
+      if (relative && session) {
+        await openCommit(ctx, stateRoot, commitUnitId(exec, relative), session, now, policy);
+      }
       let lease = null;
       if (session && relative) {
         lease = await acquireLease(ctx, stateRoot, relative, session, now, policy);
@@ -820,6 +880,9 @@ export function apply(ctx, config) {
       let outcome;
       try {
         outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
+        if (relative && session) {
+          await recordCommitWrite(ctx, stateRoot, relative, content, policy);
+        }
       } finally {
         await releaseLease(ctx, lease, Date.now(), policy);
       }

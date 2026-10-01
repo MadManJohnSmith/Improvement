@@ -160,7 +160,7 @@ class ModeLifecycleTests(unittest.TestCase):
                          "code-changes-require-workdir-exact-candidate")
         candidate = repair["repair_candidate"]
         self.assertEqual(candidate["candidate_root"],
-                         "${session-cwd}/<candidate-name>")
+                         "${session-cwd}/<workspace>/candidates/repair-<digest16>")
         self.assertEqual(candidate["candidate_workdir"],
                          "Syncify-repair-<digest16>")
         self.assertEqual(candidate["provision_workdir"], "omitted-session-cwd")

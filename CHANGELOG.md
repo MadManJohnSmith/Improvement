@@ -1,5 +1,56 @@
 # Cambios
 
+## Cerrar el framework: D1, D2, D11 y F5, más cinco unidades nuevas — 2026-10-01
+- **Cinco decisiones tomadas y ejecutadas, no cinco ideas.** La matriz de `PLAN_IMPLEMENTACION.md`
+  queda con D1, D2, D11 y F5 cerradas y cinco unidades nuevas (E1–E5) en `HECHO`. Ninguna se
+  cierra por retelling: cada una tiene código, regresión y, cuando la afirmación es empírica, medida.
+- **E1 · `mode-state` deja de poder creerse en silencio.** Cinco ficheros son cinco escrituras, y
+  una caída entre dos dejaba `findings.jsonl` diciendo una cosa y `work-items.json` otra, sin que
+  nada lo notara: la siguiente sesión leía ambos y se los creía. Ahora un marcador de escritura
+  anticipada en `mode-state/.commit.json` nombra la unidad y cada par (ruta, digest) que va a
+  aterrizar, y `reconcile_on_start` lo reporta al arrancar. **Decisión propia: se compra detección
+  y recuperación, no atomicidad** —la atomicidad real exigiría un almacén de fichero único, que
+  pondría el log entero en el hot path de cada lectura, un peor intercambio que el problema—. Una
+  unidad que escribió todo y murió antes de cerrar se declara recuperable; una con un fichero
+  ausente o alterado se declara rota nombrando el fichero.
+- **E2 · memoria episódica (F5 cerrado).** `episodes.jsonl` con un registro por unidad cerrada más
+  `episodes-index.json` para consultar en O(1) sin cargar el log. Dos reglas deciden la forma: la
+  **firma es el fingerprint**, no la palabra, o la memoria sería una segunda fuente de duplicados;
+  y **solo se recuerda un arreglo verificado**, porque recordar un intento fallido enseña a la
+  siguiente sesión a repetirlo. El Host lo escribe al cerrar la unidad, así que un modo no puede
+  olvidarlo. Una regresión encontró un fallo real aquí: el ledger decía ser append-only y usaba
+  temp+replace, que **borra** lo anterior.
+- **E3 · el gate por fin tiene ejecutor.** `bootstrap.py skill-gate-run` corre cada caso compilado
+  contra un modo real y escribe observaciones ligadas; sin sesión DSH **se abstiene nombrando lo
+  que falta**. Un caso que no pudo correr vuelve `NOT_COVERED` con el motivo, nunca un `PASS`
+  asumido, y el prompt del evaluador no lleva el veredicto esperado.
+- **E4 · la candidata deja de ser un worktree, y la razón está medida.** `git worktree` guarda
+  índice y HEAD en el `.git/worktrees/` **del producto**, así que con el producto en solo lectura
+  —que es justo lo que queremos— hasta `git add` falla dentro de la candidata: `fatal: Unable to
+  create '.../product/.git/worktrees/cand/index.lock': Permission denied`. Confinamiento y worktree
+  son incompatibles. **Decisión propia: la candidata pasa a ser un repositorio sombra con su propio
+  `.git`, creado dentro del workspace**, de modo que una sola raíz escribible cubre candidata y
+  estado y el producto queda en solo lectura real. La integración pasa a ser el patch que produce
+  `candidate_diff_command` y aplica el operador.
+- **E5 · cobertura de stacks, y un defecto real que encontró.** Once stacks declaran cómo
+  verificarse y solo cuatro tienen campaña real. `tests/test_stack_coverage.py` pone una toolchain
+  en el `PATH` de cada uno y exige que el plan nombre un comando invocable. **Escribiendo eso
+  apareció un defecto de producto:** el plan se declaraba `verification_ready` con `./gradlew` y
+  `vendor/bin/phpunit`, que no existen en un clon recién hecho. Una capacidad instalada no es un
+  comando ejecutable, y eso es la lección de LoboApp apuntada al revés: un `PASS` para una
+  verificación que la primera corrida no puede producir. La disponibilidad ahora exige también que
+  el entrypoint exista.
+- **Un presupuesto que no se negocia.** El contrato emitido es un fichero de soporte con tope de
+  25.600 bytes, y los cambios de E4 lo empujaron a 25.607. Se recortó el texto hasta caber en vez
+  de subir el presupuesto: subirlo para que quepa lo que acabo de escribir sería exactamente el
+reflejo que este framework existe para evitar.
+- **Lo que sigue abierto no es una fila: es evidencia que solo el operador puede producir.** El
+  gate no ha puntuado aún observaciones de un agente real (hace falta una sesión con proveedor, y
+  sin ella se abstiene), el confinamiento está medido y aplicado como contrato pero no ejercido en
+  campaña, y siete stacks siguen sin campaña. Queda escrito así en `docs/status.md` para que no se
+  confunda con trabajo hecho.
+- Suite: 743 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).
+
 ## El plan de lanzamiento se declaraba en curso con sus siete puertas cerradas — 2026-09-30
 - **Preguntar qué faltaba ya tenía respuesta, y aun así el plan se contradecía.** El plan 10 decía `Estado: **EN CURSO**` mientras sus siete puertas G0–G6 decían todas `HECHO`. No es cosmético: el encabezado es lo que un lector toma por veredicto, y una tabla que discrepa de su propio encabezado obliga a elegir a cuál creer.
 - **La regresión que faltaba compara las dos afirmaciones** en vez de leer una: si todas las puertas están cerradas, el plan no puede decir `EN CURSO`. Comprobado en las dos direcciones — reabrir una puerta, o devolver el encabezado a `EN CURSO`, y la prueba falla en ambos casos.

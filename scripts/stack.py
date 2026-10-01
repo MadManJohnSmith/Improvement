@@ -410,6 +410,26 @@ def _materialized_python(workspace, stack, interpreter):
     return interpreter
 
 
+def _entrypoint_present(command, product_root, root):
+    """Does the declared command point at something that exists?
+
+    A capability being installed is not the same as a command being runnable.
+    `./gradlew` and `vendor/bin/phpunit` are the two the framework declares
+    itself: both live inside the product, and both are absent in a fresh clone
+    until the wrapper is committed or `composer install` has run. Reporting the
+    stack ready without them claims a verification the first run cannot
+    produce -- the same defect as the LoboApp BLOCKED, pointed the other way.
+    """
+    if not command:
+        return True
+    head = command[0]
+    # A bare name is looked up on PATH by the shell; anything carrying a
+    # separator is a path inside the product and has to be there already.
+    if '/' not in head or head.startswith('/'):
+        return True
+    return (Path(product_root) / (root or '.') / head).exists()
+
+
 def plan(product, *, workspace=None, env=None):
     """Build the real-stack verification plan for one product.
 
@@ -460,13 +480,18 @@ def plan(product, *, workspace=None, env=None):
                     path_env=env.get('PATH'), home=home, workspace=workspace,
                     stack_name=entry['stack'], default_path=default_path),
             }
-            stack_plan['verification_ready'] = all(
-                capability['status'] == 'available'
-                for capability in stack_plan['capabilities'])
             stack_plan['verify_command'] = _runnable_entrypoint(
                 stack_plan['verify_command'], stack_plan['capabilities'], default_path)
             stack_plan['lint_command'] = _runnable_entrypoint(
                 stack_plan['lint_command'], stack_plan['capabilities'], default_path)
+            stack_plan['verification_ready'] = all(
+                capability['status'] == 'available'
+                for capability in stack_plan['capabilities']
+            ) and all(
+                _entrypoint_present(command, product, entry['root'])
+                for command in (stack_plan['verify_command'],
+                                stack_plan['lint_command'])
+                if command)
             stacks.append(stack_plan)
             continue
         spec = STACKS[entry['stack']]
@@ -491,12 +516,17 @@ def plan(product, *, workspace=None, env=None):
                           'php-composer': ['vendor']}[entry['stack']]
             stack_plan['in_product_install'] = in_product
             stack_plan['in_product_install_gitignored'] = _gitignored(product, in_product)
-        stack_plan['verification_ready'] = all(
-            capability['status'] == 'available' for capability in stack_plan['capabilities'])
         stack_plan['verify_command'] = _runnable_entrypoint(
             stack_plan['verify_command'], stack_plan['capabilities'], default_path)
         stack_plan['lint_command'] = _runnable_entrypoint(
             stack_plan['lint_command'], stack_plan['capabilities'], default_path)
+        stack_plan['verification_ready'] = all(
+            capability['status'] == 'available'
+            for capability in stack_plan['capabilities']
+        ) and all(
+            _entrypoint_present(command, product, entry['root'])
+            for command in (stack_plan['verify_command'], stack_plan['lint_command'])
+            if command)
         stacks.append(stack_plan)
     result = {
         'version': VERSION,

@@ -448,19 +448,21 @@ acciones. Comprueba además que el diff pertenece solo al candidato.
 Continuous Repair incluye el procedimiento exacto de `expected_lifecycle`: el prompt
 simple autoriza crear/reusar y editar el candidato, no commit/merge/push/publicación.
 La identidad es SHA-256 de `full-base + LF + IDs seleccionados únicos ordenados`; usa
-los primeros 16 hex en `{product_root}-repair-<digest16>` y
-`dsh/repair-<digest16>`. El contrato declara `candidate_root` exacto
-`${{session-cwd}}/<candidate-name>`, `candidate_workdir` relativo
-`{product_root}-repair-<digest16>` y `provision_workdir: omitted-session-cwd`.
-Provisiona desde el cwd de sesión con `workdir` omitido — nunca `.` para esta llamada
-que cambia Git — ejecutando el `provision_command` central exacto, sustituyendo sus tres
+los primeros 16 hex en `candidates/repair-<digest16>`. El contrato declara `candidate_root`
+exacto `${{session-cwd}}/<workspace>/candidates/repair-<digest16>` y `candidate_workdir`
+relativo `<workspace>/candidates/repair-<digest16>` y `provision_workdir:
+omitted-session-cwd`. Provisiona desde el cwd de sesión con `workdir` omitido ejecutando el
+`provision_command` central exacto, sustituyendo sus tres
 placeholders `<digest16>`, `<full-base>` y `<declared-base>` ya validados:
 `{repair_command}`.
-El comando calcula `candidate="$PWD/<candidate-name>"` dentro del shell antes de
-`git -C ./{product_root} worktree add`, porque `git -C` cambiaría la resolución de un
-destino relativo. Luego exige que realpath y el worktree registrado sean exactamente
-`$PWD/<candidate-name>`. Está prohibido crear o aceptar una candidata bajo
-`./{product_root}/...`.
+**La candidata es un repositorio sombra con su propio `.git`, no un worktree del producto.**
+Un worktree guarda índice y HEAD en el `.git/worktrees/` del producto, así que con el
+producto en solo lectura —que es lo que el sandbox impone— hasta `git add` falla dentro de
+la candidata. La sombra se crea copiando el árbol de trabajo sin `.git` e inicializando un
+repositorio propio, de modo que una sola raíz escribible cubre candidata y estado y el
+producto queda de solo lectura real. Está prohibido crear o aceptar una candidata bajo
+`./{product_root}/...` o que comparta su `.git`. La integración es el patch que produce
+`candidate_diff_command`; el operador lo aplica.
 La verificación del candidato usa el entrypoint propio del producto listado en el plan de
 capacidades (`.dsh-managed/capability-plan.json`, escrito por el Host al instalar): su comando de
 pruebas y, cuando exista, su lint, ejecutados contra el worktree candidato; el `command` de todo

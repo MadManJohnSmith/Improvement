@@ -159,14 +159,14 @@ cuyo HEAD sigue siendo su base y el arreglo vive en el diff sin commitear; `cand
 no lo distingue de la revisión anterior al arreglo. Medido sobre el estado real, los siete
 registros llevaban dos cabezas, ambas anteriores a los cambios que decían verificar. Ahora
 cada registro lleva el digest del diff verificado y tres sitios lo comprueban. Suite del
-propio framework: **670 pruebas en verde**.
+propio framework: **743 pruebas en verde**.
 
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
 anti-escalada mecánica, retirada de candidatas documentada, base obsoleta que se re-ancla
 probando el parentesco…), y una auditoría de la propia memoria descubrió una pérdida
 silenciosa de registros en el preflight, corregida con regresión. Suite del framework:
-**670 pruebas en verde**.
+**743 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 

@@ -1103,9 +1103,9 @@ class TestNegativeCorpus(unittest.TestCase):
             self.assertIn(field, required)
         repair = lifecycle["properties"]["repair_candidate"]["properties"]
         self.assertEqual(repair["candidate_root"]["const"],
-                         "${session-cwd}/<candidate-name>")
+                         "${session-cwd}/<workspace>/candidates/repair-<digest16>")
         self.assertEqual(repair["forbidden_candidate_location"]["const"],
-                         "under-product-root")
+                         "under-product-root-or-git")
         self.assertEqual(repair["provision_workdir"]["const"],
                          "omitted-session-cwd")
         self.assertEqual(repair["resume_policy"]["const"], "exact-recorded-only")

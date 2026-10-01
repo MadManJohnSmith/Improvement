@@ -17,7 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import decisions
+import episodes
 import metrics
+import state_commit
 from budget import BudgetExhausted, Ledger
 from host_controller import ControllerAlive, HostController, HostError
 from metrics import NO_DISPONIBLE
@@ -376,6 +378,64 @@ class HostControllerTest(unittest.TestCase):
         summary = metrics.summarize(mission / 'metrics')
         self.assertEqual(summary['elapsed_s']['total'], 42)
         self.assertEqual(summary['elapsed_s']['sources'], ['host-fixture'])
+
+    def test_a_closed_verified_unit_leaves_an_episode(self):
+        # E2: the memory is fed by the Host at the moment a unit is DONE, so it
+        # cannot be forgotten by a mode that simply does not write it.
+        root = self._root()
+        mission, controller, plans = self._setup(root, [])
+        entry, plan = self._unit(root, 'u1')
+        entry['episode'] = {'path': 'src/a.py', 'excerpt': 'token = 1',
+                            'fingerprint': 'fp-1', 'verdict': 'PASS',
+                            'evidence': 'pytest: 12 passed', 'repair': 'rotar'}
+        controller.enqueue(entry)
+        controller.run_next(self._launcher(root, {'u1': plan}, []))
+        found = episodes.recall(mission, fingerprint='fp-1')
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['unit'], 'u1')
+        self.assertEqual(found[0]['repair'], 'rotar')
+
+    def test_a_closed_unit_that_proved_nothing_leaves_no_episode(self):
+        # Recording an unverified attempt teaches the next session to repeat it,
+        # so a unit with no episode payload must add nothing.
+        root = self._root()
+        mission, controller, plans = self._setup(root, [])
+        entry, plan = self._unit(root, 'u1')
+        controller.enqueue(entry)
+        controller.run_next(self._launcher(root, {'u1': plan}, []))
+        self.assertEqual(episodes.stats(mission)['episodes'], 0)
+
+    def test_an_unverified_episode_does_not_fail_the_unit_it_came_from(self):
+        # The unit is already done and published; a bad memory payload is a
+        # reporting gap, not a reason to re-open finished work.
+        root = self._root()
+        mission, controller, plans = self._setup(root, [])
+        entry, plan = self._unit(root, 'u1')
+        entry['episode'] = {'path': 'src/a.py', 'excerpt': 'x', 'verdict': 'FAIL'}
+        controller.enqueue(entry)
+        outcome = controller.run_next(self._launcher(root, {'u1': plan}, []))
+        self.assertEqual(outcome['outcome'], 'UNIT_DONE')
+        self.assertEqual(episodes.stats(mission)['episodes'], 0)
+
+    def test_a_state_commit_left_torn_is_reported_at_startup(self):
+        # E1 end to end: a unit that died between two state files is named when
+        # the controller restarts, instead of the state being read as whole.
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+        state = mission / 'mode-state'
+        state.mkdir(parents=True, exist_ok=True)
+        (state / 'findings.jsonl').write_text('{"id":1}\n', encoding='utf-8')
+        state_commit.open_commit(state, 'u1', session='s1', now=0)
+        state_commit.record_write(state, 'findings.jsonl', '{"id":1}\n')
+        state_commit.record_write(state, 'work-items.json', '{"unit":"u1"}\n')
+        report = controller.reconcile_on_start()
+        self.assertEqual(report['state_commit']['state'], 'TORN')
+        self.assertEqual(report['state_commit']['missing'], ['work-items.json'])
+
+    def test_a_clean_startup_reports_no_state_commit(self):
+        root = self._root()
+        mission, controller, plans = self._setup(root, ['u1'])
+        self.assertNotIn('state_commit', controller.reconcile_on_start())
 
     def test_retained_unit_leaves_metric_and_decision(self):
         root = self._root()

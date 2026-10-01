@@ -44,7 +44,10 @@ UNIT_PATTERN = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,46}\Z')
 SHA256_PATTERN = re.compile(r'[0-9a-f]{64}\Z')
 STATES = ('PENDING', 'IN_FLIGHT', 'DONE', 'RETAINED')
 REQUIRED_UNIT_KEYS = ('unit_id', 'task_ref', 'result_ref', 'task_sha256', 'result_sha256', 'state')
-OPTIONAL_UNIT_KEYS = ('objective', 'cost', 'seconds', 'retained_cause')
+# 'episode' is the E2 payload: what this unit proved, in the terms the memory
+# needs. It is optional and Host-validated, and a malformed one is skipped
+# rather than failing a unit that is already done.
+OPTIONAL_UNIT_KEYS = ('objective', 'cost', 'seconds', 'retained_cause', 'episode')
 DIMENSIONS = ('attempts', 'cost', 'seconds')
 MAX_REF = 1024
 MAX_OBJECTIVE = 512
@@ -211,6 +214,32 @@ class HostController:
             cause, [], [unit_id],
             authorization_ref=self._mandate['authorization'])
 
+    def _record_episode(self, unit):
+        """E2: a unit that closed with a verified repair is worth remembering.
+
+        Only what the unit already proved is recorded, and a unit that proved
+        nothing records nothing: an entry for an attempt that did not verify
+        teaches the next session to make it again. A failure here must not fail
+        the unit, which is already done and already published.
+        """
+        import episodes
+
+        try:
+            episode = unit.get('episode')
+            if not isinstance(episode, dict) or not episode:
+                return None
+            return episodes.record(
+                self.mission_dir, unit=unit['unit_id'],
+                path=episode.get('path'), excerpt=episode.get('excerpt'),
+                fingerprint=episode.get('fingerprint'),
+                verdict=episode.get('verdict', 'PASS'),
+                evidence=episode.get('evidence') or unit['result_ref'],
+                repair=episode.get('repair'))
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            self._event('EPISODE_SKIPPED', unit=unit['unit_id'],
+                        cause=type(error).__name__)
+            return None
+
     # -- cola --------------------------------------------------------------
 
     def enqueue(self, unit):
@@ -278,11 +307,43 @@ class HostController:
                 unit['state'] = 'PENDING'
                 reconciled.append(unit['unit_id'])
         if not reconciled:
-            return {'reconciled': []}
+            interrupted = self._reconcile_state_commit()
+            return ({'reconciled': []} if interrupted is None
+                    else {'reconciled': [], 'state_commit': interrupted})
         self._save_queue()
         for unit_id in reconciled:
             self._event('UNIT_RECONCILED', unit=unit_id)
-        return {'reconciled': reconciled}
+        interrupted = self._reconcile_state_commit()
+        report = {'reconciled': reconciled}
+        if interrupted is not None:
+            report['state_commit'] = interrupted
+        return report
+
+    def _reconcile_state_commit(self):
+        """Report a managed state left half-written, then clear the marker.
+
+        A marker whose files are all present with the digests they were written
+        as is a unit that finished writing and died before closing: the state is
+        whole, so the marker is dropped and nothing is reported. One missing or
+        altered file is torn, and the report names exactly which, because a
+        report saying "something went wrong" costs the operator the same
+        afternoon as one naming the file that never landed.
+        """
+        import state_commit
+
+        state_root = self.mission_dir / 'mode-state'
+        if not state_root.is_dir():
+            return None
+        report = state_commit.reconcile(state_root)
+        if report['state'] == 'CLEAN':
+            return None
+        if report['state'] == 'COMPLETE_UNCLOSED':
+            state_commit.close_commit(state_root)
+            return {'state': report['state'], 'unit': report['unit'],
+                    'recovered': True}
+        self._event('STATE_COMMIT_TORN', unit=report['unit'],
+                    missing=report['missing'], altered=report['altered'])
+        return report
 
     # -- consumo -----------------------------------------------------------
 
@@ -338,6 +399,7 @@ class HostController:
         if inject is not None:
             inject('published')
         self._record_turn_close(unit)
+        self._record_episode(unit)
         unit['state'] = 'DONE'
         self._save_queue()
         self._event('UNIT_DONE', unit=unit_id, batch_id=batch_id)
