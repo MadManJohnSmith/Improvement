@@ -1,5 +1,12 @@
 # Cambios
 
+## La ruta local del mantenedor salió en un archivo publicable — 2026-09-30
+- `scripts/dsh-plugins/verify-workflow-write.mjs` **usaba como valor por defecto la ruta absoluta del checkout del mantenedor** en dos sitios (`DSH_TOOLS_INDEX` y `DSH_TOOL_BASH`). Eso rompe la regla del repo de no llevar rutas locales en archivos publicables, y además rompe en silencio para cualquiera que no sea el autor: el script nunca hubiera encontrado el runtime en otra máquina. Ahora ambas rutas las declara quien lo ejecuta y, si faltan o no existen, el script **falla cerrado** en lugar de seguir.
+- La regresión comprueba lo mismo que se rompió, pero sobre **los ficheros que Git publica** en vez de solo prosa: antes solo se miraban siete documentos. Al escribirla detectó que mi propio `.zcode/` — scratch de la app, ignorado por Git — contenía cuatro ficheros con la ruta, lo que confirmó que el defecto era real y no solo teórico.
+- Verificado en las dos direcciones: el script **falla cerrado** sin las variables, y con ellas ejecuta sus 45 comprobaciones contra el runtime real y termina en `TODO OK`.
+- Suite: 631 OK (3 saltadas).
+
+
 ## D11 no esperaba un runtime: los escenarios no son ejecutables — 2026-09-30
 - **D11 estaba bloqueada por la razón equivocada.** Decía que faltaba «correr los 55 escenarios contra un modo DSH real». Comprobarlo muestra un obstáculo anterior: **los 55 escenarios de `library/` no se pueden ejecutar tal cual**, ni con runtime. Su `input` es una tabla de aserciones **declarativas** sobre una situación —`contract_declared: true`, `attempted_write: true`, `direct_git_mutation: true`— y no una tarea que un agente pueda recibir. Los ficheros no llevan `target_mode` ni prompt, y **solo uno de los 55** tiene siquiera un campo `task`. Son una especificación de qué debería observarse, no un caso ejecutable.
 - Esto cambia qué significa cerrar D11: no basta con ejecutar un modo real y leer una puntuación, porque **no hay nada que ejecutar**. El gate (`scripts/skill_gate.py`) está bien construido y es correcto —reparto determinista, aceptación solo por mejora estricta, rechazo por regresión en entrenamiento, abstención sin evidencia— pero sus entradas las produce alguien de fuera, y hoy ese alguien no puede producirlas. El orden real es: dar forma ejecutable a los escenarios, y solo entonces el runtime deja de ser el bloqueo.

@@ -1,6 +1,7 @@
 """Architecture 3.0 consistency: no legacy plans, generic modes or local paths."""
 from pathlib import Path
 import re
+import subprocess
 import unittest
 
 
@@ -65,6 +66,22 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         ):
             with self.subTest(relative=relative):
                 self.assertNotIn('/home/alan', self.read(relative))
+
+    def test_no_versioned_source_carries_a_maintainer_home_path(self):
+        # The rule is about publishable files, not only about prose: a script that
+        # defaults to one maintainer's checkout is a path that silently breaks for
+        # everyone else, and it puts a local identity into a released artifact.
+        # Only tracked files are judged, so ignored scratch a tool leaves in the
+        # working tree cannot fail a build that is otherwise clean.
+        tracked = subprocess.run(
+            ['git', 'ls-files', '-z', '--', '*.mjs', '*.py', '*.sh'],
+            cwd=ROOT, capture_output=True, text=True, check=True).stdout
+        offenders = [name for name in tracked.split('\0')
+                     if name
+                     and not name.startswith('tests/')
+                     and '/home/alan' in
+                     (ROOT / name).read_text(encoding='utf-8', errors='replace')]
+        self.assertEqual(sorted(offenders), [])
 
     def test_creator_contract_is_generational_and_prefers_reuse(self):
         contract = self.read('docs/creator-preset-spec.md')

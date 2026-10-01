@@ -1,9 +1,20 @@
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 
-// Portable: el plugin se resuelve junto a este script; la ruta del runtime se
-// puede invalidar con DSH_TOOLS_INDEX (…/dsh-cli/node_modules/@deepseek-ai/dsh-tools/lib/index.js).
-const TOOLS = process.env.DSH_TOOLS_INDEX ?? '/home/alan/DSH-workspace/workspaces/Syncify/runtime/dsh-cli/node_modules/@deepseek-ai/dsh-tools/lib/index.js';
+// Portable: el plugin se resuelve junto a este script; la ruta del runtime la
+// declara quien lo ejecuta. Antes llevaba aquí una ruta absoluta del mantenedor
+// como valor por defecto, y un archivo publicable no puede llevar la ruta local
+// de nadie: sin DSH_TOOLS_INDEX el script no dice nada y falla cerrado.
+const TOOLS = process.env.DSH_TOOLS_INDEX;
+if (!TOOLS) {
+  console.error('FAIL CLOSED: define DSH_TOOLS_INDEX con la ruta de @deepseek-ai/dsh-tools/lib/index.js');
+  process.exit(2);
+}
+if (!existsSync(TOOLS)) {
+  console.error(`FAIL CLOSED: DSH_TOOLS_INDEX no existe: ${TOOLS}`);
+  process.exit(2);
+}
 const PLUGIN = new URL('./workflow-write.mjs', import.meta.url).href;
 const { assertSupportedJsonSchema, validateJsonSchemaValue, jsonSchemaToTs } = await import(pathToFileURL(TOOLS).href);
 
@@ -224,7 +235,14 @@ const realCtx = {
   shellEnv: { collect: () => ({}) },
   systemPrompt: { section() {}, getSectionOrder() { return 0; } },
 };
-const realBash = await import(pathToFileURL(process.env.DSH_TOOL_BASH ?? '/home/alan/DSH-workspace/workspaces/Syncify/runtime/dsh-cli/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js').href);
+// Esta comprobación importa el bash real de upstream, así que su ruta la declara
+// quien lo ejecuta; sin ella la mitad de los checks no existiría.
+const TOOL_BASH = process.env.DSH_TOOL_BASH;
+if (!TOOL_BASH || !existsSync(TOOL_BASH)) {
+  console.error('FAIL CLOSED: define DSH_TOOL_BASH con la ruta de @deepseek-ai/dsh-tool-bash/lib/index.js');
+  process.exit(2);
+}
+const realBash = await import(pathToFileURL(TOOL_BASH).href);
 realBash.apply(realCtx, {});
 const before = registry.get('bash');
 const hadFields = 'sandbox_permissions' in before.parameters.properties && 'justification' in before.parameters.properties;
