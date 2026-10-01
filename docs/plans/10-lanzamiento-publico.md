@@ -1,7 +1,10 @@
 # 10 · Lanzamiento público beta
 
-Estado: **EN CURSO**. Meta: que cualquier persona con un repo y DSH configurado instale
-Improvement con un comando, opere sus dos modos con prompts simples y reporte resultados.
+Estado: **HECHO**. Las siete puertas G0–G6 están cerradas; G6 se completó el 2026-09-30 con el
+tag `v0.1.0-beta` publicado bajo autorización del titular. Meta cumplida en su definición
+operativa: que cualquier persona con un repo y DSH configurado instale Improvement con un
+comando, opere sus dos modos con prompts simples y reporte resultados. Lo que sigue abierto
+—D2, D11 y F5— es endurecimiento de la evidencia y no bloquea esta meta.
 Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pilotos reales
 (Syncify y RehabWeb, ambas cerradas y documentadas en `CHANGELOG.md`).
 
@@ -93,7 +96,7 @@ declarada re-anclada al HEAD con la ascendencia comprobada mecánicamente, y el 
 integrando solo con commit, fast-forward y push.
 
 Métrica del propio framework: 632 pruebas en verde **en el tag `v0.1.0-beta`** — desde entonces
-la suite está en 666 con el runtime `0.1.7-rc.2` instalado, cuyo recuento se actualiza aquí y
+la suite está en 670 con el runtime `0.1.7-rc.2` instalado, cuyo recuento se actualiza aquí y
 no en las notas del tag, que describen lo que ese tag contenía; las unidades nacen
 de los pilotos; una pérdida silenciosa del preflight detectada y corregida con regresión.
 

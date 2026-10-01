@@ -67,6 +67,18 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertIn('C0', status)
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
+    def test_a_launch_plan_with_every_gate_closed_is_not_still_en_curso(self):
+        # The gate table and the plan header are two places stating the same
+        # thing, and they drifted: all seven gates read HECHO while the header
+        # still announced EN CURSO. A reader takes the header as the verdict.
+        plan = self.read('docs/plans/10-lanzamiento-publico.md')
+        rows = re.findall(r'(?m)^\| G\d \|.*\| ([A-ZÁÉÍÓÚÑ][^|]*)\|$', plan)
+        self.assertGreaterEqual(len(rows), 7, plan[:400])
+        closed = [row for row in rows if row.strip().startswith('HECHO')]
+        self.assertEqual(sorted(closed), sorted(rows),
+                         'every launch gate is closed but the plan disagrees')
+        self.assertIn('Estado: **HECHO**', plan)
+
     def test_no_versioned_file_carries_a_maintainer_home_path(self):
         # The rule is about publishable files, not only about the documents an
         # earlier round happened to list: a hand-kept list rots the moment a new

@@ -1,5 +1,10 @@
 # Cambios
 
+## El plan de lanzamiento se declaraba en curso con sus siete puertas cerradas — 2026-09-30
+- **Preguntar qué faltaba ya tenía respuesta, y aun así el plan se contradecía.** El plan 10 decía `Estado: **EN CURSO**` mientras sus siete puertas G0–G6 decían todas `HECHO`. No es cosmético: el encabezado es lo que un lector toma por veredicto, y una tabla que discrepa de su propio encabezado obliga a elegir a cuál creer.
+- **La regresión que faltaba compara las dos afirmaciones** en vez de leer una: si todas las puertas están cerradas, el plan no puede decir `EN CURSO`. Comprobado en las dos direcciones — reabrir una puerta, o devolver el encabezado a `EN CURSO`, y la prueba falla en ambos casos.
+- Cerrado con el resto del trabajo de la ronda anterior, cuya suite queda en **670** (659 en verde, 11 saltadas sin runtime; con `DSH_MODULE_ROOT` solo queda 1 saltada).
+
 ## Instalar el runtime cambió lo que era posible: rc.2, D11 ejecutable y D2 medido — 2026-09-30
 - **Publicar la beta no cerraba el trabajo: hacía falta el runtime, y con él cambian tres cosas.** `DSH_MODULE_ROOT` seguía sin instalar, así que dos regresiones «vivas» llevaban semanas saltándose. Instalado `0.1.7-rc.2` **fuera del árbol canónico** (`AGENTS.md` lo exige), la suite pasa de 632 a **666** y aparecen **tres fallos que ninguna versión anterior habría mostrado**.
 - **Uno era un defecto de producto, no de la prueba.** El plugin `workflow_write` escribía los ficheros de lease con la política a `undefined`, y rc.2 lo rechaza con `file access denied under workspace-write mode`. El resultado era silencioso y grave: **el auditor auditaría y no podría persistir nada**. Se pasa la política ya resuelta a `acquireLease`/`releaseLease`, que es lo que corresponde —el lease sigue dentro del sandbox, no se lo salta—. Los otros dos eran deriva del arnés (`ctx.shell.run` → `resolve`+`execute`+`result()`, y el `ctx.inject(['jobs'])` que la bash de rc.2 exige), resueltas por detección de capacidad y **sin tragarse errores de ejecución**.
