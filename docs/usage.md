@@ -167,7 +167,7 @@ La raíz padre no debe tener un ancestro Git ambiguo ni ser mutable por terceros
 
 ### Verificación documental de misiones con `missions.py`
 
-`task.json` v1 registra mode/objective/authorization_ref, root/files/base/change_scope, executor/criteria y commands/timeout/limits/exclusions; `result.json` v1 enlaza task hash, hashes de candidato, status/reason, findings y check/QA para repair:
+`task.json` v1 registra mode/objective/authorization_ref, root/files/base/change_scope, executor/criteria y commands/`timeout_seconds`/limits/exclusions; `result.json` v1 enlaza task hash, hashes de candidato, status/reason, findings y check/QA para repair. El campo del límite se llama **`timeout_seconds`**, no `timeout`: el mandato compara `--timeout` contra `task.timeout_seconds`, así que un `task.json` con `timeout` se rechaza con «Comando o timeout fuera del mandato» aunque el comando sea legítimo.
 
 ```bash
 python3 -B scripts/missions.py run-check \

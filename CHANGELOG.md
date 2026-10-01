@@ -1,5 +1,11 @@
 # Cambios
 
+## El comando documentado de `missions.py` no funcionaba — 2026-09-30
+- **Seguir la documentación al pie de la letra hacía fallar.** `docs/usage.md` describía el contrato de `task.json` con el campo `timeout`, pero el mandato compara `--timeout` contra **`task.timeout_seconds`**. Un `task.json` escrito como lo documenta se rechaza con «Comando o timeout fuera del mandato» y con código 1, aunque el comando sea perfectamente legítimo: el mismo error que un mandato denegado a propósito, que es lo que ese mensaje existe para decir.
+- Se corrigió la documentación, no el código: las regresiones de `test_two_mode_cycle.py` ya usan `timeout_seconds`, o sea que el código es el canónico y el doc estaba solo. Documentar el nombre correcto no es un detalle: la diferencia entre un rechazo honesto y uno por un error de tecleo es justo lo que este comando debe comunicar.
+- **El resto del flujo documentado se comprobó de verdad, fuera del árbol canónico:** `run-check` con su `task.json` real produce `check.json` más `stdout.txt`/`stderr.txt`, y `verify` acepta el resultado cuando `status` es `ACCEPTED` con `findings_ref` y `check_ref` coherentes. Se comprobó tambié que un `status` que no sea `ACCEPTED` devuelve `RETAINED` —que es lo correcto, no un fallo— y que alterar `stdout.txt` tras la firma se detecta como «Salida ausente o alterada».
+- Suite: 633 OK (4 saltadas).
+
 ## El gate se rompía justo cuando no debía juzgar — 2026-09-30
 - **La vólvora documentada de `skill-gate` no se había ejecutado nunca contra el corpus real.** Al correrla con los 55 escenarios de `library/` apareció un crash: `TypeError: '>' not supported between instances of 'float' and 'NoneType'`.
 - La causa es precisa. El gate decide `abstain` cuando no hay evidencia, pero la decisión se tomaba **antes** y la ejecución seguía igual a comparar accuracies. Con el baseline sin observaciones de holdout (`None`) y el candidato con ellas (float), esa comparación no tenía sentido posible. `docs/usage.md` promete que se abstiene —«no acepta, no rechaza» si no hay observaciones, y en vez de eso lanzaba una excepción.
