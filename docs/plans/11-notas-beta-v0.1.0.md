@@ -1,8 +1,8 @@
 # v0.1.0-beta — notas de publicación
 
 > **Borrador preparado, no publicado.** Publicar (tag `v0.1.0-beta` y push) requiere
-> autorización del titular, y G0 —la licencia— sigue sin elegir: sin `LICENSE` el
-> repositorio no debe anunciarse como instalable por terceros.
+> autorización del titular. G0 —la licencia— está cerrada: Apache-2.0, con `LICENSE` en la
+> raíz.
 
 ## Qué es
 
@@ -35,7 +35,7 @@ operador hizo commit, fast-forward y push.
 - **Una capacidad fuera del `PATH` por defecto se materializa en el workspace.** Si tu SDK se
   reescribe a sí mismo en cada ejecución, el plan pide una copia local con enlaces duros
   (0 bytes de disco) y apunta ahí.
-- **Sin licencia no hay distribución.** G0 es la puerta.
+- **Licencia Apache-2.0.** Un repositorio accesible sin licencia abierta no concede derechos; esta ya está.
 
 ## Límites conocidos
 
