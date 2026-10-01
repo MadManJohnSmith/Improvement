@@ -10,6 +10,7 @@ Versión del schema: 1
 """
 
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -1349,12 +1350,77 @@ VALIDATORS = {
     "tests-spec": validate_tests_spec,
 }
 
+# What each document name means when it appears in a plan or a prompt rather
+# than in code: two of the schemas are addressed by a different name than the
+# validator they are enforced by, and both spellings are accepted.
+SCHEMA_ALIASES = {
+    "modes": "mode-contract",
+    "skills": "skill-contract",
+}
+_FILE_STEMS = {alias: stem for stem, alias in SCHEMA_ALIASES.items()}
+
+# Every file in schemas/ and the one validator that enforces it. A schema that
+# no validator parses is a contract that exists only as a published file: the
+# directory and this table are required to name each other exactly, so adding a
+# schema without a validator -- or renaming one -- is visible instead of silent.
+# The three corpus contracts are enforced by corpus_compiler rather than by
+# this module, which is why they name a qualified target.
+SCHEMA_VALIDATORS = {
+    "run": "validate_run",
+    "generation-manifest": "validate_generation_manifest",
+    "project-manifest": "validate_project_manifest",
+    "instructions-index": "validate_instructions_index",
+    "capabilities": "validate_capabilities",
+    "scenario": "validate_scenario",
+    "acceptance-plan": "validate_acceptance_plan",
+    "handoff": "validate_handoff",
+    "drift": "validate_drift",
+    "backup": "validate_backup",
+    "promotion": "validate_promotion",
+    "rollback": "validate_rollback",
+    "library": "validate_library",
+    "source-registry": "validate_source_registry",
+    "modes": "validate_mode_contract",
+    "skills": "validate_skill_contract",
+    "discovery": "validate_discovery",
+    "design": "validate_design",
+    "tests-spec": "validate_tests_spec",
+    "executable-corpus": "corpus_compiler.validate_corpus",
+    "corpus-observations": "corpus_compiler.load_bound_observations",
+    "bound-gate-report": "corpus_compiler.validate_bound_report",
+}
+
+
+def schema_enforcement(schema_stem):
+    """The entry point that enforces `schemas/<schema_stem>.schema.json`.
+
+    Three of these take the digests or the corpus that bind the document, so
+    this names where a shape is enforced rather than handing back a uniform
+    document validator. Raises when the file exists and nothing enforces it,
+    which is the state a published schema is not allowed to be in.
+    """
+    target = SCHEMA_VALIDATORS.get(_FILE_STEMS.get(schema_stem, schema_stem))
+    _require(target is not None, f"schema without validator: {schema_stem}")
+    module_name, _, attribute = target.partition(".")
+    if not attribute:
+        return VALIDATORS[SCHEMA_ALIASES.get(schema_stem, schema_stem)]
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise ContractError(f"schema without validator: {schema_stem}") from exc
+    resolved = getattr(module, attribute, None)
+    _require(callable(resolved), f"schema without validator: {schema_stem}")
+    return resolved
+
 
 def validate(schema_name, doc):
-    """Validate a document against a named schema. Fail-closed."""
-    _require(schema_name in VALIDATORS,
+    """Validate a document against a named schema. Fail-closed.
+
+    Accepts either the validator's own name or the schema file's stem.
+    """
+    _require(schema_name in VALIDATORS or schema_name in SCHEMA_ALIASES,
              f"unknown schema: {schema_name}")
-    VALIDATORS[schema_name](doc)
+    VALIDATORS[SCHEMA_ALIASES.get(schema_name, schema_name)](doc)
 
 
 def validate_json_file(schema_name, filepath):

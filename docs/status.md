@@ -230,4 +230,23 @@ en el borrador: duplica el alcance que `dsh-tool-fs-search` ya da a todo modo ge
 dependencias no son distribuibles en este árbol, y su propio invariante lo saca del árbol de lo que
 el framework acierta.
 
+**Tercera auditoría: lo que solo se comprobaba contra un fixture.** Las dos rondas anteriores
+buscaban afirmaciones de prosa sin contraparte en el código. Esta cambió de dirección: qué reglas
+del repositorio se comprueban únicamente contra un fixture, y por tanto nunca tocarían el único
+caso real que existe. **E15:** el invariante «plan listo ⇒ comando ejecutable» se probaba para once
+productos sintéticos, y el `improvement-verification.json` del propio framework no lo resolvía
+ninguna prueba; como `stack.declared()` valida forma y no ejecución, un comando truncado seguiría
+resolviéndose `verification_ready: true` y una campaña real habría registrado un fallo del producto
+causado por la declaración del framework. **E16:** de los veintidós schemas, tres los aplicaba un
+validador escrito a mano al que ningún nombre apuntaba, y dos se direccionaban con un nombre que no
+era el de su archivo; ahora la unión está declarada en el producto y la regresión exige que
+`schemas/` y ella se nombren exactamente. **E17:** el README publicaba «743» y «755» a dieciséis
+líneas sin decir cuál era vigente; la cuenta se descubre ahora, y una cifra que no coincida tiene que
+declararse de otro momento. Los tres con canario.
+
+La hipótesis con la que empezó esa ronda era más fuerte que sus hallazgos: un volcado de `cat`
+mostraba el comando declarado sin su argumento, y los bytes del archivo y el plan resuelto
+demostraron que no era así. **La sospecha era del renderizado, no del framework** — y el fallo que
+buscaba sigue siendo alcanzable, que es exactamente lo que la regresión de E15 impide.
+
 Suite de regresión: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.

@@ -159,7 +159,7 @@ cuyo HEAD sigue siendo su base y el arreglo vive en el diff sin commitear; `cand
 no lo distingue de la revisión anterior al arreglo. Medido sobre el estado real, los siete
 registros llevaban dos cabezas, ambas anteriores a los cambios que decían verificar. Ahora
 cada registro lleva el digest del diff verificado y tres sitios lo comprueban. Suite del
-propio framework: **743 pruebas en verde**.
+propio framework en ese punto: **743 pruebas en verde**.
 
 La memoria se aplica también a sí misma: las unidades de endurecimiento nacieron de los
 fallos de los pilotos (reserva de candidata antes de editar, reconciliación sin operador,
@@ -169,7 +169,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **755 pruebas en verde**.
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **760 pruebas en verde**.
 
 ## Qué obtienes en tu repo
 

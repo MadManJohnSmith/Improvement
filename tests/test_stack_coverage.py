@@ -14,8 +14,10 @@ fixtures are deliberately tiny -- the claim under test is about resolution, not
 about the project being realistic.
 """
 import json
+import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -190,6 +192,75 @@ class StackCoverageTest(unittest.TestCase):
             product, workspace=workspace,
             env={"PATH": str(outside), "HOME": str(self.tmp)}), "python-django")
         self.assertEqual(entry["verify_command"][0], str(interpreter))
+
+
+class SelfDeclarationTest(unittest.TestCase):
+    """The one declaration that is not a fixture: this repository's own.
+
+    The case above proves the invariant for eleven synthetic products, and the
+    product that actually ships a declaration — this repository, through
+    `improvement-verification.json` — was outside its reach. That matters more
+    than a fixture, because `declared()` checks shape and nothing else: a
+    command that lost its last argument is still a list of non-empty strings,
+    so the plan would keep answering `verification_ready: true` while naming
+    something no shell can run. The other end of that is that a real campaign
+    against this framework would record a product failure caused by the
+    framework's own declaration.
+
+    So the claim is proven by running it, with a bound: the declared command
+    has to survive its own argv. It may still be running when the probe stops
+    watching — a full suite is the expected outcome, not a failure — but it may
+    not have died on the way in, because that is what a truncated command does,
+    in milliseconds.
+
+    The child is stopped the way any probe stops a long command: killed, with
+    whatever temporary state it had open left behind in `/tmp` where it belongs.
+    Nothing it touches is inside this tree, and the recursion guard keeps it from
+    reaching past its own suite.
+    """
+    #: Set on the child so the suite it starts does not start another one.
+    GUARD = "IMPROVEMENT_DECLARED_SELFTEST"
+    WATCH_SECONDS = 10.0
+
+    def setUp(self):
+        self.plan = stack_module.plan(
+            str(ROOT), workspace=str(Path(tempfile.mkdtemp(prefix="self-plan-", dir="/tmp"))),
+            env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "")})
+        self.addCleanup(shutil.rmtree, Path(self.plan["workspace"]), True)
+        entries = [e for e in self.plan["stacks"] if e["stack"] == "python-unittest"]
+        self.assertEqual(len(entries), 1, self.plan)
+        self.entry = entries[0]
+
+    def _survives(self, command, cwd):
+        """Whether a command gets past its own argv, however long it then runs."""
+        env = dict(os.environ, **{self.GUARD: "1"})
+        try:
+            done = subprocess.run(command, cwd=cwd, timeout=self.WATCH_SECONDS,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                  env=env)
+        except subprocess.TimeoutExpired:
+            return True, "sigue corriendo: el argv se aceptó"
+        if done.returncode == 0:
+            return True, "terminó en verde"
+        return False, done.stderr.decode("utf-8", "replace").strip()[-300:]
+
+    @unittest.skipIf(os.environ.get(GUARD), "ya se está probando dentro del comando declarado")
+    def test_the_command_this_repo_declares_for_itself_survives_its_own_argv(self):
+        self.assertTrue(self.entry["declared"], self.plan)
+        self.assertTrue(self.entry["verification_ready"], self.plan)
+        survived, why = self._survives(self.entry["verify_command"], ROOT)
+        self.assertTrue(survived, f"{self.entry['verify_command']} no arranca: {why}")
+
+    @unittest.skipIf(os.environ.get(GUARD), "el canary no necesita correr dos veces")
+    def test_a_truncated_declaration_would_not_pass_that_check(self):
+        # The canary: without it, "survives its own argv" is a claim about a
+        # command nobody ever ran. It is the declared command with its last
+        # argument removed and nothing else changed, which is exactly the
+        # regression this file exists to catch.
+        broken = [*self.entry["verify_command"][:-1]]
+        with tempfile.TemporaryDirectory(prefix="broken-", dir="/tmp") as empty:
+            survived, why = self._survives(broken, empty)
+        self.assertFalse(survived, f"un comando truncado pasó el chequeo: {why}")
 
 
 class CampaignEvidenceTest(unittest.TestCase):

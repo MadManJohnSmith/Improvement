@@ -216,7 +216,7 @@ class ArchitectureConsistencyTest(unittest.TestCase):
     def test_the_skipped_regressions_are_named_where_the_suite_count_is(self):
         """The number that goes green has to say what did not run.
 
-        "750 pruebas en verde" is a claim about the whole suite, and eleven of
+        "N pruebas en verde" is a claim about the whole suite, and eleven of
         those do not execute without a DSH runtime, `node`, `bubblewrap` or
         `jsonschema` present. The count is worth publishing precisely because it
         is not total, so the document that publishes it has to name the gap in
@@ -226,6 +226,90 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         for component in ("DSH_MODULE_ROOT", "node", "bubblewrap", "jsonschema"):
             with self.subTest(component=component):
                 self.assertIn(component, status)
+
+    def test_every_schema_file_names_the_validator_that_enforces_it(self):
+        """A schema nothing parses is a contract that exists only as a file.
+
+        Nineteen of the twenty-two schemas were reachable through the
+        `generation_contracts` registry, and the remaining three — the corpus
+        contracts — were enforced by hand-written validators in
+        `corpus_compiler` that no name pointed at. Both shapes work and both
+        rot the same way: edit the schema, keep enforcing the old shape, and
+        the repository publishes a contract the code does not hold. Two of the
+        reachable ones were additionally addressed by a name that was not their
+        file's, which is the same drift one rename away.
+
+        So the binding is declared in the product (`SCHEMA_VALIDATORS`) and
+        required here to be an exact bijection with the directory: a new schema
+        file without a validator fails, a binding without a file fails, and a
+        binding that names something which is not callable fails.
+        """
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import generation_contracts as gc
+
+        on_disk = {path.name[: -len(".schema.json")]
+                   for path in (ROOT / "schemas").glob("*.schema.json")}
+        self.assertNotIn("_policy", on_disk, "the cross-cutting policy is not a contract")
+        self.assertEqual(sorted(on_disk), sorted(gc.SCHEMA_VALIDATORS))
+        for stem, target in sorted(gc.SCHEMA_VALIDATORS.items()):
+            with self.subTest(schema=stem):
+                self.assertTrue(callable(gc.schema_enforcement(stem)),
+                                f"{stem} nombra {target}, que no se puede llamar")
+        # Non-vacuity in the direction that matters: a schema with nothing
+        # enforcing it is refused rather than quietly accepted as covered.
+        with self.assertRaises(gc.ContractError):
+            gc.schema_enforcement("schema-que-no-existe")
+        with self.assertRaises(gc.ContractError):
+            gc.schema_enforcement("_policy")
+
+    def test_a_schema_can_be_addressed_by_the_name_of_its_file(self):
+        """`modes` and `mode-contract` are one contract with two spellings.
+
+        The emitted lifecycle is validated as `mode-contract` while the file it
+        belongs to is `modes.schema.json`; nothing used to say so, so either
+        name could have been the one that rotted.
+        """
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import generation_contracts as gc
+
+        for stem, alias in sorted(gc.SCHEMA_ALIASES.items()):
+            with self.subTest(schema=stem):
+                self.assertEqual(gc.schema_enforcement(stem),
+                                 gc.schema_enforcement(alias))
+        with self.assertRaises(gc.ContractError):
+            gc.validate("schema-que-no-existe", {})
+
+
+    def test_the_published_suite_count_is_the_count_that_runs(self):
+            """A count of the suite is a claim about this repository, right now.
+
+            Two of them sat sixteen lines apart — "743 pruebas en verde" and "755
+            pruebas en verde" — both about the framework, both in the README, with
+            nothing saying which was current. Updating that by hand each round is
+            the fragile version: the count drifts the moment a regression is added
+            and nobody notices until a reader does.
+
+            So the number is discovered rather than remembered. A claim that
+            disagrees with the suite has to say it belongs to an earlier moment, in
+            which case it is history and is allowed to be wrong.
+            """
+            import unittest as ut
+            discovered = ut.TestLoader().discover(
+                str(ROOT / "tests")).countTestCases()
+            self.assertGreater(discovered, 0, "la suite no se descubrió: el escaneo está roto")
+            claim = re.compile(r"Suite del (?:propio )?framework: \*\*(\d+) pruebas en verde\*\*")
+            paragraphs = [p for p in self.read("README.md").split("\n\n") if claim.search(p)]
+            self.assertTrue(paragraphs, "no hay cifra de suite que comprobar")
+            for paragraph in paragraphs:
+                for said in claim.findall(paragraph):
+                    with self.subTest(said=said):
+                        if int(said) == discovered:
+                            continue
+                        self.assertIn("en ese punto", paragraph,
+                                      f"el README afirma {said} pruebas y la suite tiene "
+                                      f"{discovered}; una cifra antigua tiene que decir que lo es")
 
 
 if __name__ == '__main__':

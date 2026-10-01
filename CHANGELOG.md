@@ -1,5 +1,42 @@
 # Cambios
 
+## Tercera auditoría: lo que solo se comprobaba contra un fixture — 2026-10-01
+- **Cambio de dirección, no de método.** Las dos rondas anteriores buscaron afirmaciones de prosa
+  que ningún código respaldaba. Esta tercera auditoría mira por el otro extremo: qué reglas del repositorio
+  se comprueban **únicamente contra un fixture**, y por tanto no tocarían nunca el único caso real que
+  existe. Tres reglas, y una hipótesis que se cayó por medición.
+- **E15 · la única declaración real del repositorio estaba fuera del invariante que la suite prueba.**
+  `test_stack_coverage` demuestra que «cuando el plan está listo, el comando que nombra se puede
+  ejecutar» para once productos sintéticos. El `improvement-verification.json` del propio framework
+  —la única declaración que el repositorio publica— no lo resolvía ninguna prueba. Y `stack.declared()`
+  valida **forma**, no ejecución: una lista de cadenas no vacías. Un comando que hubiera perdido su
+  último argumento seguiría resolviéndose como `verification_ready: true`, y una campaña real contra
+  Improvement habría registrado un fallo del producto causado por la declaración del framework.
+  Ahora la prueba resuelve el plan del repositorio y lanza su comando, con un límite honesto: valen
+  tanto terminar en verde como seguir corriendo a los diez segundos, y lo que no vale es morirse en el
+  argv, que es lo que hace un comando truncado en milisegundos. Canario: el mismo comando sin su
+  último argumento falla ese mismo chequeo.
+- **La hipótesis con la que empezó: el comando estaba roto, y no lo estaba.** Un volcado de `cat`
+  mostró `discover -s` sin su valor; los bytes del archivo y el plan resuelto dan los siete tokens. La
+  sospecha venía del renderizado, no del framework. Queda escrita porque es la disciplina que este
+  repositorio reclama —**medir antes de afirmar**— y porque el fallo que buscaba sigue siendo
+  alcanzable, que es lo que ahora impide la regresión de E15.
+- **E16 · veintidós schemas y nada decía cuál se aplicaba con cuál.** Diecinueve eran alcanzables
+  por el registro de `generation_contracts`; los tres contratos del corpus los aplicaba un validador escrito
+  a mano en `corpus_compiler` al que ningún nombre apuntaba, y dos de los alcanzables se direccionaban
+  con un nombre que no era el de su archivo (`mode-contract` para `modes.schema.json`). Las dos formas
+  se pudren igual: se edita el schema, se sigue aplicando la forma vieja, y el repositorio publica un
+  contrato que el código no cumple. `SCHEMA_VALIDATORS` declara la unión en el producto,
+  `schema_enforcement()` la resuelve —y se niega cuando un schema no tiene quién lo aplique— y
+  `validate()` admite las dos grafías. La regresión exige biyección exacta con el directorio.
+  Canario: dejar un schema suelto en `schemas/` rompe la suite.
+- **E17 · la cuenta de la suite se llevaba a mano, dos veces, en un solo párrafo.** «743» y «755» a
+  dieciséis líneas de distancia, ambos sobre el framework, ambos en el README, sin nada que dijera
+  cuál era el vigente: la misma deriva que escondía once saltadas. La cuenta ahora se **descubre**: una
+  cifra que no coincide con la suite tiene que decir que pertenece a otro momento, y entonces es
+  historia y puede estar equivocada. Canario: cambiar 760 por 799 en el README falla.
+- **Suite: 760 OK (11 saltadas sin runtime, 1 con `DSH_MODULE_ROOT`).**
+
 ## Segunda auditoría de cierre: siete huecos del mismo tipo — 2026-10-01
 - **Una sola enfermedad, y E6 no la había cerrado del todo.** El framework afirmaba cosas en prosa
   que ningún código respaldaba. Una auditoría sistemática —AST sobre `scripts/` para código huérfano,
