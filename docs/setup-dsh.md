@@ -11,6 +11,17 @@ El usuario instala/configura DSH una vez y configura al menos un proveedor/model
 
 Si Creator/proveedor/capacidad falta, bootstrap conserva `RETAINED` con una sola acción del titular.
 
+## Pruebas contra el runtime instalado
+Dos regresiones levantan el runtime DSH de verdad y **se saltan si no encuentran `DSH_MODULE_ROOT`**, así que una suite en verde no dice nada sobre ellas mientras la variable no esté puesta:
+
+```bash
+DSH_MODULE_ROOT=/ruta/absoluta/al/node_modules python3 -B -m unittest discover -s tests
+```
+
+`test_real_services_and_fail_closed` levanta `ctx.fs`, `ctx.shell`, `ctx.subprocess` y `ctx.sandboxPolicy` y comprueba la denegación real: el producto queda intacto ante un intento de escritura y un proceso descendiente también queda bloqueado. `test_same_mode_escalation_writes_and_outside_denied` monta un preset por agente y necesita **`@deepseek-ai/dsh-agent-preset`, que no se publica hasta 0.1.7-alpha.1**; con un runtime anterior se salta nombrando la versión que falta.
+
+Un `skip` por defecto no es una prueba: si una de estas deja de correr porque el entorno cambió, el fallo se camufla de salto verde. Si tocas una prueba viva, ejecútala con la variable puesta antes de darla por buena.
+
 ## Preparación comprobada actual
 
 Standard mantiene cwd en el padre con framework/producto/workspace. `onboard.py --prepare-skills --session-root` copia skills al workspace y crea enlaces gestionados en `<padre>/.agents/skills`.

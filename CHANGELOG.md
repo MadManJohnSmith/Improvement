@@ -1,5 +1,10 @@
 # Cambios
 
+## Auditoría de los `skip`: solo dos ocultaban defectos — 2026-09-30
+- Un `skip` que se activa por defecto no es una prueba, es una ausencia de prueba, y ya demostró que puede esconder un bug real. Se revisaron **las doce** declaradas en la suite en vez de dar por bueno el resto. Resultado: **solo dos** ocultaban algo —las dos de runtime vivo de la entrada anterior—. Las demás se ejecutan de verdad en esta máquina.
+- Las siete de `test_workflow_write_plugin.py` que dependen de `node` **corren** (`node` está en el PATH) y la de reinicio de Host en `test_recovery_durable.py` **también**, porque bubblewrap está instalado. La de paridad JSON Schema se salta por `jsonschema` ausente, que es una dependencia opcional legitimí1a: se comprobó su contenido a mano y **las tres validadores coinciden** en los cuatro casos (plan válido y los tres campos con `" \t"`), así que el `skip` no esconde una discrepancia.
+- Lo que se registra no es que todo esté bien, sino que el único sitio donde un `skip` podría estar callando algo ya no lo está: cada uno de los doce se ejecutó o se justificó con su razón.
+
 ## Dos pruebas vivas estaban rotas y el `skip` lo tapaba — 2026-09-30
 - **La suite se declaraba en verde sin haber probado nunca lo que dice probar.** Las dos únicas pruebas que levantan el runtime DSH real están saltadas por defecto (`DSH_MODULE_ROOT` no viene puesto), así que su verde no dice nada sobre ellas. Al ejecutarlas contra el runtime instalado aparecieron **dos bugs reales**.
 - **`ctx.shell.execute` no existe en ninguna versión publicada de DSH.** `ShellExecutor` es una clase abstracta con un getter `sandboxMode`, y el ejecutor concreto (`dsh-bash-local`) expone `resolve`, `run` y `start`, jamás `execute`. La prueba llamaba a un método que nunca existió, así que nunca pudo pasar. Corregida a la API real: **ahora se ejecuta y pasa**, y con ello el repo prueba por fin lo que afirmaba — que el producto queda intacto ante un intento de escritura y que un proceso descendiente también queda bloqueado, contra bwrap de verdad y no contra un mock.
