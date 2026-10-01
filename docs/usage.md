@@ -90,6 +90,14 @@ El prompt simple no autoriza commit: el operador integra y después retira la ca
 
 El paso 2 no es cosmético: cada candidata puede acarrear decenas de GB de artefactos de compilación y varias rondas seguidas agotan el disco, lo que corta DSH a mitad de un turno. Comprobado en el piloto de Syncify, donde cuatro candidatas integradas sumaban unos 320 GB y el disco lleno tumbó dos turnos de Repair.
 
+Regla del operador al integrar: commit, fast-forward y push con la identidad que el
+repositorio tiene configurada (`git config user.name`/`user.email`), nunca con una
+forzada por comando. Ocurrió en dos pilotos: siete commits quedaron atribuidos a un
+nombre que no era el del repo y hubo que reescribir la historia con
+`rebase --exec`/`--force-with-lease`, verificando árboles idénticos y re-apuntando a
+mano los SHA anotados en los artefactos. El framework no hace commits, así que esta
+regla es suya; el trabajo de reparar el efecto ya no existe.
+
 ### Cuando el estado y el repositorio dejan de contarse (operador)
 
 El mismo comando sin `--retire` ni `--repoint` es un informe, no modifica nada:
