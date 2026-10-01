@@ -80,8 +80,10 @@ const EVIDENCE_TOTAL_BYTES = 268435456;
 const EVIDENCE_FILE_BYTES = 8388608;
 const AUDIT_NEXT_PROMPT = 'Repara los hallazgos de la auditoría; no publiques.';
 const REVISION = /^[0-9a-f]{40,64}$/u;
-const FINDING_KEYS = ['base_revision', 'finding_id', 'severity', 'status', 'summary'];
-const FINDING_KEYS_WITH_EVIDENCE = ['base_revision', 'evidence', 'finding_id', 'severity', 'status', 'summary'];
+const FINDING_FIELDS = ['base_revision', 'cause', 'finding_id', 'prevention', 'severity', 'status', 'summary'];
+const RECORD_BYTE_LIMIT = 4096;
+const CAUSE_MAX_BYTES = 256;
+const PREVENTION_MAX_BYTES = 256;
 const SEVERITIES = ['CRITICAL', 'HIGH', 'LOW', 'MEDIUM'];
 const STATUSES = ['OPEN', 'RESOLVED', 'RETAINED'];
 const TRAVERSAL = /(?:^|\/)\.\.(?:\/|$)/u;
@@ -370,8 +372,8 @@ async function validateManagedFindings(ctx, target, content, signal) {
     if (!record || typeof record !== 'object' || Array.isArray(record)) {
       throw new Error(`finding ${index} inválido`);
     }
-    const keys = Object.keys(record).sort().join(',');
-    if (keys !== FINDING_KEYS.join(',') && keys !== FINDING_KEYS_WITH_EVIDENCE.join(',')) {
+    const allowed = [...FINDING_FIELDS, 'evidence'];
+    if (Object.keys(record).some((key) => !allowed.includes(key))) {
       throw new Error(`finding ${index} no cumple el schema estricto`);
     }
     if (typeof record.finding_id !== 'string' || record.finding_id.length === 0
@@ -380,6 +382,21 @@ async function validateManagedFindings(ctx, target, content, signal) {
         || !STATUSES.includes(record.status)
         || typeof record.summary !== 'string' || record.summary.length === 0) {
       throw new Error(`finding ${index} no cumple el schema estricto`);
+    }
+    for (const [field, limit] of [['cause', CAUSE_MAX_BYTES], ['prevention', PREVENTION_MAX_BYTES]]) {
+      const value = record[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string' || value.length === 0
+          || Buffer.byteLength(value, 'utf8') > limit) {
+        throw new Error(`finding ${index}: ${field} debe ser texto de 1 a ${limit} bytes`);
+      }
+    }
+    // A record over the cap would be dropped by the next preflight, long after
+    // the turn that wrote it, so the refusal happens where the model can act.
+    const encoded = Buffer.byteLength(JSON.stringify(record), 'utf8');
+    if (encoded + 32 > RECORD_BYTE_LIMIT) {
+      throw new Error(`finding ${index} ocupa ${encoded} bytes y el tope del registro es `
+        + `${RECORD_BYTE_LIMIT}; acorta summary, cause o prevention`);
     }
     const evidence = record.evidence;
     if (evidence === undefined) {
@@ -392,13 +409,14 @@ async function validateManagedFindings(ctx, target, content, signal) {
     const evidenceKeys = Object.keys(evidence).sort();
     if (evidenceKeys.length < 2
         || !evidenceKeys.includes('excerpt') || !evidenceKeys.includes('path')
-        || evidenceKeys.some((key) => !['excerpt', 'line', 'located', 'path'].includes(key))) {
+        || evidenceKeys.some((key) => !['excerpt', 'fingerprint', 'line', 'located', 'path'].includes(key))) {
       throw new Error(`finding ${index}: evidence debe llevar exactamente path y excerpt`);
     }
-    // line and located are computed here; a mode that writes them is claiming a
-    // location it did not locate.
-    if ('line' in evidence || 'located' in evidence) {
-      throw new Error(`finding ${index}: evidence.line y evidence.located los calcula la herramienta`);
+    // line, located and fingerprint are computed here; a mode that writes them
+    // is claiming an identity or a location it did not derive.
+    if ('line' in evidence || 'located' in evidence || 'fingerprint' in evidence) {
+      throw new Error(`finding ${index}: evidence.line, evidence.located y evidence.fingerprint `
+        + 'los calcula la herramienta');
     }
     if (typeof evidence.path !== 'string' || evidence.path.length === 0
         || typeof evidence.excerpt !== 'string'
@@ -414,14 +432,27 @@ async function validateManagedFindings(ctx, target, content, signal) {
       throw new Error(`finding ${index} (${record.finding_id}): el excerpt aparece ${matches.length} veces en ${evidence.path}; `
         + 'cita un fragmento que sea único');
     }
-    rewritten.push({
+    const computed = {
       finding_id: record.finding_id,
       base_revision: record.base_revision,
       severity: record.severity,
       summary: record.summary,
       status: record.status,
-      evidence: {path: evidence.path, excerpt: evidence.excerpt, line: matches[0], located: true},
-    });
+      evidence: {
+        path: evidence.path,
+        excerpt: evidence.excerpt,
+        // Identity of the quoted code, not of the wording: two audits that
+        // describe the same line differently share a fingerprint, which is
+        // what makes "same defect, other words" countable.
+        fingerprint: createHash('sha256')
+          .update(`${evidence.path}\n${evidence.excerpt.trimEnd()}`, 'utf8').digest('hex'),
+        line: matches[0],
+        located: true,
+      },
+    };
+    if (record.cause !== undefined) computed.cause = record.cause;
+    if (record.prevention !== undefined) computed.prevention = record.prevention;
+    rewritten.push(computed);
   }
   return rewritten.map((record) => JSON.stringify(record)).join('\n') + '\n';
 }

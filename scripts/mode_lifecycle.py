@@ -33,6 +33,8 @@ RECORD_BYTE_LIMIT = 4_096
 # small enough that adding it to a record never pushes the record over its cap.
 ANCHOR_EXCERPT_MAX_BYTES = 240
 ANCHOR_PATH_MAX_BYTES = 4_096
+CAUSE_MAX_BYTES = 256
+PREVENTION_MAX_BYTES = 256
 # Evidence that does not fit a 4 KiB record — candidate patches, tool logs,
 # long command output — used to be written into the state root, where the
 # preflight archived it as unexpected evidence: legitimate work treated as a
@@ -359,6 +361,7 @@ def persona_prefix(preset_id, role=None):
             "finding about something with no location, such as an architecture or a missing "
             "capability, carries no evidence at all, which is honest and visible, not a gap you "
             "Your scope decides where you look first (audit_scope). A request that names the whole project is complete: observe the product and form your own observations BEFORE reading findings.jsonl or handoffs.jsonl, so the queue informs you instead of anchoring you, and the state you read afterwards is checked against what you already saw, not the other way round. A request that names a flow, a feature or a component is incremental: start from the persisted diagnosis and verify it against the product. Name the scope in the final response and in the handoff_id: audit-complete-<base8>-<n> for complete, audit-<base8>-<n> for incremental. The distinction is countable afterwards, which is why it has to be declared: a complete audit that silently starts from the queue finds the same findings the queue already had. "
+            "Say why the defect exists and what would stop it coming back: `cause` and `prevention`, each at most 256 bytes. They are what turns a list of findings into work that can be prevented, and they are bounded because the record as a whole is: if the write is refused for exceeding the record cap, shorten the summary first and keep the cause. `evidence.fingerprint` is not yours to write: it identifies the quoted code, so the same defect described in different words is the same defect instead of a second record. "
             "should hide. "
             "Evidence that does not fit a record has a managed home, not the state root: write "
             "candidate patches, tool logs and long command output through workflow_write to the "
@@ -551,6 +554,12 @@ def expected_lifecycle(role, layout):
             "writes": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
             "candidate_state": "preserve-existing",
             "persist_order": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
+            "rich_finding": {
+                "cause": "why-the-defect-exists-<=256-bytes",
+                "prevention": "what-would-stop-it-returning-<=256-bytes",
+                "fingerprint": "computed-from-path-and-excerpt-not-from-the-wording",
+                "record_cap_enforced_at_write": True,
+            },
             "evidence_anchor": {
                 "fields_written_by_the_mode": ["path", "excerpt"],
                 "fields_computed_by_the_tool": ["line", "located"],
@@ -756,6 +765,7 @@ def _anchor_schema():
         "properties": {
             "path": {"type": "string", "minLength": 1, "maxLength": ANCHOR_PATH_MAX_BYTES},
             "excerpt": {"type": "string", "minLength": 8, "maxLength": ANCHOR_EXCERPT_MAX_BYTES},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "line": {"type": "integer", "minimum": 1},
             "located": {"enum": [True]},
         },
@@ -796,10 +806,18 @@ def state_schema():
             "findings.jsonl": {"format": "jsonl", "limit": LIMITS["findings.jsonl"],
                 "max_bytes": BYTE_LIMITS["findings.jsonl"], "dedupe_key": ["finding_id", "base_revision"],
                 "record": _record_schema(["finding_id", "base_revision", "severity", "summary", "status"],
-                    {"finding_id": text, "base_revision": revision, "severity": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]}, "summary": text, "status": {"enum": ["OPEN", "RESOLVED", "RETAINED"]},
+                    {"finding_id": text, "base_revision": revision,
+                     "severity": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+                     "summary": text, "status": {"enum": ["OPEN", "RESOLVED", "RETAINED"]},
+                     "cause": {"type": "string", "minLength": 1, "maxLength": CAUSE_MAX_BYTES},
+                     "prevention": {"type": "string", "minLength": 1, "maxLength": PREVENTION_MAX_BYTES},
                      "evidence": _anchor_schema()},
-                    {"finding_id": "A-01", "base_revision": "a" * 40, "severity": "HIGH", "summary": "Missing validation", "status": "OPEN",
-                     "evidence": {"path": "src/api.py", "excerpt": "def create_user(payload):", "line": 42, "located": True}})},
+                    {"finding_id": "A-01", "base_revision": "a" * 40, "severity": "HIGH",
+                     "summary": "Missing validation", "status": "OPEN",
+                     "cause": "The handler trusts the request body",
+                     "prevention": "A schema check on the route",
+                     "evidence": {"path": "src/api.py", "excerpt": "def create_user(payload):",
+                                  "fingerprint": "d" * 64, "line": 42, "located": True}})},
             "handoffs.jsonl": {"format": "jsonl", "limit": LIMITS["handoffs.jsonl"],
                 "max_bytes": BYTE_LIMITS["handoffs.jsonl"], "dedupe_key": ["handoff_id", "base_revision"],
                 "record": _record_schema(["handoff_id", "base_revision", "finding_ids", "next_prompt"],

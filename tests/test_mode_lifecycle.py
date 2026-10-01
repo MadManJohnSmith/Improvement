@@ -512,6 +512,45 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertTrue(any("A-03" in name for name in dropped))
             self.assertTrue(any("A-04" in name for name in dropped))
 
+    def test_rich_finding_fields_are_optional_for_existing_state(self):
+        """Adding cause, prevention and fingerprint must not touch old records.
+
+        The four campaigns wrote five fields with the evidence in prose. If the
+        preflight required the new fields it would archive every one of those
+        records, so the fields are optional: a legacy finding stays exactly as
+        it was, a well-formed rich finding survives, and a malformed one is
+        dropped with a receipt naming it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "mode-state"
+            state.mkdir()
+            base = "a" * 40
+            legacy = {"finding_id": "A-01", "base_revision": base,
+                      "severity": "HIGH", "summary": "Missing validation", "status": "OPEN"}
+            rich = {**legacy, "finding_id": "A-02", "cause": "trusts the body",
+                    "prevention": "schema check",
+                    "evidence": {"path": "src/api.py", "excerpt": "def create_user(payload):",
+                                 "fingerprint": "d" * 64, "line": 42, "located": True}}
+            bad_cause = {**rich, "finding_id": "A-03", "cause": "x" * 257}
+            bad_fingerprint = {**rich, "finding_id": "A-04", "evidence": {
+                **rich["evidence"], "fingerprint": "not-a-digest"}}
+            (state / "findings.jsonl").write_text("\n".join(
+                json.dumps(record, ensure_ascii=False)
+                for record in (legacy, rich, bad_cause, bad_fingerprint)) + "\n")
+            report = initialize_state(
+                state, {"schema_version": 1, "project_id": "p",
+                        "product_root": "Product",
+                        "state_root": "Product-workspace/mode-state"},
+                root / "archive")
+            active = [json.loads(line) for line in
+                      (state / "findings.jsonl").read_text().splitlines() if line.strip()]
+            self.assertEqual([record["finding_id"] for record in active], ["A-01", "A-02"])
+            self.assertEqual(active[1]["prevention"], "schema check")
+            dropped = report["dropped"][0]["dropped_records"]
+            self.assertTrue(any("A-03" in name for name in dropped))
+            self.assertTrue(any("A-04" in name for name in dropped))
+
     def test_complete_audit_observes_before_it_reads_the_queue(self):
         """D10: reading the state first is anchoring, not diligence.
 

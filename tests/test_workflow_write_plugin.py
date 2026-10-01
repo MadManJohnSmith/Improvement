@@ -887,6 +887,79 @@ class WorkflowWritePluginTest(unittest.TestCase):
                     outcome["written"],
                     f'{name} reached writeText: {outcome["onDisk"]!r}')
 
+    def test_fingerprint_identifies_the_code_not_the_wording(self):
+        """The same defect described twice has to be countable as one.
+
+        The dedupe key is `(finding_id, base_revision)`, so a re-audit that
+        describes the same line differently produces a second record and the
+        queue grows a duplicate. The fingerprint is computed from the quoted
+        code — path plus excerpt — never from the wording, and it is the tool
+        that computes it, so it cannot be reused to smuggle in a different
+        identity. `cause` and `prevention` are the other half of a rich
+        finding: why the defect exists and what would stop it coming back,
+        both bounded, both checked against the record cap at write time rather
+        than dropped by the next preflight.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-rich-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        (product / 'src').mkdir(parents=True)
+        (product / 'src' / 'api.py').write_text(
+            'def create_user(payload):\n    return payload\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            self._signed_plan(workspace, [], product=str(product)))
+
+        base = 'a' * 40
+        record = {'finding_id': 'A-01', 'base_revision': base, 'severity': 'HIGH',
+                  'summary': 'Missing validation', 'status': 'OPEN',
+                  'cause': 'The handler trusts the request body',
+                  'prevention': 'A schema check on the route',
+                  'evidence': {'path': 'src/api.py', 'excerpt': 'def create_user(payload):'}}
+        cases = {
+            "rich": json.dumps(record, ensure_ascii=False) + '\n',
+            "same_code_other_wording": json.dumps({
+                **{k: v for k, v in record.items() if k != 'summary'},
+                'summary': 'The endpoint accepts anything'}, ensure_ascii=False) + '\n',
+            "fingerprint_claimed": json.dumps({
+                **record, 'evidence': {**record['evidence'], 'fingerprint': 'e' * 64}},
+                ensure_ascii=False) + '\n',
+            "cause_too_long": json.dumps({**record, 'cause': 'x' * 257},
+                                         ensure_ascii=False) + '\n',
+            "record_over_cap": json.dumps({**record, 'summary': 'x' * 4_200},
+                                          ensure_ascii=False) + '\n',
+        }
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'rich-driver.mjs'
+        driver.write_text(ANCHOR_DRIVER.replace('PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run([node, driver.as_posix(), session.as_posix()],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        landed = json.loads(report["rich"]["onDisk"])
+        fingerprint = landed["evidence"]["fingerprint"]
+        self.assertRegex(fingerprint, r'^[0-9a-f]{64}$')
+        self.assertEqual(landed["cause"], record["cause"])
+        self.assertEqual(landed["prevention"], record["prevention"])
+        # Rewording the summary does not change what the code is.
+        self.assertEqual(
+            json.loads(report["same_code_other_wording"]["onDisk"])["evidence"]["fingerprint"],
+            fingerprint)
+        for name, expected in (("fingerprint_claimed", "los calcula la herramienta"),
+                               ("cause_too_long", "cause debe ser texto"),
+                               ("record_over_cap", "tope del registro")):
+            with self.subTest(case=name):
+                self.assertFalse(report[name]["ok"], report[name])
+                self.assertIn(expected, report[name]["error"])
+                self.assertFalse(report[name]["written"])
+
     def test_audit_handoff_must_name_every_open_finding_at_its_base(self):
         """A1: `persisted_count` was a claim about itself with nothing behind it.
 

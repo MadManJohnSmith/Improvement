@@ -1,5 +1,12 @@
 # Cambios
 
+## El hallazgo dice por qué existe y qué lo impediría — 2026-09-30
+- **`cause` y `prevention`**, cada una de 1 a 256 bytes: por qué existe el defecto y qué impediría que volviera. Es lo que convierte una lista de hallazgos en trabajo prevenible, y ambas están acotadas porque el registro entero vive en 4.096 B.
+- **`evidence.fingerprint` calculado sobre el código citado**, no sobre la redacción. La clave de deduplicación es `(finding_id, base_revision)`, así que una reauditoría que describe la misma línea con otras palabras generaba un segundo registro y la cola crecía con duplicados invisibles; ahora «mismo defecto, otras palabras» comparte fingerprint y se puede contar. Lo calcula la herramienta, que también rechaza que el modo lo escriba.
+- **El tope del registro se comprueba en el límite de escritura**, no en el preflight de la siguiente instalación: un registro que excede 4.096 B se rechazaba cuando ya no había nadie quecould corregirlo, y ahora el rechazo dice cuántos bytes ocupa y qué acortar.
+- Los tres campos son opcionales: la evidencia de las cuatro campañas sigue activándose sin cambios, con regresión propia para las dos mitades.
+- Suite: 623 OK (3 saltadas).
+
 ## Distinguir la auditoría completa de la incremental — 2026-09-30
 - **La plantilla ordenaba leer el estado antes de auditar**, que es justo lo contrario de lo que necesita una revisión completa: el modelo se ancla a la cola y vuelve a encontrar lo que la cola ya tenía. Una petición que nombra el proyecto entero ahora obliga a formar observaciones propias primero y a contrastar el diagnóstico persistido con ellas; una petición que nombra un flujo, una característica o un componente sigue partiendo del diagnóstico, que es lo correcto para una incremental.
 - El alcance se declara en la respuesta y viaja en el `handoff_id` (`audit-complete-<base8>-<n>` frente a `audit-<base8>-<n>`), y `bootstrap.py state` cuenta ambos. Sin eso la distinción era una frase del prompt, y una frase del prompt no se puede auditar a posteriori.
