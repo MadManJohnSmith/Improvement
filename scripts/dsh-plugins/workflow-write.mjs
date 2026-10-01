@@ -65,9 +65,13 @@ import { createHash } from 'node:crypto';
 export const inject = ['tools', 'fs', 'systemPrompt'];
 
 const MANAGED_RESULTS_SUFFIX = '/mode-state/verification-results.jsonl';
+const MANAGED_HANDOFFS_SUFFIX = '/mode-state/handoffs.jsonl';
 const PLAN_RELATIVE = '.dsh-managed/capability-plan.json';
 const PLAN_BYTE_LIMIT = 131072;
+const FINDINGS_BYTE_LIMIT = 262144;
 const STATE_DIR_NAME = 'mode-state';
+const AUDIT_NEXT_PROMPT = 'Repara los hallazgos de la auditoría; no publiques.';
+const REVISION = /^[0-9a-f]{40,64}$/u;
 const TRAVERSAL = /(?:^|\/)\.\.(?:\/|$)/u;
 
 function canonicalJson(value) {
@@ -208,6 +212,115 @@ async function validateManagedVerification(ctx, target, content, signal) {
     }
     if (commands.get(record.command) !== true && record.result !== 'BLOCKED') {
       throw new Error(`verification-result ${index} debe ser BLOCKED: falta capacidad del stack`);
+    }
+  }
+  // One record says what one entrypoint said. PASS and BLOCKED coexist for a
+  // finding — that is a partial result and the Host derives it — but PASS
+  // against FAIL on the same tree is a contradiction no rule could resolve
+  // afterwards, so it never reaches the state.
+  const decided = new Map();
+  lines.forEach((line, index) => {
+    const record = JSON.parse(line);
+    if (record.result === 'BLOCKED') return;
+    const key = `${record.finding_id}@${record.candidate_head}`;
+    if (decided.has(key) && decided.get(key) !== record.result) {
+      throw new Error(`verification-result ${index} contradice el veredicto de otro registro del mismo hallazgo`);
+    }
+    decided.set(key, record.result);
+  });
+}
+
+/**
+ * A handoff is the claim that the audit happened, so it is checked against the
+ * findings the state actually carries: every id it names must exist at the same
+ * base, and the audit handoff (the one carrying the exact contract next_prompt)
+ * must name every finding left OPEN at that base. Syncify is the case this
+ * closes — six consecutive findings had a work item and no repair handoff
+ * covering them, because nothing compared the two files before accepting the
+ * turn. Refusing the write keeps the unclaimed findings in the state instead of
+ * in a response nobody can re-derive.
+ */
+async function validateManagedHandoff(ctx, target, content, signal) {
+  if (typeof ctx.fs.processPath !== 'function' || typeof ctx.fs.readText !== 'function') return;
+  const rawTargetPath = await ctx.fs.processPath(target);
+  if (typeof rawTargetPath !== 'string') return;
+  const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!targetPath.endsWith(MANAGED_HANDOFFS_SUFFIX)) return;
+
+  const workspacePath = targetPath.slice(0, -MANAGED_HANDOFFS_SUFFIX.length);
+  const expectedTarget = await ctx.fs.resolve('mode-state/handoffs.jsonl', {
+    cwd: workspacePath, signal,
+  });
+  if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
+    throw new Error('handoffs target no coincide con el mode-state gestionado');
+  }
+  const findingsTarget = await ctx.fs.resolve('mode-state/findings.jsonl', {
+    cwd: workspacePath, signal,
+  });
+  let findingsText;
+  try {
+    findingsText = await ctx.fs.readText(findingsTarget, signal);
+  } catch {
+    findingsText = null;
+  }
+  if (typeof findingsText === 'string' && Buffer.byteLength(findingsText, 'utf8') > FINDINGS_BYTE_LIMIT) {
+    throw new Error('findings.jsonl del mode-state excede el límite gestionado');
+  }
+  const findings = [];
+  if (typeof findingsText === 'string') {
+    const lines = findingsText.split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      if (lines[index].trim() === '') continue;
+      let record;
+      try { record = JSON.parse(lines[index]); } catch {
+        throw new Error(`findings.jsonl:${index + 1} no es JSON`);
+      }
+      if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        throw new Error(`findings.jsonl:${index + 1} no es objeto`);
+      }
+      findings.push(record);
+    }
+  }
+
+  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
+  if (lines.length === 1 && lines[0] === '') return;
+  if (lines.some((line) => line.trim() === '')) throw new Error('handoffs contiene línea vacía');
+  for (let index = 0; index < lines.length; index++) {
+    let record;
+    try { record = JSON.parse(lines[index]); } catch { throw new Error(`handoff ${index} inválido`); }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error(`handoff ${index} inválido`);
+    }
+    const keys = Object.keys(record).sort();
+    const required = ['base_revision', 'finding_ids', 'handoff_id', 'next_prompt'];
+    if (keys.length !== required.length || keys.some((key, offset) => key !== required[offset])
+        || typeof record.handoff_id !== 'string' || record.handoff_id.length === 0
+        || typeof record.next_prompt !== 'string' || record.next_prompt.length === 0
+        || typeof record.base_revision !== 'string' || !REVISION.test(record.base_revision)
+        || !Array.isArray(record.finding_ids)
+        || record.finding_ids.some((id) => typeof id !== 'string' || id.length === 0)) {
+      throw new Error(`handoff ${index} no cumple el schema estricto`);
+    }
+    if (new Set(record.finding_ids).size !== record.finding_ids.length) {
+      throw new Error(`handoff ${index} repite finding_id`);
+    }
+    const persisted = new Set(findings.filter((finding) => (
+      finding.base_revision === record.base_revision
+      && typeof finding.finding_id === 'string')).map((finding) => finding.finding_id));
+    const missing = record.finding_ids.filter((id) => !persisted.has(id));
+    if (missing.length > 0) {
+      throw new Error(`handoff ${index} nombra hallazgos no persistidos en esa base: ${missing.join(',')}`);
+    }
+    if (record.next_prompt !== AUDIT_NEXT_PROMPT) continue;
+    const open = new Set(findings.filter((finding) => (
+      finding.base_revision === record.base_revision && finding.status === 'OPEN'
+      && typeof finding.finding_id === 'string')).map((finding) => finding.finding_id));
+    const uncovered = [...open].filter((id) => !record.finding_ids.includes(id)).sort();
+    const extraneous = record.finding_ids.filter((id) => !open.has(id)).sort();
+    if (uncovered.length > 0 || extraneous.length > 0) {
+      throw new Error(`handoff ${index} no cubre exactamente los hallazgos OPEN de la base`
+        + `${uncovered.length > 0 ? `; sin nombrar: ${uncovered.join(',')}` : ''}`
+        + `${extraneous.length > 0 ? `; no OPEN: ${extraneous.join(',')}` : ''}`);
     }
   }
 }
@@ -383,6 +496,7 @@ export function apply(ctx, config) {
       const stateRoot = await managedStateRoot(ctx, cwd, exec.signal);
       if (stateRoot) await assertStateWrite(ctx, target, stateRoot);
       await validateManagedVerification(ctx, target, args.content, exec.signal);
+      await validateManagedHandoff(ctx, target, args.content, exec.signal);
       const intent = await ctx.waterfall('fs/write-intent', target, exec, () => undefined);
       // Sin envoltura de error propia: los errores del backend ya traen el
       // marcador [sandbox: ...] cuando son denegaciones; envolver aquí cualquier

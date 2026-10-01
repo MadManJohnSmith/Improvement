@@ -1,11 +1,21 @@
 # Borrador: expansión de orquestación externa — specs EARS, kanban de worktrees e índice local
 
-**Estado:** BORRADOR de propuesta. Nada de este documento es decisión aceptada, implementación ni evidencia.
-**Fecha:** 2026-09-13
+**Estado:** RETOMADO por decisión del titular (2026-09-30) como **material de diseño de la unidad D11**, no como diseño vigente. Nada de este documento es arquitectura, implementación ni evidencia: la autoridad sigue siendo [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0.
+**Fecha:** 2026-09-13 (propuesta) · retomado el 2026-09-30
 **Subordinado a:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) (diseño normativo vigente, v3.0)
 **Origen:** análisis del mantenedor con ZCode sobre capacidades de herramientas agénticas de terceros (Factory/droid, Cursor, AWS Kiro, Vibe Kanban, Aider) y su encaje con el flujo existente.
 
-Este borrador no compite con la arquitectura normativa ni con [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md): propone qué capacidades de terceros valen la pena evaluar, cuáles se rechazan y cómo se mapearían sobre las piezas ya implementadas. Cualquier adopción pasa primero por las reglas habituales: decisión del mantenedor, actualización de la arquitectura y acreditación por separado.
+La decisión del 2026-09-30 no adopta este contenido: lo marca como punto de partida de
+D11 (paquete de memoria F5, RSI y disparador por commit, en «Deuda declarada» de
+[PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md)) y le fija una condición de decisión
+medible, la del propio borrador (F5, «Criterio de salida», más abajo): el ensayo de búsqueda
+de símbolos midiendo el coste de navegar el repositorio sin índice frente a con índice. Ese
+ensayo no se ha corrido, así
+que la memoria episódica sigue sin justificarse con evidencia. Lo que sí decide la retomada
+es que el trabajo ya no está aparcado: cada incremento pasa por arquitectura, regresión y
+`CHANGELOG.md` como cualquier otra unidad.
+
+Este documento no compite con la arquitectura normativa ni con [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md): propone qué capacidades de terceros valen la pena evaluar, cuáles se rechazan y cómo se mapearían sobre las piezas ya implementadas. Cualquier adopción pasa primero por las reglas habituales: decisión del mantenedor, actualización de la arquitectura y acreditación por separado.
 
 ## 1. Hechos de entorno sobre los que se apoya la propuesta
 

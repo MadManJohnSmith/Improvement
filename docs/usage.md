@@ -86,9 +86,23 @@ del código del producto sirven para investigar, no para verificar.
 El prompt simple no autoriza commit: el operador integra y después retira la candidata. Tras `git merge --ff-only <rama-dsh>` y `git push` en la rama canónica:
 
 1. Registrar `INTEGRATED` en `work-items.json.candidate` (solo el Host u el operador puede; los modos conservan el registro anterior y no lo borran).
-2. Retirar el worktree de esa candidata: `git worktree remove ../<Proyecto>-repair-<digest16>`, y su rama `git branch -D dsh/repair-<digest16>` cuando su tip esté fusionada. Solo si el worktree está limpio y su HEAD es ancestro de la rama canónica; una candidata sucia sin registro se conserva intacta (`unrecorded_dirty_target: RETAINED-never-adopted`, `unrelated_candidates: ignore-preserve`).
+2. Retirar el worktree de esa candidata: `python3 -B scripts/bootstrap.py state --project <ruta-del-producto> --retire`. El comando hace el `git worktree remove` y el `git branch -D` **solo** si comprueba que la candidata está `INTEGRATED`, que su cabeza está en la rama canónica, que el worktree registrado es el suyo y coincide con la registrada, y que está limpio; si algo falla, no borra nada y dice por qué. Es idempotente: repetirlo informa de que ya no hay worktree ni rama.
 
 El paso 2 no es cosmético: cada candidata puede acarrear decenas de GB de artefactos de compilación y varias rondas seguidas agotan el disco, lo que corta DSH a mitad de un turno. Comprobado en el piloto de Syncify, donde cuatro candidatas integradas sumaban unos 320 GB y el disco lleno tumbó dos turnos de Repair.
+
+### Cuando el estado y el repositorio dejan de contarse (operador)
+
+El mismo comando sin `--retire` ni `--repoint` es un informe, no modifica nada:
+
+```bash
+python3 -B scripts/bootstrap.py state --project <ruta-del-producto>
+```
+
+Nombra tres discrepancias que el estado por sí solo no puede ver:
+
+- la cabeza integrada que una reescritura de historia (`commit --amend`, `rebase`, push forzado) ya no dejó en la rama canónica, con `integrated_head_rewritten` y la revisión actual; para corregir el registro a mano, `--repoint <revisión>`, que solo acepta una revisión que git pruebe ancestro del HEAD canónico con el producto limpio y deja recibo en `overflows.jsonl`;
+- los hallazgos que el ledger sigue llamando `OPEN` aunque su work item sea `VERIFIED` (`closed_findings`): el hallazgo pasa a `RESOLVED` cuando una auditoría posterior observa el arreglo, así que entre ambas cosas la cola ofrece trabajo ya hecho;
+- los hallazgos `OPEN` que ningún handoff tomó nunca (`uncovered_findings`).
 
 ## Herramientas de mantenimiento (capa MVP)
 

@@ -329,6 +329,97 @@ for (const [name, spec] of Object.entries(cases)) {
 process.stdout.write(JSON.stringify(report));
 '''
 
+# Drives the real plugin against a managed session's handoffs.jsonl. The Python
+# side owns the findings bytes, so each case mutates one of the three inputs the
+# handoff claim rests on — a named finding that is not persisted, an OPEN finding
+# left out of the audit handoff, and the record shape — and the report says
+# whether the write actually reached the disk.
+HANDOFF_DRIVER = r'''
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content) => {
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content) {
+  const definition = makeCtx(root);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const cases = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const relative = 'Improvement-workspace/mode-state/handoffs.jsonl';
+const targetPath = path.join(session, relative);
+const findingsPath = path.join(session, 'Improvement-workspace', 'mode-state', 'findings.jsonl');
+const report = {};
+for (const [name, spec] of Object.entries(cases)) {
+  fs.writeFileSync(findingsPath, spec.findings);
+  fs.rmSync(targetPath, {force: true});
+  const outcome = await attempt(session, relative, spec.content);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    written: fs.existsSync(targetPath),
+    onDisk: fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : null};
+}
+process.stdout.write(JSON.stringify(report));
+'''
+
 
 class WorkflowWritePluginTest(unittest.TestCase):
     def _signed_plan(self, workspace, stacks):
@@ -430,6 +521,8 @@ class WorkflowWritePluginTest(unittest.TestCase):
             "unsigned": {"plan": json.dumps(
                 {k: v for k, v in body.items() if k != "plan_sha256"}) + "\n",
                 "content": json.dumps(record) + "\n"},
+            "contradiction": {"plan": signed, "content": json.dumps(record) + "\n" + json.dumps(
+                dict(record, command=entrypoint, result="FAIL")) + "\n"},
         }
         (session / 'fixture.json').write_text(json.dumps(cases))
         driver = root / 'plan-driver.mjs'
@@ -447,7 +540,8 @@ class WorkflowWritePluginTest(unittest.TestCase):
         for name, expected in (("command", "comando ajeno"),
                                ("availability", "debe ser BLOCKED"),
                                ("digest", "capability-plan alterado"),
-                               ("unsigned", "capability-plan alterado")):
+                               ("unsigned", "capability-plan alterado"),
+                               ("contradiction", "contradice")):
             with self.subTest(case=name):
                 outcome = report[name]
                 self.assertFalse(outcome["ok"], outcome)
@@ -455,6 +549,97 @@ class WorkflowWritePluginTest(unittest.TestCase):
                 self.assertFalse(
                     outcome["written"],
                     f'{name} reached writeText: {outcome["onDisk"]!r}')
+
+    def test_audit_handoff_must_name_every_open_finding_at_its_base(self):
+        """A1: `persisted_count` was a claim about itself with nothing behind it.
+
+        The contract asks the auditor to report how much it persisted, but
+        nothing compared that number with `findings.jsonl`: a turn that
+        persisted nothing could still answer with a count. Syncify is the case
+        that motivated this — six consecutive findings had a work item and no
+        repair handoff covering them. The tool now refuses, before writeText, a
+        handoff that names an unpersisted finding or omits one the state leaves
+        OPEN at the same base.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-handoff-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        (session / 'Improvement' / 'scripts').mkdir(parents=True)
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            json.dumps({'version': 1, 'workspace': str(workspace), 'stacks': []}))
+        (workspace / 'mode-state').mkdir()
+
+        base = 'a' * 40
+        other = 'b' * 40
+        prompt = 'Repara los hallazgos de la auditoría; no publiques.'
+        repair_prompt = 'Repara A-01; no publiques.'
+        findings = ''.join(json.dumps(record, ensure_ascii=False) + '\n' for record in (
+            {"finding_id": "A-01", "base_revision": base, "severity": "HIGH",
+             "summary": "Missing validation", "status": "OPEN"},
+            {"finding_id": "A-02", "base_revision": base, "severity": "LOW",
+             "summary": "Stale doc", "status": "OPEN"},
+            {"finding_id": "A-03", "base_revision": base, "severity": "MEDIUM",
+             "summary": "Already fixed", "status": "RESOLVED"},
+            {"finding_id": "B-01", "base_revision": other, "severity": "HIGH",
+             "summary": "Other base", "status": "OPEN"},
+        ))
+
+        def handoff(ids, base_revision=base, next_prompt=prompt, **extra):
+            return json.dumps(dict({
+                "handoff_id": "audit-1", "base_revision": base_revision,
+                "finding_ids": ids, "next_prompt": next_prompt}, **extra),
+                ensure_ascii=False) + '\n'
+
+        cases = {
+            "complete": {"findings": findings,
+                         "content": handoff(["A-01", "A-02"])},
+            "uncovered": {"findings": findings,
+                          "content": handoff(["A-01"])},
+            "unpersisted": {"findings": findings,
+                            "content": handoff(["A-01", "A-02", "A-03"])},
+            "other_base": {"findings": findings,
+                           "content": handoff([], base_revision=other)},
+            "extra_field": {"findings": findings,
+                            "content": handoff(["A-01", "A-02"], path="/abs/candidate")},
+            "repair_partial": {"findings": findings,
+                               "content": handoff(["A-01"], next_prompt=repair_prompt)},
+        }
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'handoff-driver.mjs'
+        driver.write_text(HANDOFF_DRIVER.replace(
+            'PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run(
+            [node, driver.as_posix(), session.as_posix()],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        self.assertTrue(report["complete"]["ok"], report["complete"])
+        self.assertTrue(report["complete"]["written"], report["complete"])
+        for name, expected in (("uncovered", "sin nombrar: A-02"),
+                               ("unpersisted", "no OPEN: A-03"),
+                               ("extra_field", "schema estricto")):
+            with self.subTest(case=name):
+                outcome = report[name]
+                self.assertFalse(outcome["ok"], outcome)
+                self.assertIn(expected, outcome["error"])
+                self.assertFalse(
+                    outcome["written"],
+                    f'{name} reached writeText: {outcome["onDisk"]!r}')
+        # A repair handoff names the findings it took, not the whole open set:
+        # the coverage rule is the audit claim, and refusing partial repair
+        # would strand every candidate that cannot close the queue at once.
+        self.assertTrue(report["repair_partial"]["ok"], report["repair_partial"])
+        # Coverage is scoped to the handoff's own base: an audit that declares
+        # another revision must answer for that revision's open set, not the
+        # one it audited a moment ago.
+        self.assertFalse(report["other_base"]["ok"], report["other_base"])
+        self.assertIn("sin nombrar: B-01", report["other_base"]["error"])
 
     def test_same_mode_escalation_writes_and_outside_denied(self):
         runtime = __import__('os').environ.get('DSH_MODULE_ROOT')

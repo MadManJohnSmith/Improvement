@@ -24,7 +24,7 @@ Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pi
 
 | # | Puerta | Contenido | Estado |
 |---|---|---|---|
-| G0 | Licencia | Elegir y añadir `LICENSE` (recomendación: MIT o Apache-2.0; decisión del titular) y reflejarla en el README. Sin esto el repo no debe anunciarse como instalable. | PENDIENTE |
+| G0 | Licencia | Elegir y añadir `LICENSE` (recomendación: MIT o Apache-2.0; decisión del titular) y reflejarla en el README. Sin esto el repo no debe anunciarse como instalable. | HECHO 2026-09-30 (Apache-2.0) |
 | G1 | Contrato de candidata | El `recording_command` emite el objeto JSON exacto a persistir; la persona prohíbe añadir campos; el preflight informa de lo que descarta (no solo lo archiva). Regresión con el caso RehabWeb (campos extra + ruta absoluta). | HECHO 2026-09-29 |
 | G2 | decisions + metrics al ciclo | Llamar al ledger de métricas y al almacén de decisiones al cierre de turno en `host_controller.py` (el hook ya existe: transiciones y UNIT_DONE/UNIT_RETAINED). Regresión con la regresión existente de ambos módulos. | HECHO 2026-09-29 |
 | G3 | Compactación con recibo | El desbordamiento de runtime deja recibo (patrón del archivo legacy, `dropped_records` incluido) en lugar de perder registros sin traza. Caso Syncify: 50/50 handoffs. | HECHO 2026-09-29 |

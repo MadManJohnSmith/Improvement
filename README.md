@@ -204,10 +204,9 @@ Esto se lanza para testeo. Lo que ya está probado: instalación de principio a 
 intervención, desde un clon de GitHub y sin contaminación previa; el ciclo
 auditor→reparador→integración en tres campañas reales; verificación ejecutada contra el
 entrypoint real del producto (Flutter y Django, sin stubs) con la evidencia persistida y
-validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo. Lo que
-falta para la versión estable está en el
-[plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): elegir licencia (G0) y la
-etiqueta de la beta (G6).
+validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo. Licencia
+Apache-2.0 elegida (G0). Lo que queda para la versión estable está en el
+[plan de lanzamiento](docs/plans/10-lanzamiento-publico.md): la etiqueta de la beta (G6).
 
 **Para reportar tu experiencia**, comparte tu `mode-state` (`findings.jsonl`,
 `handoffs.jsonl`, `verification-results.jsonl` — sin código de tu producto), los turnos
@@ -226,5 +225,5 @@ formato que el framework ya produce.
 
 ## Licencia
 
-Sin definir todavía: es decisión del titular y es la puerta G0 del plan de lanzamiento.
-Un repositorio accesible no concede por sí solo una licencia abierta.
+Apache-2.0 ([LICENSE](LICENSE)). Las skills de terceros y sus atribuciones están en
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

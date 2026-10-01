@@ -1,6 +1,6 @@
 # Plan de implementación y progreso
 
-**Estado:** C0–C7 conservan verificación histórica; hardening y lifecycle operativo `IMPLEMENTED_NOT_VERIFIED`/`EN CURSO` hasta nuevo piloto DSH real (ver «Post-C7»).
+**Estado:** C0–C7, P1–P11 y las unidades de endurecimiento de los pilotos conservan verificación con evidencia recuperable; el trabajo abierto está en «Deuda declarada» y en las puertas G0–G6 del [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md).
 **Actualización:** 2026-09-27
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
@@ -58,10 +58,30 @@ Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en
 | P7 | Aceptación Host aislada del Creator | HECHO | harness del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa, actores correlacionados con turnos DSH reales |
 | P8 | Instalación de modos como presets DSH | HECHO | bundle de declaraciones `@deepseek-ai/dsh-agent-preset` instalado por `pluginManager/installBundle`, con roster verificado vía `agentPresets/list`; `READY_FOR_INSTALL` determinista antes de `ACTIVE` |
 | P9 | Gate operativo y ruta real de skills | HECHO | cada modo exige persona+bash+fs+fs-search (`sampleOverCapGlobResults: false`)+skill-filesystem+tool-skill y rechaza delegación/workflow/web/plugin-manager; frontmatter mínimo validado; bundle copia skills/recursos y skills de modo, con root local exclusivo y recibo de ambos presets |
-| P10 | Piloto tardis (Syncify) con DSH real | EN CURSO | cada salida del piloto produce cambio de flujo y regresión; paquete aceptado de extremo a extremo pendiente |
-| P11 | Handoff durable y reparación acotada | EN CURSO / IMPLEMENTED_NOT_VERIFIED | bootstrap exacto de skill, schemas/caps y migración preflight, candidato determinista, commit no implícito e invariantes canónicas implementados con regresiones; falta piloto DSH real y sigue sin existir confinamiento mecánico de bash ni CAS/lease multiarchivo |
+| P10 | Piloto tardis (Syncify) con DSH real | HECHO | 77 hallazgos distintos (114 registros) atendidos por los modos con handoff y verificación; integración solo por commit/fast-forward/push del operador y CI verde en 3 jobs en `b9413eb`. El registro de cierre declara D-01..D-04 como alcance condicionado (SoundCloud/Apple Music dependen de credenciales del propietario), no como trabajo pendiente |
+| P11 | Handoff durable y reparación acotada | HECHO | bootstrap exacto de skill, schemas/caps, migración preflight por digest, candidato determinista registrada antes del primer cambio, commit no implícito e invariantes canónicas, con regresiones. Ejercitado con DSH real en tres campañas posteriores (RehabWeb, LoboApp y el self-test del framework). Dos límites siguen sin implementar y son deuda declarada, no parte de esta unidad: el confinamiento mecánico de bash y el CAS/lease multiarchivo |
 
 Suite de regresión vigente: ver último registro en `CHANGELOG.md`; la suite completa corre en verde antes de cada cierre de unidad.
+
+## Deuda declarada
+
+Trabajo abierto con evidencia detrás, no sobre el papel. Cada línea es una unidad
+pendiente con su criterio de cierre; ninguna está implícita en otro estado `HECHO`.
+
+| ID | Qué falta | Estado | Cierre |
+|---|---|---|---|
+| D1 | CAS/lease o escritura atómica multiarchivo de `mode-state` | PENDIENTE | Escritura completa de una sesión gestionada que no pueda quedar a medias ante concurrencia, con regresión de interrupción |
+| D2 | Confinamiento mecánico de bash del auditor | PENDIENTE | Hoy la frontera la impone la herramienta de escritura, no un sandbox; cerrarlo es una decisión de diseño, no un parche |
+| D3 | Gate de reconteo `persisted_count` contra el fichero | HECHO 2026-09-30 | `count_command` central que recalcula el conjunto abierto desde el fichero e imprime el número; el handoff debe cubrir exactamente ese conjunto y `workflow_write` lo rechaza si no |
+| D4 | Aviso y re-apuntado asistidos ante reescritura de commits tras integrar | HECHO 2026-09-30 | `bootstrap.py state` lo detecta (`integrated_head_rewritten`) y `--repoint` solo acepta revisión ancestro del HEAD canónico con producto limpio, con recibo en `overflows.jsonl` |
+| D5 | Retirada de candidata como mecanismo verificado, no procedimiento | HECHO 2026-09-30 | `bootstrap.py state --retire` verifica condición por condición y es idempotente; el procedimiento manual de `docs/usage.md` queda como explicación, no como paso |
+| D6 | Enum de `verification-results`: `PARTIAL` entra o se exige enum cerrado con N/A justificado | DECIDIDO 2026-09-30 | El enum sigue cerrado y `PARTIAL` pasa a ser veredicto **derivado** por hallazgo (peor resultado gana: FAIL > BLOCKED > PASS), con un registro por entrypoint; `REPAIRED` no entra |
+| D7 | Hallazgo rico (fingerprint, causa, prevención de recurrencia) en `mode-state` | PENDIENTE | El registro sigue con cinco campos; hay que decidir antes cómo convive con el cap de 4.096 B |
+| D8 | Vista derivada de hallazgos cerrados por work item VERIFIED | HECHO 2026-09-30 | `bootstrap.py state` nombra `closed_findings` y `uncovered_findings` sin reescribir el ledger |
+| D9 | Directorio de evidencia fuera de `mode-state` para parches y logs grandes | PENDIENTE | Un parche de 4,0 MB y un log de 5,8 MB acabaron archivados como evidencia inesperada |
+| D10 | Plantilla que distinga auditoría completa de incremental (anti-anclaje) | PENDIENTE | Hoy la plantilla ordena leer el estado antes de auditar |
+| D11 | Paquete de memoria F5, RSI y disparador por commit | PENDIENTE | Retomados por decisión del titular; el diseño de partida es `docs/external-orchestration-draft.md` |
+| D12 | Publicación de la beta (tag y push) | BLOQUEADO | G6 requiere autorización de destino |
 
 ## Dependencias
 

@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import mode_lifecycle
-from mode_lifecycle import (BYTE_LIMITS, LEGACY_FILE_BYTE_LIMIT,
+from mode_lifecycle import (AUDIT_NEXT_PROMPT, BYTE_LIMITS,
+                            LEGACY_FILE_BYTE_LIMIT,
                             LEGACY_TOTAL_BYTE_LIMIT, LIMITS, RECORD_BYTE_LIMIT,
-                            compact_records, initialize_state,
+                            audit_count_command, compact_records, initialize_state,
                             repair_candidate_diff_command,
                             repair_provision_command, repair_reconcile_command,
                             repair_recording_command, repair_resume_command,
@@ -78,6 +79,72 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stdout.splitlines(), [
                 str(session), mode_lifecycle.SUCCESS_SENTINEL])
+
+    def test_audit_count_command_derives_the_count_from_the_state(self):
+        """`persisted_count` is copied from the file, never from memory.
+
+        The count the auditor reports is the only number a reader has to decide
+        whether a turn did anything, so the command has to derive it from what
+        landed and refuse when the handoff and the findings disagree. The three
+        refusals are the ones a turn actually hits: an OPEN finding nobody
+        handed off, no audit handoff at all, and a handoff for another base.
+        """
+        layout = {"session_root": "Syncify", "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace",
+                  "state_root": "Syncify-workspace/mode-state"}
+        base = "a" * 40
+        command = audit_count_command(layout).replace("<base-revision>", base)
+        self.assertEqual(_placeholders(command), set())
+
+        def write(name, records):
+            path = Path(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n"
+                                   for record in records), encoding="utf-8")
+
+        def finding(finding_id, status="OPEN", revision=base):
+            return {"finding_id": finding_id, "base_revision": revision,
+                    "severity": "HIGH", "summary": "Missing validation",
+                    "status": status}
+
+        def handoff(ids, revision=base, prompt=AUDIT_NEXT_PROMPT):
+            return {"handoff_id": "audit-1", "base_revision": revision,
+                    "finding_ids": ids, "next_prompt": prompt}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session = Path(tmp) / "Syncify"
+            state = session / "Syncify-workspace" / "mode-state"
+            state.mkdir(parents=True)
+            run = lambda: subprocess.run(command, cwd=session, shell=True,
+                                         capture_output=True, text=True)
+
+            write(state / "findings.jsonl", [finding("A-01"), finding("A-02"),
+                                             finding("A-03", status="RESOLVED")])
+            write(state / "handoffs.jsonl", [handoff(["A-01", "A-02"])])
+            complete = run()
+            self.assertEqual(complete.returncode, 0, complete.stderr)
+            self.assertEqual(complete.stdout.splitlines(), [
+                "__IMPROVEMENT_AUDIT_COUNT__ 2",
+                "__IMPROVEMENT_AUDIT_IDS__ A-01 A-02"])
+
+            write(state / "findings.jsonl", [finding("A-01"), finding("A-02"),
+                                             finding("A-03", status="RESOLVED"),
+                                             finding("A-04")])
+            uncovered = run()
+            self.assertNotEqual(uncovered.returncode, 0)
+            self.assertNotIn("__IMPROVEMENT_AUDIT_COUNT__", uncovered.stdout)
+
+            write(state / "handoffs.jsonl", [])
+            missing_handoff = run()
+            self.assertNotEqual(missing_handoff.returncode, 0)
+            self.assertNotIn("__IMPROVEMENT_AUDIT_COUNT__", missing_handoff.stdout)
+
+            write(state / "findings.jsonl", [finding("A-01"), finding("A-02"),
+                                             finding("A-03", status="RESOLVED")])
+            write(state / "handoffs.jsonl", [handoff(["A-01"], revision="b" * 40)])
+            other_base = run()
+            self.assertNotEqual(other_base.returncode, 0)
+            self.assertNotIn("__IMPROVEMENT_AUDIT_COUNT__", other_base.stdout)
 
     def test_auditor_expected_lifecycle_keeps_session_cwd_for_all_bash_calls(self):
         layout = {"session_root": "parent", "product_root": "Syncify",

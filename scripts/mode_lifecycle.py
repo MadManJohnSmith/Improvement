@@ -252,6 +252,60 @@ def repair_resume_command(layout):
         "printf '__IMPROVEMENT_DIRTY_RESUME_OK__\\n'")
 
 
+AUDIT_NEXT_PROMPT = "Repara los hallazgos de la auditoría; no publiques."
+
+_AUDIT_COUNT_SCRIPT = r'''import json,os,sys
+root,base,prompt=sys.argv[1],sys.argv[2],sys.argv[3]
+def load(name):
+    path=os.path.join(root,name)
+    if not os.path.isfile(path): return []
+    records=[]
+    with open(path,encoding="utf-8") as stream:
+        for number,line in enumerate(stream,1):
+            if not line.strip(): continue
+            try: record=json.loads(line)
+            except ValueError: raise SystemExit("%s:%d no es JSON"%(name,number))
+            if not isinstance(record,dict): raise SystemExit("%s:%d no es objeto"%(name,number))
+            records.append(record)
+    return records
+findings=load("findings.jsonl")
+handoffs=[r for r in load("handoffs.jsonl")
+          if r.get("base_revision")==base and r.get("next_prompt")==prompt]
+if not handoffs:
+    raise SystemExit("no hay handoff de auditoria para la base declarada")
+named=set()
+for record in handoffs:
+    named.update(record.get("finding_ids") or [])
+pending=sorted({r["finding_id"] for r in findings
+                if r.get("base_revision")==base and r.get("status")=="OPEN"
+                and isinstance(r.get("finding_id"),str)})
+if named!=set(pending):
+    raise SystemExit("el handoff no cubre exactamente los hallazgos OPEN de la base: %s"
+                     % ",".join(sorted(named.symmetric_difference(pending))))
+sys.stdout.write("__IMPROVEMENT_AUDIT_COUNT__ %d\n__IMPROVEMENT_AUDIT_IDS__ %s\n"
+                 % (len(pending)," ".join(pending)))
+'''
+
+
+def audit_count_command(layout):
+    """Return the exact command that derives the audited count from the state.
+
+    `persisted_count` is a contract final field, but a field a mode reports about
+    itself is a claim: the Syncify state kept a full 50 handoffs and the three
+    RehabWeb turns that ended silently left nothing to count. This command reads
+    what actually landed — the OPEN findings at the declared base and the audit
+    handoffs that name them — and refuses to print unless the handoff covers
+    exactly that set, so the number in the final response is copied from the
+    file instead of remembered. A mode that persisted nothing cannot produce a
+    count to report.
+    """
+    encoded = base64.b64encode(_AUDIT_COUNT_SCRIPT.encode()).decode()
+    return (
+        "set -eu; base='<base-revision>'; python3 -B -c 'import base64;exec(base64.b64decode(\"" +
+        encoded + "\"))' '" + layout["state_root"] + "/' \"$base\" '" +
+        AUDIT_NEXT_PROMPT + "'")
+
+
 def persona_prefix(preset_id, role=None):
     role = role or ("auditor" if preset_id.endswith("-auditor") else "continuous-repair")
     bootstrap = (f"First-party Improvement preset contract: your first action MUST call the skill "
@@ -276,7 +330,24 @@ def persona_prefix(preset_id, role=None):
             "another workdir MUST be rewritten before invocation to target the product with "
             "git -C, npm --prefix, cargo --manifest-path, or an equivalent command option; never "
             "use cd or a subdirectory workdir. Any accidental workdir override or pwd drift is "
-            "immediately RETAINED with no retry or further action.")
+            "immediately RETAINED with no retry or further action. "
+            "Persist in the declared order (persist_order): findings.jsonl first, then "
+            "handoffs.jsonl, then work-items.json. The audit handoff MUST name every finding "
+            "that findings.jsonl leaves OPEN at that same base_revision, and no other: "
+            "workflow_write refuses a handoff that omits one or names a finding that is not "
+            "persisted (handoff_coverage: audit-handoff-names-every-open-finding-at-its-base-"
+            "revision), so a finding cannot be reported as handed off while sitting unclaimed in "
+            "the state, and a previous audit's open findings are either repaired or resolved with "
+            "evidence, never silently dropped from the queue. "
+            "persisted_count is not a number you remember. After persisting, run the exact "
+            "centrally generated count_command with the declared base substituted in its "
+            "<base-revision> placeholder; it recomputes the open set from findings.jsonl, verifies "
+            "the handoff covers exactly it, and prints __IMPROVEMENT_AUDIT_COUNT__ with the exact "
+            "number and __IMPROVEMENT_AUDIT_IDS__ with the ids. Report that printed number "
+            "verbatim as persisted_count, with the persisted path and the exact next_prompt. If "
+            "the command fails, it means the state does not say what the response would claim: fix "
+            "the persistence and re-run it, or report RETAINED. Never report a count the command "
+            "did not print.")
     if role == "continuous-repair":
         return bootstrap + (
             "Verify the candidate with the product's own entrypoint listed in the capability "
@@ -302,6 +373,15 @@ def persona_prefix(preset_id, role=None):
             "capability is still missing, record "
             "BLOCKED naming the exact capability and its provision step; never PASS, never FAIL, "
             "and never substitute a stub. "
+            "The plan can name more than one entrypoint for a stack, so a finding is verified "
+            "by more than one command: write one record per entrypoint it actually ran, each "
+            "with that entrypoint's own result, and never write PARTIAL or REPAIRED as a result "
+            "(verdict_per_entrypoint: PASS-FAIL-BLOCKED-only-no-partial-value). A mixed result "
+            "is real and has a name — it is partial — but the name is derived from the records "
+            "(derived_verdict: worst-result-per-finding-and-candidate-partial-is-derived-not-"
+            "written): a finding counts as verified only when every entrypoint that could run "
+            "said PASS, and two records that say PASS and FAIL about the same finding on the "
+            "same tree are refused as a contradiction, not resolved in your favour. "
             "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
             "Before provisioning, if that declared base differs from the current canonical product "
             "HEAD, require the canonical product clean and pass the declared base as the "
@@ -389,6 +469,8 @@ def expected_lifecycle(role, layout):
             "install_inside_product": "only-when-plan-marks-path-gitignored",
             "sandbox_readonly_sdk": "run-plan-materialize_step-then-use-the-copy-the-plan-names",
             "verification_identity": "candidate-diff-digest-must-match-work-items",
+            "verdict_per_entrypoint": "PASS-FAIL-BLOCKED-only-no-partial-value",
+            "derived_verdict": "worst-result-per-finding-and-candidate-partial-is-derived-not-written",
         },
         "startup": {
             "startup_workdir": "session-cwd-only",
@@ -422,8 +504,12 @@ def expected_lifecycle(role, layout):
             "dedupe_key": ["finding_id", "base_revision"],
             "writes": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
             "candidate_state": "preserve-existing",
+            "persist_order": ["findings.jsonl", "handoffs.jsonl", "work-items.json"],
             "final_fields": ["persisted_path", "persisted_count", "next_prompt"],
-            "next_prompt": "Repara los hallazgos de la auditoría; no publiques.",
+            "persisted_count": "copy-the-number-the-count-command-prints",
+            "count_command": audit_count_command(layout),
+            "handoff_coverage": "audit-handoff-names-every-open-finding-at-its-base-revision",
+            "next_prompt": AUDIT_NEXT_PROMPT,
         }
     elif role == "continuous-repair":
         common["tool_policy"]["bash"] = "code-changes-require-workdir-exact-candidate"
@@ -634,7 +720,7 @@ def state_schema():
                     "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["PROVISIONED", "DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
                     "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
-                "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head"],
+                "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head", "command"],
                 "record": _record_schema(["finding_id", "candidate_head", "candidate_diff_digest", "result", "command"],
                     {"finding_id": text, "candidate_head": revision, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result": {"enum": ["PASS", "FAIL", "BLOCKED"]}, "command": text},
                     {"finding_id": "A-01", "candidate_head": "a" * 40, "candidate_diff_digest": "b" * 64, "result": "PASS", "command": "pytest"})},

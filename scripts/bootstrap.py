@@ -30,6 +30,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from onboard import checked, framework_clean, prepare_project_skills
+import state_reconcile
 
 SCHEMA_VERSION = 1
 RUN_DIR_NAME = "creator-runs"
@@ -1401,6 +1402,18 @@ def main():
     p_purge.add_argument("--confirm", action="store_true",
                          help="Confirmar la eliminación destructiva")
 
+    # state
+    p_state = sub.add_parser(
+        "state",
+        help="Reconciliar el mode-state con el repositorio real (informe, "
+             "re-apuntado de cabeza integrada, retirada de candidata)")
+    p_state.add_argument("--project", required=True)
+    p_state.add_argument("--workspace", default=None)
+    p_state.add_argument("--retire", action="store_true",
+                         help="Retirar la candidata INTEGRATED verificada")
+    p_state.add_argument("--repoint", default=None,
+                         help="Revisión ya integrada a la que re-apuntar el registro")
+
     args = parser.parse_args()
 
     try:
@@ -1472,6 +1485,23 @@ def main():
                 Path(args.workspace).resolve(),
                 confirm=args.confirm,
             )
+
+        elif args.command == "state":
+            project = Path(args.project).resolve()
+            workspace = (
+                Path(args.workspace).resolve() if args.workspace
+                else project.parent / f"{project.name}-workspace"
+            )
+            performed = []
+            if args.repoint:
+                performed.append(state_reconcile.repoint(
+                    project, workspace, args.repoint))
+            if args.retire:
+                performed.append(state_reconcile.retire(project, workspace))
+            result = {"result": "RESOLVED",
+                      "reconciled": state_reconcile.reconcile(project, workspace)}
+            if performed:
+                result["performed"] = performed
 
         print(json.dumps(result, ensure_ascii=False, indent=2))
 

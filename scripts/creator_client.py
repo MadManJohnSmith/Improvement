@@ -418,12 +418,18 @@ registro que sale del estado sin recibo es una pérdida sin traza.
 
 Auditor debe incluir `audit_handoff` con `required_before_final: true`, dedupe
 `["finding_id","base_revision"]`, writes `findings.jsonl`, `handoffs.jsonl`,
-`work-items.json`, final_fields `persisted_path`, `persisted_count`, `next_prompt` y
-next_prompt exacto `Repara los hallazgos de la auditoría; no publiques.`. Su
+`work-items.json`, persist_order `["findings.jsonl","handoffs.jsonl","work-items.json"]`,
+final_fields `persisted_path`, `persisted_count`, `next_prompt`, la regla
+`persisted_count: copy-the-number-the-count-command-prints` con su `count_command`
+central, `handoff_coverage: audit-handoff-names-every-open-finding-at-its-base-revision`
+y next_prompt exacto `Repara los hallazgos de la auditoría; no publiques.`. Su
 procedimiento lee primero el estado actual, deduplica por finding/base, conserva
 solo los 200 hallazgos y 50 handoffs más recientes, y reemplaza cada archivo
-completo con `workflow_write`; no responde finalmente hasta persistir y reportar
-ruta/conteo. Debe funcionar con `Audita completamente este proyecto; no modifiques
+completo con `workflow_write` en el orden declarado; el handoff de auditoría nombra
+exactamente los hallazgos que `findings.jsonl` deja OPEN en esa misma base, y el
+conteo reportado es el que imprime el `count_command` (que recalcula el conjunto
+abierto desde el fichero y verifica la cobertura del handoff), nunca un número
+recordado. Debe funcionar con `Audita completamente este proyecto; no modifiques
 ni publiques.`.
 
 Ambos lifecycle incluyen `startup` con el comando inicial exacto y `tool_policy` con

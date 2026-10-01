@@ -307,6 +307,71 @@ class StackPlanTests(unittest.TestCase):
                 stack.validate_verification_results(
                     value, [{**record, 'result': 'FAIL'}])
 
+    def test_partial_is_derived_per_finding_never_written(self):
+        """A9: `PARTIAL` and `REPAIRED` existed in practice, outside the enum.
+
+        RehabWeb persisted both against the contract, and the enum had no
+        honest name for the real case — tests passed, lint could not run
+        because the capability is missing. The fix is not a wider enum: each
+        entrypoint keeps its own closed result, and the finding-level verdict
+        is derived, worst result wins. So the enum cannot be softened to excuse
+        a capable stack, and a contradiction between two records is refused
+        instead of being resolved in the mode's favour.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'go.mod': 'module x\n'})
+            fake = root / 'bin'
+            fake.mkdir()
+            for name, body in (('go', '#!/bin/sh\nexit 0\n'), ('gofmt', '#!/bin/sh\nexit 1\n')):
+                tool = fake / name
+                tool.write_text(body)
+                tool.chmod(0o755)
+            value = stack.plan(product, workspace=root / 'ws',
+                               env={'PATH': str(fake), 'HOME': str(root)})
+            entry, = value['stacks']
+            verify = json.dumps(entry['verify_command'], separators=(',', ':'))
+            lint = json.dumps(entry['lint_command'], separators=(',', ':'))
+            self.assertNotEqual(verify, lint)
+
+            def record(command, result, finding='A-01'):
+                return {'finding_id': finding, 'candidate_head': 'a' * 40,
+                        'candidate_diff_digest': 'b' * 64,
+                        'result': result, 'command': command}
+
+            # The mode writes one result per entrypoint it actually ran, and the
+            # finding-level verdict is what those records add up to.
+            records = [record(verify, 'FAIL'), record(lint, 'BLOCKED')]
+            stack.validate_verification_results(value, records)
+            self.assertEqual(
+                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'FAIL'})
+
+            # A missing capability is BLOCKED on its own entrypoint while the
+            # one that ran still says PASS: that group is partial, and the
+            # derivation says so without anyone writing the word.
+            records = [record(verify, 'PASS'), record(lint, 'BLOCKED')]
+            stack.validate_verification_results(value, records)
+            self.assertEqual(
+                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'BLOCKED'})
+
+            records = [record(verify, 'PASS')]
+            stack.validate_verification_results(value, records)
+            self.assertEqual(
+                stack.derived_verdicts(records), {('A-01', 'a' * 40): 'PASS'})
+
+            with self.assertRaisesRegex(ValueError, 'veredicto inválido'):
+                stack.validate_verification_results(
+                    value, [record(verify, 'PARTIAL')])
+            with self.assertRaisesRegex(ValueError, 'veredicto inválido'):
+                stack.validate_verification_results(
+                    value, [record(verify, 'REPAIRED')])
+            with self.assertRaisesRegex(ValueError, 'contradice'):
+                stack.validate_verification_results(
+                    value, [record(verify, 'PASS'), record(lint, 'FAIL')])
+            self.assertEqual(
+                stack.derived_verdicts([record(verify, 'PASS', 'A-02')]),
+                {('A-02', 'a' * 40): 'PASS'})
+
     def test_ready_stack_accepts_pass_or_fail_from_real_entrypoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

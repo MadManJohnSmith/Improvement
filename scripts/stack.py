@@ -611,7 +611,42 @@ def validate_verification_results(value, records, candidate=None):
                     and record['candidate_head'] != expected_head):
                 raise ValueError(
                     f'Resultado {index} nombra una revisión ajena al candidato verificado')
+    # One record states what one entrypoint said. PASS and BLOCKED coexist for a
+    # finding — that is the derived PARTIAL, and the group verdict below names
+    # it — but PASS against FAIL on the same tree has no honest reading, and no
+    # rule could pick the winner afterwards.
+    decided = {}
+    for index, record in enumerate(records):
+        if record['result'] == 'BLOCKED':
+            continue
+        key = (record['finding_id'], record['candidate_head'])
+        if decided.setdefault(key, record['result']) != record['result']:
+            raise ValueError(
+                f'Resultado {index} contradice el veredicto de otro registro del mismo hallazgo')
     return records
+
+
+def derived_verdicts(records):
+    """Verdict per (finding, candidate tree) from the records that tree produced.
+
+    A plan names a test command and, when it has one, a lint command, so a
+    finding is verified by more than one entrypoint. `PARTIAL` is the honest
+    name for "tests passed, lint could not run" and it is *derived*, never
+    written: the persisted enum stays closed at PASS/FAIL/BLOCKED, one value per
+    entrypoint, and a mode cannot soften a fully capable stack by declaring a
+    mixed state. The worse result wins — FAIL over BLOCKED over PASS — because a
+    finding is verified only when every entrypoint that could run said PASS.
+    """
+    verdicts = {}
+    for record in records or []:
+        key = (record['finding_id'], record['candidate_head'])
+        current = verdicts.get(key)
+        if current is None:
+            verdicts[key] = record['result']
+            continue
+        order = {'PASS': 1, 'BLOCKED': 2, 'FAIL': 3}
+        verdicts[key] = max(current, record['result'], key=order.get)
+    return verdicts
 
 
 def summary(value):
