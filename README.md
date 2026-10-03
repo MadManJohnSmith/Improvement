@@ -2,14 +2,21 @@
 
 [![Licencia: Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue)](LICENSE) [![Estado: beta](https://img.shields.io/badge/estado-beta-orange)](docs/plans/10-lanzamiento-publico.md)
 
-**Un auditor y un reparador continuo para tu repositorio: hallazgos con evidencia,
-arreglos verificados con tus pruebas reales y nada integrado sin tu aprobación.**
+**Un auditor y un reparador que viven junto a tu repositorio: encuentran los defectos
+reales, los arreglan verificándolo con tus propias pruebas y dejan el commit y el push en
+tus manos.**
 
-Improvement instala en tu proyecto dos modos con memoria persistente, generados
-específicamente para él. El **auditor** examina el código y guarda cada hallazgo con su
-evidencia (`archivo:línea`) y severidad; el **reparador** corrige en un worktree aislado,
-verifica contra los comandos reales de tu proyecto y deja tu árbol intacto. Tú operas con
-prompts de una línea y tú haces el commit y el push.
+Si mantienes un proyecto vivo, esto te suena: la misma clase de bug vuelve cada pocas
+semanas, auditar a fondo se queda siempre para mañana y el porqué de cada arreglo vive en
+la cabeza de quien lo hizo. Improvement convierte esa rutina en un ciclo con memoria: le
+hablas con prompts de una línea, el framework hace el trabajo pesado y tú decides qué se
+integra.
+
+Al instalarlo, genera **dos modos hechos a la medida de tu proyecto**. El **auditor**
+examina el código y registra cada hallazgo con su evidencia (`archivo:línea`) y su
+severidad. El **reparador** corrige en un worktree aislado, verifica cada arreglo contra
+los comandos reales de tu proyecto y deja tu árbol intacto. Nada llega a tu rama sin pasar
+por ti.
 
 Es un framework probado en tres campañas completas sobre repositorios reales: Syncify
 (una app de música en Rust/Tauri/Vue), RehabWeb (una app clínica en Django/Vue) y LoboApp
@@ -18,9 +25,17 @@ abajo son de esas campañas, no promesas.
 
 ## Inicio rápido
 
-Necesitas Linux, `git` y Python 3, y [DSH](docs/setup-dsh.md) con al menos un
-proveedor/modelo configurado por ti. El framework nunca lee ni pide tus API keys: solo
-comprueba que las variables existen.
+### ¿Qué es DSH?
+
+Improvement no trae su propia IA: trabaja sobre **DSH**, un runtime local de agentes que
+instalas y configuras **una sola vez**. DSH es la aplicación donde viven los dos modos
+generados, donde hablas con ellos y donde están tus credenciales de proveedor. Improvement
+nunca lee ni pide tus API keys: solo comprueba que el proveedor que configuraste existe.
+
+### Requisitos
+
+Linux, `git` y Python 3, y [DSH](docs/setup-dsh.md) ya configurado con al menos un
+proveedor/modelo tuyo. Nada más.
 
 Clona el framework **junto a tu proyecto, nunca dentro**, y ejecuta un comando:
 
@@ -74,6 +89,20 @@ siguen siendo tuyos.
 
 *El ciclo completo. Es un diagrama explorable: cada relación se puede trazar y el tema
 cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+
+## Los términos que verás
+
+| Término | Qué es |
+|---|---|
+| DSH | El runtime local de agentes donde viven los dos modos y tus credenciales de proveedor. |
+| Modo | Cada uno de los dos agentes generados para tu proyecto: el auditor y el reparador. |
+| Hallazgo | Un defecto registrado con evidencia (`archivo:línea`), severidad, causa y prevención. |
+| Handoff | El registro que deja cada auditoría, con el siguiente prompt listo para copiar. |
+| Candidata | El worktree hermano y aislado donde el reparador cambia código. |
+| `mode-state` | La memoria en disco del workspace: hallazgos, handoffs, verificaciones y recibos. |
+| Plan de capacidades | El inventario de los comandos reales de test y análisis de tu proyecto, firmado al instalar. |
+| RETAINED | Un turno retenido: terminó con un resultado legible y sin salirse del contrato. |
+| VERIFIED / RESOLVED | El trabajo verificado y los defectos cerrados, cada uno con su evidencia. |
 
 ## Verificación contra tu proyecto real, nunca con stubs
 
