@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Qué instala Improvement en tu máquina",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "escrituras",
+        "label": "Quién escribe qué",
+        "focus": [
+          "auditor",
+          "reparador",
+          "estado",
+          "candidata"
+        ],
+        "note": "El auditor solo escribe estado; el reparador solo escribe en la candidata."
+      },
+      {
+        "id": "frontera",
+        "label": "Frontera de integración",
+        "focus": [
+          "operador",
+          "producto",
+          "candidata"
+        ],
+        "note": "Nada llega a tu rama sin el merge y el push del operador."
+      },
+      {
+        "id": "plan",
+        "label": "Verificación real",
+        "focus": [
+          "plan",
+          "reparador",
+          "estado"
+        ],
+        "note": "El plan de capacidades nombra el entrypoint real y qué falta en la máquina."
+      }
+    ],
+    "output": "docs/diagrams/arquitectura-instalacion.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "Modo generado"
+        },
+        "database": {
+          "label": "Estado en disco"
+        },
+        "security": {
+          "label": "Autoridad (Host)"
+        },
+        "external": {
+          "label": "Operador y árboles de código"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "operador",
+      "type": "external",
+      "label": "Operador",
+      "sublabel": "prompts breves e integración",
+      "pos": [
+        40,
+        320
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "host",
+      "type": "security",
+      "label": "DSH Host",
+      "sublabel": "valida, activa o retiene",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "estados mecánicos"
+    },
+    {
+      "id": "auditor",
+      "type": "backend",
+      "label": "<Proyecto>-auditor",
+      "sublabel": "examina y persiste hallazgos",
+      "pos": [
+        300,
+        170
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "reparador",
+      "type": "backend",
+      "label": "<Proyecto>-continuous-repair",
+      "sublabel": "corrige y verifica en candidata",
+      "pos": [
+        300,
+        420
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "producto",
+      "type": "external",
+      "label": "Tu producto",
+      "sublabel": "repo canónico",
+      "pos": [
+        640,
+        60
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "tag": "sin escritura de los modos"
+    },
+    {
+      "id": "estado",
+      "type": "database",
+      "label": "mode-state/",
+      "sublabel": "findings · handoffs · verificaciones · overflows",
+      "pos": [
+        640,
+        230
+      ],
+      "size": [
+        200,
+        84
+      ]
+    },
+    {
+      "id": "candidata",
+      "type": "external",
+      "label": "Candidata",
+      "sublabel": "worktree hermano aislado",
+      "pos": [
+        640,
+        420
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "plan",
+      "type": "database",
+      "label": "capability-plan.json",
+      "sublabel": "entrypoints reales del producto",
+      "pos": [
+        890,
+        230
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "firmado por digest"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "<Proyecto>-workspace/ (hermano del producto)",
+      "wraps": [
+        "estado",
+        "plan"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Frontera: commit y push solo del operador",
+      "wraps": [
+        "producto"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "op-aud",
+      "from": "operador",
+      "to": "auditor",
+      "label": "prompt breve"
+    },
+    {
+      "id": "op-rep",
+      "from": "operador",
+      "to": "reparador",
+      "label": "prompt breve"
+    },
+    {
+      "id": "host-aud",
+      "from": "host",
+      "to": "auditor",
+      "label": "activa o RETAINED"
+    },
+    {
+      "id": "host-rep",
+      "from": "host",
+      "to": "reparador",
+      "label": "activa o RETAINED"
+    },
+    {
+      "id": "aud-prod",
+      "from": "auditor",
+      "to": "producto",
+      "label": "solo lectura",
+      "variant": "dashed"
+    },
+    {
+      "id": "aud-est",
+      "from": "auditor",
+      "to": "estado",
+      "label": "persiste hallazgos + handoff",
+      "variant": "emphasis"
+    },
+    {
+      "id": "est-rep",
+      "from": "estado",
+      "to": "reparador",
+      "label": "hallazgos OPEN"
+    },
+    {
+      "id": "rep-est",
+      "from": "reparador",
+      "to": "estado",
+      "label": "registra verificación"
+    },
+    {
+      "id": "rep-cand",
+      "from": "reparador",
+      "to": "candidata",
+      "label": "edita solo aquí",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plan-rep",
+      "from": "plan",
+      "to": "reparador",
+      "label": "entrypoint real"
+    },
+    {
+      "id": "op-prod",
+      "from": "operador",
+      "to": "producto",
+      "label": "git merge --ff-only + push",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "La frontera",
+      "items": [
+        "Los modos nunca escriben tu producto",
+        "La candidata vive en un worktree hermano",
+        "El commit y el push son del operador"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Memoria acotada",
+      "items": [
+        "Hallazgos con evidencia archivo:línea",
+        "Deduplicación por (hallazgo, revisión)",
+        "Topes por fichero: compacta con recibo"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Verificación real",
+      "items": [
+        "El plan nombra el entrypoint propio del producto",
+        "PASS exige evidencia del stack real",
+        "Falta una herramienta: BLOCKED, nunca PASS"
+      ]
+    }
+  ]
+}

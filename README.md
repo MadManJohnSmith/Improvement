@@ -70,6 +70,11 @@ Cada auditoría deja un handoff con el siguiente prompt listo para copiar. Cuand
 reparador termina, integras con un `git merge --ff-only` normal: el commit y el push
 siguen siendo tuyos.
 
+![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
+
+*El ciclo completo. Es un diagrama explorable: cada relación se puede trazar y el tema
+cambia claro/oscuro en la [versión interactiva](docs/diagrams/ciclo-operativo.html).*
+
 ## Verificación contra tu proyecto real, nunca con stubs
 
 Al instalar, Improvement lee tu proyecto y escribe un **plan de capacidades** en
@@ -180,6 +185,11 @@ verde**.
 
 ## Qué obtienes en tu repo
 
+![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.png)
+
+*Los dos modos generados, la memoria acotada y la frontera de integración. También
+explorable: [versión interactiva](docs/diagrams/arquitectura-instalacion.html).*
+
 ```
 tu-proyecto/
 tu-proyecto-workspace/
@@ -230,6 +240,7 @@ produce.
 ## Documentación
 
 - [Uso operativo](docs/usage.md) — el ciclo completo, integración y recuperación de espacio
+- [Diagramas interactivos](docs/diagrams/) — el ciclo operativo y la arquitectura instalada, como HTML explorables
 - [Preparación de DSH](docs/setup-dsh.md)
 - [Estado comprobado](docs/status.md)
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
