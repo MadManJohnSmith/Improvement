@@ -73,7 +73,7 @@ siguen siendo tuyos.
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
 
 *El ciclo completo. Es un diagrama explorable: cada relación se puede trazar y el tema
-cambia claro/oscuro en la [versión interactiva](docs/diagrams/ciclo-operativo.html).*
+cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
 
 ## Verificación contra tu proyecto real, nunca con stubs
 
@@ -188,7 +188,7 @@ verde**.
 ![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.png)
 
 *Los dos modos generados, la memoria acotada y la frontera de integración. También
-explorable: [versión interactiva](docs/diagrams/arquitectura-instalacion.html).*
+explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
 
 ```
 tu-proyecto/
@@ -240,7 +240,7 @@ produce.
 ## Documentación
 
 - [Uso operativo](docs/usage.md) — el ciclo completo, integración y recuperación de espacio
-- [Diagramas interactivos](docs/diagrams/) — el ciclo operativo y la arquitectura instalada, como HTML explorables
+- [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html), como HTML explorables
 - [Preparación de DSH](docs/setup-dsh.md)
 - [Estado comprobado](docs/status.md)
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
