@@ -27,10 +27,11 @@ abajo son de esas campañas, no promesas.
 
 ### ¿Qué es DSH?
 
-Improvement no trae su propia IA: trabaja sobre **DSH**, un runtime local de agentes que
-instalas y configuras **una sola vez**. DSH es la aplicación donde viven los dos modos
-generados, donde hablas con ellos y donde están tus credenciales de proveedor. Improvement
-nunca lee ni pide tus API keys: solo comprueba que el proveedor que configuraste existe.
+Improvement no trae su propia IA: trabaja sobre **DSH (DeepSeek Harness)**, un runtime
+local de agentes que instalas y configuras **una sola vez**. DSH es la aplicación donde
+viven los dos modos generados, donde hablas con ellos y donde están tus credenciales de
+proveedor. Improvement nunca lee ni pide tus API keys: solo comprueba que el proveedor
+que configuraste existe.
 
 ### Requisitos
 
@@ -94,7 +95,7 @@ cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.
 
 | Término | Qué es |
 |---|---|
-| DSH | El runtime local de agentes donde viven los dos modos y tus credenciales de proveedor. |
+| DSH (DeepSeek Harness) | El runtime local de agentes donde viven los dos modos y tus credenciales de proveedor. |
 | Modo | Cada uno de los dos agentes generados para tu proyecto: el auditor y el reparador. |
 | Hallazgo | Un defecto registrado con evidencia (`archivo:línea`), severidad, causa y prevención. |
 | Handoff | El registro que deja cada auditoría, con el siguiente prompt listo para copiar. |
