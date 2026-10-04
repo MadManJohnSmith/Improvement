@@ -1,11 +1,11 @@
 """E5: a declared verification command is only coverage if it resolves.
 
-Eleven stacks declare how to verify themselves, and only four have been proven
+Thirty stacks declare how to verify themselves, and only four have been proven
 by a real campaign (Syncify/Rust, RehabWeb/Django, LoboApp/Flutter and the
-framework itself/Python). The other seven were written from what those tools
-document, and a plausible command is not coverage: the LoboApp campaign proved
-that the command a plan names is not always the command the mode's shell can
-run.
+framework itself/Python). The other twenty-six were written from what those
+tools document, and a plausible command is not coverage: the LoboApp campaign
+proved that the command a plan names is not always the command the mode's shell
+can run.
 
 These cases put a real toolchain on PATH for every declared stack and require
 the plan to name a command the shell can invoke, then take the toolchain away
@@ -43,6 +43,28 @@ FIXTURES = {
     "python-django": ("manage.py", ["python3"], "#!/usr/bin/env python3\n"),
     "python-generic": ("pytest.ini", ["pytest", "python3"], "[pytest]\n"),
     "dart-flutter": ("pubspec.yaml", ["flutter"], "name: x\n"),
+    "deno": ("deno.json", ["deno"], '{"tasks": {"test": "deno test"}}'),
+    "bun": ("bunfig.toml", ["bun"], "[install] exact = true"),
+    "android-gradle": ("app/build.gradle", ["java", "sdkmanager"],
+                       "plugins { id 'com.android.application' }"),
+    "swift": ("Package.swift", ["swift"], "// swift-tools-version:5.9 package x"),
+    "cmake": ("CMakeLists.txt", ["cmake", "ctest"],
+              "cmake_minimum_required(VERSION 3.20) project(x) enable_testing()"),
+    "meson": ("meson.build", ["meson"], "project('x')"),
+    "sbt": ("build.sbt", ["sbt"], 'ThisBuild / scalaVersion := "3.3.1"'),
+    "elixir": ("mix.exs", ["mix"], "defmodule X.MixProject do use Mix.Project end"),
+    "erlang": ("rebar.config", ["rebar3"], "{erl_opts, [debug_info]}."),
+    "zig": ("build.zig.zon", ["zig"], '.{ .name = "x", .version = "0.1.0" }'),
+    "crystal": ("shard.yml", ["crystal"], "name: x version: 0.1.0"),
+    "nim": ("x.nimble", ["nimble"], 'version = "0.1.0" author = "x"'),
+    "julia": ("Project.toml", ["julia"], 'name = "x" version = "0.1.0"'),
+    "r": ("DESCRIPTION", ["R"], "Package: x Version: 0.1.0"),
+    "perl": ("Makefile.PL", ["perl", "prove"],
+             "use ExtUtils::MakeMaker; WriteMakefile(NAME => 'x');"),
+    "clojure": ("deps.edn", ["clojure"], '{:paths ["src"]}'),
+    "cabal": ("x.cabal", ["cabal"], "cabal-version: 3.0 name: x version: 0.1.0"),
+    "haskell-stack": ("stack.yaml", ["stack"], 'resolver: lts-22.0 packages: ["."]'),
+    "dune": ("dune-project", ["dune"], "(lang dune 3.0)"),
 }
 
 
@@ -89,7 +111,11 @@ class StackCoverageTest(unittest.TestCase):
             product.mkdir(parents=True)
             workspace.mkdir(parents=True)
             marker, binaries, content = FIXTURES[stack_name]
-            (product / marker).write_text(content, encoding="utf-8")
+            marker_path = product / marker
+            # A marker may live below the root (android's app/build.gradle):
+            # create the directories it needs before writing it.
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(content, encoding="utf-8")
             for binary in binaries:
                 _fake_binary(base / "bin", binary)
             self.products[stack_name] = (product, workspace, base / "bin")
@@ -120,6 +146,46 @@ class StackCoverageTest(unittest.TestCase):
                 product, _, _ = self._project(stack_name)
                 found = {e["stack"] for e in stack_module.detect(product)}
                 self.assertIn(stack_name, found)
+
+    # -- detection priority between overlapping markers ----------------------
+    def test_a_bun_project_with_a_package_json_is_bun_not_node(self):
+        # A bun project usually carries a package.json too — tooling only reads
+        # node's manifest — so the manifest is the weaker signal. STACKS puts
+        # bun and deno above node for exactly this: the first stack to match a
+        # root keeps it, and the lockfile wins over the manifest.
+        product, _, _ = self._project("bun")
+        (product / "package.json").write_text('{"name":"x"}\n', encoding="utf-8")
+        at_root = [e["stack"] for e in stack_module.detect(product)
+                   if e["root"] == ""]
+        self.assertEqual(at_root[0], "bun")
+        self.assertIn("node", at_root)  # both matched; priority decided
+
+    def test_an_android_project_is_not_mistaken_for_plain_java_gradle(self):
+        # An Android app module is a Gradle project too: with build.gradle,
+        # settings.gradle and gradlew at the root it matches java-gradle's
+        # markers as well. android-gradle sits above it in STACKS so the app/
+        # marker claims the root and names the Android entrypoints.
+        product, _, _ = self._project("android-gradle")
+        for marker in ("build.gradle", "settings.gradle", "gradlew"):
+            (product / marker).write_text("// root gradle plumbing\n",
+                                          encoding="utf-8")
+        at_root = [e["stack"] for e in stack_module.detect(product)
+                   if e["root"] == ""]
+        self.assertEqual(at_root[0], "android-gradle")
+        self.assertIn("java-gradle", at_root)  # both matched; priority decided
+
+    def test_a_gradle_project_with_only_settings_gradle_is_detected(self):
+        # A multi-module Gradle project may carry no build.gradle at the root:
+        # settings.gradle alone is still a Gradle project, and without those
+        # markers in STACKS the detector would leave such a root undeclared.
+        base = self.tmp / "gradle-settings-only"
+        product = base / "product"
+        product.mkdir(parents=True)
+        (product / "settings.gradle").write_text("rootProject.name = 'x'\n",
+                                                 encoding="utf-8")
+        at_root = [e["stack"] for e in stack_module.detect(product)
+                   if e["root"] == ""]
+        self.assertEqual(at_root, ["java-gradle"])
 
     # -- with the toolchain present -----------------------------------------
     def test_when_the_plan_is_ready_the_command_it_names_can_actually_run(self):
@@ -197,7 +263,7 @@ class StackCoverageTest(unittest.TestCase):
 class SelfDeclarationTest(unittest.TestCase):
     """The one declaration that is not a fixture: this repository's own.
 
-    The case above proves the invariant for eleven synthetic products, and the
+    The case above proves the invariant for thirty synthetic products, and the
     product that actually ships a declaration — this repository, through
     `improvement-verification.json` — was outside its reach. That matters more
     than a fixture, because `declared()` checks shape and nothing else: a

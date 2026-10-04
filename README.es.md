@@ -189,12 +189,19 @@ la unidad que lo cerró y el arreglo que funcionó. `bootstrap.py state` cuenta 
 | Django | `python manage.py test`, `django check` | **probada** — RehabWeb, 108 pruebas reales |
 | Flutter | `flutter test`, `flutter analyze` | **probada** — LoboApp, 166 pruebas reales |
 | Python | `pytest -q`, `compileall` | **probada** — el propio framework sobre sí mismo |
-| Node · Go · Maven · Gradle · .NET · PHP · Ruby | el entrypoint propio de cada una | declaradas |
+| Node · Bun · Deno | `npm test` · `bun test` · `deno test` | declaradas |
+| Go | `go test ./...`, `go vet ./...` | declaradas |
+| Java · Scala: Maven · Gradle · Android · sbt | `mvn test` · `./gradlew test` · `./gradlew testDebugUnitTest` · `sbt test` | declaradas |
+| .NET · PHP · Ruby | `dotnet test` · `vendor/bin/phpunit` · `bundle exec rspec` | declaradas |
+| Swift · C/C++ (CMake) · Meson | `swift test` · `ctest` · `meson test` | declaradas |
+| Elixir · Erlang · Clojure · Perl | `mix test` · `rebar3 eunit` · `clojure -M:test` · `prove` | declaradas |
+| Zig · Crystal · Nim · Julia · R | `zig build test` · `crystal spec` · `nimble test` · `Pkg.test()` · `R CMD check` | declaradas |
+| Haskell (Cabal · Stack) · OCaml (Dune) | `cabal test` · `stack test` · `dune runtest` | declaradas |
 
-Las siete declaradas son el hueco real de la beta: el plan resuelve su comando igual, y
+Las veintiséis declaradas son el hueco real de la beta: el plan resuelve su comando igual, y
 si falta una herramienta el resultado es `BLOCKED` nombrándola — jamás un `PASS`
 inventado. Ejercitarlas con repositorios reales es exactamente para lo que existe la
-beta.
+beta. La tabla completa, una fila por stack, está en el [estado comprobado](docs/status.md).
 
 ## Casos reales
 
@@ -279,7 +286,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **774 pruebas en
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **777 pruebas en
 verde**.
 
 ## Qué obtienes en tu repo

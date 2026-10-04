@@ -45,6 +45,18 @@ STACKS = {
         "provision_outside": True,
         "needs": ("python3",),
     },
+    "deno": {
+        "markers": ("deno.lock", "deno.json", "deno.jsonc"),
+        "verify": (["deno", "test"], ["deno", "lint"]),
+        "provision_outside": True,
+        "needs": ("deno",),
+    },
+    "bun": {
+        "markers": ("bun.lockb", "bun.lock", "bunfig.toml"),
+        "verify": (["bun", "test"],),
+        "provision_outside": False,
+        "needs": ("bun",),
+    },
     "node": {
         "markers": ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "package.json"),
         "verify": (["npm", "test"], ["npm", "run", "build"]),
@@ -69,6 +81,12 @@ STACKS = {
         "provision_outside": True,
         "needs": ("go",),
     },
+    "android-gradle": {
+        "markers": ("app/build.gradle", "app/build.gradle.kts"),
+        "verify": (["./gradlew", "testDebugUnitTest"], ["./gradlew", "lint"]),
+        "provision_outside": True,
+        "needs": ("java", "sdkmanager"),
+    },
     "java-maven": {
         "markers": ("pom.xml",),
         "verify": (["mvn", "-q", "test"],),
@@ -76,7 +94,8 @@ STACKS = {
         "needs": ("mvn",),
     },
     "java-gradle": {
-        "markers": ("gradlew", "build.gradle", "build.gradle.kts"),
+        "markers": ("gradlew", "build.gradle", "build.gradle.kts",
+                    "settings.gradle", "settings.gradle.kts"),
         "verify": (["./gradlew", "test"],),
         "provision_outside": True,
         "needs": ("java",),
@@ -98,6 +117,102 @@ STACKS = {
         "verify": (["bundle", "exec", "rspec"],),
         "provision_outside": True,
         "needs": ("bundle",),
+    },
+    "swift": {
+        "markers": ("Package.swift",),
+        "verify": (["swift", "test"], ["swift", "build"]),
+        "provision_outside": False,
+        "needs": ("swift",),
+    },
+    "cmake": {
+        "markers": ("CMakeLists.txt",),
+        "verify": (["ctest", "--test-dir", "build"],),
+        "provision_outside": False,
+        "needs": ("cmake", "ctest"),
+    },
+    "meson": {
+        "markers": ("meson.build",),
+        "verify": (["meson", "test"],),
+        "provision_outside": False,
+        "needs": ("meson",),
+    },
+    "sbt": {
+        "markers": ("build.sbt",),
+        "verify": (["sbt", "test"],),
+        "provision_outside": True,
+        "needs": ("sbt",),
+    },
+    "elixir": {
+        "markers": ("mix.lock", "mix.exs"),
+        "verify": (["mix", "test"], ["mix", "format", "--check-formatted"]),
+        "provision_outside": False,
+        "needs": ("mix",),
+    },
+    "erlang": {
+        "markers": ("rebar.lock", "rebar.config"),
+        "verify": (["rebar3", "eunit"], ["rebar3", "xref"]),
+        "provision_outside": False,
+        "needs": ("rebar3",),
+    },
+    "zig": {
+        "markers": ("build.zig.zon", "build.zig"),
+        "verify": (["zig", "build", "test"], ["zig", "build"]),
+        "provision_outside": False,
+        "needs": ("zig",),
+    },
+    "crystal": {
+        "markers": ("shard.lock", "shard.yml"),
+        "verify": (["crystal", "spec"],),
+        "provision_outside": False,
+        "needs": ("crystal",),
+    },
+    "nim": {
+        "markers": ("*.nimble",),
+        "verify": (["nimble", "test"], ["nimble", "build"]),
+        "provision_outside": False,
+        "needs": ("nimble",),
+    },
+    "julia": {
+        "markers": ("Project.toml",),
+        "verify": (["julia", "--project=.", "-e", "using Pkg; Pkg.test()"],),
+        "provision_outside": True,
+        "needs": ("julia",),
+    },
+    "r": {
+        "markers": ("DESCRIPTION",),
+        "verify": (["R", "CMD", "check", "--no-manual", "."],),
+        "provision_outside": False,
+        "needs": ("R",),
+    },
+    "perl": {
+        "markers": ("cpanfile", "Makefile.PL", "Build.PL"),
+        "verify": (["prove", "-lr", "t"],),
+        "provision_outside": True,
+        "needs": ("perl", "prove"),
+    },
+    "clojure": {
+        "markers": ("deps.edn",),
+        "verify": (["clojure", "-M:test"],),
+        "provision_outside": True,
+        "needs": ("clojure",),
+    },
+    "cabal": {
+        "markers": ("*.cabal", "cabal.project"),
+        "verify": (["cabal", "test", "all"],),
+        "provision_outside": False,
+        "needs": ("cabal",),
+    },
+    "haskell-stack": {
+        "markers": ("stack.yaml",),
+        "verify": (["stack", "test"],),
+        "provision_outside": False,
+        "needs": ("stack",),
+    },
+    "dune": {
+        "markers": ("dune-project",),
+        "verify": (["dune", "runtest"], ["dune", "build"]),
+        "provision_outside": False,
+        "needs": ("dune",),
     },
 }
 
@@ -179,6 +294,126 @@ PROVISION_HINTS = {
         "what": "Bundler de Ruby",
         "check": "shutil.which('bundle')",
         "step": "instalar Ruby+Bundler; vendor/bundle o BUNDLE_PATH fuera del producto",
+    },
+    "deno": {
+        "what": "CLI de Deno",
+        "check": "shutil.which('deno')",
+        "step": "instalar Deno (instalador oficial o paquete de la distro); "
+                "el caché de módulos vive fuera del producto (DENO_DIR por defecto)",
+    },
+    "bun": {
+        "what": "Bun",
+        "check": "shutil.which('bun')",
+        "step": "instalar Bun; node_modules dentro del producto solo si está en .gitignore",
+    },
+    "sdkmanager": {
+        "what": "command-line tools del SDK de Android",
+        "check": "shutil.which('sdkmanager') o <ANDROID_HOME>/cmdline-tools/latest/bin",
+        "step": "instalar las cmdline-tools del SDK de Android, anteponer "
+                "<sdk>/cmdline-tools/latest/bin al PATH y apuntar ANDROID_HOME al SDK",
+    },
+    "swift": {
+        "what": "toolchain de Swift (SPM incluido)",
+        "check": "shutil.which('swift')",
+        "step": "instalar Swift (swiftly o paquete de la distro); "
+                ".build/ dentro del producto solo si está en .gitignore",
+    },
+    "cmake": {
+        "what": "CMake",
+        "check": "shutil.which('cmake')",
+        "step": "instalar cmake; configurar y compilar antes de ctest: "
+                "cmake -S . -B build && cmake --build build, con build/ en .gitignore",
+    },
+    "ctest": {
+        "what": "CTest (incluido con CMake)",
+        "check": "shutil.which('ctest')",
+        "step": "viene con cmake; si falta, instala el kit completo de CMake",
+    },
+    "meson": {
+        "what": "Meson con ninja",
+        "check": "shutil.which('meson')",
+        "step": "instalar meson y ninja; meson setup build antes de meson test, "
+                "con build/ en .gitignore",
+    },
+    "sbt": {
+        "what": "sbt (Scala)",
+        "check": "shutil.which('sbt')",
+        "step": "instalar sbt (coursier o paquete de la distro); "
+                "target/ dentro del producto solo si está en .gitignore",
+    },
+    "mix": {
+        "what": "Elixir con mix (requiere Erlang/OTP)",
+        "check": "shutil.which('mix')",
+        "step": "instalar Erlang/OTP y Elixir; deps/ y _build/ dentro del producto "
+                "solo si están en .gitignore",
+    },
+    "rebar3": {
+        "what": "rebar3 (Erlang/OTP)",
+        "check": "shutil.which('rebar3')",
+        "step": "instalar Erlang/OTP y rebar3; _build/ dentro del producto solo si está en .gitignore",
+    },
+    "zig": {
+        "what": "toolchain de Zig",
+        "check": "shutil.which('zig')",
+        "step": "instalar Zig estable; .zig-cache/ y zig-out/ dentro del producto "
+                "solo si están en .gitignore",
+    },
+    "crystal": {
+        "what": "compilador de Crystal",
+        "check": "shutil.which('crystal')",
+        "step": "instalar Crystal; lib/ dentro del producto solo si está en .gitignore",
+    },
+    "nimble": {
+        "what": "Nim con nimble",
+        "check": "shutil.which('nimble')",
+        "step": "instalar Nim (choosenim) con nimble; "
+                "nimbledeps/ dentro del producto solo si está en .gitignore",
+    },
+    "julia": {
+        "what": "Julia",
+        "check": "shutil.which('julia')",
+        "step": "instalar Julia (juliaup); los paquetes van al depot del usuario "
+                "(~/.julia), fuera del producto",
+    },
+    "R": {
+        "what": "R",
+        "check": "shutil.which('R')",
+        "step": "instalar R (r-base); dirige la salida de R CMD check fuera del "
+                "producto con -o, o asegúrate de que .Rcheck está en .gitignore",
+    },
+    "perl": {
+        "what": "Perl",
+        "check": "shutil.which('perl')",
+        "step": "instalar Perl (paquete del sistema o perlbrew); "
+                "dependencias con cpanm --local-lib fuera del producto",
+    },
+    "prove": {
+        "what": "prove (viene con el core de Perl)",
+        "check": "shutil.which('prove')",
+        "step": "viene con Perl; si falta, revisa la instalación de Perl",
+    },
+    "clojure": {
+        "what": "Clojure CLI (tools.deps)",
+        "check": "shutil.which('clojure')",
+        "step": "instalar Clojure CLI; los jars van a ~/.m2 (fuera) y .cpcache/ "
+                "queda dentro del producto solo si está en .gitignore",
+    },
+    "cabal": {
+        "what": "Cabal con GHC",
+        "check": "shutil.which('cabal')",
+        "step": "instalar GHCup (cabal y GHC); "
+                "dist-newstyle/ dentro del producto solo si está en .gitignore",
+    },
+    "stack": {
+        "what": "Haskell Stack",
+        "check": "shutil.which('stack')",
+        "step": "instalar Stack; .stack-work/ dentro del producto solo si está en .gitignore",
+    },
+    "dune": {
+        "what": "OCaml con dune (opam)",
+        "check": "shutil.which('dune')",
+        "step": "instalar OCaml vía opam con dune; "
+                "_build/ dentro del producto solo si está en .gitignore",
     },
 }
 
@@ -531,8 +766,18 @@ def plan(product, *, workspace=None, env=None):
                 default_path=default_path),
         }
         if not spec['provision_outside']:
+            # The convention each ecosystem installs into inside the product;
+            # kept in step with the PROVISION_HINTS entry that names it.
             in_product = {'node': ['node_modules'], 'dart-flutter': ['.dart_tool'],
-                          'php-composer': ['vendor']}[entry['stack']]
+                          'php-composer': ['vendor'],
+                          'bun': ['node_modules'], 'swift': ['.build'],
+                          'cmake': ['build'], 'meson': ['build'],
+                          'elixir': ['deps', '_build'], 'erlang': ['_build'],
+                          'zig': ['.zig-cache', 'zig-out'], 'crystal': ['lib'],
+                          'nim': ['nimbledeps'], 'r': ['.Rcheck'],
+                          'cabal': ['dist-newstyle'],
+                          'haskell-stack': ['.stack-work'], 'dune': ['_build'],
+                          }[entry['stack']]
             stack_plan['in_product_install'] = in_product
             stack_plan['in_product_install_gitignored'] = _gitignored(product, in_product)
         stack_plan['verify_command'] = _runnable_entrypoint(

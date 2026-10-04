@@ -1,6 +1,6 @@
 # Estado comprobado del framework
 
-**Actualización:** 2026-09-27
+**Actualización:** 2026-10-04
 **Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (norma implementada; lifecycle operativo EN CURSO/IMPLEMENTED_NOT_VERIFIED)
 **Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md)
 
@@ -129,7 +129,7 @@ Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el 
 
 ### `stack_coverage`: qué stack está probado y cuál está solo declarado
 
-Once stacks declaran cómo verificarse. **Un comando escrito a mano no es cobertura**, y la
+Treinta stacks declaran cómo verificarse. **Un comando escrito a mano no es cobertura**, y la
 diferencia tiene que verse antes de que alguien confíe en él sobre su repositorio.
 `tests/test_stack_coverage.py` pone una toolchain real en el `PATH` de cada stack y exige que
 el plan nombre un comando que la shell puede invocar; luego la quita y exige que el plan nombre
@@ -139,8 +139,8 @@ la capacidad que falta en vez de asumir disponibilidad. Eso convierte "declarado
 | stack | comando declarado | evidencia de campaña real |
 |---|---|---|
 | `rust` | `cargo test`, `cargo clippy -- -D warnings` | **PROBADA** — Syncify (Rust/Tauri/Vue), CI verde en 3 jobs |
-| `python-django` | `python manage.py test`, `django check` | **PROBADA** — RehabWeb, 108 pruebas Django reales |
-| `python-generic` | `pytest -q`, `compileall` | **PROBADA** — el propio framework sobre sí mismo |
+| `python-django` | `python manage.py test`, `python -m django check` | **PROBADA** — RehabWeb, 108 pruebas Django reales |
+| `python-generic` | `python -m pytest -q`, `python -m compileall -q .` | **PROBADA** — el propio framework sobre sí mismo |
 | `dart-flutter` | `flutter test`, `flutter analyze` | **PROBADA** — LoboApp, 166 pruebas Flutter |
 | `node` | `npm test`, `npm run build` | declarada; resolución comprobada, sin campaña |
 | `go` | `go test ./...`, `go vet ./...` | declarada; resolución comprobada, sin campaña |
@@ -149,8 +149,27 @@ la capacidad que falta en vez de asumir disponibilidad. Eso convierte "declarado
 | `dotnet` | `dotnet test` | declarada; resolución comprobada, sin campaña |
 | `php-composer` | `vendor/bin/phpunit` | declarada; resolución comprobada, sin campaña |
 | `ruby` | `bundle exec rspec` | declarada; resolución comprobada, sin campaña |
+| `deno` | `deno test`, `deno lint` | declarada; resolución comprobada, sin campaña |
+| `bun` | `bun test` | declarada; resolución comprobada, sin campaña |
+| `android-gradle` | `./gradlew testDebugUnitTest`, `./gradlew lint` | declarada; resolución comprobada, sin campaña |
+| `swift` | `swift test`, `swift build` | declarada; resolución comprobada, sin campaña |
+| `cmake` | `ctest --test-dir build` | declarada; resolución comprobada, sin campaña |
+| `meson` | `meson test` | declarada; resolución comprobada, sin campaña |
+| `sbt` | `sbt test` | declarada; resolución comprobada, sin campaña |
+| `elixir` | `mix test`, `mix format --check-formatted` | declarada; resolución comprobada, sin campaña |
+| `erlang` | `rebar3 eunit`, `rebar3 xref` | declarada; resolución comprobada, sin campaña |
+| `zig` | `zig build test`, `zig build` | declarada; resolución comprobada, sin campaña |
+| `crystal` | `crystal spec` | declarada; resolución comprobada, sin campaña |
+| `nim` | `nimble test`, `nimble build` | declarada; resolución comprobada, sin campaña |
+| `julia` | `julia --project=. -e using Pkg; Pkg.test()` | declarada; resolución comprobada, sin campaña |
+| `r` | `R CMD check --no-manual .` | declarada; resolución comprobada, sin campaña |
+| `perl` | `prove -lr t` | declarada; resolución comprobada, sin campaña |
+| `clojure` | `clojure -M:test` | declarada; resolución comprobada, sin campaña |
+| `cabal` | `cabal test all` | declarada; resolución comprobada, sin campaña |
+| `haskell-stack` | `stack test` | declarada; resolución comprobada, sin campaña |
+| `dune` | `dune runtest`, `dune build` | declarada; resolución comprobada, sin campaña |
 
-Las siete sin campaña son el hueco real de la beta: si tu proyecto usa una de ellas, el plan
+Las veintiséis sin campaña son el hueco real de la beta: si tu proyecto usa una de ellas, el plan
 resuelve el comando y el framework no se inventa un `PASS`, pero nadie ha corrido todavía una
 suite real de esa tecnología contra este flujo. Es exactamente lo que la beta sirve para
 descubrir, y por eso se pide compartir el `mode-state` cuando la stack no esté en la tabla de
@@ -173,8 +192,8 @@ sólo el operador puede producir**, y conviene nombrarla para que no se confunda
 - **El confinamiento mecánico está medido y aplicado como contrato, no comprovado en una
   campaña.** `tests/test_auditor_confinement.py` lo prueba contra el runtime real con `EROFS`;
   que un proyecto real lo ejerza bajo el flujo completo es lo que la beta comprueba.
-- **Siete stacks están declarados y ninguno tiene campaña** (Node, Go, Maven, Gradle, .NET, PHP,
-  Ruby). La tabla `stack_coverage` de arriba dice cuáles sí.
+- **Veintiséis stacks están declarados y ninguno tiene campaña**; la tabla `stack_coverage` de
+  arriba los nombra todos.
 
 **D11: el corpus ya es ejecutable, y lo que falta es ejecutarlo contra un modo.** Los 55
 escenarios de `library/` eran tablas de aserciones declarativas (`contract_declared: true`),

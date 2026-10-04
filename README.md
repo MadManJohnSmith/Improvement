@@ -191,11 +191,19 @@ prevention that failed is a different defect from the first one.
 | Django | `python manage.py test`, `django check` | **proven** — RehabWeb, 108 real tests |
 | Flutter | `flutter test`, `flutter analyze` | **proven** — LoboApp, 166 real tests |
 | Python | `pytest -q`, `compileall` | **proven** — the framework on itself |
-| Node · Go · Maven · Gradle · .NET · PHP · Ruby | each one's own entrypoint | declared |
+| Node · Bun · Deno | `npm test` · `bun test` · `deno test` | declared |
+| Go | `go test ./...`, `go vet ./...` | declared |
+| Java · Scala: Maven · Gradle · Android · sbt | `mvn test` · `./gradlew test` · `./gradlew testDebugUnitTest` · `sbt test` | declared |
+| .NET · PHP · Ruby | `dotnet test` · `vendor/bin/phpunit` · `bundle exec rspec` | declared |
+| Swift · C/C++ (CMake) · Meson | `swift test` · `ctest` · `meson test` | declared |
+| Elixir · Erlang · Clojure · Perl | `mix test` · `rebar3 eunit` · `clojure -M:test` · `prove` | declared |
+| Zig · Crystal · Nim · Julia · R | `zig build test` · `crystal spec` · `nimble test` · `Pkg.test()` · `R CMD check` | declared |
+| Haskell (Cabal · Stack) · OCaml (Dune) | `cabal test` · `stack test` · `dune runtest` | declared |
 
-The seven declared ones are the beta's real gap: the plan resolves their command just the
+The twenty-six declared ones are the beta's real gap: the plan resolves their command just the
 same, and if a tool is missing the result is `BLOCKED` naming it — never an invented
-`PASS`. Exercising them on real repositories is exactly what the beta exists for.
+`PASS`. Exercising them on real repositories is exactly what the beta exists for. The
+complete table, one row per stack, is in the [verified status](docs/status.md).
 
 ## Real-world cases
 
@@ -279,7 +287,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **774 tests green**.
+Framework suite: **777 tests green**.
 
 ## What you get in your repo
 

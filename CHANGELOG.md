@@ -1,5 +1,39 @@
 # Cambios
 
+## Cobertura de stacks: treinta ecosistemas declarados — 2026-10-04
+- **El registro pasa de once a treinta stacks: diecinueve ecosistemas nuevos declaran su propio
+  comando de verificación, y ninguno estrena campaña.** Por familias: Deno (`deno test`,
+  `deno lint`) y Bun (`bun test`) junto a Node; Android Gradle (`./gradlew testDebugUnitTest`,
+  `./gradlew lint`) junto a Maven y Gradle; Swift (`swift test`, `swift build`); C/C++ con CMake
+  (`ctest --test-dir build`) y Meson (`meson test`); Scala (`sbt test`); Elixir (`mix test`,
+  `mix format --check-formatted`), Erlang (`rebar3 eunit`, `rebar3 xref`), Clojure
+  (`clojure -M:test`) y Perl (`prove -lr t`); Zig (`zig build test`, `zig build`), Crystal
+  (`crystal spec`), Nim (`nimble test`, `nimble build`), Julia (`julia --project=. -e using Pkg;
+  Pkg.test()`) y R (`R CMD check --no-manual .`); Haskell por Cabal (`cabal test all`) y por
+  Stack (`stack test`), y OCaml con Dune (`dune runtest`, `dune build`). La tabla
+  `stack_coverage` de `docs/status.md` queda con exactamente una fila por stack y ninguna más —
+  la biyección con el registro la exige el test.
+- **La regla lockfile-first del registro se defiende con regresión por par, no con una frase.**
+  Un proyecto Bun con `package.json` se detecta `bun`, no `node`
+  (`test_a_bun_project_with_a_package_json_is_bun_not_node`), y un proyecto Android con
+  `app/build.gradle` no se confunde con `java-gradle` genérico
+  (`test_an_android_project_is_not_mistaken_for_plain_java_gradle`): bun declara antes que node
+  y android-gradle antes que java-gradle, y el orden del registro decide.
+- **java-gradle gana dos marcadores nuevos.** `settings.gradle` y `settings.gradle.kts` entran
+  en su lista de marcadores para que un proyecto Gradle cuyo único rastro sea el fichero de
+  settings se detecte igual (`test_a_gradle_project_with_only_settings_gradle_is_detected`).
+- **Cada capacidad nueva declara cómo provisionarse fuera del producto.** Veintiún hints de
+  provisión nuevos — del `sdkmanager` de Android a `mix`, `rebar3`, `zig`, `crystal`, `nimble`,
+  `julia`, `stack`, `dune` o `ctest` — para que una capacidad ausente se nombre con su paso de
+  instalación y nunca se convierta en un `PASS` inventado.
+- **Fixture por stack y tres regresiones de orden.** `FIXTURES` cubre los treinta stacks — la
+  biyección con el registro lo exige — y las tres regresiones de detección/orden de arriba son
+  las que impiden que la ampliación vuelva a ser una frase editada a mano.
+- **`CAMPAIGN_EVIDENCE` sigue intacta: las probadas siguen siendo cuatro** (Rust, Django,
+  Flutter y el propio framework). Los veintiséis restantes resuelven su comando y nombran lo que
+  falta; ninguna campaña real los ha ejercitado todavía, y así lo dice la tabla.
+- **Suite: 777 OK (11 saltadas sin runtime)**
+
 ## Sexta auditoría: la regla del árbol canónico, sin comprobación — 2026-10-01
 - **E21 · «no basta con ignorarlos en Git» no lo comprobaba nadie.** `AGENTS.md` exige que proyectos,
   informes de sesión, logs, capturas, candidatas, salidas y cachés vivan **fuera** de este
