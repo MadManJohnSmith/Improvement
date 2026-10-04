@@ -10,10 +10,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 permite user namespaces sin la restricción AppArmor de 24.04,
+    # que bubblewrap necesita para las pruebas end-to-end del canal.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: bubblewrap para las pruebas del canal de inferencia
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Identidad de git para las pruebas que crean commits
+        run: |
+          git config --global user.email "ci@users.noreply.github.com"
+          git config --global user.name "CI"
       - run: python3 -B -m unittest discover -s tests
