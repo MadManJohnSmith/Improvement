@@ -37,12 +37,21 @@
           "retenido"
         ],
         "note": "Todo desvío del contrato retiene el turno con causa y siguiente acción."
+      },
+      {
+        "id": "aprendizaje",
+        "label": "El ciclo aprende",
+        "focus": [
+          "integra",
+          "gate_biblio"
+        ],
+        "note": "Las observaciones de cada campaña puntúan la biblioteca en el gate de holdout."
       }
     ],
     "output": "docs/diagrams/ciclo-operativo.html",
     "viewBox": [
-      1160,
-      660
+      1210,
+      776
     ],
     "legend": {
       "mode": "auto",
@@ -52,6 +61,9 @@
         },
         "security": {
           "label": "Retención fail-closed"
+        },
+        "database": {
+          "label": "Biblioteca de skills"
         },
         "external": {
           "label": "Acción del operador"
@@ -76,6 +88,10 @@
       "id": "cerrado",
       "label": "Fail-closed",
       "variant": "exception"
+    },
+    {
+      "id": "biblioteca",
+      "label": "Biblioteca de skills"
     }
   ],
   "phases": [
@@ -114,7 +130,8 @@
     ],
     "allowedTerminals": [
       "integra",
-      "retenido"
+      "retenido",
+      "gate_biblio"
     ],
     "requiredEdges": [
       {
@@ -196,6 +213,15 @@
       "label": "RETAINED",
       "sublabel": "el turno termina con un resultado legible",
       "width": 210
+    },
+    {
+      "id": "gate_biblio",
+      "lane": "biblioteca",
+      "col": 5,
+      "type": "database",
+      "label": "Gate de holdout",
+      "sublabel": "las observaciones puntúan la biblioteca",
+      "width": 210
     }
   ],
   "edges": [
@@ -234,6 +260,11 @@
       "label": "check fallido o drift",
       "variant": "security",
       "role": "error"
+    },
+    {
+      "from": "integra",
+      "to": "gate_biblio",
+      "label": "observaciones de la campaña"
     }
   ],
   "cards": [
@@ -262,6 +293,15 @@
         "Un desvío del contrato retiene el turno",
         "RETAINED nombra causa y siguiente acción",
         "Un BLOCKED nunca se registra como PASS"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "El ciclo aprende",
+      "items": [
+        "Persistir consulta el índice de episodios",
+        "Un arreglo previo viaja como prior_episode",
+        "Las observaciones de la campaña puntúan la biblioteca en el gate"
       ]
     }
   ]

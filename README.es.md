@@ -78,6 +78,35 @@ estructura que sobrevive a los ciclos:
 - una **frontera de integración clara**: el modo deja el candidato verificado y tú haces
   el commit y el push. Nada llega a tu rama sin pasar por ti.
 
+## De dónde salen los modos
+
+Los dos modos no salen de una plantilla vacía: se componen en cada instalación desde una
+**biblioteca de skills** con procedencia registrada. La base son 21 skills inmutables —
+desarrollo dirigido por tests, depuración sistemática, endurecimiento de seguridad,
+revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
+patrones especializados que solo se activan ante señales observadas en tu proyecto:
+revisión estática de políticas IAM, verificación de cabeceras HTTP de seguridad, contrato
+OpenAPI de FastAPI y accesibilidad WCAG 2.2. Detrás hay 45 fuentes externas fijadas —
+repositorios, estándares W3C, guías de AWS y MDN — con URL, revisión y licencia
+registradas de cada una.
+
+Creator selecciona siguiendo un orden obligatorio: primero una skill base; luego un
+patrón del catálogo, solo si su señal aparece de verdad en tu repo; después
+composiciones; y solo al final una extensión nueva, que exige demostrar que lo anterior
+no aplica. Cada reutilización se declara y el Host la verifica contra el snapshot de la
+biblioteca congelado con su digest al instalar: lo que tu modo reutiliza es exactamente
+lo que el digest firmó, no una versión deslizada después. Es el flujo que generó los
+modos de RehabWeb, LoboApp y del propio framework.
+
+**La biblioteca mejora con evidencia, no con opiniones.** Sus 55 escenarios se compilan
+en casos ejecutables cuyo veredicto esperado solo conoce el Host. Ningún cambio de una
+skill base entra sin puntuar en un gate que únicamente acepta mejora estricta: los
+intentos rechazados quedan con su score antes/después y la razón del rechazo alimenta el
+siguiente intento, para que el framework no pague dos veces la misma corrección. El
+ejecutor es `bootstrap.py skill-gate-run`: contra una sesión DSH con tu proyecto, el
+bucle completo queda en tus manos — usas los modos, produces observaciones, el gate
+puntúa, la biblioteca solo puede mejorar.
+
 ## Cómo se usa
 
 ### Prompts simples
@@ -97,8 +126,9 @@ siguen siendo tuyos.
 
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
 
-*El ciclo completo. Es un diagrama explorable: cada relación se puede trazar y el tema
-cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+*El ciclo completo, incluido el cierre del aprendizaje: las observaciones de cada campaña
+puntúan la biblioteca en el gate de holdout. Es un diagrama explorable: cada relación se
+puede trazar y el tema cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
 
 ## Los términos que verás
 
@@ -113,6 +143,9 @@ cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.
 | Plan de capacidades | El inventario de los comandos reales de test y análisis de tu proyecto, firmado al instalar. |
 | RETAINED | Un turno retenido: terminó con un resultado legible y sin salirse del contrato. |
 | VERIFIED / RESOLVED | El trabajo verificado y los defectos cerrados, cada uno con su evidencia. |
+| Biblioteca base | Las 21 skills base inmutables desde las que se componen los modos, con escenarios ejecutables y fuentes registradas. |
+| Ancla de evidencia | El fragmento literal de código que fija la ubicación de un hallazgo; la herramienta la calcula y rechaza lo que no puede colocar. |
+| Gate de holdout | El cerrojo que puntúa cualquier cambio de la biblioteca contra casos ejecutables y solo acepta mejora estricta. |
 
 ## Verificación contra tu proyecto real, nunca con stubs
 
@@ -135,6 +168,33 @@ stacks:
 Un detalle que la beta destapó por las malas: si la herramienta está instalada pero fuera
 del `PATH` por defecto, el plan la nombra **por su ruta absoluta**. Un nombre suelto que
 la shell del modo no puede invocar convierte una suite que funciona en un `BLOCKED` falso.
+
+La evidencia de un hallazgo es verificable, no prosa. Un hallazgo puede anclar su
+ubicación con un **fragmento literal del código** (`path` + `excerpt`): es la herramienta
+de escritura la que localiza el fragmento y calcula la línea, y si el fragmento no
+aparece, o aparece más de una vez, la escritura **se rechaza** en vez de adivinar — un
+ancla que no se puede colocar es un ancla que apunta a la línea equivocada.
+`bootstrap.py state` reporta cuántos hallazgos están anclados y cuántos no.
+
+La memoria consulta a la memoria: al persistir un hallazgo se comprueba el índice de
+episodios y, si esa misma firma ya se cerró antes, el registro lleva `prior_episode` con
+la unidad que lo cerró y el arreglo que funcionó. `bootstrap.py state` cuenta las
+**repeticiones**: una prevención que falló es un defecto distinto del primero.
+
+### Stacks probadas y stacks declaradas
+
+| Stack | Verificación | Estado |
+|---|---|---|
+| Rust | `cargo test`, `cargo clippy` | **probada** — Syncify, CI verde en 3 jobs |
+| Django | `python manage.py test`, `django check` | **probada** — RehabWeb, 108 pruebas reales |
+| Flutter | `flutter test`, `flutter analyze` | **probada** — LoboApp, 166 pruebas reales |
+| Python | `pytest -q`, `compileall` | **probada** — el propio framework sobre sí mismo |
+| Node · Go · Maven · Gradle · .NET · PHP · Ruby | el entrypoint propio de cada una | declaradas |
+
+Las siete declaradas son el hueco real de la beta: el plan resuelve su comando igual, y
+si falta una herramienta el resultado es `BLOCKED` nombrándola — jamás un `PASS`
+inventado. Ejercitarlas con repositorios reales es exactamente para lo que existe la
+beta.
 
 ## Casos reales
 
@@ -226,7 +286,8 @@ verde**.
 
 ![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.png)
 
-*Los dos modos generados, la memoria acotada y la frontera de integración. También
+*La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, los dos
+modos, la memoria acotada y la frontera de integración. También
 explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
 
 ```
@@ -254,8 +315,24 @@ silencio: queda un recibo en `overflows.jsonl` diciendo qué se perdió y por qu
 - **No es autónomo en la sombra.** Cada turno termina con un resultado legible; lo que se
   retiene se dice y por qué.
 - **No instala proveedores ni credenciales.** DSH y tu proveedor son prerrequisitos.
-- **No promete aislamiento mecánico del sistema de ficheros.** La frontera es contractual
-  y está probada; no hay sandbox de kernel.
+- **El reparador no corre dentro de un sandbox de kernel.** La frontera de escritura es
+  contractual y está probada; el confinamiento mecánico existe hoy para el auditor (ver
+  abajo) y para el reparador no: necesita dos raíces escribibles y el runtime solo admite
+  una.
+
+## Lo que está blindado
+
+- **La escalada está prohibida de verdad.** Los modos jamás envían `sandbox_permissions`
+  ni `justification` — con ningún valor — y un guard first-party los intercepta en bash
+  antes de la aprobación. Hay regresión contra el runtime real que monta la composición
+  exacta y bloquea `workspace-write` y `danger-full-access` en seco.
+- **El auditor se puede confinar en el núcleo.** Con la política apuntando al workspace,
+  tu producto queda fuera de las raíces escribibles: la bash recibe un `EROFS` real al
+  intentarlo y el auditor sigue pudiendo persistir sus hallazgos. Medido contra el
+  runtime, con regresión.
+- **El recuento no lo afirma el modo.** Un comando central recalcula los hallazgos
+  persistidos desde los ficheros y exige que el handoff los cubra exactamente; un
+  resultado parcial o contradictorio no se escribe.
 
 ## Estado: beta pública
 
@@ -266,6 +343,12 @@ entrypoint real del producto (Flutter y Django, sin stubs) con la evidencia pers
 validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
 estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md).
+
+Si la sesión se cae a mitad de turno — y en una developer preview pasa — el trabajo no se
+pierde: una candidata interrumpida se reanuda verificando la identidad exacta registrada
+(mismo worktree, misma base, mismo digest de hallazgos) sin descartar el diff, y
+`bootstrap.py state` reconcilia el estado con tu repositorio cuando algo se movió por
+fuera, con recibos en lugar de silencios.
 
 ## ¿Lo pruebas?
 

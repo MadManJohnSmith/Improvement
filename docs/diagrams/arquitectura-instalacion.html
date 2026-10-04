@@ -5017,50 +5017,56 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" data-composition-frame-label="Frontera: commit y push solo del operador" x="610" y="30" width="240" height="114" rx="8" class="c-security-group" stroke-width="1"/>
 
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="2" data-composition-frame-label="Guard anti-escalada first-party en bash" x="270" y="140" width="250" height="364" rx="8" class="c-security-group" stroke-width="1"/>
+
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
-          <path data-graph-role="automatic-crossover-underlay" d="M 115 320 L 115 304 Q 115 296 123 296 L 268 296 Q 276 296 276 288 L 276 217 Q 276 209 284 209 L 300 209" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="operador" data-edge-to="auditor" data-edge-label="prompt breve" data-edge-key="0" data-edge-id="op-aud" data-composition-points="115,320;115,296;276,296;276,209;300,209" data-composition-crossover="halo" data-composition-independent="true" d="M 115 320 L 115 304 Q 115 296 123 296 L 268 296 Q 276 296 276 288 L 276 217 Q 276 209 284 209 L 300 209" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 300 76 L 253 76 Q 245 76 245 84 L 245 127 Q 245 135 237 135 L 190 135" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="biblioteca" data-edge-to="host" data-edge-label="snapshot con digest" data-edge-key="0" data-edge-id="bib-host" data-composition-points="300,76;245,76;245,135;190,135" data-composition-crossover="halo" data-composition-independent="true" d="M 300 76 L 253 76 Q 245 76 245 84 L 245 127 Q 245 135 237 135 L 190 135" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:1">
-          <path data-graph-role="automatic-crossover-underlay" d="M 190 366 L 237 366 Q 245 366 245 374 L 245 444 Q 245 452 253 452 L 300 452" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="operador" data-edge-to="reparador" data-edge-label="prompt breve" data-edge-key="1" data-edge-id="op-rep" data-composition-points="190,366;245,366;245,452;300,452" data-composition-crossover="halo" data-composition-independent="true" d="M 190 366 L 237 366 Q 245 366 245 374 L 245 444 Q 245 452 253 452 L 300 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 115 320 L 115 304 Q 115 296 123 296 L 268 296 Q 276 296 276 288 L 276 217 Q 276 209 284 209 L 300 209" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="operador" data-edge-to="auditor" data-edge-label="prompt breve" data-edge-key="1" data-edge-id="op-aud" data-composition-points="115,320;115,296;276,296;276,209;300,209" data-composition-crossover="halo" data-composition-independent="true" d="M 115 320 L 115 304 Q 115 296 123 296 L 268 296 Q 276 296 276 288 L 276 217 Q 276 209 284 209 L 300 209" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:2">
-          <path data-graph-role="automatic-crossover-underlay" d="M 190 142 L 237 142 Q 245 142 245 150 L 245 187 Q 245 195 253 195 L 300 195" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="host" data-edge-to="auditor" data-edge-label="activa o RETAINED" data-edge-key="2" data-edge-id="host-aud" data-composition-points="190,142;245,142;245,195;300,195" data-composition-crossover="halo" data-composition-independent="true" d="M 190 142 L 237 142 Q 245 142 245 150 L 245 187 Q 245 195 253 195 L 300 195" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 190 366 L 237 366 Q 245 366 245 374 L 245 444 Q 245 452 253 452 L 300 452" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="operador" data-edge-to="reparador" data-edge-label="prompt breve" data-edge-key="2" data-edge-id="op-rep" data-composition-points="190,366;245,366;245,452;300,452" data-composition-crossover="halo" data-composition-independent="true" d="M 190 366 L 237 366 Q 245 366 245 374 L 245 444 Q 245 452 253 452 L 300 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:3">
-          <path data-graph-role="automatic-crossover-underlay" d="M 115 174 L 115 289 Q 115 297 123 297 L 387 297 Q 395 297 395 305 L 395 420" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="host" data-edge-to="reparador" data-edge-label="activa o RETAINED" data-edge-key="3" data-edge-id="host-rep" data-composition-points="115,174;115,297;395,297;395,420" data-composition-crossover="halo" data-composition-independent="true" d="M 115 174 L 115 289 Q 115 297 123 297 L 387 297 Q 395 297 395 305 L 395 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 190 149 L 237 149 Q 245 149 245 157 L 245 187 Q 245 195 253 195 L 300 195" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="host" data-edge-to="auditor" data-edge-label="activa o RETAINED" data-edge-key="3" data-edge-id="host-aud" data-composition-points="190,149;245,149;245,195;300,195" data-composition-crossover="halo" data-composition-independent="true" d="M 190 149 L 237 149 Q 245 149 245 157 L 245 187 Q 245 195 253 195 L 300 195" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:4">
-          <path data-graph-role="automatic-crossover-underlay" d="M 490 195 L 557 195 Q 565 195 565 187 L 565 93 Q 565 85 573 85 L 640 85" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="auditor" data-edge-to="producto" data-edge-label="solo lectura" data-edge-key="4" data-edge-id="aud-prod" data-composition-points="490,195;565,195;565,85;640,85" data-composition-crossover="halo" data-composition-independent="true" d="M 490 195 L 557 195 Q 565 195 565 187 L 565 93 Q 565 85 573 85 L 640 85" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 115 174 L 115 289 Q 115 297 123 297 L 387 297 Q 395 297 395 305 L 395 420" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="host" data-edge-to="reparador" data-edge-label="activa o RETAINED" data-edge-key="4" data-edge-id="host-rep" data-composition-points="115,174;115,297;395,297;395,420" data-composition-crossover="halo" data-composition-independent="true" d="M 115 174 L 115 289 Q 115 297 123 297 L 387 297 Q 395 297 395 305 L 395 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:5">
-          <path data-graph-role="automatic-crossover-underlay" d="M 490 210.05 L 557 210.05 Q 565 210.05 565 218.05 L 565 248.95 Q 565 256.95 573 256.95 L 640 256.95" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="auditor" data-edge-to="estado" data-edge-label="persiste hallazgos + handoff" data-edge-key="5" data-edge-id="aud-est" data-composition-points="490,210.05;565,210.05;565,256.95;640,256.95" data-composition-crossover="halo" data-composition-independent="true" d="M 490 210.05 L 557 210.05 Q 565 210.05 565 218.05 L 565 248.95 Q 565 256.95 573 256.95 L 640 256.95" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 490 195 L 557 195 Q 565 195 565 187 L 565 93 Q 565 85 573 85 L 640 85" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="auditor" data-edge-to="producto" data-edge-label="solo lectura" data-edge-key="5" data-edge-id="aud-prod" data-composition-points="490,195;565,195;565,85;640,85" data-composition-crossover="halo" data-composition-independent="true" d="M 490 195 L 557 195 Q 565 195 565 187 L 565 93 Q 565 85 573 85 L 640 85" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:6">
-          <path data-graph-role="automatic-crossover-underlay" d="M 640 272 L 389 272 Q 381 272 381 280 L 381 420" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="estado" data-edge-to="reparador" data-edge-label="hallazgos OPEN" data-edge-key="6" data-edge-id="est-rep" data-composition-points="640,272;381,272;381,420" data-composition-crossover="halo" data-composition-independent="true" d="M 640 272 L 389 272 Q 381 272 381 280 L 381 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 490 210.05 L 557 210.05 Q 565 210.05 565 218.05 L 565 248.95 Q 565 256.95 573 256.95 L 640 256.95" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="auditor" data-edge-to="estado" data-edge-label="persiste hallazgos + handoff" data-edge-key="6" data-edge-id="aud-est" data-composition-points="490,210.05;565,210.05;565,256.95;640,256.95" data-composition-crossover="halo" data-composition-independent="true" d="M 490 210.05 L 557 210.05 Q 565 210.05 565 218.05 L 565 248.95 Q 565 256.95 573 256.95 L 640 256.95" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:7">
-          <path data-graph-role="automatic-crossover-underlay" d="M 409 420 L 409 375 Q 409 367 417 367 L 732 367 Q 740 367 740 359 L 740 314" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="reparador" data-edge-to="estado" data-edge-label="registra verificación" data-edge-key="7" data-edge-id="rep-est" data-composition-points="409,420;409,367;740,367;740,314" data-composition-crossover="halo" data-composition-independent="true" d="M 409 420 L 409 375 Q 409 367 417 367 L 732 367 Q 740 367 740 359 L 740 314" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 640 272 L 389 272 Q 381 272 381 280 L 381 420" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="estado" data-edge-to="reparador" data-edge-label="hallazgos OPEN" data-edge-key="7" data-edge-id="est-rep" data-composition-points="640,272;381,272;381,420" data-composition-crossover="halo" data-composition-independent="true" d="M 640 272 L 389 272 Q 381 272 381 280 L 381 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:8">
-          <path data-graph-role="automatic-crossover-underlay" d="M 395 484 L 395 500 Q 395 508 403 508 L 608 508 Q 616 508 616 500 L 616 460 Q 616 452 624 452 L 640 452" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="reparador" data-edge-to="candidata" data-edge-label="edita solo aquí" data-edge-key="8" data-edge-id="rep-cand" data-composition-points="395,484;395,508;616,508;616,452;640,452" data-composition-crossover="halo" data-composition-independent="true" d="M 395 484 L 395 500 Q 395 508 403 508 L 608 508 Q 616 508 616 500 L 616 460 Q 616 452 624 452 L 640 452" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 409 420 L 409 375 Q 409 367 417 367 L 732 367 Q 740 367 740 359 L 740 314" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="reparador" data-edge-to="estado" data-edge-label="registra verificación" data-edge-key="8" data-edge-id="rep-est" data-composition-points="409,420;409,367;740,367;740,314" data-composition-crossover="halo" data-composition-independent="true" d="M 409 420 L 409 375 Q 409 367 417 367 L 732 367 Q 740 367 740 359 L 740 314" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:9">
-          <path data-graph-role="automatic-crossover-underlay" d="M 890 266 L 874 266 Q 866 266 866 274 L 866 409 Q 866 417 858 417 L 522 417 Q 514 417 514 425 L 514 428 Q 514 436 506 436 L 490 436" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="plan" data-edge-to="reparador" data-edge-label="entrypoint real" data-edge-key="9" data-edge-id="plan-rep" data-composition-points="890,266;866,266;866,417;514,417;514,436;490,436" data-composition-crossover="halo" data-composition-independent="true" d="M 890 266 L 874 266 Q 866 266 866 274 L 866 409 Q 866 417 858 417 L 522 417 Q 514 417 514 425 L 514 428 Q 514 436 506 436 L 490 436" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 395 484 L 395 500 Q 395 508 403 508 L 608 508 Q 616 508 616 500 L 616 460 Q 616 452 624 452 L 640 452" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="reparador" data-edge-to="candidata" data-edge-label="edita solo aquí" data-edge-key="9" data-edge-id="rep-cand" data-composition-points="395,484;395,508;616,508;616,452;640,452" data-composition-crossover="halo" data-composition-independent="true" d="M 395 484 L 395 500 Q 395 508 403 508 L 608 508 Q 616 508 616 500 L 616 460 Q 616 452 624 452 L 640 452" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:10">
+          <path data-graph-role="automatic-crossover-underlay" d="M 890 266 L 874 266 Q 866 266 866 274 L 866 409 Q 866 417 858 417 L 522 417 Q 514 417 514 425 L 514 428 Q 514 436 506 436 L 490 436" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="plan" data-edge-to="reparador" data-edge-label="entrypoint real" data-edge-key="10" data-edge-id="plan-rep" data-composition-points="890,266;866,266;866,417;514,417;514,436;490,436" data-composition-crossover="halo" data-composition-independent="true" d="M 890 266 L 874 266 Q 866 266 866 274 L 866 409 Q 866 417 858 417 L 522 417 Q 514 417 514 425 L 514 428 Q 514 436 506 436 L 490 436" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:11">
           <path data-graph-role="automatic-crossover-underlay" d="M 190 338 L 608 338 Q 616 338 616 330 L 616 107 Q 616 99 624 99 L 640 99" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="operador" data-edge-to="producto" data-edge-label="git merge --ff-only + push" data-edge-key="10" data-edge-id="op-prod" data-composition-points="190,338;616,338;616,99;640,99" data-composition-crossover="halo" data-composition-independent="true" d="M 190 338 L 608 338 Q 616 338 616 330 L 616 107 Q 616 99 624 99 L 640 99" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+          <path data-edge-from="operador" data-edge-to="producto" data-edge-label="git merge --ff-only + push" data-edge-key="11" data-edge-id="op-prod" data-composition-points="190,338;616,338;616,99;640,99" data-composition-crossover="halo" data-composition-independent="true" d="M 190 338 L 608 338 Q 616 338 616 330 L 616 107 Q 616 99 624 99 L 640 99" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
         </g>
 
         <!-- Components -->
@@ -5089,8 +5095,21 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="115" y="166" class="t-security" font-size="7" text-anchor="middle">estados mecánicos</text>
         </g>
 
-        <g id="node-auditor" data-node-id="auditor" data-node-label="&lt;Proyecto&gt;-auditor" tabindex="0" role="button" aria-label="Focus &lt;Proyecto&gt;-auditor, examina y persiste hallazgos, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="examina y persiste hallazgos" data-node-context="Architecture component">
-          <title>&lt;Proyecto&gt;-auditor · examina y persiste hallazgos · Architecture component</title>
+        <g id="node-biblioteca" data-node-id="biblioteca" data-node-label="Biblioteca de skills" tabindex="0" role="button" aria-label="Focus Biblioteca de skills, 21 base + 4 patrones · 45 fuentes, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="21 base + 4 patrones · 45 fuentes" data-node-tag="procedencia registrada" data-node-context="Architecture component">
+          <title>Biblioteca de skills · 21 base + 4 patrones · 45 fuentes · Architecture component · procedencia registrada</title>
+          <rect x="300" y="40" width="190" height="72" rx="6" class="c-mask"/>
+          <rect x="300" y="40" width="190" height="72" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(306 46) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="395" y="74" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Biblioteca de skills</text>
+        <text data-detail="context" x="395" y="90" class="t-muted" font-size="9" text-anchor="middle">21 base + 4 patrones · 45 fuentes</text>
+        <text data-detail="fine" x="395" y="104" class="t-database" font-size="7" text-anchor="middle">procedencia registrada</text>
+        </g>
+
+        <g id="node-auditor" data-node-id="auditor" data-node-label="&lt;Proyecto&gt;-auditor" tabindex="0" role="button" aria-label="Focus &lt;Proyecto&gt;-auditor, examina y persiste hallazgos, Guard anti-escalada first-party en bash" aria-pressed="false" data-node-kind="backend" data-node-sublabel="examina y persiste hallazgos" data-node-context="Guard anti-escalada first-party en bash">
+          <title>&lt;Proyecto&gt;-auditor · examina y persiste hallazgos · Guard anti-escalada first-party en bash</title>
           <rect x="300" y="170" width="190" height="64" rx="6" class="c-mask"/>
           <rect x="300" y="170" width="190" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(306 176) scale(0.6875)">
@@ -5100,8 +5119,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="395" y="216" class="t-muted" font-size="9" text-anchor="middle">examina y persiste hallazgos</text>
         </g>
 
-        <g id="node-reparador" data-node-id="reparador" data-node-label="&lt;Proyecto&gt;-continuous-repair" tabindex="0" role="button" aria-label="Focus &lt;Proyecto&gt;-continuous-repair, corrige y verifica en candidata, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="corrige y verifica en candidata" data-node-context="Architecture component">
-          <title>&lt;Proyecto&gt;-continuous-repair · corrige y verifica en candidata · Architecture component</title>
+        <g id="node-reparador" data-node-id="reparador" data-node-label="&lt;Proyecto&gt;-continuous-repair" tabindex="0" role="button" aria-label="Focus &lt;Proyecto&gt;-continuous-repair, corrige y verifica en candidata, Guard anti-escalada first-party en bash" aria-pressed="false" data-node-kind="backend" data-node-sublabel="corrige y verifica en candidata" data-node-context="Guard anti-escalada first-party en bash">
+          <title>&lt;Proyecto&gt;-continuous-repair · corrige y verifica en candidata · Guard anti-escalada first-party en bash</title>
           <rect x="300" y="420" width="190" height="64" rx="6" class="c-mask"/>
           <rect x="300" y="420" width="190" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(306 426) scale(0.6875)">
@@ -5162,47 +5181,51 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="operador" data-edge-to="auditor" data-edge-label="prompt breve" data-edge-key="0" data-edge-id="op-aud">
+        <g data-detail="context" data-edge-from="biblioteca" data-edge-to="host" data-edge-label="snapshot con digest" data-edge-key="0" data-edge-id="bib-host">
+          <rect x="194.4" y="85.5" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="245" y="95.5" class="t-edge-default" font-size="8" text-anchor="middle">snapshot con digest</text>
+        </g>
+        <g data-detail="context" data-edge-from="operador" data-edge-to="auditor" data-edge-label="prompt breve" data-edge-key="1" data-edge-id="op-aud">
           <rect x="121.45" y="276" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="155.25" y="286" class="t-edge-default" font-size="8" text-anchor="middle">prompt breve</text>
         </g>
-        <g data-detail="context" data-edge-from="operador" data-edge-to="reparador" data-edge-label="prompt breve" data-edge-key="1" data-edge-id="op-rep">
+        <g data-detail="context" data-edge-from="operador" data-edge-to="reparador" data-edge-label="prompt breve" data-edge-key="2" data-edge-id="op-rep">
           <rect x="211.2" y="389" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="245" y="399" class="t-edge-default" font-size="8" text-anchor="middle">prompt breve</text>
         </g>
-        <g data-detail="context" data-edge-from="host" data-edge-to="auditor" data-edge-label="activa o RETAINED" data-edge-key="2" data-edge-id="host-aud">
-          <rect x="199.2" y="148.5" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="245" y="158.5" class="t-edge-default" font-size="8" text-anchor="middle">activa o RETAINED</text>
+        <g data-detail="context" data-edge-from="host" data-edge-to="auditor" data-edge-label="activa o RETAINED" data-edge-key="3" data-edge-id="host-aud">
+          <rect x="147.39999999999998" y="176.5" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="193.2" y="186.5" class="t-edge-default" font-size="8" text-anchor="middle">activa o RETAINED</text>
         </g>
-        <g data-detail="context" data-edge-from="host" data-edge-to="reparador" data-edge-label="activa o RETAINED" data-edge-key="3" data-edge-id="host-rep">
+        <g data-detail="context" data-edge-from="host" data-edge-to="reparador" data-edge-label="activa o RETAINED" data-edge-key="4" data-edge-id="host-rep">
           <rect x="17.400000000000006" y="228.5" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="63.2" y="238.5" class="t-edge-default" font-size="8" text-anchor="middle">activa o RETAINED</text>
         </g>
-        <g data-detail="context" data-edge-from="auditor" data-edge-to="producto" data-edge-label="solo lectura" data-edge-key="4" data-edge-id="aud-prod">
+        <g data-detail="context" data-edge-from="auditor" data-edge-to="producto" data-edge-label="solo lectura" data-edge-key="5" data-edge-id="aud-prod">
           <rect x="531.2" y="120" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="565" y="130" class="t-edge-dashed" font-size="8" text-anchor="middle">solo lectura</text>
         </g>
-        <g data-detail="context" data-edge-from="auditor" data-edge-to="estado" data-edge-label="persiste hallazgos + handoff" data-edge-key="5" data-edge-id="aud-est">
+        <g data-detail="context" data-edge-from="auditor" data-edge-to="estado" data-edge-label="persiste hallazgos + handoff" data-edge-key="6" data-edge-id="aud-est">
           <rect x="414.6" y="238.225" width="144.4" height="14" rx="3" class="c-mask"/>
           <text x="486.8" y="248.225" class="t-edge-emphasis" font-size="8" text-anchor="middle">persiste hallazgos + handoff</text>
         </g>
-        <g data-detail="context" data-edge-from="estado" data-edge-to="reparador" data-edge-label="hallazgos OPEN" data-edge-key="6" data-edge-id="est-rep">
+        <g data-detail="context" data-edge-from="estado" data-edge-to="reparador" data-edge-label="hallazgos OPEN" data-edge-key="7" data-edge-id="est-rep">
           <rect x="471.9" y="282" width="77.2" height="14" rx="3" class="c-mask"/>
           <text x="510.5" y="292" class="t-edge-default" font-size="8" text-anchor="middle">hallazgos OPEN</text>
         </g>
-        <g data-detail="context" data-edge-from="reparador" data-edge-to="estado" data-edge-label="registra verificación" data-edge-key="7" data-edge-id="rep-est">
+        <g data-detail="context" data-edge-from="reparador" data-edge-to="estado" data-edge-label="registra verificación" data-edge-key="8" data-edge-id="rep-est">
           <rect x="519.1" y="347" width="110.8" height="14" rx="3" class="c-mask"/>
           <text x="574.5" y="357" class="t-edge-default" font-size="8" text-anchor="middle">registra verificación</text>
         </g>
-        <g data-detail="context" data-edge-from="reparador" data-edge-to="candidata" data-edge-label="edita solo aquí" data-edge-key="8" data-edge-id="rep-cand">
+        <g data-detail="context" data-edge-from="reparador" data-edge-to="candidata" data-edge-label="edita solo aquí" data-edge-key="9" data-edge-id="rep-cand">
           <rect x="464.5" y="488" width="82" height="14" rx="3" class="c-mask"/>
           <text x="505.5" y="498" class="t-edge-emphasis" font-size="8" text-anchor="middle">edita solo aquí</text>
         </g>
-        <g data-detail="context" data-edge-from="plan" data-edge-to="reparador" data-edge-label="entrypoint real" data-edge-key="9" data-edge-id="plan-rep">
+        <g data-detail="context" data-edge-from="plan" data-edge-to="reparador" data-edge-label="entrypoint real" data-edge-key="10" data-edge-id="plan-rep">
           <rect x="825" y="321.5" width="82" height="14" rx="3" class="c-mask"/>
           <text x="866" y="331.5" class="t-edge-default" font-size="8" text-anchor="middle">entrypoint real</text>
         </g>
-        <g data-detail="context" data-edge-from="operador" data-edge-to="producto" data-edge-label="git merge --ff-only + push" data-edge-key="10" data-edge-id="op-prod">
+        <g data-detail="context" data-edge-from="operador" data-edge-to="producto" data-edge-label="git merge --ff-only + push" data-edge-key="11" data-edge-id="op-prod">
           <rect x="229.1" y="318" width="134.8" height="14" rx="3" class="c-mask"/>
           <text x="296.5" y="328" class="t-edge-security" font-size="8" text-anchor="middle">git merge --ff-only + push</text>
         </g>
@@ -5216,6 +5239,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="security-group" data-composition-frame-label="Frontera: commit y push solo del operador">
           <rect data-graph-role="structural-frame-label-mask" x="614" y="40" width="231.4" height="16" rx="3" class="c-mask"/>
           <text data-boundary-label="" x="618" y="53" class="t-security" font-size="9" font-weight="600">Frontera: commit y push solo del operador</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="security-group" data-composition-frame-label="Guard anti-escalada first-party en bash">
+          <rect data-graph-role="structural-frame-label-mask" x="274" y="150" width="220.6" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="278" y="163" class="t-security" font-size="9" font-weight="600">Guard anti-escalada first-party en bash</text>
         </g>
 
         <!-- Legend -->
@@ -5432,9 +5460,21 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <h3>Memoria acotada</h3>
         </div>
         <ul>
-          <li>Hallazgos con evidencia archivo:línea</li>
+          <li>Hallazgos anclados a un fragmento literal</li>
           <li>Deduplicación por (hallazgo, revisión)</li>
           <li>Topes por fichero: compacta con recibo</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot amber"></div>
+          <h3>Skills con procedencia</h3>
+        </div>
+        <ul>
+          <li>21 base + 4 patrones desde 45 fuentes fijadas</li>
+          <li>Creator reutiliza contra el snapshot con digest</li>
+          <li>El guard anti-escalada viaja en el bundle</li>
         </ul>
       </div>
 

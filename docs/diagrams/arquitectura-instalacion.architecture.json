@@ -35,6 +35,16 @@
           "estado"
         ],
         "note": "El plan de capacidades nombra el entrypoint real y qué falta en la máquina."
+      },
+      {
+        "id": "skills",
+        "label": "Procedencia",
+        "focus": [
+          "biblioteca",
+          "host",
+          "auditor"
+        ],
+        "note": "Creator reutiliza contra el snapshot congelado; el guard viaja en el bundle."
       }
     ],
     "output": "docs/diagrams/arquitectura-instalacion.html",
@@ -85,6 +95,21 @@
         64
       ],
       "tag": "estados mecánicos"
+    },
+    {
+      "id": "biblioteca",
+      "type": "database",
+      "label": "Biblioteca de skills",
+      "sublabel": "21 base + 4 patrones · 45 fuentes",
+      "pos": [
+        300,
+        40
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "procedencia registrada"
     },
     {
       "id": "auditor",
@@ -188,9 +213,23 @@
       "wraps": [
         "producto"
       ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Guard anti-escalada first-party en bash",
+      "wraps": [
+        "auditor",
+        "reparador"
+      ]
     }
   ],
   "connections": [
+    {
+      "id": "bib-host",
+      "from": "biblioteca",
+      "to": "host",
+      "label": "snapshot con digest"
+    },
     {
       "id": "op-aud",
       "from": "operador",
@@ -276,9 +315,18 @@
       "dot": "cyan",
       "title": "Memoria acotada",
       "items": [
-        "Hallazgos con evidencia archivo:línea",
+        "Hallazgos anclados a un fragmento literal",
         "Deduplicación por (hallazgo, revisión)",
         "Topes por fichero: compacta con recibo"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Skills con procedencia",
+      "items": [
+        "21 base + 4 patrones desde 45 fuentes fijadas",
+        "Creator reutiliza contra el snapshot con digest",
+        "El guard anti-escalada viaja en el bundle"
       ]
     },
     {

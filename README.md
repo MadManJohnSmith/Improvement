@@ -77,6 +77,34 @@ with different criteria. Improvement puts that into a structure that survives th
 - a **clear integration boundary**: the mode leaves the verified candidate and you make
   the commit and the push. Nothing reaches your branch without going through you.
 
+## Where the modes come from
+
+The two modes do not come out of an empty template: on every install they are composed
+from a **skills library** with recorded provenance. The base is 21 immutable skills —
+test-driven development, systematic debugging, security hardening, code review, writing
+plans…— reimplemented with MIT attribution. On top, 4 specialized catalog patterns that
+activate only on signals observed in your project: static review of IAM policies,
+security HTTP headers verification, FastAPI OpenAPI contract checks, and WCAG 2.2
+accessibility. Behind them stand 45 pinned external sources — skill repositories, W3C
+standards, AWS and MDN guides — with URL, revision, and license recorded for each one.
+
+Creator selects following a mandatory order: first a base skill; then a catalog pattern,
+only if its signal really appears in your repo; then compositions; and only as a last
+resort a brand-new extension, which has to demonstrate the previous layers do not apply.
+Every reuse is declared, and the Host verifies it against the library snapshot frozen
+with its digest at install time: what your mode reuses is exactly what the digest signed,
+not a version that drifted afterwards. This is the flow that generated the modes of
+RehabWeb, LoboApp, and the framework itself.
+
+**The library improves on evidence, not on opinions.** Its 55 scenarios compile into
+executable cases whose expected verdict only the Host knows. No base-skill change gets in
+without scoring on a gate that only accepts strict improvement: rejected attempts are
+kept with their before/after scores, and the reason for the rejection feeds the next
+attempt, so the framework never pays twice for the same correction. The executor is
+`bootstrap.py skill-gate-run`: against a DSH session with your project, the full loop is
+in your hands — use the modes, produce observations, the gate scores, the library can
+only get better.
+
 ## How to use it
 
 ### Simple prompts
@@ -96,8 +124,9 @@ still yours.
 
 ![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
 
-*The full cycle. It is an explorable diagram: every relationship can be traced, and the
-theme switches light/dark, in the [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+*The full cycle, including the learning close-out: each campaign's observations score the
+library at the holdout gate. It is an explorable diagram: every relationship can be
+traced, and the theme switches light/dark, in the [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
 
 ## Terms you will see
 
@@ -112,6 +141,9 @@ theme switches light/dark, in the [interactive version](https://madmanjohnsmith.
 | Capability plan | The inventory of your project's real test and analysis commands, signed at install. |
 | RETAINED | A retained turn: it ended with a readable result and without stepping outside the contract. |
 | VERIFIED / RESOLVED | The verified work and the closed defects, each with its evidence. |
+| Skills library | The 21 immutable base skills the modes are composed from, with executable scenarios and recorded sources. |
+| Evidence anchor | The literal code snippet that pins where a finding lives; the tool computes the location and rejects what it cannot place. |
+| Holdout gate | The lock that scores any library change against executable cases and only accepts strict improvement. |
 
 ## Verification against your real project, never with stubs
 
@@ -138,6 +170,32 @@ The plan's own output is Spanish, like the rest of the framework: `ready` is
 A detail the beta uncovered the hard way: if the tool is installed but outside the
 default `PATH`, the plan names it **by its absolute path**. A bare name that the mode's
 shell cannot invoke turns a working suite into a false `BLOCKED`.
+
+A finding's evidence is verifiable, not prose. A finding can anchor its location with a
+**literal code snippet** (`path` + `excerpt`): it is the write tool that locates the
+snippet and computes the line, and if the snippet is absent, or appears more than once,
+the write **is rejected** instead of guessing — an anchor that cannot be placed is an
+anchor pointing at the wrong line. `bootstrap.py state` reports how many findings are
+anchored and how many are not.
+
+Memory consults memory: when a finding is persisted, the episode index is checked, and if
+that exact signature was closed before, the record carries `prior_episode` with the unit
+that closed it and the fix that worked. `bootstrap.py state` counts the **repeats**: a
+prevention that failed is a different defect from the first one.
+
+### Stacks proven and stacks declared
+
+| Stack | Verification | Status |
+|---|---|---|
+| Rust | `cargo test`, `cargo clippy` | **proven** — Syncify, CI green in 3 jobs |
+| Django | `python manage.py test`, `django check` | **proven** — RehabWeb, 108 real tests |
+| Flutter | `flutter test`, `flutter analyze` | **proven** — LoboApp, 166 real tests |
+| Python | `pytest -q`, `compileall` | **proven** — the framework on itself |
+| Node · Go · Maven · Gradle · .NET · PHP · Ruby | each one's own entrypoint | declared |
+
+The seven declared ones are the beta's real gap: the plan resolves their command just the
+same, and if a tool is missing the result is `BLOCKED` naming it — never an invented
+`PASS`. Exercising them on real repositories is exactly what the beta exists for.
 
 ## Real-world cases
 
@@ -227,7 +285,8 @@ Framework suite: **774 tests green**.
 
 ![What Improvement installs on your machine](docs/diagrams/arquitectura-instalacion.png)
 
-*The two generated modes, the bounded memory, and the integration boundary. Also
+*The provenance-tracked library feeding generation, the anti-escalation guard, the two
+generated modes, the bounded memory, and the integration boundary. Also
 explorable: [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
 
 ```
@@ -257,8 +316,24 @@ silently: a receipt is left in `overflows.jsonl` saying what was lost and why.
   is retained is said, and why.
 - **It does not install providers or credentials.** DSH and your provider are
   prerequisites.
-- **It does not promise mechanical filesystem isolation.** The boundary is contractual
-  and tested; there is no kernel sandbox.
+- **The repairer does not run inside a kernel sandbox.** The write boundary is
+  contractual and tested; mechanical confinement exists today for the auditor (see
+  below), not for the repairer: it needs two writable roots and the runtime only accepts
+  one.
+
+## What is hardened
+
+- **Escalation is truly forbidden.** The modes never send `sandbox_permissions` or
+  `justification` — with any value — and a first-party guard intercepts those arguments
+  in bash before approval. There is a regression against the real runtime that mounts the
+  exact composition and blocks `workspace-write` and `danger-full-access` flat.
+- **The auditor can be confined in the kernel.** With the policy pointing at the
+  workspace, your product sits outside the writable roots: bash gets a real `EROFS` when
+  it tries to write it, and the auditor can still persist its findings. Measured against
+  the runtime, with a regression.
+- **The count is not the mode's claim.** A central command recomputes the persisted
+  findings from the files and requires the handoff to cover them exactly; a partial or
+  contradictory result is never written.
 
 ## Status: public beta
 
@@ -270,6 +345,12 @@ persisted and mechanically validated; and the memory reaching its caps with comp
 and a receipt. The Apache-2.0 license and the `v0.1.0-beta` tag are already published.
 What is left for the stable release is in the
 [launch plan](docs/plans/10-lanzamiento-publico.md).
+
+If the session dies mid-turn — and in a developer preview it does — the work is not lost:
+an interrupted candidate resumes by verifying the exact recorded identity (same worktree,
+same base, same findings digest) without discarding the diff, and `bootstrap.py state`
+reconciles the state with your repository when something moved outside it, with receipts
+instead of silences.
 
 ## Want to try it?
 
