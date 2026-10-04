@@ -150,7 +150,6 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             'EVALUACION_ORQUESTACION_EXTERNA',
             'trial-readiness',
             'cycle-artifacts',
-            'docs/diagrams/',
             'bash con redirección',
         ]
         for relative in ('README.md', 'PLAN_IMPLEMENTACION.md',
@@ -317,33 +316,46 @@ class ArchitectureConsistencyTest(unittest.TestCase):
 
 
     def test_the_published_suite_count_is_the_count_that_runs(self):
-            """A count of the suite is a claim about this repository, right now.
+        """A count of the suite is a claim about this repository, right now.
 
-            Two of them sat sixteen lines apart — "743 pruebas en verde" and "755
-            pruebas en verde" — both about the framework, both in the README, with
-            nothing saying which was current. Updating that by hand each round is
-            the fragile version: the count drifts the moment a regression is added
-            and nobody notices until a reader does.
+        Two of them sat sixteen lines apart — "743 pruebas en verde" and "755
+        pruebas en verde" — both about the framework, both in the README, with
+        nothing saying which was current. Updating that by hand each round is
+        the fragile version: the count drifts the moment a regression is added
+        and nobody notices until a reader does.
 
-            So the number is discovered rather than remembered. A claim that
-            disagrees with the suite has to say it belongs to an earlier moment, in
-            which case it is history and is allowed to be wrong.
-            """
-            import unittest as ut
-            discovered = ut.TestLoader().discover(
-                str(ROOT / "tests")).countTestCases()
-            self.assertGreater(discovered, 0, "la suite no se descubrió: el escaneo está roto")
-            claim = re.compile(r"Suite del (?:propio )?framework: \*\*(\d+) pruebas en verde\*\*")
-            paragraphs = [p for p in self.read("README.md").split("\n\n") if claim.search(p)]
-            self.assertTrue(paragraphs, "no hay cifra de suite que comprobar")
-            for paragraph in paragraphs:
-                for said in claim.findall(paragraph):
-                    with self.subTest(said=said):
+        So the number is discovered rather than remembered. A claim that
+        disagrees with the suite has to say it belongs to an earlier moment, in
+        which case it is history and is allowed to be wrong.
+
+        The claim lives in both README languages, and paragraphs may wrap mid-phrase, so each paragraph is whitespace-normalized before matching.
+        """
+        import unittest as ut
+        discovered = ut.TestLoader().discover(
+            str(ROOT / "tests")).countTestCases()
+        self.assertGreater(discovered, 0, "la suite no se descubrió: el escaneo está roto")
+        published = [
+            ("README.md", "at that point",
+             re.compile(r"Framework suite: \*\*(\d+) tests green\*\*")),
+            ("README.es.md", "en ese punto",
+             re.compile(r"Suite del (?:propio )?framework: \*\*(\d+) pruebas en verde\*\*")),
+        ]
+        for relative, historical, claim in published:
+            if not (ROOT / relative).exists():
+                continue
+            claims = 0
+            for paragraph in self.read(relative).split("\n\n"):
+                text = re.sub(r"\s+", " ", paragraph)
+                for said in claim.findall(text):
+                    claims += 1
+                    with self.subTest(relative=relative, said=said):
                         if int(said) == discovered:
                             continue
-                        self.assertIn("en ese punto", paragraph,
-                                      f"el README afirma {said} pruebas y la suite tiene "
+                        self.assertIn(historical, text,
+                                      f"{relative} afirma {said} pruebas y la suite tiene "
                                       f"{discovered}; una cifra antigua tiene que decir que lo es")
+            self.assertGreater(claims, 0,
+                               f"{relative} no publica cifra de suite que comprobar")
 
 
 if __name__ == '__main__':

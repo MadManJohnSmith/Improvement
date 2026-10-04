@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentación de DSH (DeepSeek Harness)
+    url: https://deepseek-harness.github.io/deepseek-harness/
+    about: >-
+      Guía de DSH, el runtime donde viven los dos modos y tus credenciales de
+      proveedor.
+  - name: README del framework
+    url: https://github.com/MadManJohnSmith/Improvement/blob/main/README.es.md#inicio-r%C3%A1pido
+    about: >-
+      Inicio rápido: requisitos, instalación y los dos prompts con los que se
+      opera.

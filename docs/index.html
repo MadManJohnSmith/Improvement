@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Improvement — Auditoría y reparación continua para tu repositorio</title>
+  <meta name="description" content="Auditoría y reparación continua para tu repositorio con agentes locales: hallazgos con evidencia, verificación contra tus pruebas reales y la integración siempre en tus manos.">
+  <style>
+    /* Paleta tomada del tema "classic" de docs/diagrams/ciclo-operativo.html */
+    :root {
+      --bg: #f4f5f7;
+      --text: #111827;
+      --text-muted: #5b6474;
+      --text-dim: #9aa3b2;
+      --panel: #ffffff;
+      --panel-border: #e5e7eb;
+      --code-bg: #f9fafb;
+      --accent: #059669;
+      --accent-strong: #047857;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #020617;
+        --text: #ffffff;
+        --text-muted: #94a3b8;
+        --text-dim: #475569;
+        --panel: rgba(15, 23, 42, 0.5);
+        --panel-border: #1e293b;
+        --code-bg: #0f172a;
+        --accent: #34d399;
+        --accent-strong: #6ee7b7;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 17px;
+      line-height: 1.6;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+    }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 3rem 1.25rem 4rem;
+    }
+    header { margin-bottom: 2.75rem; }
+    .kicker {
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 0.75rem;
+    }
+    h1 {
+      font-size: clamp(2.1rem, 5vw, 3rem);
+      line-height: 1.1;
+      margin: 0 0 1rem;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 46rem;
+      margin: 0;
+    }
+    h2 {
+      font-size: 1.35rem;
+      letter-spacing: -0.01em;
+      margin: 0 0 1.25rem;
+    }
+    section { margin-bottom: 3rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-strong); text-decoration: underline; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 1.4rem 1.5rem;
+      color: inherit;
+    }
+    .card:hover {
+      text-decoration: none;
+      border-color: var(--accent);
+    }
+    .card .label {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin: 0 0 0.6rem;
+    }
+    .card h3 {
+      font-size: 1.1rem;
+      margin: 0 0 0.5rem;
+      color: var(--text);
+    }
+    .card p {
+      margin: 0 0 0.9rem;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+    .card .go { font-size: 0.9rem; color: var(--accent); }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 1.1rem 1.3rem;
+      overflow-x: auto;
+      margin: 0 0 1rem;
+    }
+    pre code {
+      font-size: 0.88rem;
+      line-height: 1.7;
+      color: var(--text);
+    }
+    .hint { font-size: 0.92rem; color: var(--text-muted); margin: 0; }
+
+    ul.docs { list-style: none; padding: 0; margin: 0; }
+    ul.docs li {
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    ul.docs li:last-child { border-bottom: none; }
+    ul.docs .file { font-size: 0.92rem; }
+    ul.docs .desc { color: var(--text-muted); font-size: 0.95rem; }
+
+    footer {
+      border-top: 1px solid var(--panel-border);
+      padding: 1.5rem 1.25rem 2.5rem;
+      text-align: center;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="kicker mono">Beta · Agentes locales</p>
+      <h1>Improvement</h1>
+      <p class="subtitle">Auditoría y reparación continua para tu repositorio con agentes locales: hallazgos con evidencia, verificación contra tus pruebas reales y la integración siempre en tus manos.</p>
+    </header>
+
+    <section aria-label="Diagramas interactivos">
+      <div class="cards">
+        <a class="card" href="diagrams/ciclo-operativo.html">
+          <p class="label mono">Diagrama interactivo</p>
+          <h3>El ciclo operativo: auditar, reparar, integrar</h3>
+          <p>Cómo el auditor encuentra defectos con evidencia, el reparador los corrige verificando con tus propias pruebas y el commit y el push quedan siempre en tus manos.</p>
+          <span class="go">Abrir diagrama →</span>
+        </a>
+        <a class="card" href="diagrams/arquitectura-instalacion.html">
+          <p class="label mono">Diagrama interactivo</p>
+          <h3>Qué instala Improvement en tu máquina</h3>
+          <p>Los modos y skills que viven junto a tu repositorio tras la instalación, y cómo se activan sin tocar tu producto.</p>
+          <span class="go">Abrir diagrama →</span>
+        </a>
+      </div>
+    </section>
+
+    <section aria-labelledby="inicio-rapido">
+      <h2 id="inicio-rapido">Inicio rápido</h2>
+      <pre><code class="mono">git clone https://github.com/MadManJohnSmith/Improvement.git
+cd Improvement
+python3 -B scripts/bootstrap.py install --project /ruta/a/tu/proyecto --launch-dsh</code></pre>
+      <p class="hint">Más detalles en el <a href="https://github.com/MadManJohnSmith/Improvement/blob/main/README.es.md">README del repositorio</a>.</p>
+    </section>
+
+    <section aria-labelledby="documentacion">
+      <h2 id="documentacion">Documentación</h2>
+      <ul class="docs">
+        <li><a class="file mono" href="https://github.com/MadManJohnSmith/Improvement/blob/main/docs/usage.md">docs/usage.md</a> — <span class="desc">Uso operativo del framework en tu proyecto.</span></li>
+        <li><a class="file mono" href="https://github.com/MadManJohnSmith/Improvement/blob/main/docs/setup-dsh.md">docs/setup-dsh.md</a> — <span class="desc">Preparación de DSH, el harness local que ejecuta las misiones.</span></li>
+        <li><a class="file mono" href="https://github.com/MadManJohnSmith/Improvement/blob/main/docs/plans/10-lanzamiento-publico.md">docs/plans/10-lanzamiento-publico.md</a> — <span class="desc">Plan del lanzamiento público beta.</span></li>
+        <li><a class="file mono" href="https://github.com/MadManJohnSmith/Improvement/blob/main/docs/plans/11-notas-beta-v0.1.0.md">docs/plans/11-notas-beta-v0.1.0.md</a> — <span class="desc">Notas de la versión v0.1.0-beta.</span></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Distribuido bajo la licencia <a href="https://github.com/MadManJohnSmith/Improvement/blob/main/LICENSE">Apache-2.0</a>.</p>
+  </footer>
+</body>
+</html>

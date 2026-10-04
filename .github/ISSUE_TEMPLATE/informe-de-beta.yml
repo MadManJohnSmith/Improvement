@@ -1,0 +1,111 @@
+name: Informe de beta (mode-state)
+description: >-
+  El informe de beta es el mode-state de tu proyecto: comparte findings.jsonl,
+  handoffs.jsonl y verification-results.jsonl —sin código de tu producto— más
+  los turnos que acabaron en RETAINED y por qué. Es exactamente el formato que
+  el framework ya produce.
+labels: ["beta"]
+body:
+  - type: input
+    id: proyecto-y-stack
+    attributes:
+      label: Proyecto y stack
+      description: >-
+        Nombre de tu proyecto y tecnologías principales. Ejemplo ficticio:
+        «hypothetical-app — Python / Flask».
+      placeholder: hypothetical-app — Python / Flask
+    validations:
+      required: true
+  - type: textarea
+    id: que-intentabas
+    attributes:
+      label: ¿Qué intentabas?
+      description: >-
+        Qué campaña o ciclo lanzaste sobre tu proyecto y qué objetivo tenía:
+        auditoría completa, reparación continua, verificación de un hallazgo…
+    validations:
+      required: true
+  - type: textarea
+    id: findings-jsonl
+    attributes:
+      label: findings.jsonl
+      description: >-
+        Contenido de tu findings.jsonl tal como lo produjo el framework, una
+        línea JSONL por hallazgo y sin código de tu producto. El texto de abajo
+        es un ejemplo inventado y genérico: sustitúyelo por tus líneas reales.
+      placeholder: |-
+        {"finding_id": "F-021", "base_revision": "0123456789abcdef0123456789abcdef01234567", "severity": "MEDIUM", "summary": "Hallazgo inventado de ejemplo sobre hypothetical-app; sustituye esta línea por una real de tu findings.jsonl", "status": "OPEN", "cause": "Causa ficticia del ejemplo", "prevention": "Prevención ficticia del ejemplo"}
+    validations:
+      required: true
+  - type: textarea
+    id: handoffs-jsonl
+    attributes:
+      label: handoffs.jsonl
+      description: >-
+        Contenido de tu handoffs.jsonl, una línea JSONL por handoff. El texto de
+        abajo es un ejemplo inventado y genérico: sustitúyelo por tus líneas
+        reales.
+      placeholder: |-
+        {"handoff_id": "audit-complete-01234567-1", "base_revision": "0123456789abcdef0123456789abcdef01234567", "finding_ids": ["F-021"], "next_prompt": "Repara F-021; registro inventado de ejemplo"}
+    validations:
+      required: true
+  - type: textarea
+    id: verification-results-jsonl
+    attributes:
+      label: verification-results.jsonl
+      description: >-
+        Contenido de tu verification-results.jsonl, una línea JSONL por
+        verificación. El texto de abajo es un ejemplo inventado y genérico con
+        un PASS y un BLOCKED: sustitúyelo por tus líneas reales.
+      placeholder: |-
+        {"finding_id": "F-021", "candidate_head": "0123456789abcdef0123456789abcdef01234567", "candidate_diff_digest": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "result": "PASS", "command": "python -m unittest"}
+        {"finding_id": "F-022", "candidate_head": "0123456789abcdef0123456789abcdef01234567", "candidate_diff_digest": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", "result": "BLOCKED", "command": "hypothetical-tool --check"}
+    validations:
+      required: true
+  - type: textarea
+    id: turnos-retained
+    attributes:
+      label: Turnos que acabaron en RETAINED y por qué
+      description: >-
+        Cuántos turnos acabaron en RETAINED, con la causa y la acción concreta
+        que el framework registró en cada uno.
+    validations:
+      required: true
+  - type: input
+    id: version-dsh
+    attributes:
+      label: Versión de DSH (@deepseek-ai/dsh)
+      description: La versión del paquete que usaste.
+      placeholder: "@deepseek-ai/dsh@0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: entorno
+    attributes:
+      label: Entorno
+      description: >-
+        Sistema operativo, versión de Python y versión de git con las que
+        ejecutaste el framework.
+      placeholder: |-
+        SO:
+        Python:
+        git:
+    validations:
+      required: true
+  - type: textarea
+    id: notas
+    attributes:
+      label: Notas
+      description: Cualquier contexto adicional que ayude a interpretar el informe.
+    validations:
+      required: false
+  - type: checkboxes
+    id: declaraciones
+    attributes:
+      label: Declaraciones
+      description: Marca las dos casillas para poder enviar el informe.
+      options:
+        - label: No incluyo código ni datos privados de mi producto
+        - label: Los fragmentos vienen de mode-state tal como los produjo el framework
+    validations:
+      required: true

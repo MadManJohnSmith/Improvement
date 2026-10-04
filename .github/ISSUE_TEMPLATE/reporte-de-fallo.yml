@@ -1,0 +1,51 @@
+name: Reporte de fallo
+description: >-
+  Algo del framework falló: un comando se rompió, un resultado fue incorrecto o
+  la herramienta se comportó de forma inesperada. Para compartir el mode-state
+  de una campaña usa la plantilla «Informe de beta (mode-state)».
+labels: ["bug"]
+body:
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: ¿Qué pasó?
+      description: Describe el fallo tal como ocurrió.
+    validations:
+      required: true
+  - type: textarea
+    id: que-esperabas
+    attributes:
+      label: ¿Qué esperabas?
+      description: Qué comportamiento esperabas en su lugar.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos-para-reproducirlo
+    attributes:
+      label: Pasos para reproducirlo
+      description: >-
+        Los pasos exactos, numerados, desde un estado conocido. Incluye el
+        comando o el prompt que lo provocó.
+    validations:
+      required: true
+  - type: textarea
+    id: entorno
+    attributes:
+      label: Entorno
+      description: >-
+        Sistema operativo, versión de Python y versión de git; versión de DSH
+        (@deepseek-ai/dsh) si la conoces.
+    validations:
+      required: false
+  - type: textarea
+    id: salida-o-logs
+    attributes:
+      label: Salida o logs
+      description: >-
+        Pega aquí la salida del comando o el log relevante al fallo.
+      placeholder: >-
+        Pega aquí la salida o el log. Recorta antes cualquier dato privado
+        (credenciales, rutas personales, nombres de usuario o fragmentos de
+        código de tu producto) antes de pegar.
+    validations:
+      required: false

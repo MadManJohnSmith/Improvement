@@ -1,0 +1,19 @@
+# Las regresiones que levantan el runtime real de DSH se saltan solas cuando no existe
+# DSH_MODULE_ROOT, así que esta CI cubre la suite estándar del repositorio.
+name: Pruebas
+
+on:
+  push:
+    branches: ['main', 'dev']
+  pull_request:
+    branches: ['main', 'dev']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python3 -B -m unittest discover -s tests
