@@ -49,7 +49,7 @@ Unidades posteriores a C7, cada una con cambio de flujo, regresión y entrada en
 
 | ID | Resultado | Estado | Contenido comprobado |
 |---|---|---|---|
-| P1 | Registro de fuentes y biblioteca materializada | HECHO | 43 fuentes con procedencia fijada (commit o spec_version); 21 skills base inmutables y 4 patrones de catálogo con criterios de activación y escenarios; regresión bidireccional |
+| P1 | Registro de fuentes y biblioteca materializada | HECHO | 47 fuentes con procedencia fijada (commit o spec_version); 21 skills base inmutables y 4 patrones de catálogo con criterios de activación y escenarios; regresión bidireccional |
 | P2 | Integración biblioteca ↔ Creator | HECHO | snapshot de biblioteca por run, prompt con base/catálogo, `reuse_reference` resuelto por el validador Host contra el snapshot |
 | P3 | Despacho automático y ciclo de vida DSH | HECHO | detención de instancias previas, propiedad del puerto, cookie HMAC del home, lanzamiento no interactivo con diagnóstico, resolutor de proveedor utilizable |
 | P4 | Sesión Creator ligada al workspace | HECHO | `workspace/create` + `workspaceId`; única sesión Creator, agrupada en la UI, sin sesiones evaluator/reviewer ni delegación; frontera `workspace-write` = workspace del run |

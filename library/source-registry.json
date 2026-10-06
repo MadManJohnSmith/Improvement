@@ -595,6 +595,36 @@
       "status": "CANDIDATE",
       "decision_summary": "Leido por dentro en staging externo. Se toma el ancla de evidencia: el comentario se ancla a un fragmento literal y se localiza por coincidencia determinista; si no aparece se reubica entre ficheros sin modelo y con aviso; cero o varios aciertos rechazan y dejan el comentario sin localizar antes de que el modelo sobrescriba la evidencia. Se rechaza la dependencia: un informe externo no puede ser evidencia bajo G7, su esquema no cabe en el ledger estricto y la delegacion choca con F7.",
       "notes": "diff/resolver.go (ResolveComment y RelocateAcrossFiles deterministas; declinan en ambiguedad y devuelven false como 'aun sin localizar', no como error) y llmloop/loop.go:721 (el LLM solo entra si lo determinista no resolvio, con comment_refiled registrado). agent/selection.go: seleccion previa al despacho como funcion pura compartida por preview y ejecucion; agent/agent.go:1251 registerCoverage sella el denominador y su fallo impide reportar exito. Correccion sobre ASSURANCE_CASE.md: afirma validacion JSON Schema de la respuesta del LLM y no existe en el codigo."
+    },
+    {
+      "source_id": "agent-receipts",
+      "title": "receipts (agent-receipts)",
+      "publisher": "effectustasi",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/effectustasi/agent-receipts",
+      "revision": "d5666a4b35994df99f5dc1b30948aace3c8d95d6",
+      "retrieved_at": "2026-10-06",
+      "provenance_status": "pinned",
+      "license": "MIT",
+      "license_status": "open",
+      "status": "REFERENCE",
+      "decision_summary": "Evaluado por README, licencia y estructura (lectura interna aun no hecha). Tres skills de persona —prove-it, no-guessing, repro-first— que prohiben por prompt lo que este framework garantiza por herramienta: evidencia product-own-entrypoint-only, anclas por fragmento literal y verificacion contra el stack real antes de reparar. Valor como validacion de diseno y vocabulario: su salida «Not verified: ... To check: ...» es el BLOCKED con paso de provision de este framework. No se adopta como skill: sustituiria enforcement mecanico por enforcement de persona.",
+      "notes": "skills/prove-it, no-guessing y repro-first. Las vias de instalacion del propio repo (marketplace de Claude Code, curl a AGENTS.md para Codex) son exactamente las excluidas por la politica de este registro; la consulta es de lectura con pin, sin instalacion."
+    },
+    {
+      "source_id": "uipath-coder-eval",
+      "title": "Coder Eval",
+      "publisher": "UiPath",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/UiPath/coder_eval",
+      "revision": "1770360190187638f3b5b4a06503f0e2a28adf4b",
+      "retrieved_at": "2026-10-06",
+      "provenance_status": "pinned",
+      "license": "Apache-2.0",
+      "license_status": "open",
+      "status": "CANDIDATE",
+      "decision_summary": "Evaluado por README, licencia y estructura. Framework de evaluacion agnostico del agente: suites YAML declarativas, ejecucion en sandbox, scoring ponderado 0.0-1.0, check de activacion skill_triggered, capa A/B y gate de CI. Candidato como referencia para el ejecutor del gate de skills (D11) y el vocabulario de puntuacion de campanas. No adoptable como componente: dependencia externa pesada (pip, Python 3.13+), rubricas puntuadas por LLM donde aqui el oraculo deriva en el Host, y disciplina stdlib-only del repo.",
+      "notes": "Descubierto via la superficie de descubrimiento topic:claude-skills de la API de GitHub (funnel del mantenedor: filtro por hechos verificables —licencia, mantenimiento, pruebas— y analisis por skill; la frescura nunca ordena). Pendiente: lectura interna en staging del formato de suites y del criterio skill_triggered."
     }
   ]
 }

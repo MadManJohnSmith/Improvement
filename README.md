@@ -85,7 +85,7 @@ test-driven development, systematic debugging, security hardening, code review, 
 plans…— reimplemented with MIT attribution. On top, 4 specialized catalog patterns that
 activate only on signals observed in your project: static review of IAM policies,
 security HTTP headers verification, FastAPI OpenAPI contract checks, and WCAG 2.2
-accessibility. Behind them stand 45 pinned external sources — skill repositories, W3C
+accessibility. Behind them stand 47 pinned external sources — skill repositories, W3C
 standards, AWS and MDN guides — with URL, revision, and license recorded for each one.
 
 Creator selects following a mandatory order: first a base skill; then a catalog pattern,

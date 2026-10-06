@@ -100,7 +100,7 @@
       "id": "biblioteca",
       "type": "database",
       "label": "Biblioteca de skills",
-      "sublabel": "21 base + 4 patrones · 45 fuentes",
+      "sublabel": "21 base + 4 patrones · 47 fuentes",
       "pos": [
         300,
         40
@@ -324,7 +324,7 @@
       "dot": "amber",
       "title": "Skills con procedencia",
       "items": [
-        "21 base + 4 patrones desde 45 fuentes fijadas",
+        "21 base + 4 patrones desde 47 fuentes fijadas",
         "Creator reutiliza contra el snapshot con digest",
         "El guard anti-escalada viaja en el bundle"
       ]

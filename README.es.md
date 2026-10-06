@@ -86,7 +86,7 @@ desarrollo dirigido por tests, depuración sistemática, endurecimiento de segur
 revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
 patrones especializados que solo se activan ante señales observadas en tu proyecto:
 revisión estática de políticas IAM, verificación de cabeceras HTTP de seguridad, contrato
-OpenAPI de FastAPI y accesibilidad WCAG 2.2. Detrás hay 45 fuentes externas fijadas —
+OpenAPI de FastAPI y accesibilidad WCAG 2.2. Detrás hay 47 fuentes externas fijadas —
 repositorios, estándares W3C, guías de AWS y MDN — con URL, revisión y licencia
 registradas de cada una.
 

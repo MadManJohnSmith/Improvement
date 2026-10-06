@@ -1,5 +1,26 @@
 # Cambios
 
+## Registro de fuentes: dos hallazgos de la superficie de descubrimiento — 2026-10-06
+- **El registro pasa de 45 a 47 fuentes, ambas con pin por commit y decisión razonada.**
+  `UiPath/coder_eval` entra como **CANDIDATE** (Apache-2.0, pin `1770360`): evaluación
+  agnóstica del agente con suites YAML declarativas, ejecución en sandbox, scoring ponderado
+  0.0–1.0, check de activación `skill_triggered`, capa A/B y gate de CI — material de referencia
+  para el ejecutor del gate de skills (D11) y el vocabulario de puntuación de campañas; no
+  adoptable como componente (dependencia pip con Python 3.13+, rúbricas puntuadas por LLM donde
+  aquí el oráculo deriva en el Host, disciplina stdlib-only). `effectustasi/agent-receipts`
+  entra como **REFERENCE** (MIT, pin `d5666a4`): tres skills de persona (`prove-it`,
+  `no-guessing`, `repro-first`) que prohíben por prompt lo que este framework garantiza por
+  herramienta — evidencia del entrypoint propio, anclas por fragmento literal, verificación real
+  antes de reparar. Validación de diseño y vocabulario, no adopción: sustituir enforcement
+  mecánico por prompts es una regresión.
+- **La superficie de descubrimiento queda anotada en el estado**: la búsqueda
+  `topic:claude-skills` de la API de GitHub, filtrada por hechos verificables (licencia,
+  mantenimiento, pruebas) y con adopción solo por análisis por skill con pin manual; la
+  frescura nunca ordena. El recuento de fuentes se corrige en todas las superficies que lo
+  decían mal — status.md y la matriz decían 43, los README y el diagrama de arquitectura 45 —
+  con el diagrama re-renderizado y sus PNG recapturados.
+- **Suite: 777 OK (11 saltadas sin runtime)**
+
 ## Cobertura de stacks: treinta ecosistemas declarados — 2026-10-04
 - **El registro pasa de once a treinta stacks: diecinueve ecosistemas nuevos declaran su propio
   comando de verificación, y ninguno estrena campaña.** Por familias: Deno (`deno test`,
