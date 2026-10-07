@@ -1479,6 +1479,24 @@ def main():
     p_metrics.add_argument("--kind", action="append", default=None,
                            help="Limitar a un kind de evento; repetible")
 
+    p_workflow = sub.add_parser(
+        "workflow",
+        help="Ejecutar un plan de workflow sin DSH (gate/join/fase) o "
+             "verificar el journal de un run dir externo")
+    workflow_sub = p_workflow.add_subparsers(dest="workflow_command", required=True)
+    p_workflow_run = workflow_sub.add_parser(
+        "run",
+        help="Ejecuta un plan; comando-decisión: 0=RUN_COMPLETED, "
+             "1=RETAINED/ABSTAINED")
+    p_workflow_run.add_argument("plan", help="Ruta del plan JSON")
+    p_workflow_run.add_argument(
+        "--run-root", default=None,
+        help="Raíz de run dirs (default: hermano externo <workspace>-workflow)")
+    p_workflow_verify = workflow_sub.add_parser(
+        "verify",
+        help="Verifica por replay la cadena del journal de un run dir")
+    p_workflow_verify.add_argument("run_dir", help="Directorio de ejecución")
+
     args = parser.parse_args()
 
     # Only decision commands set a non-zero exit; the rest keep exit 0 and let
@@ -1675,6 +1693,33 @@ def main():
                       "reconciled": state_reconcile.reconcile(project, workspace)}
             if performed:
                 result["performed"] = performed
+
+        elif args.command == "workflow":
+            import workflow as workflow_runner
+            if args.workflow_command == "run":
+                outcome = workflow_runner.run_plan_entry(
+                    args.plan, run_root=args.run_root)
+                if outcome["result"] == "ABSTAINED":
+                    # La abstención nombra la pieza que falta y no deja run
+                    # dir ni journal: nada hecho, nada escrito. Comando de
+                    # decisión, así que también aquí el exit lleva el veredicto.
+                    print(json.dumps({"result": "ABSTAINED",
+                                      "reason": outcome["reason"]},
+                                     ensure_ascii=False), file=sys.stderr)
+                    sys.exit(1)
+                result = {"result": outcome["result"], "run_dir": outcome["run_dir"],
+                          "events": outcome["events"]}
+                if outcome["result"] == "RETAINED":
+                    result["cause"] = outcome["cause"]
+                    if not outcome.get("journaled", True):
+                        result["journaled"] = False
+                    # Comando-decisión: el exit code lleva la decisión.
+                    exit_code = 1
+            else:
+                info = workflow_runner.verify(args.run_dir)
+                result = {"result": "VERIFIED", "events": info["events"],
+                          "head_sha256": info["head_sha256"],
+                          "run_dir": info["run_dir"]}
 
         print(json.dumps(result, ensure_ascii=False, indent=2))
 

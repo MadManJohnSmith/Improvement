@@ -39,11 +39,14 @@ RUN_ARTIFACTS = {
     # it is for: a hand-copied list of names is already stale the moment the
     # product writes a new one.
     "evidence-ledger.jsonl", "scenarios.jsonl",
+    # Journal del ejecutor de workflow (scripts/workflow.py): vive en el run
+    # dir externo <workspace>-workflow/<run_id>/, nunca en este árbol.
+    "journal.jsonl",
 }
 # Whole directories a run creates, relative to whatever root it ran in.
 RUN_DIRECTORIES = {
     "mode-state", "metrics", "decisions", ".dsh-managed", ".dsh", "runs",
-    "reports", "candidates", "screenshots", "evidence",
+    "reports", "candidates", "screenshots", "evidence", "observations",
 }
 
 

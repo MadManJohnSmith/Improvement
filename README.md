@@ -287,7 +287,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **777 tests green**.
+Framework suite: **804 tests green**.
 
 ## What you get in your repo
 

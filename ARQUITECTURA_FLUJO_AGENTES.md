@@ -284,7 +284,16 @@ bootstrap.py purge-data      # destructivo, separado y con confirmación
 - launcher/canal de inferencia;
 - plugin `workflow-write`;
 - validador de generación;
-- instalador transaccional.
+- instalador transaccional;
+- ejecutor de workflows (`scripts/workflow.py`).
+
+### 4.9 Ejecutor de workflows en el Host
+
+Un workflow se declara en tres capas, y su ejecución es mecánica del Host, nunca un prompt:
+
+1. **Skill-doctrina.** El método de un proyecto —qué gates, en qué orden, qué se pregunta a DSH— vive en una skill de doctrina, nunca en el libre albedrío del modelo. *(Su aterrizaje en `library/` es la unidad U5, aún no ejecutada.)*
+2. **Ejecutor Host (`scripts/workflow.py`).** Un plan JSON se valida fail-closed —ids únicos, dependencias previas y acíclicas por construcción, tipos `gate`/`join`/`fase`/`ask`— y se ejecuta en un run dir externo al workspace y a todo `mode-state` (`<workspace>-workflow/<run_id>/`, 0700): el preflight de `mode-state` archiva y borra ficheros ajenos, así que un journal ahí dentro sería basura archivada. Cada evento queda en un journal append-only con digest encadenado y punto de control atómico; nada se trunca —lo excedido produce `RUN_RETAINED`— y `verify` re-verifica la cadena por replay, fallando cerrado ante alteración. La reanudación salta solo pasos con observación verificada por digest; el paso `ask` abre sesión DSH nueva por intento con el preset verificado del proyecto y reanuda ([corr-3]) reenviando el mismo `request_id` a la misma sesión viva, nunca a una nueva.
+3. **Entrada bootstrap.** `bootstrap.py workflow run|verify` adquiere el cliente DSH solo por la vía no-launch —jamás lanza `dsh web`— y convierte cada salida en comando-decisión: `RUN_COMPLETED` exit 0; `RUN_RETAINED` con causa y `ABSTENCIÓN` —nada hecho, nada escrito, sin run dir— exit 1.
 
 ---
 
