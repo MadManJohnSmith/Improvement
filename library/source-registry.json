@@ -625,6 +625,36 @@
       "status": "CANDIDATE",
       "decision_summary": "Evaluado por README, licencia y estructura. Framework de evaluacion agnostico del agente: suites YAML declarativas, ejecucion en sandbox, scoring ponderado 0.0-1.0, check de activacion skill_triggered, capa A/B y gate de CI. Candidato como referencia para el ejecutor del gate de skills (D11) y el vocabulario de puntuacion de campanas. No adoptable como componente: dependencia externa pesada (pip, Python 3.13+), rubricas puntuadas por LLM donde aqui el oraculo deriva en el Host, y disciplina stdlib-only del repo.",
       "notes": "Descubierto via la superficie de descubrimiento topic:claude-skills de la API de GitHub (funnel del mantenedor: filtro por hechos verificables —licencia, mantenimiento, pruebas— y analisis por skill; la frescura nunca ordena). Pendiente: lectura interna en staging del formato de suites y del criterio skill_triggered."
+    },
+    {
+      "source_id": "mattpocock-skills",
+      "title": "Skills",
+      "publisher": "Matt Pocock",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/mattpocock/skills",
+      "revision": "b0618bc436ad893b3c5e84e55fba86586d34a404",
+      "retrieved_at": "2026-10-08",
+      "provenance_status": "pinned",
+      "license": "MIT",
+      "license_status": "open",
+      "status": "REFERENCE",
+      "decision_summary": "38 SKILL.md de ingenieria y productividad; el manifiesto selecciona 27 (engineering/ y productivity/), mientras misc/ e in-progress/ quedan fuera. Instrucciones puras, sin runtime: la ejecucion depende del host (subagentes, git, gh/glab). diagnosing-bugs (bucle reproducible, minimizacion, hipotesis, instrumentacion, verificacion) solapa con base/ de superpowers, asi que el valor esta en el triaje por skill, no en el catalogo. Sin auto-descubrimiento ni marketplace (prohibidos por la politica); la verificacion declarada pasa a gate del Host y los artefactos de reproduccion, fuera del arbol.",
+      "notes": "Auditado en el commit del 2026-10-08. Su package.json solo trae Changesets como dependencia de desarrollo: no hay motor que instalar ni auditar como codigo. Conversion por skill individual al estilo de base/ y catalog/, nunca el catalogo completo. Adopcion aplazada hasta que terminen los cambios de codigo en curso y solo si el triaje demuestra ganancia sobre lo ya cubierto."
+    },
+    {
+      "source_id": "nvidia-nemo-switchyard",
+      "title": "Switchyard",
+      "publisher": "NVIDIA NeMo",
+      "kind": "runtime",
+      "canonical_url": "https://github.com/NVIDIA-NeMo/Switchyard",
+      "revision": "1a0d1191a377e3b97e285219e9a6f15efa2cb675",
+      "retrieved_at": "2026-10-08",
+      "provenance_status": "pinned",
+      "license": "Apache-2.0",
+      "license_status": "open",
+      "status": "REFERENCE",
+      "decision_summary": "Proxy y enrutador de modelos v0.3.0: switchyard-server expone APIs OpenAI y Anthropic; libsy separa decisiones de llamadas al modelo mediante pasos que ejecuta el host. Interesa como referencia para una posible necesidad futura de enrutado, no como componente adoptado. Un servidor residente cambiaria la topologia actual; su fallback_client reenvia rutas no registradas y decision_clients solo configura system_one. Una evaluacion posterior debe medir la mejora frente al flujo vigente y comprobar aislamiento, fail-closed y autoridad del Host.",
+      "notes": "Auditado en el commit del 2026-10-08, licencia Apache-2.0 y version pre-1.0: revalidar API y comportamiento al evaluar otra revision. No instalar ni ejecutar en el framework; cualquier prototipo, build o ensayo debe quedar fuera del arbol canonico. Adopcion aplazada hasta que terminen los cambios de codigo en curso y solo si aporta funcionalidad medible sin debilitar los gates de evaluacion existentes."
     }
   ]
 }
