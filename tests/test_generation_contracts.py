@@ -1563,7 +1563,7 @@ class TestSourceRegistry(unittest.TestCase):
 
     def test_local_path_in_inventory_location_rejected(self):
         doc = _golden_source_registry()
-        doc["analysis_inventory"]["location"] = "/home/alan/external/inventory"
+        doc["analysis_inventory"]["location"] = "/home/example/external/inventory"
         with self.assertRaises(gc.ContractError) as ctx:
             gc.validate("source-registry", doc)
         self.assertIn("local filesystem", str(ctx.exception))

@@ -178,6 +178,50 @@ class WorkflowExecutorTests(unittest.TestCase):
 
     # -- reanudación por replay: solo se salta STEP_COMPLETED verificado
 
+    def test_verify_rechaza_ask_skipped_sin_condicion_del_plan(self):
+        import workflow
+        plan_path = self.write_plan([self.gate('g1', ['true'])])
+        outcome = run_plan(plan_path)
+        run_dir = Path(outcome['run_dir'])
+        payloads = read_journal(run_dir)
+        writer = workflow._JournalWriter(run_dir, workflow.MAX_STORE, len(payloads),
+                                         payloads[-1]['content_sha256'], len(payloads))
+        writer.append('ASK_SKIPPED', {'step_id': 'g1', 'from': 'g1',
+                                      'esperado': 'FAIL', 'real': 'PASS'})
+        with self.assertRaisesRegex(WorkflowError, 'ASK_SKIPPED sin condición'):
+            verify(run_dir)
+
+    def test_verify_rechaza_join_con_dependencia_solo_skipped(self):
+        from tests.test_workflow_ask import FakeAskClient
+        import workflow
+        client = FakeAskClient()
+        client.auto_complete_on_send = True
+        (self.workspace / 'evidence').mkdir()
+        (self.workspace / 'evidence/veredicto.json').write_text('{"estado":"NO"}\n')
+        plan_path = self.write_plan([
+            self.gate('g1', ['true']),
+            {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+             'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
+                             'field': 'estado', 'equals': 'SI'}},
+            {'id': 'j', 'type': 'join', 'depends': ['a1']}], preset='cordis')
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'RETAINED')
+        run_dir = Path(outcome['run_dir'])
+        payloads = read_journal(run_dir)
+        skipped = next(item['payload'] for item in payloads if item['kind'] == 'ASK_SKIPPED')
+        forged = {'step_id': 'j', 'attempt': 1, 'observation': 'observations/99-j-join.json',
+                  'output_sha256': 'a' * 64, 'deps': {'a1': 'a' * 64}}
+        data = workflow._canonical({'step': 'j', 'intent': 'join', 'attempt': 1,
+                                    'deps': {'a1': 'a' * 64}}) + b'\n'
+        forged['output_sha256'] = hashlib.sha256(data).hexdigest()
+        (run_dir / forged['observation']).write_bytes(data)
+        writer = workflow._JournalWriter(run_dir, workflow.MAX_STORE, len(payloads),
+                                         payloads[-1]['content_sha256'], len(payloads))
+        writer.append('STEP_COMPLETED', forged)
+        with self.assertRaisesRegex(WorkflowError, 'join sin dependencias'):
+            verify(run_dir)
+        self.assertEqual(skipped['step_id'], 'a1')
+
     def test_replay_salta_solo_step_completed(self):
         flag = self.tmp / 'bandera'
         plan_path = self.write_plan([self.gate('s1', ['true']),
@@ -317,25 +361,16 @@ class WorkflowExecutorTests(unittest.TestCase):
         self.assertEqual(payloads[-1]['payload']['cause'], 'journal-store-limit')
         self.assertEqual(verify(outcome['run_dir'])['events'], len(payloads))
 
-    # -- registro mayor que 4096 B -> RETAINED sin truncar
+    # -- el join imposible de registrar se rechaza antes de crear run dir
 
     def test_registro_mayor_que_4096_retina(self):
         deps = ['g%02d' % index for index in range(60)]
         steps = [self.gate(dep, ['true']) for dep in deps]
         steps.append({'id': 'j', 'type': 'join', 'depends': deps})
         plan_path = self.write_plan(steps)
-        outcome = run_plan(plan_path)
-        self.assertEqual(outcome['result'], 'RETAINED')
-        self.assertEqual(outcome['cause'], 'journal-record-limit:j')
-        payloads = read_journal(outcome['run_dir'])
-        kinds = [e['kind'] for e in payloads]
-        self.assertEqual(kinds[-1], 'RUN_RETAINED')
-        completed = [e['payload']['step_id'] for e in payloads
-                     if e['kind'] == 'STEP_COMPLETED']
-        self.assertNotIn('j', completed)
-        for line in (Path(outcome['run_dir']) / 'journal.jsonl').read_bytes().splitlines():
-            self.assertLessEqual(len(line), 4096)
-        self.assertEqual(verify(outcome['run_dir'])['events'], len(payloads))
+        with self.assertRaisesRegex(WorkflowError, 'join excede registro'):
+            run_plan(plan_path)
+        self.assertFalse(self.run_root.exists())
 
     # -- plan gate-only por CLI: RUN_COMPLETED, exit 0
 
@@ -428,6 +463,139 @@ class WorkflowExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, 'registro alterado'):
             run_plan(plan_path)
         self.assertEqual(journal.read_bytes(), altered)
+
+        with self.subTest(case='gate_rejected_con_observacion_alterada'):
+            p1 = self.write_plan([self.gate('g1', ['false'], action='abort')], filename='gate-rej.json')
+            out1 = run_plan(p1)
+            self.assertEqual(out1['result'], 'RETAINED')
+            rd1 = Path(out1['run_dir'])
+            obs_files = list((rd1 / 'observations').glob('*-g1-gate.json'))
+            self.assertEqual(len(obs_files), 1)
+            obs_f = obs_files[0]
+            obs_f.write_bytes(obs_f.read_bytes() + b' ')
+            with self.assertRaisesRegex(WorkflowError, 'observación alterada'):
+                verify(rd1)
+            with self.assertRaisesRegex(WorkflowError, 'observación alterada'):
+                run_plan(p1)
+
+        with self.subTest(case='step_failed_continue_con_observacion_alterada'):
+            p2 = self.write_plan([self.gate('g1', ['false'], action='continue', rounds=1)], filename='step-fail.json')
+            out2 = run_plan(p2)
+            self.assertEqual(out2['result'], 'COMPLETED')
+            rd2 = Path(out2['run_dir'])
+            obs_files2 = list((rd2 / 'observations').glob('*-g1-gate.json'))
+            self.assertEqual(len(obs_files2), 1)
+            obs_f2 = obs_files2[0]
+            obs_f2.write_bytes(obs_f2.read_bytes() + b' ')
+            with self.assertRaisesRegex(WorkflowError, 'observación alterada'):
+                verify(rd2)
+            with self.assertRaisesRegex(WorkflowError, 'observación alterada'):
+                run_plan(p2)
+
+        with self.subTest(case='ask_skipped_incoherente_con_veredicto'):
+            from tests.test_workflow_ask import FakeAskClient
+            import workflow
+            client = FakeAskClient()
+            client.auto_complete_on_send = True
+            (self.workspace / 'evidence').mkdir(parents=True, exist_ok=True)
+            (self.workspace / 'evidence' / 'veredicto.json').write_text('{"verdict": "FAIL"}\n')
+            p3 = self.write_plan([
+                self.gate('g1', ['true']),
+                {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
+                                 'field': 'verdict', 'equals': 'PASS'}},
+            ], preset='cordis', filename='ask-skip-incoh.json')
+            out3 = run_plan(p3, ask_client=client)
+            self.assertEqual(out3['result'], 'COMPLETED')
+            rd3 = Path(out3['run_dir'])
+            payloads = read_journal(rd3)
+            obs = list((rd3 / 'observations').glob('*-g1-gate.json'))[0]
+            obs_sha = hashlib.sha256(obs.read_bytes()).hexdigest()
+            writer = workflow._JournalWriter(rd3, workflow.MAX_STORE, len(payloads),
+                                             payloads[-1]['content_sha256'], len(payloads))
+            writer.append('ASK_SKIPPED', {'step_id': 'a1', 'from': 'g1',
+                                          'esperado': 'PASS', 'real': 'PASS',
+                                          'source_digest': obs_sha})
+            with self.assertRaisesRegex(WorkflowError, 'ASK_SKIPPED incoherente con el veredicto de origen'):
+                verify(rd3)
+
+        with self.subTest(case='ask_skipped_con_source_digest_incoherente'):
+            from tests.test_workflow_ask import FakeAskClient
+            import workflow
+            client = FakeAskClient()
+            client.auto_complete_on_send = True
+            (self.workspace / 'evidence').mkdir(parents=True, exist_ok=True)
+            (self.workspace / 'evidence' / 'veredicto.json').write_text('{"verdict": "PASS"}\n')
+            p4 = self.write_plan([
+                self.gate('g1', ['true']),
+                {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
+                                 'field': 'verdict', 'equals': 'FAIL'}},
+            ], preset='cordis', filename='ask-skip-digest.json')
+            out4 = run_plan(p4, ask_client=client)
+            self.assertEqual(out4['result'], 'COMPLETED')
+            rd4 = Path(out4['run_dir'])
+            payloads = read_journal(rd4)
+            writer = workflow._JournalWriter(rd4, workflow.MAX_STORE, len(payloads),
+                                             payloads[-1]['content_sha256'], len(payloads))
+            writer.append('ASK_SKIPPED', {'step_id': 'a1', 'from': 'g1',
+                                          'esperado': 'FAIL', 'real': 'PASS',
+                                          'source_digest': '0' * 64})
+            with self.assertRaisesRegex(WorkflowError, 'digest de origen inconsistente'):
+                verify(rd4)
+
+        with self.subTest(case='step_completed_condicional_incoherente'):
+            from tests.test_workflow_ask import FakeAskClient
+            import workflow
+            client = FakeAskClient()
+            client.auto_complete_on_send = True
+            (self.workspace / 'evidence').mkdir(parents=True, exist_ok=True)
+            (self.workspace / 'evidence' / 'veredicto.json').write_text('{"verdict": "PASS"}\n')
+            p5 = self.write_plan([
+                self.gate('g1', ['true']),
+                {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
+                                 'field': 'verdict', 'equals': 'FAIL'}},
+            ], preset='cordis', filename='step-comp-incoh.json')
+            out5 = run_plan(p5, ask_client=client)
+            self.assertEqual(out5['result'], 'COMPLETED')
+            rd5 = Path(out5['run_dir'])
+            journal = rd5 / 'journal.jsonl'
+            lines = journal.read_bytes().splitlines(keepends=True)
+            g1_lines = lines[:3]  # PLAN_LOADED, STEP_STARTED, STEP_COMPLETED
+            journal.write_bytes(b''.join(g1_lines))
+            raw_events = [json.loads(line) for line in g1_lines]
+            obs = rd5 / 'observations' / '02-a1-ask.json'
+            obs.write_text('{"status": "completed"}')
+            obs_sha = hashlib.sha256(obs.read_bytes()).hexdigest()
+            g1_obs = list((rd5 / 'observations').glob('*-g1-gate.json'))[0]
+            g1_sha = hashlib.sha256(g1_obs.read_bytes()).hexdigest()
+            writer = workflow._JournalWriter(rd5, workflow.MAX_STORE, len(raw_events),
+                                             raw_events[-1]['content_sha256'], len(raw_events))
+            writer.append('STEP_COMPLETED', {'step_id': 'a1', 'attempt': 1,
+                                             'observation': 'observations/02-a1-ask.json',
+                                             'output_sha256': obs_sha,
+                                             'deps': {'g1': g1_sha},
+                                             'prompt_sha256': 'a' * 64})
+            with self.assertRaisesRegex(WorkflowError, 'ask completado con veredicto no coincidente'):
+                verify(rd5)
+
+    def test_join_preflight_cincuenta_si_cincuenta_y_cinco_no(self):
+        for count, accepted in ((50, True), (55, False)):
+            with self.subTest(count=count):
+                deps = ['g%02d' % index for index in range(count)]
+                steps = [self.gate(dep, ['true']) for dep in deps]
+                steps.append({'id': 'j', 'type': 'join', 'depends': deps})
+                path = self.write_plan(steps, filename='join-%d.json' % count)
+                if accepted:
+                    outcome = run_plan(path)
+                    self.assertEqual(outcome['result'], 'COMPLETED')
+                    self.assertIn('STEP_COMPLETED', self.kinds(outcome['run_dir']))
+                else:
+                    with self.assertRaisesRegex(WorkflowError, 'join excede registro'):
+                        run_plan(path)
+                    run_id = 'r-' + hashlib.sha256(path.read_bytes()).hexdigest()[:24]
+                    self.assertFalse((self.run_root / run_id).exists())
 
 
 if __name__ == '__main__':

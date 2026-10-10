@@ -41,12 +41,14 @@ RUN_ARTIFACTS = {
     "evidence-ledger.jsonl", "scenarios.jsonl",
     # Journal del ejecutor de workflow (scripts/workflow.py): vive en el run
     # dir externo <workspace>-workflow/<run_id>/, nunca en este árbol.
-    "journal.jsonl",
+    "journal.jsonl", "plan.json", "manifest.json", "auditoria.json",
+    "reparar.json", "veredicto.json",
 }
 # Whole directories a run creates, relative to whatever root it ran in.
 RUN_DIRECTORIES = {
     "mode-state", "metrics", "decisions", ".dsh-managed", ".dsh", "runs",
     "reports", "candidates", "screenshots", "evidence", "observations",
+    "campaign",
 }
 
 
@@ -76,6 +78,17 @@ class CanonicalTreeTest(unittest.TestCase):
         self.assertEqual(found, [],
                          "artefactos de ejecución dentro del árbol canónico: "
                          f"{found}. AGENTS.md exige que vivan fuera.")
+
+    def test_campaign_files_in_canonical_tree_are_detected(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'campaign').mkdir()
+            (root / 'campaign/plan.json').write_text('{}\n', encoding='utf-8')
+            with mock.patch.dict(self.entries.__func__.__globals__, {'ROOT': root}):
+                with self.assertRaisesRegex(AssertionError, 'campaign/plan.json'):
+                    self.test_the_canonical_tree_holds_no_run_artifact()
 
     def test_the_vocabulary_still_matches_what_the_product_writes(self):
         """The list above is only worth anything while it is the real one.
@@ -116,7 +129,9 @@ def _looks_like_state(name):
     """A state file the product writes, as opposed to a schema or a config."""
     return (name.endswith(".jsonl")
             or name in {"run.json", "work-items.json", "project.json", "mode.json",
-                        "started.json", "summary.json", "checkpoint.json"})
+                        "started.json", "summary.json", "checkpoint.json",
+                        "plan.json", "manifest.json", "auditoria.json",
+                        "reparar.json", "veredicto.json"})
 
 
 if __name__ == "__main__":

@@ -86,7 +86,7 @@ desarrollo dirigido por tests, depuración sistemática, endurecimiento de segur
 revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
 patrones especializados que solo se activan ante señales observadas en tu proyecto:
 revisión estática de políticas IAM, verificación de cabeceras HTTP de seguridad, contrato
-OpenAPI de FastAPI y accesibilidad WCAG 2.2. Detrás hay 49 fuentes externas fijadas —
+OpenAPI de FastAPI y accesibilidad WCAG 2.2. Detrás hay 50 fuentes externas fijadas —
 repositorios, estándares W3C, guías de AWS y MDN — con URL, revisión y licencia
 registradas de cada una.
 
@@ -286,7 +286,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **804 pruebas en
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **848 pruebas en
 verde**.
 
 ## Qué obtienes en tu repo

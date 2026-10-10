@@ -14,6 +14,7 @@ import tempfile
 import unittest
 
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import stack  # noqa: E402
@@ -426,6 +427,54 @@ class StackPlanTests(unittest.TestCase):
             path.write_text(json.dumps(tampered))
             with self.assertRaisesRegex(ValueError, 'alterado'):
                 stack.load(workspace)
+
+    def test_write_cambio_de_directorio_antes_del_temporal_no_escribe_fuera(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / 'ws'
+            workspace.mkdir()
+            outside = root / 'outside'
+            outside.mkdir()
+            value = stack.plan(workspace, workspace=workspace)
+            managed = workspace / '.dsh-managed'
+            real_open = stack.os.open
+            switched = False
+
+            def swap_at_temp(path, flags, *args, **kwargs):
+                nonlocal switched
+                if str(path).startswith('.capability-plan.json.') and not switched:
+                    switched = True
+                    managed.rename(root / 'old-managed')
+                    managed.symlink_to(outside, target_is_directory=True)
+                return real_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(stack.os, 'open', side_effect=swap_at_temp):
+                stack.write(value, workspace)
+            self.assertTrue(switched)
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertTrue((root / 'old-managed/capability-plan.json').is_file())
+
+    def test_write_rechaza_fichero_y_directorio_symlink_sin_fuga(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / 'ws'
+            workspace.mkdir()
+            outside = root / 'outside'
+            outside.mkdir()
+            value = stack.plan(workspace, workspace=workspace)
+            managed = workspace / '.dsh-managed'
+            managed.mkdir()
+            destination = outside / 'robado.json'
+            (managed / 'capability-plan.json').symlink_to(destination)
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                stack.write(value, workspace)
+            self.assertFalse(destination.exists())
+            (managed / 'capability-plan.json').unlink()
+            managed.rmdir()
+            managed.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                stack.write(value, workspace)
+            self.assertFalse((outside / 'capability-plan.json').exists())
 
     def test_product_without_markers_resolves_to_no_stacks_not_invention(self):
         with tempfile.TemporaryDirectory() as tmp:

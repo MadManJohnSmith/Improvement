@@ -53,11 +53,14 @@ Reglas del plan aprobado (U1):
 Solo biblioteca estándar de Python; un solo escritor por run dir.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import re
 import secrets
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -76,6 +79,9 @@ MAX_PLAN_BYTES = 128 * 1024
 MAX_CAPTURE_BYTES = 1024 * 1024
 MAX_PROMPT_BYTES = 262144
 MAX_RESULT_BYTES = 1024 * 1024
+EVIDENCE_FILE_LIMIT = 200
+EVIDENCE_FILE_BYTES = 8 * 1024 * 1024
+EVIDENCE_TOTAL_BYTES = 256 * 1024 * 1024
 ASK_POLL_SECONDS = 0.1
 ASK_CANCEL_GRACE_SECONDS = 30.0
 # Reserva que garantiza que RUN_RETAINED quepa cuando un registro regular
@@ -90,11 +96,13 @@ HEAD_KIND = 'workflow-head'
 CONTENT_KEYS = ('version', 'seq', 'event_id', 'kind', 'payload', 'prev_sha256')
 ENVELOPE_KEYS = frozenset(CONTENT_KEYS) | {'content_sha256'}
 KINDS = frozenset({'PLAN_LOADED', 'PHASE_STARTED', 'STEP_STARTED', 'STEP_COMPLETED',
-                   'GATE_REJECTED', 'STEP_FAILED', 'ROUND_CAP_REACHED', 'RUN_RETAINED',
+                   'ASK_SKIPPED', 'GATE_REJECTED', 'STEP_FAILED', 'ROUND_CAP_REACHED', 'RUN_RETAINED',
                    'RUN_COMPLETED'})
 STEP_TYPES = ('gate', 'join', 'fase', 'ask')
 FAIL_ACTIONS = ('retry', 'abort', 'continue')
 STEP_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
+EVIDENCE_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$')
+FIELD_RE = re.compile(r'^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$')
 SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 OBSERVATION_RE = re.compile(r'^observations/[0-9]{2,}-[A-Za-z0-9._-]{1,80}-(gate|join|ask)\.json$')
 OBS_NUMBER_RE = re.compile(r'^([0-9]+)-')
@@ -213,8 +221,25 @@ def _validate_plan(value):
         step = _validate_step(raw_step, previous_ids, index)
         steps.append(step)
         previous_ids.add(step['id'])
+        if step['type'] == 'join':
+            _check_join_record(step, index)
     return {'name': name, 'workspace': workspace, 'run_root': run_root,
             'preset': preset, 'steps': steps}
+
+
+def _check_join_record(step, index):
+    # El tamaño del registro depende de los digests de todas las dependencias;
+    # rechazarlo ahora evita ejecutar trabajo que no podrá registrar el join.
+    digests = {dep: '0' * 64 for dep in step['depends']}
+    observation = '%s/%02d-%s-join.json' % (OBSERVATIONS_NAME, index + 1, step['id'])
+    payload = {'step_id': step['id'], 'attempt': 1, 'observation': observation,
+               'output_sha256': '0' * 64, 'deps': digests}
+    envelope = {'version': 1, 'seq': index + 2, 'event_id': 'e-' + '0' * 16,
+                'kind': 'STEP_COMPLETED', 'payload': payload, 'prev_sha256': '0' * 64,
+                'content_sha256': '0' * 64}
+    if len(_canonical(envelope) + b'\n') > MAX_RECORD:
+        raise WorkflowError('paso inválido: join excede registro de %d B: %s' % (
+            MAX_RECORD, step['id']))
 
 
 def _validate_step(raw, previous_ids, index):
@@ -223,7 +248,7 @@ def _validate_step(raw, previous_ids, index):
         raise WorkflowError('paso inválido: se esperaba un objeto' + where)
     unknown = set(raw) - {'id', 'type', 'depends', 'command', 'on_fail',
                           'name', 'max_rounds', 'prompt', 'prompt_file', 'timeout_s',
-                          'result_contract'}
+                          'result_contract', 'preset', 'if_veredicto'}
     if unknown:
         raise WorkflowError('paso inválido: claves desconocidas: ' + ', '.join(sorted(unknown)) + where)
     step_id = raw.get('id')
@@ -248,6 +273,8 @@ def _validate_step(raw, previous_ids, index):
         if dep not in previous_ids:
             raise WorkflowError('paso inválido: dependencia no previa: ' + dep + where)
     step = {'id': step_id, 'type': step_type, 'depends': tuple(depends)}
+    if step_type != 'ask' and ('preset' in raw or 'if_veredicto' in raw):
+        raise WorkflowError('paso inválido: preset/if_veredicto solo para ask' + where)
     if step_type == 'gate':
         command = raw.get('command')
         if (not isinstance(command, list) or not command
@@ -279,6 +306,29 @@ def _validate_step(raw, previous_ids, index):
         step['name'] = phase_name
         step['max_rounds'] = max_rounds
     else:  # ask
+        ask_preset = raw.get('preset')
+        if 'preset' in raw and (not isinstance(ask_preset, str) or not ask_preset.strip()
+                                or len(ask_preset) > 128):
+            raise WorkflowError('paso inválido: preset inválido' + where)
+        step['preset'] = ask_preset
+        condition = raw.get('if_veredicto')
+        if 'if_veredicto' in raw:
+            if not isinstance(condition, dict) or set(condition) != {'from', 'path', 'field', 'equals'}:
+                raise WorkflowError('paso inválido: if_veredicto requiere from, path, field, equals' + where)
+            source, path, field, equals = (condition[key] for key in
+                                           ('from', 'path', 'field', 'equals'))
+            if not isinstance(source, str) or source not in previous_ids:
+                raise WorkflowError('paso inválido: if_veredicto.from no previo: ' + repr(source) + where)
+            if (not isinstance(path, str) or not path or '/' in path or '\\' in path
+                    or '..' in path or not EVIDENCE_NAME_RE.fullmatch(path)):
+                raise WorkflowError('paso inválido: if_veredicto.path inválido' + where)
+            if not isinstance(field, str) or not FIELD_RE.fullmatch(field):
+                raise WorkflowError('paso inválido: if_veredicto.field inválido' + where)
+            if not isinstance(equals, str):
+                raise WorkflowError('paso inválido: if_veredicto.equals debe ser string' + where)
+            step['if_veredicto'] = dict(condition)
+        else:
+            step['if_veredicto'] = None
         prompt = raw.get('prompt')
         prompt_file = raw.get('prompt_file')
         if (prompt is None) == (prompt_file is None):
@@ -292,17 +342,28 @@ def _validate_step(raw, previous_ids, index):
             raise WorkflowError('paso inválido: timeout_s debe ser entero >= 1' + where)
         contract = raw.get('result_contract')
         if contract is not None:
-            if not isinstance(contract, dict) or set(contract) != {'path'}:
-                raise WorkflowError('paso inválido: result_contract requiere exactamente path' + where)
+            if (not isinstance(contract, dict) or 'path' not in contract
+                    or set(contract) - {'path', 'evidence_name'}):
+                raise WorkflowError('paso inválido: result_contract requiere path '
+                                    'y admite evidence_name' + where)
+            evidence_name = contract.get('evidence_name', '.')
+            if (not isinstance(evidence_name, str) or
+                    (evidence_name != '.' and
+                     (evidence_name == '..' or not EVIDENCE_NAME_RE.fullmatch(evidence_name)))):
+                raise WorkflowError('paso inválido: result_contract.evidence_name inválido' + where)
             rel = contract['path']
             if (not isinstance(rel, str) or not rel.strip() or Path(rel).is_absolute()
-                    or '..' in Path(rel).parts):
+                    or '..' in Path(rel).parts or '\\' in rel
+                    or (evidence_name != '.' and
+                        ('/' in rel or not EVIDENCE_NAME_RE.fullmatch(rel)))):
                 raise WorkflowError('paso inválido: result_contract.path debe ser relativo '
                                     'sin escape' + where)
         step['prompt'] = prompt
         step['prompt_file'] = prompt_file
         step['timeout_s'] = timeout
-        step['result_contract'] = None if contract is None else {'path': contract['path']}
+        step['result_contract'] = (None if contract is None else
+                                   {'path': contract['path'],
+                                    'evidence_name': contract.get('evidence_name', '.')})
     return step
 
 
@@ -421,6 +482,18 @@ def _validate_payload(kind, payload, where):
             if (not isinstance(dep, str) or not STEP_ID_RE.match(dep)
                     or not isinstance(digest, str) or not SHA256_RE.match(digest)):
                 raise WorkflowError('payload inválido para ' + kind + where)
+    elif kind == 'ASK_SKIPPED':
+        base = {'step_id', 'from', 'esperado', 'real'}
+        if set(payload) == base:
+            pass
+        elif set(payload) == base | {'source_digest'}:
+            need_sha('source_digest')
+        else:
+            raise WorkflowError('payload inválido para ' + kind + where)
+        need_text('step_id', 64)
+        need_text('from', 64)
+        if not isinstance(payload['esperado'], str) or not isinstance(payload['real'], str):
+            raise WorkflowError('payload inválido para ' + kind + where)
     elif kind == 'GATE_REJECTED':
         exact('step_id', 'attempt', 'exit_code', 'output_sha256', 'observation')
         need_text('step_id', 64)
@@ -511,6 +584,93 @@ def verify(run_dir, *, journal_limit=None):
         raise WorkflowError('instantánea del plan demasiado grande')
     if _sha256_bytes(raw) != payloads[0]['payload']['plan_sha256']:
         raise WorkflowError(SNAPSHOT_NAME + ' no coincide con PLAN_LOADED')
+    try:
+        plan = _validate_plan(json.loads(raw))
+    except (ValueError, UnicodeDecodeError) as error:
+        raise WorkflowError('instantánea del plan inválida: ' + str(error)) from error
+    if payloads[0]['payload']['steps'] != len(plan['steps']):
+        raise WorkflowError('PLAN_LOADED no coincide con los pasos del plan')
+    state = _replay(payloads, run_dir)
+    steps = {step['id']: step for step in plan['steps']}
+    observed_completed = {}
+    observed_failed = set()
+    last_rejected = {}
+    last_observation = {}
+    for envelope in payloads:
+        kind, item = envelope['kind'], envelope['payload']
+        if kind == 'STEP_COMPLETED':
+            step = steps.get(item['step_id'])
+            if step and step.get('type') == 'join':
+                if (item['step_id'] not in state['completed']
+                        or set(item['deps']) != set(step['depends'])
+                        or any(dep not in observed_completed for dep in item['deps'])
+                        or any(item['deps'][dep] != observed_completed[dep]['output_sha256']
+                               for dep in item['deps'])):
+                    raise WorkflowError('join sin dependencias completadas verificadas')
+            elif step and step.get('type') == 'ask' and step.get('if_veredicto'):
+                cond = step['if_veredicto']
+                src_info = last_observation.get(cond['from'])
+                if src_info is None:
+                    raise WorkflowError('ask completado sin veredicto previo de origen')
+                if item.get('deps') and item['deps'].get(cond['from']) != src_info['output_sha256']:
+                    raise WorkflowError('ask completado con digest de origen inconsistente')
+                if src_info.get('result') is not None:
+                    real = src_info['result']
+                    for key in cond['field'].split('.'):
+                        real = real.get(key) if isinstance(real, dict) else None
+                    if real != cond['equals']:
+                        raise WorkflowError('ask completado con veredicto no coincidente')
+            obs_path = run_dir / item['observation']
+            try:
+                obs_data = json.loads(obs_path.read_bytes())
+            except (ValueError, UnicodeDecodeError):
+                obs_data = {}
+            comp_item = dict(item)
+            if 'result' in obs_data:
+                comp_item['result'] = obs_data['result']
+            observed_completed[item['step_id']] = comp_item
+            last_observation[item['step_id']] = comp_item
+        elif kind == 'GATE_REJECTED':
+            last_rejected[(item['step_id'], item['attempt'])] = item
+        elif kind == 'STEP_FAILED' and item['action'] == 'continue':
+            observed_failed.add(item['step_id'])
+            rej = last_rejected.get((item['step_id'], item['attempt']))
+            obs_path = run_dir / item['observation']
+            try:
+                obs_data = json.loads(obs_path.read_bytes())
+            except (ValueError, UnicodeDecodeError):
+                obs_data = {}
+            failed_item = dict(item)
+            if rej:
+                failed_item['output_sha256'] = rej['output_sha256']
+            if 'result' in obs_data:
+                failed_item['result'] = obs_data['result']
+            last_observation[item['step_id']] = failed_item
+        elif kind == 'ASK_SKIPPED':
+            step = steps.get(item['step_id'])
+            if (step is None or step['type'] != 'ask' or step.get('if_veredicto') is None
+                    or step['if_veredicto']['from'] != item['from']
+                    or step['if_veredicto']['equals'] != item['esperado']
+                    or item['step_id'] in observed_completed):
+                raise WorkflowError('ASK_SKIPPED sin condición válida en el plan')
+            source = steps[item['from']]
+            if (item['from'] not in observed_completed
+                    and not (source['type'] == 'gate' and item['from'] in observed_failed)):
+                raise WorkflowError('ASK_SKIPPED sin veredicto de origen previo')
+            src_info = last_observation.get(item['from'])
+            if src_info is None:
+                raise WorkflowError('ASK_SKIPPED sin veredicto de origen previo')
+            if 'source_digest' in item and item['source_digest'] != src_info['output_sha256']:
+                raise WorkflowError('ASK_SKIPPED con digest de origen inconsistente')
+            if src_info.get('result') is not None:
+                real = src_info['result']
+                for key in step['if_veredicto']['field'].split('.'):
+                    real = real.get(key) if isinstance(real, dict) else None
+                actual = real if isinstance(real, str) else json.dumps(real, ensure_ascii=False)
+                if real == item['esperado'] or actual != item['real']:
+                    raise WorkflowError('ASK_SKIPPED incoherente con el veredicto de origen')
+            else:
+                raise WorkflowError('ASK_SKIPPED sin veredicto de origen previo')
     return {'events': len(payloads), 'head_sha256': payloads[-1]['content_sha256'],
             'run_dir': str(run_dir)}
 
@@ -765,8 +925,9 @@ def _ask_quiescent(client, session_id, state):
 # ------------------------------------------------------------ replay
 
 def _empty_state():
-    return {'completed': {}, 'attempts': {}, 'phase': None,
-            'phase_started_ids': set(), 'plan_sha256': None, 'pending_asks': {}}
+    return {'completed': {}, 'failed_gates': {}, 'skipped': {}, 'attempts': {},
+            'phase': None, 'phase_started_ids': set(), 'plan_sha256': None,
+            'pending_asks': {}}
 
 
 def _latest_ask_dispatch(run_dir, step_id, attempt):
@@ -814,9 +975,12 @@ def _replay(payloads, run_dir):
     """Estado derivado del journal verificado; solo se consideran completados
     los pasos con STEP_COMPLETED cuya observación verifica su sha256."""
     state = _empty_state()
+    rejected_gates = {}
+    failed_gates = {}
     started_types = {}
     started_counts = {}
     completed_counts = {}
+    obs_digests = {}
     for envelope in payloads:
         kind = envelope['kind']
         payload = envelope['payload']
@@ -833,19 +997,75 @@ def _replay(payloads, run_dir):
             started_counts[step_id] = started_counts.get(step_id, 0) + 1
         elif kind == 'STEP_COMPLETED':
             state['completed'][payload['step_id']] = dict(payload)
+            failed_gates.pop(payload['step_id'], None)
             completed_counts[payload['step_id']] = completed_counts.get(payload['step_id'], 0) + 1
+            obs_digests[payload['observation']] = payload['output_sha256']
+        elif kind == 'ASK_SKIPPED':
+            state['skipped'][payload['step_id']] = payload.get('source_digest', True)
+        elif kind == 'STEP_FAILED' and payload['action'] == 'continue':
+            failed_gates[payload['step_id']] = dict(payload)
+            state['completed'].pop(payload['step_id'], None)
         elif kind == 'GATE_REJECTED':
+            rejected_gates[(payload['step_id'], payload['attempt'])] = payload
+            obs_digests[payload['observation']] = payload['output_sha256']
             if state['phase'] is not None:
                 state['phase']['count'] += 1
+
+    for step_id, item in failed_gates.items():
+        rej = rejected_gates.get((step_id, item['attempt']))
+        if rej is not None:
+            obs_digests[item['observation']] = rej['output_sha256']
+
+    for obs_rel, expected_sha in obs_digests.items():
+        obs_path = run_dir / obs_rel
+        if not obs_path.is_file():
+            raise WorkflowError('falta fichero de observación: ' + obs_rel)
+        if _sha256_bytes(obs_path.read_bytes()) != expected_sha:
+            raise WorkflowError('observación alterada: ' + obs_rel)
+
     verified = {}
     for step_id, item in state['completed'].items():
-        path = run_dir / item['observation']
-        if path.is_file() and _sha256_bytes(path.read_bytes()) == item['output_sha256']:
-            verified[step_id] = item
-    # Un join completado exige que cada dep siga verificado con su digest.
+        obs_path = run_dir / item['observation']
+        try:
+            obs_data = json.loads(obs_path.read_bytes())
+        except (ValueError, UnicodeDecodeError):
+            obs_data = {}
+        item_copy = dict(item)
+        if 'result' in obs_data:
+            item_copy['result'] = obs_data['result']
+        if 'result_path' in obs_data:
+            item_copy['result_path'] = obs_data['result_path']
+        if 'result_sha256' in obs_data:
+            item_copy['result_sha256'] = obs_data['result_sha256']
+        verified[step_id] = item_copy
+
+    failed_state = {}
+    for step_id, item in failed_gates.items():
+        if step_id in verified:
+            continue
+        rej = rejected_gates.get((step_id, item['attempt']))
+        if not rej or rej['observation'] != item['observation']:
+            continue
+        obs_path = run_dir / item['observation']
+        try:
+            obs_data = json.loads(obs_path.read_bytes())
+        except (ValueError, UnicodeDecodeError):
+            obs_data = {}
+        item_copy = dict(item)
+        item_copy['output_sha256'] = rej['output_sha256']
+        if 'result' in obs_data:
+            item_copy['result'] = obs_data['result']
+        if 'result_path' in obs_data:
+            item_copy['result_path'] = obs_data['result_path']
+        if 'result_sha256' in obs_data:
+            item_copy['result_sha256'] = obs_data['result_sha256']
+        failed_state[step_id] = item_copy
+    state['failed_gates'] = failed_state
+
+    # Un join o ask completado exige que cada dep siga verificado con su digest.
     for step_id, item in list(verified.items()):
         for dep, digest in item['deps'].items():
-            other = verified.get(dep)
+            other = verified.get(dep) or state['failed_gates'].get(dep)
             if other is None or other['output_sha256'] != digest:
                 verified.pop(step_id)
                 break
@@ -867,18 +1087,23 @@ def _replay(payloads, run_dir):
 # ----------------------------------------------------------- ejecutor
 
 class _Run:
-    def __init__(self, plan, run_dir, writer, state, *, ask_client=None, run_id=None):
+    def __init__(self, plan, run_dir, writer, state, *, ask_client=None, run_id=None,
+                 campaign_manifest=None, plan_sha256=None):
         self.plan = plan
         self.workspace = plan['workspace']
         self.run_dir = run_dir
         self.writer = writer
         self.completed = state['completed']
+        self.failed_gates = state['failed_gates']
+        self.skipped = state['skipped']
         self.attempts = state['attempts']
         self.phase = state['phase']
         self.phase_started_ids = state['phase_started_ids']
         self.pending_asks = state['pending_asks']
         self.ask_client = ask_client
         self.run_id = run_id or ''
+        self.campaign_manifest = campaign_manifest
+        self.plan_sha256 = plan_sha256
         self.last_ask_observation = None  # Resultado del ask previo para WORKFLOW_OBSERVATION.
         self.retained_journaled = None
         observations = run_dir / OBSERVATIONS_NAME
@@ -933,6 +1158,17 @@ class _Run:
     def execute(self, step):
         if step['id'] in self.completed:
             return  # Reanudación: solo se salta con STEP_COMPLETED verificado.
+        if step.get('if_veredicto'):
+            cond = step['if_veredicto']
+            source_info = self.completed.get(cond['from']) or self.failed_gates.get(cond['from'])
+            if source_info and self.skipped.get(step['id']) == source_info['output_sha256']:
+                return  # Skip solo es terminal respecto a la MISMA fuente verificada.
+            if self.skipped.get(step['id']) is True:
+                return  # Retrocompatibilidad
+        elif step['id'] in self.skipped:
+            return
+        if step['id'] in self.failed_gates:
+            return  # Gate continue fallido: tampoco satisface un join.
         if step['type'] == 'gate':
             self._gate(step)
         elif step['type'] == 'join':
@@ -950,10 +1186,96 @@ class _Run:
         self.phase_started_ids.add(step['id'])
         self.phase = {'name': step['name'], 'max_rounds': step['max_rounds'], 'count': 0}
 
+    def _campaign_command(self, step):
+        """Copia y sella ambos ejecutables: el proceso hijo ejecuta esos bytes.
+
+        No reabre la ruta después de comprobar el digest; ni sustitución del
+        nombre ni escritura in-place cambian el memfd ya sellado.
+        Materializa además en run_dir un snapshot sellado (solo lectura) de
+        todos los módulos first-party declarados en el manifest para que
+        PYTHONPATH resuelva exclusivamente desde allí.
+        """
+        if self.campaign_manifest['campaign_plan_sha256'] != self.plan_sha256:
+            raise ValueError('plan de campaña no coincide con manifest')
+        fds = []
+        modules_dir = self.run_dir / ('campaign_modules_' + step['id'])
+        if modules_dir.is_dir():
+            shutil.rmtree(modules_dir, ignore_errors=True)
+        modules_dir.mkdir(mode=0o700, exist_ok=True)
+        try:
+            for executable in step['command'][:2]:
+                source = os.open(executable, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                try:
+                    if not stat.S_ISREG(os.fstat(source).st_mode):
+                        raise ValueError('ejecutable no regular: ' + executable)
+                    sealed = os.memfd_create('campaign-gate', os.MFD_ALLOW_SEALING)
+                    fds.append(sealed)
+                    digest = hashlib.sha256()
+                    with os.fdopen(os.dup(source), 'rb') as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                            digest.update(chunk)
+                            view = memoryview(chunk)
+                            while view:
+                                view = view[os.write(sealed, view):]
+                finally:
+                    os.close(source)
+                if digest.hexdigest() != self.campaign_manifest['executables'].get(executable):
+                    raise ValueError('ejecutable cambiado o movido: ' + executable)
+                os.fchmod(sealed, 0o700)
+                fcntl.fcntl(sealed, fcntl.F_ADD_SEALS,
+                            fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW |
+                            fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+
+            script_path = Path(step['command'][1]).resolve()
+            script_dir = script_path.parent
+            for path_str, expected_digest in sorted(self.campaign_manifest.get('executables', {}).items()):
+                mod_path = Path(path_str).resolve()
+                if mod_path.suffix == '.py' and mod_path.parent == script_dir:
+                    source = os.open(path_str, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                    try:
+                        st = os.fstat(source)
+                        if not stat.S_ISREG(st.st_mode):
+                            raise ValueError('módulo no regular: ' + path_str)
+                        with os.fdopen(os.dup(source), 'rb') as stream:
+                            content = stream.read()
+                    finally:
+                        os.close(source)
+                    if hashlib.sha256(content).hexdigest() != expected_digest:
+                        raise ValueError('módulo cambiado o movido: ' + path_str)
+                    dest = modules_dir / mod_path.name
+                    dest.write_bytes(content)
+                    dest.chmod(0o400)
+            command = ['/proc/self/fd/%d' % fds[0], '-B',
+                       '/proc/self/fd/%d' % fds[1], *step['command'][2:]]
+            return command, tuple(fds)
+        except BaseException:
+            for fd in fds:
+                os.close(fd)
+            shutil.rmtree(modules_dir, ignore_errors=True)
+            raise
+
     def _gate(self, step):
         step_id = step['id']
         action = step['on_fail']['action']
         rounds = step['on_fail']['rounds']
+        if self.campaign_manifest is not None:
+            try:
+                command, fds = self._campaign_command(step)
+            except (OSError, ValueError) as exc:
+                self._retain('campaign-regeneracion-requerida:' + step_id + ':' + _brief(exc))
+        else:
+            command, fds = step['command'], ()
+        try:
+            self._run_gate_attempts(step, command, fds, action, rounds)
+        finally:
+            for fd in fds:
+                os.close(fd)
+            modules_dir = self.run_dir / ('campaign_modules_' + step_id)
+            if modules_dir.is_dir():
+                shutil.rmtree(modules_dir, ignore_errors=True)
+
+    def _run_gate_attempts(self, step, command, fds, action, rounds):
+        step_id = step['id']
         failures = 0
         while True:
             attempt = self.attempts.get(step_id, 0) + 1
@@ -961,6 +1283,18 @@ class _Run:
             self.record('STEP_STARTED', {'step_id': step_id, 'step_type': 'gate',
                                          'attempt': attempt})
             env = dict(os.environ)
+            if fds:
+                # Ejecutar desde memfd cambia sys.path[0] a /proc/self/fd;
+                # los imports hermanos se cargan desde el snapshot sellado/materializado.
+                modules_dir = self.run_dir / ('campaign_modules_' + step['id'])
+                script_dir = str(Path(step['command'][1]).resolve().parent)
+                existing = [p for p in env.get('PYTHONPATH', '').split(os.pathsep)
+                            if p and Path(p).resolve() != Path(script_dir)]
+                if modules_dir.is_dir():
+                    env['PYTHONPATH'] = os.pathsep.join([str(modules_dir)] + existing)
+                else:
+                    env['PYTHONPATH'] = os.pathsep.join(filter(None, (script_dir,
+                                                               env.get('PYTHONPATH'))))
             if self.last_ask_observation is not None:
                 env['WORKFLOW_OBSERVATION'] = str(self.last_ask_observation)
             exit_code = None
@@ -968,16 +1302,46 @@ class _Run:
             stdout = ''
             stderr = ''
             try:
-                proc = subprocess.run(step['command'], cwd=str(self.workspace), env=env,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                proc = subprocess.run(command, cwd=str(self.workspace), env=env,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      **({'pass_fds': fds} if fds else {}))
                 exit_code = proc.returncode
                 stdout = proc.stdout[:MAX_CAPTURE_BYTES].decode('utf-8', 'replace')
                 stderr = proc.stderr[:MAX_CAPTURE_BYTES].decode('utf-8', 'replace')
             except OSError as exc:
                 error = type(exc).__name__ + ': ' + str(exc)
+            result_path = None
+            result_payload = None
+            result_sha256 = None
+            if exit_code in (0, 1):
+                target_path = None
+                target_evidence = '.'
+                if step.get('result_contract'):
+                    target_path = step['result_contract']['path']
+                    target_evidence = step['result_contract'].get('evidence_name', '.')
+                else:
+                    for future_step in self.plan['steps']:
+                        cond = future_step.get('if_veredicto')
+                        if cond and cond.get('from') == step_id:
+                            target_path = cond['path']
+                            if (self.workspace / 'evidence' / 'campana' / target_path).is_file():
+                                target_evidence = 'campana'
+                            break
+                if target_path:
+                    try:
+                        result_path, result_payload, result_sha256 = self._load_result(
+                            step_id, target_path, target_evidence, retain=False)
+                    except (OSError, ValueError):
+                        result_path = result_payload = result_sha256 = None
+
+            extra_obs = {}
+            if result_payload is not None:
+                extra_obs['result'] = result_payload
+                extra_obs['result_path'] = result_path
+                extra_obs['result_sha256'] = result_sha256
             relative, data = self._write_observation(step_id, 'gate', attempt,
                                                      exit_code=exit_code, stdout=stdout,
-                                                     stderr=stderr, error=error)
+                                                     stderr=stderr, error=error, **extra_obs)
             output_sha256 = _sha256_bytes(data)
             if error is not None:
                 self._retain('gate-impossible:' + step_id + ':spawn')
@@ -985,9 +1349,14 @@ class _Run:
                 self.record('STEP_COMPLETED', {'step_id': step_id, 'attempt': attempt,
                                                'observation': relative,
                                                'output_sha256': output_sha256, 'deps': {}})
-                self.completed[step_id] = {'step_id': step_id, 'attempt': attempt,
-                                           'observation': relative,
-                                           'output_sha256': output_sha256, 'deps': {}}
+                completed_item = {'step_id': step_id, 'attempt': attempt,
+                                  'observation': relative,
+                                  'output_sha256': output_sha256, 'deps': {}}
+                if result_payload is not None:
+                    completed_item['result'] = result_payload
+                    completed_item['result_path'] = result_path
+                    completed_item['result_sha256'] = result_sha256
+                self.completed[step_id] = completed_item
                 return
             if exit_code == 1:
                 self.record('GATE_REJECTED', {'step_id': step_id, 'attempt': attempt,
@@ -1004,9 +1373,17 @@ class _Run:
                         self.record('ROUND_CAP_REACHED', {'step_id': step_id, 'rounds': rounds})
                         self._retain('gate-rounds-exhausted:' + step_id)
                     continue
-                self.record('STEP_FAILED', {'step_id': step_id, 'attempt': attempt,
-                                            'exit_code': 1, 'action': action,
-                                            'observation': relative})
+                failed = {'step_id': step_id, 'attempt': attempt,
+                          'exit_code': 1, 'action': action, 'observation': relative}
+                self.record('STEP_FAILED', failed)
+                if action == 'continue':
+                    failed_item = dict(failed)
+                    failed_item['output_sha256'] = output_sha256
+                    if result_payload is not None:
+                        failed_item['result'] = result_payload
+                        failed_item['result_path'] = result_path
+                        failed_item['result_sha256'] = result_sha256
+                    self.failed_gates[step_id] = failed_item
                 if action == 'abort':
                     self._retain('gate-abort:' + step_id)
                 return  # continue: el paso queda fallido y la ejecución sigue
@@ -1049,6 +1426,53 @@ class _Run:
         if pending is not None:
             self._ask_resume(step, pending)
             return
+        condition = step['if_veredicto']
+        if condition is not None:
+            source = next(item for item in self.plan['steps'] if item['id'] == condition['from'])
+            # Un paso sin result_contract (un gate) publica su veredicto en la
+            # raíz de evidencia, que es la única raíz que puede declarar.
+            contract = source.get('result_contract') or {'evidence_name': '.'}
+            available = source['id'] in self.completed
+            source_info = self.completed.get(source['id'])
+            if source['type'] == 'gate':
+                # FAIL con on_fail=continue también produce un veredicto; no es
+                # STEP_COMPLETED ni satisface un join. La observación del fallo
+                # debe estar verificada por el journal en la reanudación.
+                available = available or source['id'] in self.failed_gates
+                if not source_info:
+                    source_info = self.failed_gates.get(source['id'])
+            if not available or source_info is None:
+                self._retain('ask-veredicto-sin-resultado:' + step_id + ':' + source['id'])
+            source_digest = source_info['output_sha256']
+            verdict = source_info.get('result')
+            if verdict is None:
+                obs_path = self.run_dir / source_info['observation']
+                if obs_path.is_file() and _sha256_bytes(obs_path.read_bytes()) == source_digest:
+                    try:
+                        obs_body = json.loads(obs_path.read_bytes().decode('utf-8'))
+                        verdict = obs_body.get('result')
+                    except Exception:
+                        pass
+            if verdict is None:
+                try:
+                    _path, verdict, _digest = self._load_result(
+                        step_id, condition['path'], contract['evidence_name'], retain=False)
+                except (OSError, ValueError):
+                    verdict = None
+            if verdict is None:
+                self._retain('ask-veredicto-sin-resultado:' + step_id + ':' + source['id'])
+            real = verdict
+            for key in condition['field'].split('.'):
+                real = real.get(key) if isinstance(real, dict) else None
+            if real != condition['equals'] or not isinstance(real, str):
+                # Un campo no textual jamás coincide con equals; se registra
+                # serializado para dejar constancia verificable del salto.
+                actual = real if isinstance(real, str) else json.dumps(real, ensure_ascii=False)
+                self.record('ASK_SKIPPED', {'step_id': step_id, 'from': source['id'],
+                                            'esperado': condition['equals'], 'real': actual,
+                                            'source_digest': source_digest})
+                self.skipped[step_id] = source_digest
+                return
         attempt = self.attempts.get(step_id, 0) + 1
         self.attempts[step_id] = attempt
         self.record('STEP_STARTED', {'step_id': step_id, 'step_type': 'ask',
@@ -1059,7 +1483,8 @@ class _Run:
         # nunca se adoptan sesiones ajenas.
         try:
             session_id = self.ask_client.create_creator_session(
-                workspace_path=str(self.workspace), agent_preset=self.plan['preset'])
+                workspace_path=str(self.workspace),
+                agent_preset=step['preset'] if step['preset'] is not None else self.plan['preset'])
         except (ValueError, OSError, urllib.error.URLError) as error:
             self._write_ask_state(step_id, attempt, None, request_id,
                                   prompt_sha256, 'failed', error=_brief(error))
@@ -1136,41 +1561,92 @@ class _Run:
         result_sha256 = None
         if step['result_contract'] is not None:
             result_path, result_payload, result_sha256 = self._load_result(
-                step_id, step['result_contract']['path'])
+                step_id, step['result_contract']['path'],
+                step['result_contract']['evidence_name'])
         relative, data = self._write_ask_state(
             step_id, attempt, session_id, request_id, prompt_sha256, 'completed',
             text=text, result=result_payload, result_path=result_path)
+        deps = {}
+        cond = step.get('if_veredicto')
+        if cond is not None:
+            source_info = self.completed.get(cond['from']) or self.failed_gates.get(cond['from'])
+            if source_info and source_info.get('output_sha256'):
+                deps[cond['from']] = source_info['output_sha256']
         payload = {'step_id': step_id, 'attempt': attempt, 'observation': relative,
-                   'output_sha256': _sha256_bytes(data), 'deps': {},
+                   'output_sha256': _sha256_bytes(data), 'deps': deps,
                    'prompt_sha256': prompt_sha256}
         if result_sha256 is not None:
             payload['result_sha256'] = result_sha256
             payload['result_path'] = result_path
         self.record('STEP_COMPLETED', payload)
-        self.completed[step_id] = dict(payload)
+        completed_item = dict(payload)
+        if result_payload is not None:
+            completed_item['result'] = result_payload
+        self.completed[step_id] = completed_item
         contract = step['result_contract']
         # WORKFLOW_OBSERVATION: la ruta del resultado del ask previo.
-        self.last_ask_observation = ((self.workspace / 'evidence' / contract['path'])
-                                     if contract is not None
+        self.last_ask_observation = ((self.workspace / 'evidence' / contract['evidence_name']
+                                      / contract['path']) if contract is not None
                                      else self.run_dir / relative)
 
-    def _load_result(self, step_id, relative):
-        """Valida el resultado estructurado en <workspace>/evidence ([corr-4])."""
-        evidence = (self.workspace / 'evidence').resolve()
-        target = (evidence / relative).resolve()
-        if target == evidence or evidence not in target.parents or not target.is_file():
-            self._retain('ask-sin-resultado:' + step_id + ':' + relative)
-        data = target.read_bytes()
-        if len(data) > MAX_RESULT_BYTES:
-            self._retain('ask-resultado-demasiado-grande:' + step_id)
+    def _load_result(self, step_id, relative, evidence_name='.', retain=True):
+        """Valida el resultado estructurado y los topes de su raíz de evidencia.
+
+        La raíz se resuelve y se confina antes de comparar o relativizar: el
+        orden anterior abría fuera del workspace con un symlink en `evidence/`
+        y dejaba `relative_to` lanzar ValueError sin retención (crash visto)."""
         try:
+            workspace = self.workspace.resolve()
+            base = (workspace / 'evidence').resolve()
+            if base != workspace and workspace not in base.parents:
+                raise ValueError('evidence fuera del workspace')
+            evidence = (base / evidence_name).resolve()
+            if evidence != base and base not in evidence.parents:
+                raise ValueError('evidence_name fuera de evidence')
+            target = (evidence / relative).resolve()
+            if target == evidence or evidence not in target.parents:
+                raise ValueError('resultado fuera de evidence')
+            count = total = 0
+            dirs = [evidence]
+            while dirs:
+                directory = dirs.pop()
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        if not EVIDENCE_NAME_RE.fullmatch(entry.name):
+                            raise ValueError('nombre de evidencia inválido: ' + entry.name)
+                        info = entry.stat(follow_symlinks=False)
+                        if stat.S_ISDIR(info.st_mode):
+                            dirs.append(Path(entry.path))
+                        elif stat.S_ISREG(info.st_mode):
+                            count += 1
+                            total += info.st_size
+                            if info.st_size > EVIDENCE_FILE_BYTES:
+                                raise ValueError('evidencia excede 8 MiB: ' + entry.name)
+                            if count > EVIDENCE_FILE_LIMIT or total > EVIDENCE_TOTAL_BYTES:
+                                raise ValueError('presupuesto de evidencia excedido')
+                        else:
+                            # Enlaces y nodos especiales no son evidencia válida.
+                            raise ValueError('evidencia no es fichero regular: ' + entry.name)
+            # No seguir el último componente ni aceptar un fichero no regular;
+            # fstat y lectura en el mismo descriptor cierran is_file→read_bytes.
+            fd = os.open(evidence / relative, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream:
+                size = os.fstat(stream.fileno())
+                if not stat.S_ISREG(size.st_mode):
+                    raise ValueError('resultado no es fichero regular')
+                if size.st_size > EVIDENCE_FILE_BYTES:
+                    raise ValueError('resultado excede 8 MiB')
+                data = stream.read(MAX_RESULT_BYTES + 1)
+            if len(data) > MAX_RESULT_BYTES:
+                raise ValueError('resultado excede el límite JSON')
             value = json.loads(data.decode('utf-8'))
-        except (ValueError, UnicodeDecodeError) as error:
-            self._retain('ask-resultado-ilegible:' + step_id + ':' + _brief(error))
-        if not isinstance(value, dict):
-            self._retain('ask-resultado-ilegible:' + step_id + ':no es un objeto JSON')
-        return (target.relative_to(self.workspace.resolve()).as_posix(),
-                value, _sha256_bytes(data))
+            if not isinstance(value, dict):
+                raise ValueError('resultado no es un objeto JSON')
+            return (target.relative_to(workspace).as_posix(), value, _sha256_bytes(data))
+        except (OSError, ValueError) as error:
+            if not retain:
+                raise
+            self._retain('ask-resultado-fallo:' + step_id + ':' + _brief(error))
 
     def _close_ask(self, session_id, state=None):
         """cancel_session + gracia de 30 s; True solo con quiescencia confirmada.
@@ -1191,6 +1667,22 @@ class _Run:
         return False
 
 
+def _campaign_manifest(plan_path, plan_sha256):
+    path = Path(plan_path).resolve()
+    if path.name != 'plan.json' or path.parent.name != 'campaign':
+        return None
+    manifest_path = path.parent / 'manifest.json'
+    try:
+        manifest = json.loads(manifest_path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise WorkflowError('manifest de campaña ilegible: ' + str(error)) from error
+    if (not isinstance(manifest, dict)
+            or manifest.get('campaign_plan_sha256') != plan_sha256
+            or not isinstance(manifest.get('executables'), dict)):
+        raise WorkflowError('manifest de campaña no coincide con el plan')
+    return manifest
+
+
 def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     """Ejecuta un plan; devuelve el resultado (COMPLETED/RETAINED/ABSTAINED).
 
@@ -1202,6 +1694,7 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     """
     plan, raw = load_plan(plan_path)
     plan_sha256 = _sha256_bytes(raw)
+    campaign_manifest = _campaign_manifest(plan_path, plan_sha256)
     has_ask = any(step['type'] == 'ask' for step in plan['steps'])
     if has_ask and ask_client is None:
         return {'result': 'ABSTAINED',
@@ -1209,14 +1702,18 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     if has_ask:
         # Preflight de abstención antes de tocar disco: sin preset declarado
         # o sin preset verificado no hay run dir ni journal.
-        if plan['preset'] is None:
+        # Cada ask que sobrescribe preset pone su id; el resto usa el del plan.
+        presets = {step['preset'] if step['preset'] is not None else plan['preset']
+                   for step in plan['steps'] if step['type'] == 'ask'}
+        if None in presets:
             return {'result': 'ABSTAINED',
                     'reason': 'plan con paso ask sin preset verificado: '
                               'el plan no declara preset'}
-        detail = _verify_preset(ask_client, plan['preset'])
-        if detail is not None:
-            return {'result': 'ABSTAINED',
-                    'reason': 'plan con paso ask sin preset verificado: ' + detail}
+        for preset_id in sorted(presets):
+            detail = _verify_preset(ask_client, preset_id)
+            if detail is not None:
+                return {'result': 'ABSTAINED',
+                        'reason': 'plan con paso ask sin preset verificado: ' + detail}
     limit = MAX_STORE if journal_limit is None else _journal_limit(journal_limit)
     if run_root is not None:
         resolved_root = _resolve_run_root(plan['workspace'], run_root)
@@ -1259,7 +1756,8 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
                                       'steps': len(plan['steps']),
                                       'run_root': str(resolved_root)})
     run = _Run(plan, run_dir, writer, state, ask_client=ask_client,
-               run_id=_run_id_for(plan_sha256))
+               run_id=_run_id_for(plan_sha256), campaign_manifest=campaign_manifest,
+               plan_sha256=plan_sha256)
     try:
         for step in plan['steps']:
             run.execute(step)

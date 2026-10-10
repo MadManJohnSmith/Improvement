@@ -655,6 +655,21 @@
       "status": "REFERENCE",
       "decision_summary": "Proxy y enrutador de modelos v0.3.0: switchyard-server expone APIs OpenAI y Anthropic; libsy separa decisiones de llamadas al modelo mediante pasos que ejecuta el host. Interesa como referencia para una posible necesidad futura de enrutado, no como componente adoptado. Un servidor residente cambiaria la topologia actual; su fallback_client reenvia rutas no registradas y decision_clients solo configura system_one. Una evaluacion posterior debe medir la mejora frente al flujo vigente y comprobar aislamiento, fail-closed y autoridad del Host.",
       "notes": "Auditado en el commit del 2026-10-08, licencia Apache-2.0 y version pre-1.0: revalidar API y comportamiento al evaluar otra revision. No instalar ni ejecutar en el framework; cualquier prototipo, build o ensayo debe quedar fuera del arbol canonico. Adopcion aplazada hasta que terminen los cambios de codigo en curso y solo si aporta funcionalidad medible sin debilitar los gates de evaluacion existentes."
+    },
+    {
+      "source_id": "elvisun-newsjack",
+      "title": "newsjack",
+      "publisher": "Elvis Sun",
+      "kind": "skill-repository",
+      "canonical_url": "https://github.com/elvisun/newsjack",
+      "revision": "b5a8dc87cb34fb3629a760b529d73972f441a86a",
+      "retrieved_at": "2026-10-08",
+      "provenance_status": "pinned",
+      "license": "MIT",
+      "license_status": "open",
+      "status": "REFERENCE",
+      "decision_summary": "Skills de newsjacking con CLI propio en Go: 30 SKILL.md de relaciones públicas, fuera del dominio de este framework. La demo compara Jev contra Opus pero corre simulada por defecto, con el mock cableado a favor (0 tokens de salida y 0 cambios de opinion para Jev, latencias fijas y abortion del perdedor), asi que su titular no mide nada. Util solo como patron: contrato de decision tipado con confianza por opcion y triaje en dos fases. No se adopta el CLI: curl|sh, escritura en registro de Windows y ejecucion arbitraria.",
+      "notes": "Auditado en el commit del 2026-10-08, MIT uniforme, con TRADEMARK.md que prohibe el nombre. Jev (TypeSafe AI) existe y esta documentado, pero la cifra de 390x no esta corroborada: un benchmark independiente con codigo abierto midio 84-139x en coste y 5-6x en velocidad, con peor calibracion que Opus. El 390x sale de comparar una corrida completa contra una abortada. Jev cuesta ~8,4x mas por token de entrada: su ventaja es no generar texto, economia que no aplica a modos que deben producir prosa con evidencia. El post presenta como guia oficial de Claude un documento de Google, donde no vive la documentacion oficial."
     }
   ]
 }

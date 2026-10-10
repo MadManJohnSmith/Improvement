@@ -19,7 +19,9 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shlex
+import stat
 import shutil
 from pathlib import Path
 
@@ -807,16 +809,56 @@ def plan(product, *, workspace=None, env=None):
 
 
 def write(plan_value, workspace):
-    """Write the plan under the managed workspace; refuse drift or oversized output."""
+    """Write through pinned workspace/managed FDs; never follow a symlink."""
     workspace = Path(workspace)
     path = workspace / PLAN_RELATIVE
     encoded = json.dumps(plan_value, ensure_ascii=False, sort_keys=True, indent=1) + '\n'
     if len(encoded.encode('utf-8')) > MAX_PLAN_BYTES:
         raise ValueError('Capability plan excesivo')
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.write_text(encoded, encoding='utf-8')
-    os.replace(temporary, path)
+    workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            os.mkdir('.dsh-managed', mode=0o700, dir_fd=workspace_fd)
+        except FileExistsError:
+            pass
+        try:
+            managed_fd = os.open('.dsh-managed', os.O_RDONLY | os.O_DIRECTORY |
+                                 os.O_NOFOLLOW, dir_fd=workspace_fd)
+        except OSError as error:
+            raise ValueError('Capability plan o directorio gestionado es symlink') from error
+        try:
+            name = path.name
+            try:
+                current = os.stat(name, dir_fd=managed_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            if current is not None and not stat.S_ISREG(current.st_mode):
+                raise ValueError('Capability plan o directorio gestionado es symlink')
+            temporary = '.' + name + '.' + secrets.token_hex(12)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         os.O_NOFOLLOW, 0o600, dir_fd=managed_fd)
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                try:
+                    current = os.stat(name, dir_fd=managed_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    current = None
+                if current is not None and not stat.S_ISREG(current.st_mode):
+                    raise ValueError('Capability plan o directorio gestionado es symlink')
+                os.replace(temporary, name, src_dir_fd=managed_fd,
+                           dst_dir_fd=managed_fd)
+            finally:
+                try:
+                    os.unlink(temporary, dir_fd=managed_fd)
+                except FileNotFoundError:
+                    pass
+        finally:
+            os.close(managed_fd)
+    finally:
+        os.close(workspace_fd)
     return path
 
 

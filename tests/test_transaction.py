@@ -496,6 +496,100 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(second["result"], "NO_OP")
         self.assertEqual(len(second["published_presets"]), 2)
 
+    def test_campaign_plan_private_and_empty_stacks_never_claim_pass(self):
+        result = self.install()
+        receipt = result['campaign_plan']
+        self.assertTrue(receipt['written'])
+        plan_path = Path(receipt['path'])
+        self.assertEqual(plan_path, self.workspace / '.dsh-managed/campaign/plan.json')
+        self.assertFalse((self.generated / 'campaign').exists())
+        plan = json.loads(plan_path.read_bytes())
+        self.assertEqual(len(plan['steps']), 8)
+        manifest = json.loads(plan_path.with_name('manifest.json').read_bytes())
+        self.assertEqual(manifest['stacks'], [])
+        self.assertEqual(manifest['campaign_plan_sha256'], receipt['campaign_plan_sha256'])
+        self.assertEqual(
+            [step['id'] for step in plan['steps'] if step['type'] == 'gate'
+             and step['on_fail']['action'] == 'abort'],
+            ['preflight', 'verificar-final', 'cerrar'])
+        import campaign
+        # Sin stacks ni ledger no hay PASS de verificación: solo cerrar es un
+        # paso terminal sin entrada de verificación.
+        code, verdict = campaign.verification_verdict(self.workspace, 'pre')
+        self.assertNotEqual(code, campaign.EXIT_PASS)
+        self.assertNotEqual(verdict['verdict'], 'PASS')
+
+    def test_restart_required_campaign_pendiente_sin_fichero(self):
+        result = self.install(client=Client(application='restart-required'))
+        self.assertEqual(result['result'], 'RESTART_REQUIRED')
+        self.assertEqual(result['campaign_plan']['state'], 'pendiente-de-activacion')
+        self.assertEqual(result['campaign_plan']['preset_ids'],
+                         ['project-auditor', 'project-continuous-repair'])
+        self.assertFalse((self.workspace / '.dsh-managed/campaign').exists())
+
+    def test_no_op_materializa_y_preserva_mtime(self):
+        self.install()
+        plan = self.workspace / '.dsh-managed/campaign/plan.json'
+        plan.unlink()
+        first = self.install(client=self.client)
+        self.assertEqual(first['result'], 'NO_OP')
+        self.assertTrue(first['campaign_plan']['written'])
+        mtime = plan.stat().st_mtime_ns
+        second = self.install(client=self.client)
+        self.assertEqual(second['result'], 'NO_OP')
+        self.assertFalse(second['campaign_plan']['written'])
+        self.assertEqual(plan.stat().st_mtime_ns, mtime)
+
+    def test_rollback_restores_capability_and_campaign_absent_or_bytes(self):
+        for old_state in ('absent', 'present'):
+            with self.subTest(old_state=old_state):
+                # Una instalación nueva por caso permite probar también el
+                # marcador de ausencia sin residuos de la primera ejecución.
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    workspace = root / 'Syncify-workspace'
+                    workspace.mkdir()
+                    product = root / 'Syncify'
+                    product.mkdir()
+                    (workspace / 'project.json').write_text(json.dumps({
+                        'schema': 1, 'name': 'project', 'project': str(product)}) + '\n')
+                    # _package usa self.root para el session_root; en este
+                    # subTest lo vinculamos al nuevo /tmp hasta que termine.
+                    prior_root = self.root
+                    self.root = root
+                    try:
+                        generated = self._package(root / 'generated')
+                    finally:
+                        self.root = prior_root
+                    home = root / 'home'
+                    if old_state == 'present':
+                        managed = workspace / '.dsh-managed'
+                        campaign_dir = managed / 'campaign'
+                        campaign_dir.mkdir(parents=True)
+                        (managed / 'capability-plan.json').write_bytes(b'viejo plan\n')
+                        (campaign_dir / 'plan.json').write_bytes(b'vieja campana\n')
+                    previous_plan = (workspace / '.dsh-managed/capability-plan.json')
+                    previous_campaign = (workspace / '.dsh-managed/campaign/plan.json')
+                    old_plan = previous_plan.read_bytes() if previous_plan.exists() else None
+                    old_campaign = previous_campaign.read_bytes() if previous_campaign.exists() else None
+                    transaction = tx.Transaction(workspace, dsh_home=home,
+                                                 client=Client())
+                    host_verdict = root / 'host-verdict.json'
+                    host_verdict.write_text(json.dumps(verdict()) + '\n')
+                    # El fallo después de ACTIVE obliga al except a restaurar
+                    # capacidad y campaña sin perder los bytes anteriores.
+                    with unittest.mock.patch('acceptance.validate_host_verdict',
+                                             return_value=verdict()):
+                        with unittest.mock.patch.object(tx, 'write_campaign',
+                                                       side_effect=RuntimeError('fallo tras ACTIVE')):
+                            with self.assertRaisesRegex(RuntimeError, 'fallo tras ACTIVE'):
+                                transaction.install(generated, 'gen-1',
+                                                    host_verdict=host_verdict)
+                    self.assertEqual(previous_plan.read_bytes() if previous_plan.exists() else None,
+                                     old_plan)
+                    self.assertEqual(previous_campaign.read_bytes()
+                                     if previous_campaign.exists() else None, old_campaign)
+
     def test_retry_after_roster_failure_republishes_incomplete_generation(self):
         with self.assertRaisesRegex(tx.TransactionError, "agentPresets/list"):
             self.install(client=Client(ids=("project-auditor",)))

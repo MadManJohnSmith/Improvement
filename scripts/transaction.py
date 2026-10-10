@@ -20,6 +20,7 @@ from pathlib import Path
 from composition_contract import ANTI_ESCALATION_PLUGIN, validate_operational_composition
 from layout_contract import layout_from_paths, validate_mode_layout
 from mode_lifecycle import initialize_state
+from campaign_plan import write_campaign
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -176,6 +177,7 @@ class Transaction:
             actual_generation = {
                 path: data for path, data in actual.items()
                 if not path.startswith("agent-presets/")
+                and not path.startswith("campaign-state/")
             }
             if actual_generation != expected:
                 raise TransactionError(
@@ -185,6 +187,7 @@ class Transaction:
                 if not previous_dir.is_dir() or _inventory(previous_dir) != expected:
                     raise TransactionError(
                         f"Generación previa cambió desde el backup: {previous_id}")
+            self._verify_campaign_backup(generation_id, manifest)
             return manifest
 
         entries = []
@@ -203,16 +206,92 @@ class Transaction:
         hashes_payload = json.dumps(entries, sort_keys=True).encode("utf-8")
         receipt_path = self.install_root / "published-presets.json"
         previous_receipt = _json(receipt_path) if receipt_path.is_file() else None
+        campaign_backup = self._backup_campaign_state(generation_id)
         return {
             "schema_version": SCHEMA_VERSION,
             "generation_id": generation_id,
             "timestamp": _now_iso(),
             "previous_generation_id": previous_id or "",
             "previous_published_presets": previous_receipt,
+            "previous_campaign_state": campaign_backup,
             "entries": entries,
             "hashes_digest": hashlib.sha256(hashes_payload).hexdigest(),
             "verified": True,
         }
+
+    def _campaign_paths(self):
+        managed = self.workspace / '.dsh-managed'
+        return (managed / 'capability-plan.json', managed / 'campaign')
+
+    def _backup_campaign_state(self, generation_id):
+        """Guarda bytes o ausencia de ambos recursos gestionados, con digests."""
+        plan_path, campaign_dir = self._campaign_paths()
+        backup_dir = self.backups / generation_id / 'campaign-state'
+        saved = {}
+        for path, key in ((plan_path, 'capability-plan'), (campaign_dir, 'campaign')):
+            if path.is_symlink():
+                raise TransactionError('Recurso gestionado es symlink: ' + str(path))
+            if not path.exists():
+                saved[key] = {'state': 'absent'}
+                continue
+            if key == 'capability-plan':
+                if not path.is_file():
+                    raise TransactionError('Capability plan no es fichero: ' + str(path))
+                data = path.read_bytes()
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                (backup_dir / 'capability-plan.json').write_bytes(data)
+                saved[key] = {'state': 'present', 'sha256': hashlib.sha256(data).hexdigest()}
+            else:
+                _safe_tree(path)
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(path, backup_dir / 'campaign')
+                saved[key] = {'state': 'present',
+                              'sha256': {name: row['sha256']
+                                         for name, row in _inventory(path).items()}}
+        return saved
+
+    def _verify_campaign_backup(self, generation_id, manifest):
+        backup = manifest.get('previous_campaign_state')
+        if not isinstance(backup, dict):
+            raise TransactionError('Backup de campaña incompleto')
+        root = self.backups / generation_id / 'campaign-state'
+        if set(backup) != {'capability-plan', 'campaign'}:
+            raise TransactionError('Backup de campaña incompleto')
+        for key, saved in backup.items():
+            if not isinstance(saved, dict) or saved.get('state') not in ('absent', 'present'):
+                raise TransactionError('Marcador de backup de campaña inválido')
+            if saved['state'] == 'absent':
+                continue
+            if key == 'capability-plan':
+                path = root / 'capability-plan.json'
+                if path.is_symlink() or not path.is_file() or _sha256(path) != saved.get('sha256'):
+                    raise TransactionError('Backup de capability-plan alterado')
+            elif key == 'campaign':
+                path = root / 'campaign'
+                if not path.is_dir() or path.is_symlink():
+                    raise TransactionError('Backup de campaña ausente o symlink')
+                _safe_tree(path)
+                hashes = {name: row['sha256'] for name, row in _inventory(path).items()}
+                if hashes != saved.get('sha256'):
+                    raise TransactionError('Backup de campaña alterado')
+
+    def _restore_campaign_state(self, generation_id, manifest):
+        self._verify_campaign_backup(generation_id, manifest)
+        root = self.backups / generation_id / 'campaign-state'
+        plan_path, campaign_dir = self._campaign_paths()
+        saved = manifest['previous_campaign_state']
+        for path in (plan_path.parent, plan_path, campaign_dir):
+            if path.is_symlink():
+                raise TransactionError('Recurso gestionado es symlink: ' + str(path))
+        if campaign_dir.exists():
+            _safe_tree(campaign_dir)
+            shutil.rmtree(campaign_dir)
+        if saved['campaign']['state'] == 'present':
+            shutil.copytree(root / 'campaign', campaign_dir)
+        if plan_path.exists():
+            plan_path.unlink()
+        if saved['capability-plan']['state'] == 'present':
+            shutil.copy2(root / 'capability-plan.json', plan_path)
 
     def _require_host_verdict(self, host_verdict, generation_id):
         """Fail closed: publication requires READY_FOR_INSTALL from the Host.
@@ -288,8 +367,8 @@ class Transaction:
             path = stack_plan.write(value, self.workspace)
         except (OSError, ValueError) as error:
             raise TransactionError(f"stack del producto no resoluble: {error}") from error
-        return {"path": str(path), "stacks": stack_plan.summary(value),
-                "evidence": value["evidence"], "stubs": value["stubs"]}
+        return ({"path": str(path), "stacks": stack_plan.summary(value),
+                 "evidence": value["evidence"], "stubs": value["stubs"]}, value)
 
     def _prepare_mode_state(self):
         common = self.workspace.parent
@@ -574,8 +653,12 @@ class Transaction:
                             for preset_id in expected_ids) and
                         self._active_presets_match(
                             modes, receipt_bundle / "skills")):
+                    import stack as stack_plan
+                    campaign_receipt = write_campaign(
+                        self.workspace, stack_plan.load(self.workspace), expected_ids)
                     return {"result": "NO_OP", "generation_id": generation_id,
                             "published_presets": expected_ids,
+                            "campaign_plan": campaign_receipt,
                             "mode_state": str(self.workspace / "mode-state")}
             shutil.rmtree(target)
 
@@ -604,7 +687,7 @@ class Transaction:
             # The preflight report names what the preflight discarded, so the
             # operator sees it in the install result instead of only in the archive.
             mode_state_preflight = self._prepare_mode_state()
-            capability_plan = self._resolve_capabilities()
+            capability_plan, stack_value = self._resolve_capabilities()
             publication = self._publish_presets(target, modes, generation_id)
             if publication["result"] == "RESTART_REQUIRED":
                 return {
@@ -613,6 +696,10 @@ class Transaction:
                     "previous_generation_id": backup_manifest["previous_generation_id"],
                     "mode_state_preflight": mode_state_preflight,
                     "capability_plan": capability_plan,
+                    "campaign_plan": {
+                        "state": "pendiente-de-activacion",
+                        "preset_ids": [preset_id for preset_id, _role, _source in modes],
+                        "reason": "DSH requiere reinicio antes de activar presets"},
                     "message": (
                         "DSH guardó la actualización del bundle pero requiere "
                         "reinicio; relanza DSH y repite bootstrap install"),
@@ -634,6 +721,7 @@ class Transaction:
                 raise TransactionError("Swap de puntero no verificable")
             if _inventory(target) != _inventory(generated):
                 raise TransactionError("Hashes post-swap no coinciden")
+            campaign_receipt = write_campaign(self.workspace, stack_value, expected_ids)
         except BaseException:
             self.rollback(generation_id)
             raise
@@ -647,6 +735,7 @@ class Transaction:
             "mode_state": str(self.workspace / "mode-state"),
             "mode_state_preflight": mode_state_preflight,
             "capability_plan": capability_plan,
+            "campaign_plan": campaign_receipt,
         }
 
     def rollback(self, generation_id):
@@ -682,6 +771,7 @@ class Transaction:
                 preset_root.mkdir(mode=0o700, parents=True, exist_ok=True)
                 shutil.copytree(backup, published)
         previous_receipt = manifest.get("previous_published_presets")
+        self._restore_campaign_state(generation_id, manifest)
         if receipt_path.exists():
             receipt_path.unlink()
         if previous_receipt is not None:
