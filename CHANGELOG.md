@@ -18,6 +18,13 @@ Cambio de framework, medido sobre el fallo real que detuvo el cierre del ciclo X
   aborta antes de medir nada. La publicación ocurre en todas las ramas de la
   activación, incluida la idempotente, y el recibo de activación registra los
   digests publicados.
+- **Comprobado en el turno real que había fallado.** Con el helper publicado y el comando
+  regenerado (3.041 caracteres, sin payload), el cierre se ejecutó en el primer paso: el modo
+  emitió `__IMPROVEMENT_CANDIDATE_RECORD__` con `status: DIRTY`, el
+  `candidate_diff_digest` (`23c3977a…`) y `changed_paths: ["src/tarifario.js"]`, y la
+  verificación del entrypoint pasó 3/3 contra la sombra. `work-items.json` quedó registrado
+  correctamente, la sombra sigue sucia con la reparación y el producto canónico quedó limpio.
+  El turno se paró por proyección con 169.834 tokens, después de cerrar la parte sustantiva.
 - **Regresiones.** Los comandos no pueden volver a contener un blob codificado
   (`tests/test_mode_lifecycle.py`: los cuatro constructores quedan libres de
   `b64decode`/`b85decode` y apuntan al archivo publicado), y el digest del helper se

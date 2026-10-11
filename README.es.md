@@ -350,10 +350,11 @@ Sus tres turnos facturaron 243.165 `totalTokens`; los dos últimos se detuvieron
 de editar nada** por el presupuesto por turno: 99.022 medidos / 128.213 proyectados, y
 97.973 / 127.227. Solo skill, layout y provisión de sombra costó 48.694 tokens. Un cuarto
 turno con techo de 200.000 **sí editó la sombra**: 180.107
-tokens en 11 pasos, el defecto canónico quedó reparado. El arreglo es correcto —3 tests en
-verde contra la sombra, ejecutados por el operador desde fuera— y el producto intacto, pero el
-contrato sigue sin ejercicio. Falta el tramo de cierre `DIRTY`: reclamación sucia, registro de
-verificación y candid_diff_digest, así que la prueba del ciclo completo sigue pendiente. El procedimiento
+tokens en 11 pasos, el defecto canónico quedó reparado y el producto canónico intacto.
+Un turno posterior, con los comandos ya
+como archivos verificados por digest, cerró el ciclo: el modo registró `DIRTY` con su digest, lo
+persistió en `work-items.json` y ejecutó el entrypoint (3/3). La prueba del ciclo completo queda
+hecha en sus dos tramos. El procedimiento
 completo para preparar ese tipo de sesión
 real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
