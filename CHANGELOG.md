@@ -1,5 +1,41 @@
 # Cambios
 
+## Coste del ciclo medido por pasos; el techo y la causa no están establecidos — 2026-10-11
+Sin cambios de código ni de skills. Se midió el turno X1 bajo preset real con el journal
+durable (`/tmp/x1journal/final.jsonl`, 50 eventos): el contrato se entrega por tres canales en
+cada paso, con solape textual casi nulo entre ellos. No se ha establecido todavía que eso sea
+la causa del corte por presupuesto.
+- **El contrato se entrega por tres canales en cada paso, con solape textual casi nulo
+  y funciones parcialmente superpuestas.** Persona del preset (`persona_prefix`, 8.117 caracteres para
+  `continuous-repair`), cuerpo de la skill generada (24.635) y el ciclo inyectado por el
+  prompt del ensayo (17.961). Total 50.713 caracteres en el contexto del primer paso; cada paso
+  posterior relee contexto acumulado vía `cacheRead`. Compartido entre persona y cuerpo de skill: **un único fragmento de 68 caracteres**;
+  los comandos shell del ciclo inyectado y los de la skill comparten **0 esqueletos** (la
+  plantilla se rellena con valores concretos). No es duplicación literal; cada canal tiene un papel
+  distinto (bootstrap previo a la skill, contrato del modo y orden de ensayo).
+- **El coste se acumula, no se concentra.** `cacheReadTokens` crece 128 → 4.055 → 12.666 →
+  12.848 → 15.360 a lo largo de 6 pasos; el paso 2 costó 21.963 `totalTokens` para llegar a
+  un centinela de una línea. Ninguna pieza aislada explica el gasto: lo explica el contexto
+  acumulado. Dos hipótesis de redundancia se midieron y **se descartaron** (solape
+  skill/inbox 0; prólogo compartido entre puertas bash, 92 caracteres).
+- **Consecuencia para el techo.** No se ha probado el techo de 200k: con los pasos pendientes sin medir, no puede
+  afirmarse si el ciclo cabe. La entrega funcional en tres canales es una hipótesis de
+  optimización, no un defecto demostrado; hace falta un ensayo con presupuesto mayor
+  antes de decidir recortes que podrían debilitar el contrato.
+- **Persona: qué es intocable.** `scripts/composition_contract.py:145-153` compara la
+  totalidad del `config.prefix` generado con `persona_prefix()` por igualdad, así que
+  acortar la persona obliga a cambiar la función canónica y las pruebas que la fijan; no
+  vale recortar solo la composición generada. La parte previa a la carga de la skill
+  (`scripts/mode_lifecycle.py:571-585`) es causalmente necesaria: instruye lo que el modo
+  debe hacer **antes** de poder leer la skill. La prosa operativa posterior sí es
+  candidata a recorte contra lo que ya garantiza el JSON del ciclo.
+- **Procedencia corregida con evidencia.** `mattpocock/skills` queda fijada en
+  `49dd158d1076` (el clon auditado), no en `b0618bc`: los 38 SKILL.md son idénticos entre
+  ambas revisiones (delta: un script del wizard y metadatos). La atribución anterior —"el
+  manifiesto selecciona 27, misc/ e in-progress/ quedan fuera"— era imprecisa:
+  `engineering/` 20 + `productivity/` 7 = 27 los instala la instrucción Gemini del README,
+  pero `scripts/link-skills.sh:31` instala 34 porque **incluye `in-progress/`**.
+
 ## Documentación y regresión del gate de biblioteca: ni PASS inventado ni gate operativo — 2026-10-11
 Solo cambios de documentación y de pruebas que leen documentación. Ni scripts, ni
 schemas, ni skills. Motivación: el runner `skill-gate-run` quedó fail-closed —exige un

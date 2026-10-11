@@ -256,6 +256,22 @@ El 2026-10-10 se ejecutó un ensayo con instalación real de `@deepseek-ai/dsh` 
    techo de 120.000 por turno), y solo cargar la skill, el layout y provisionar la sombra
    costó 48.694 tokens. No hubo diff ni checks de reparación: el contrato y sus fixtures
    siguen sin probar la corrida completa con preset.
+   **Coste de contexto medido; causa y techo suficiente aún no establecidos.** Medido sobre el
+   journal del turno (`/tmp/x1journal/final.jsonl`), el contrato llega por tres canales en el
+   contexto de cada paso: persona del preset (8.117 caracteres),
+   cuerpo de la skill (24.635) y ciclo inyectado por el prompt del ensayo (17.961); suman
+   50.713 caracteres en el contexto del primer paso, y los pasos posteriores releen contexto
+   acumulado vía `cacheRead`. El solape textual es casi nulo —un fragmento de
+   68 caracteres entre persona y skill, 0 esqueletos shell compartidos entre ciclo inyectado
+   y skill— pero cada canal cumple un papel distinto (bootstrap, contrato y orden de ensayo). `cacheReadTokens` crece
+   monótonamente (128 → 4.055 → 12.666 → 12.848 → 15.360) y el paso 2 costó 21.963
+   `totalTokens` para un centinela de una línea. No se ha probado un techo de 200k ni el
+   coste de los pasos restantes, así que todavía no se puede afirmar si el ciclo cabe.
+   La parte previa a la carga de skill
+   en `persona_prefix` (`scripts/mode_lifecycle.py:571-585`) es necesaria y no se recorta; la
+   prosa operativa posterior se podrá recortar contra lo que ya garantiza el JSON del ciclo,
+   cambiando la función canónica y las pruebas que fijan su texto exacto
+   (`scripts/composition_contract.py:145-153`).
 
 El presupuesto del Creator se mide **por run** y se evalúa antes de declarar éxito: los tokens
 reales se pliegan por cada `seq` observada, el límite queda congelado con el deadline para que

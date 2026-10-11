@@ -632,14 +632,14 @@
       "publisher": "Matt Pocock",
       "kind": "skill-repository",
       "canonical_url": "https://github.com/mattpocock/skills",
-      "revision": "b0618bc436ad893b3c5e84e55fba86586d34a404",
-      "retrieved_at": "2026-10-08",
+      "revision": "49dd158d1076134a641b33efb035946536778336",
+      "retrieved_at": "2026-10-09",
       "provenance_status": "pinned",
       "license": "MIT",
       "license_status": "open",
       "status": "REFERENCE",
-      "decision_summary": "38 SKILL.md de ingenieria y productividad; el manifiesto selecciona 27 (engineering/ y productivity/), mientras misc/ e in-progress/ quedan fuera. Instrucciones puras, sin runtime: la ejecucion depende del host (subagentes, git, gh/glab). diagnosing-bugs (bucle reproducible, minimizacion, hipotesis, instrumentacion, verificacion) solapa con base/ de superpowers, asi que el valor esta en el triaje por skill, no en el catalogo. Sin auto-descubrimiento ni marketplace (prohibidos por la politica); la verificacion declarada pasa a gate del Host y los artefactos de reproduccion, fuera del arbol.",
-      "notes": "Auditado en el commit del 2026-10-08. Su package.json solo trae Changesets como dependencia de desarrollo: no hay motor que instalar ni auditar como codigo. Conversion por skill individual al estilo de base/ y catalog/, nunca el catalogo completo. Adopcion aplazada hasta que terminen los cambios de codigo en curso y solo si el triaje demuestra ganancia sobre lo ya cubierto."
+      "decision_summary": "38 SKILL.md: engineering/ 20, productivity/ 7, misc/ 4 e in-progress/ 7. La guia Gemini del README instala 27; scripts/link-skills.sh instala 34 (incluye in-progress/). Instrucciones puras, sin runtime: la ejecucion depende del host (subagentes, git, gh/glab). diagnosing-bugs solapa con base/ de superpowers, asi que el valor esta en el triaje por skill, no en el catalogo. Sin auto-descubrimiento ni marketplace (prohibidos por la politica); la verificacion declarada pasa a gate del Host y los artefactos de reproduccion, fuera del arbol.",
+      "notes": "Auditado en el commit del 2026-10-08. Su package.json solo trae Changesets como dependencia de desarrollo: no hay motor que instalar ni auditar como codigo. Conversion por skill individual al estilo de base/ y catalog/, nunca el catalogo completo. Adopcion aplazada hasta que terminen los cambios de codigo en curso y solo si el triaje demuestra ganancia sobre lo ya cubierto. Los 38 SKILL.md son identicos entre b0618bc436ad893b3c5e84e55fba86586d34a404 y 49dd158d1076134a641b33efb035946536778336 (delta: un script del wizard y metadatos), asi que fijar el sha del clon auditado no cambia el juicio."
     },
     {
       "source_id": "nvidia-nemo-switchyard",
