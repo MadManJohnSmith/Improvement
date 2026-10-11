@@ -348,9 +348,11 @@ código y fixture, a la espera de una corrida Creator íntegra. La campaña web 
 (`x1-preset-real`) sí resolvió el preset real, cargó su skill y ejecutó los centinelas.
 Sus tres turnos facturaron 243.165 `totalTokens`; los dos últimos se detuvieron **antes
 de editar nada** por el presupuesto por turno: 99.022 medidos / 128.213 proyectados, y
-97.973 / 127.227 frente a 120.000 de techo. Solo skill, layout y provisión de sombra
-costaron 48.694 tokens en el último. No hay diff de reparación, checks ni prueba del
-ciclo completo. El procedimiento
+97.973 / 127.227. Solo skill, layout y provisión de sombra costó 48.694 tokens. Un cuarto
+turno con techo de 200.000 **sí editó la sombra**: 180.107
+tokens en 11 pasos, el defecto canónico quedó reparado y los 3 tests pasaron contra la
+sombra con el producto intacto. De la reparación y los checks ya hay evidencia real; lo que
+falta es el tramo de cierre `DIRTY`, así que la prueba del ciclo completo sigue pendiente. El procedimiento
 completo para preparar ese tipo de sesión
 real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 

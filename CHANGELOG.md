@@ -1,5 +1,24 @@
 # Cambios
 
+## X1 con techo 200.000: el modo edita y verifica; falta el cierre DIRTY — 2026-10-11
+Ensayo real bajo preset web, presupuesto por turno subido de 120.000 a 200.000 en la fixture
+externa `x1-preset-real` (repo canónico intacto, sin commit ni push). Resultado: **el tramo que
+nunca se había alcanzado sí se ejerce**.
+- **11 pasos, 180.107 tokens facturables** (65.337 input, 6.226 output, 108.544 cacheRead). El
+  turno se detuvo por proyección con 208.828 previstos, no por techo real.
+- **La sombra quedó sucia con el defecto canónico reparado**: `redondearMonetario` pasó de
+  `Math.round(valor)` a `Math.round(valor * 100) / 100`, y `totalConIva` redondea sobre la
+  tarifa ya redondeada. Es el fix que exige el comentario de contrato de la propia función.
+- **Verificación real: 3/3 tests en verde contra la sombra**, y el producto canónico quedó
+  limpio (`git status` vacío).
+- **Falta un tramo corto**: segunda reclamación de la sombra ya sucia, registro de verificación
+  con el `candidate_diff_digest` copiado de `work-items.json` y cierre `DIRTY`. El ciclo íntegro
+  bajo preset real sigue sin probarse, pero ya no es un problema de arranque: está acotado a
+  esos pasos finales y medido.
+- **El coste por paso es plano, no creciente**: entre el paso 3 y el 11 el coste se mantiene
+  entre 12.786 y 18.733 tokens. Con un contexto de unas 6-7 acciones, el gasto lo domina el
+  contexto acumulado inicial (persona + skill + prompt de ensayo), no pasos que se degraden.
+
 ## Coste del ciclo medido por pasos; el techo y la causa no están establecidos — 2026-10-11
 Sin cambios de código ni de skills. Se midió el turno X1 bajo preset real con el journal
 durable (`/tmp/x1journal/final.jsonl`, 50 eventos): el contrato se entrega por tres canales en

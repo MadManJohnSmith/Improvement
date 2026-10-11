@@ -345,11 +345,16 @@ were in-workspace clones. The contract answered that measurement: the candidate 
 a **shadow repository the Host provisions under the workspace**, with its own `.git` and
 a receipt the mode only verifies — proven in code and fixture, still waiting for a full
 Creator run. The later `x1-preset-real` web campaign did resolve the real preset, load its
-skill and run the sentinels. Across three turns it billed 243,165 `totalTokens`;
-the last two were stopped **before editing anything** by the per-turn budget:
-99,022 measured / 128,213 projected, then 97,973 / 127,227 against a 120,000
-token ceiling. Skill, layout and provisioning alone cost 48,694 tokens in the
-last turn. No repair diff, no checks, no full-cycle proof. The
+skill and run the sentinels. The three turns at a 120,000 per-turn ceiling
+billed 243,165 `totalTokens`; two of them were stopped **before editing anything**:
+99,022 measured / 128,213 projected, then 97,973 / 127,227. Skill, layout and
+provisioning alone cost 48,694 tokens. A fourth turn at a 200,000 ceiling
+**did reach the edit**:
+180,107 tokens across 11 steps, the shadow left dirty with the canonical defect
+repaired, and 3/3 tests green against the shadow with the product untouched. What
+is still missing is the closing leg: the dirty re-claim, the verification record
+carrying the `candidate_diff_digest` from `work-items.json`, and the `DIRTY` close.
+The full cycle under a real preset is not yet proven. The
 full procedure for preparing that kind of real session is a permanent skill:
 `skills/dsh-maintenance-session/SKILL.md`.
 
