@@ -294,7 +294,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1086 pruebas en verde** (11 omitidas sin runtime externo).
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1088 pruebas en verde** (11 omitidas sin runtime externo).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 

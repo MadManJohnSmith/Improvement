@@ -1882,6 +1882,10 @@ def _new_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
         "usage_output_tokens": 0,
         "usage_cache_read_tokens": 0,
         "usage_tokens": 0,
+        # Whether this run has a real account at all. A state written before
+        # accounting existed has none of these fields, which is a missing
+        # account, not a run that cost zero.
+        "usage_accounted": True,
         "cursor": -1,
         "reason": "DISPATCH_PENDING",
         "created_at": _now_iso(),
@@ -1920,7 +1924,10 @@ def _reconcile_resumed_usage(state, run_doc):
     """
     max_tokens = int(state.get("max_tokens", 500000))
     budget = run_doc.get("budget") or {}
-    if not budget or int(budget.get("max_tokens", 0)) != max_tokens:
+    # A state written before the limit was frozen carries no max_tokens of its
+    # own; the run on disk is then the only statement of the limit and is taken
+    # as such. Only two disagreeing numbers are ambiguous.
+    if "max_tokens" in state and int(budget.get("max_tokens", 0)) != max_tokens:
         raise CreatorUsageAmbiguous(
             "el límite de tokens persistido no coincide con el run actual: "
             f"{max_tokens} != {budget.get('max_tokens')}")
@@ -2195,8 +2202,18 @@ def _observe_creator(client, state):
 
 
 def _creator_usage_tokens(state):
-    """Monotonic real tokens folded so far, or ``None`` when not measurable."""
-    tokens = state.get("usage_tokens")
+    """Monotonic real tokens folded so far, or ``None`` when not measurable.
+
+    A state that never carried an account returns ``None`` rather than zero:
+    "we don't know what this run spent" and "this run spent nothing" are
+    different facts, and only the second one can justify an acceptance.
+    """
+    if state.get("usage_accounted") is not True:
+        return None
+    usage_by_seq = state.get("usage_by_seq")
+    if not isinstance(usage_by_seq, dict):
+        return None
+    tokens = sum(item["totalTokens"] for item in usage_by_seq.values())
     if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
         return None
     return tokens
@@ -2323,6 +2340,21 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
             # Verify and return it before prepare() can rewrite status/checkpoint
             # or any DSH call can redispatch the prompt.
             if run_doc.get("status") == "GENERATED":
+                # The run is finished, so nothing new will be spent; the budget
+                # is still a claim about this run, and the only evidence for it
+                # is the persisted account. A missing account is not a run that
+                # cost nothing, so an absent one refuses here too.
+                state_path = _session_state_path(run_dir)
+                recorded = (_read_json(state_path)
+                            if state_path.is_file() else {})
+                used = _creator_usage_tokens(recorded)
+                if used is None or used >= session.max_tokens:
+                    _save_session_state(run_dir, recorded,
+                                        reason="TOKEN_BUDGET_EXCEEDED")
+                    return session.retain(
+                        f"Coste real Creator no medible o fuera del límite: "
+                        f"{used} frente a {session.max_tokens}; no se acepta "
+                        "un paquete terminal sin gasto que lo respalde")
                 manifest = session.verify_generation_output()
                 finish_path = run_dir / "finish.json"
                 if not finish_path.is_file():

@@ -89,7 +89,7 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 La cuenta que se publica («NNN pruebas en verde») no es el total, y decirlo es
 justo lo que la hace publicable. La cifra vigente se **mide**, no se recuerda:
 `python3 -B -m unittest discover -s tests` cerró el 2026-10-11 con
-`Ran 1086 tests … OK (skipped=11)`. **Once regresiones se saltan** en una máquina
+`Ran 1088 tests … OK (skipped=11)`. **Once regresiones se saltan** en una máquina
 sin los componentes externos, y todas nombran el componente que falta:
 
 | componente ausente | qué se pierde |

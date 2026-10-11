@@ -363,6 +363,82 @@ class FinalTurnOverflow(Base):
         run = json.loads((self.run_dir / "run.json").read_text())
         self.assertEqual(run["status"], "GENERATED")
 
+    def test_a_generated_rerun_without_accounting_is_not_accepted(self):
+        """Immutability covers the artifacts, not the budget.
+
+        A run marked GENERATED is returned without observing DSH, so the only
+        thing that can check its spend is the persisted account. A state that
+        never carried one -- written before accounting existed -- says nothing
+        about the limit, and a stale total that disagrees with its own segments
+        says nothing trustworthy either: both are refused instead of being read
+        as a run that stayed inside the budget.
+        """
+        self.make_package()
+        self.fresh_state(max_tokens=500)
+        for recorded in (
+                # No account at all: a pre-budget-era state.
+                {"usage_accounted": False, "usage_by_seq": {}},
+                # An account whose folded total disagrees with its segments.
+                {"usage_accounted": True,
+                 "usage_by_seq": {"1": {
+                     "inputTokens": 400, "outputTokens": 200,
+                     "cacheReadTokens": 0, "totalTokens": 600}}},
+        ):
+            cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE,
+                            {**self._legacy_state(), **recorded})
+            run = json.loads((self.run_dir / "run.json").read_text())
+            run["status"] = "GENERATED"
+            cc._update_json(self.run_dir / "run.json", run)
+            result = cc.run_creator(
+                self.run_dir, client=self._client([], cancelled=[False]),
+                poll_seconds=0, cancel_grace_seconds=1,
+                now_fn=lambda: 1000.0, sleep_fn=lambda _seconds: None)
+            self.assertEqual(result["result"], "RETAINED", recorded)
+            self.assertIn("coste real", result["reason"].lower())
+            # The refusal is recorded on the run, so the Host boundary sees it.
+            retained = json.loads((self.run_dir / "run.json").read_text())
+            self.assertEqual(retained["status"], "RETAINED")
+
+    def _legacy_state(self):
+        """The minimum a Creator run persists before any budget existed."""
+        prep = json.loads((self.run_dir / "generation-request.json").read_text())
+        prep = {"generation_id": prep["generation_id"],
+                "prompt_digest": prep["prompt_digest"]}
+        return {
+            "schema_version": cc.SCHEMA_VERSION,
+            "generation_id": prep["generation_id"],
+            "session_id": "session-legacy",
+            "request_id": "request-legacy",
+            "prompt_digest": prep["prompt_digest"],
+            "deadline": 9999,
+            "max_tokens": 500,
+            "usage_steps": 0,
+            "cursor": -1,
+            "reason": "TERMINAL_QUIESCENT",
+            "terminal": True,
+            "quiescent": True,
+        }
+
+    def test_a_measured_generated_rerun_is_returned_unchanged(self):
+        """The same rerun, with a measured account inside the limit, is not
+        refused: the gate must not turn immutability into a re-litigation."""
+        self.make_package()
+        self.fresh_state(max_tokens=500)
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["status"] = "GENERATED"
+        cc._update_json(self.run_dir / "run.json", run)
+        cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE,
+                        {**self._legacy_state(),
+                        "usage_accounted": True,
+                        "usage_by_seq": {"1": {
+                            "inputTokens": 120, "outputTokens": 30,
+                            "cacheReadTokens": 0, "totalTokens": 150}}})
+        result = cc.run_creator(
+            self.run_dir, client=self._client([], cancelled=[False]),
+            poll_seconds=0, cancel_grace_seconds=1,
+            now_fn=lambda: 1000.0, sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "GENERATED")
+
     def test_a_resume_whose_limit_disagrees_with_the_run_refuses(self):
         """A limit raised on disk must not silently relax a frozen budget.
 

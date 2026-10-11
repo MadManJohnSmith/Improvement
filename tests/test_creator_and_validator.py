@@ -553,6 +553,17 @@ class CreatorTests(Base):
             "reason": "READY_FOR_HOST_REJECTION",
             "terminal": True,
             "quiescent": True,
+            # A real account: the budget gate reads the folded evidence, so a
+            # fixture without it would look like an unmeasured run instead of
+            # a package the Host has to judge on its content.
+            "usage_accounted": True,
+            "usage_by_seq": {"3": {"inputTokens": 640, "outputTokens": 12,
+                                   "cacheReadTokens": 0, "totalTokens": 652}},
+            "usage_steps": 1,
+            "usage_input_tokens": 640,
+            "usage_output_tokens": 12,
+            "usage_cache_read_tokens": 0,
+            "usage_tokens": 652,
         }
         cc._write_json(self.run_dir / "creator-session.json", state)
 
@@ -712,7 +723,28 @@ class CreatorTests(Base):
     def test_generated_rerun_does_not_dispatch_or_degrade(self):
         generated, manifest = self.make_package()
         session = cc.CreatorSession(self.run_dir)
+        prep = session.prepare()
         session.create_finish(manifest)
+        # The rerun is immutable, but it is still a run whose spend has to be
+        # inside the limit; the account below is what the budget gate reads.
+        cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, {
+            "schema_version": 1,
+            "generation_id": prep["generation_id"],
+            "session_id": "session-generate",
+            "request_id": "request-generate",
+            "prompt_digest": prep["prompt_digest"],
+            "deadline": 9999,
+            "cursor": 1,
+            "reason": "TERMINAL_QUIESCENT",
+            "terminal": True,
+            "quiescent": True,
+            "usage_accounted": True,
+            "usage_by_seq": {"1": {
+                "inputTokens": 900, "outputTokens": 60,
+                "cacheReadTokens": 400, "totalTokens": 1360}},
+            "usage_steps": 1,
+            "usage_tokens": 1360,
+        })
 
         class ExplodingClient:
             authenticated = True
