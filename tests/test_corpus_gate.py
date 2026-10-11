@@ -16,14 +16,17 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import corpus_compiler
+import creator_client
 import reflection
 import skill_gate
+import skill_gate_run
 
 LIBRARY = ROOT / "library"
 BASE_DIGEST = hashlib.sha256(b"baseline-candidate").hexdigest()
@@ -70,6 +73,19 @@ class ExecutableCorpusTest(unittest.TestCase):
                 self.assertNotIn("verdict", serialized)
                 self.assertNotIn("oracle", serialized)
 
+    def test_every_compiled_case_retains_its_source_semantics(self):
+        sources = {scenario["scenario_id"]: scenario
+                   for _, scenario in corpus_compiler._source_records(LIBRARY)}
+        for case in self.corpus["cases"]:
+            with self.subTest(case=case["case_id"]):
+                source = sources[case["case_id"]]
+                self.assertEqual(case["input"]["scenario_fixture"],
+                                 source["input"])
+                self.assertEqual(case["input"]["scenario_description"],
+                                 source["description"])
+                self.assertNotIn("expected", case["input"])
+                self.assertNotIn("verdict", case["input"])
+
     def test_oracles_come_from_the_host_side_source(self):
         verdicts = corpus_compiler.expected_verdicts(LIBRARY, self.corpus)
         self.assertEqual(len(verdicts), len(self.corpus["cases"]))
@@ -83,6 +99,57 @@ class ExecutableCorpusTest(unittest.TestCase):
         tampered["cases"][0]["input"]["task"] = "something else entirely"
         with self.assertRaises(corpus_compiler.CorpusError):
             corpus_compiler.expected_verdicts(LIBRARY, tampered)
+
+    def test_case_id_cannot_escape_the_host_workspace(self):
+        # Even a self-consistent forged corpus digest must not turn a case_id
+        # into a relative path or a symlink-readable neighbour's answer.
+        for case_id in ("../../..", "../SC-101", "SC-101/../SC-102",
+                        "/tmp/SC-101", "SC-101\\result", "SC-101\n", "."):
+            with self.subTest(case_id=case_id):
+                forged = json.loads(json.dumps(self.corpus))
+                forged["cases"][0]["case_id"] = case_id
+                identity = {key: forged[key] for key in
+                            ("schema_version", "compiler_version",
+                             "source_digest", "cases")}
+                forged["corpus_digest"] = corpus_compiler._digest(identity)
+                with self.assertRaisesRegex(corpus_compiler.CorpusError,
+                                            "case_id"):
+                    corpus_compiler.validate_corpus(forged)
+
+    def test_oracle_fields_cannot_hide_in_a_public_fixture(self):
+        for key in ("expected", "verdict", "oracle", "evidence_type", "type"):
+            with self.subTest(key=key):
+                forged = json.loads(json.dumps(self.corpus))
+                forged["cases"][0]["input"]["scenario_fixture"][key] = "PASS"
+                identity = {name: forged[name] for name in
+                            ("schema_version", "compiler_version",
+                             "source_digest", "cases")}
+                forged["corpus_digest"] = corpus_compiler._digest(identity)
+                with self.assertRaisesRegex(corpus_compiler.CorpusError,
+                                            "exposes an oracle"):
+                    corpus_compiler.validate_corpus(forged)
+
+    def test_nested_public_input_cannot_smuggle_oracle_field(self):
+        forged = json.loads(json.dumps(self.corpus))
+        forged["cases"][0]["input"]["scenario_fixture"]["nested"] = {
+            "verdict": "PASS"}
+        identity = {key: forged[key] for key in
+                    ("schema_version", "compiler_version", "source_digest", "cases")}
+        forged["corpus_digest"] = corpus_compiler._digest(identity)
+        with self.assertRaisesRegex(corpus_compiler.CorpusError,
+                                    "exposes an oracle"):
+            corpus_compiler.validate_corpus(forged)
+
+    def test_source_scenario_input_cannot_smuggle_oracle_field(self):
+        library = Path(self.tmp) / "library"
+        shutil.copytree(LIBRARY, library)
+        path = library / "base/brainstorming/scenarios/SC-101.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["input"]["verdict"] = "PASS"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        with self.assertRaisesRegex(corpus_compiler.CorpusError,
+                                    "exposes an oracle"):
+            corpus_compiler.compile_corpus(library)
 
     def test_an_unknown_scenario_type_is_refused_not_guessed(self):
         library = Path(self.tmp) / "library"
@@ -556,6 +623,324 @@ class BoundGateExitCodeTest(unittest.TestCase):
             "skill-gate", "--baseline", str(legacy), "--candidate", str(legacy),
             "--library", str(LIBRARY))
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+
+
+class DshHeadlessCompositionRegression(unittest.TestCase):
+    """The headless session the framework launches carries the framework overlay.
+
+    A Creator pilot turn came back RETAINED because a headless turn boots
+    without ``workflow_write``: the overlay is only applied by ``launch_dsh_web``,
+    and a session started by any other route answers the framework's write
+    contract with the upstream tool the sandbox rejects. One resolver
+    (``creator_client.dsh_headless_command``) and one entry point per profile
+    is what keeps the two from drifting again, and these cases pin the three
+    things that would drift: the launcher flag, the overlay row, and the tool
+    name the overlay registers.
+    """
+
+    def test_the_headless_command_carries_the_plugin_overlay(self):
+        command = creator_client.dsh_headless_command()
+        # `--patch` is a launcher flag, so it composes with any profile -- the
+        # headless one included. Without it the row is simply absent.
+        self.assertEqual(command[-2:-1], ["--patch"])
+        self.assertEqual(Path(command[-1]), creator_client.DSH_PLUGIN_PATCH)
+        self.assertEqual(command[:5], ["npx", "-y", "@deepseek-ai/dsh",
+                                       "--profile", "headless"])
+
+    def test_the_headless_overlay_row_resolves_to_the_workflow_write_plugin(self):
+        """A row that pointed anywhere else would boot without the tool."""
+        overlay = creator_client.DSH_PLUGIN_PATCH.read_text(encoding="utf-8")
+        rows = [line.strip() for line in overlay.splitlines()
+                if line.strip().startswith("- ")]
+        # The overlay is an `insert` row carrying exactly one plugin. A second
+        # row would be a second overlay that nobody reviewed.
+        self.assertEqual(rows, ["- insert:", "- name: ./workflow-write.mjs"],
+                         f"overlay con filas inesperadas: {rows}")
+        plugin = creator_client.DSH_PLUGIN_PATCH.parent / "workflow-write.mjs"
+        self.assertTrue(plugin.is_file(),
+                        "la fila del overlay no resuelve a un plugin real")
+
+    def test_the_overlay_registers_the_tool_the_framework_promises(self):
+        """The tool name in the source is the one the framework's instructions
+        promise. A rename here would pass an audit by inspection."""
+        source = (creator_client.DSH_PLUGIN_PATCH.parent / "workflow-write.mjs"
+                  ).read_text(encoding="utf-8")
+        registration = source[source.index("ctx.tools.register("):]
+        self.assertIn("name: 'workflow_write'", registration)
+        # The framework's own instructions tell generated modes to call
+        # workflow_write and never plain write. A session booted without the
+        # overlay would follow those instructions into the upstream rejection.
+        instructions = Path(creator_client.__file__).read_text(encoding="utf-8")
+        self.assertIn("usa el tool `workflow_write` (no `write`)", instructions)
+
+    def test_the_headless_command_honours_the_shared_escape_hatch(self):
+        """The headless route reuses the web resolver rather than redefining it,
+        so its escape hatch is the same one the launcher documents."""
+        patched = creator_client.dsh_headless_command()
+        with unittest.mock.patch.dict(os.environ,
+                                      {"DSH_PLUGIN_PATCH": "0"}):
+            bare = creator_client.dsh_headless_command()
+        self.assertEqual(bare, patched[:len(patched) - 2])
+        self.assertNotIn("--patch", bare)
+
+
+class _RosterClient:
+    """The authorized preset surface any dispatch fixture can stand on.
+
+    Kept at module level so a fixture subclass does not depend on enclosing
+    class scoping. It answers the same two RPCs the real client serves --
+    ``agentPresets/list`` and ``agentPresets/read`` -- with the exact
+    operational composition, because the runner refuses to dispatch against a
+    mode it has not verified. A fixture that omits the roster tests something
+    weaker than it looks like: it proves the refusal, not the dispatch.
+    """
+
+    COMPOSITION = """- id: persona
+  name: '@deepseek-ai/dsh-persona'
+- id: bash
+  name: '@deepseek-ai/dsh-tool-bash'
+- id: fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+- id: skillfs
+  name: '@deepseek-ai/dsh-skill-filesystem'
+- id: skill
+  name: '@deepseek-ai/dsh-tool-skill'
+- id: guard
+  name: ./anti-escalation.mjs
+"""
+
+    def __init__(self, preset_id="auditor"):
+        self.preset_id = preset_id
+
+    def list_agent_presets(self):
+        return {"value": {"items": [
+            {"id": self.preset_id, "broken": False}]}}
+
+    def read_agent_preset(self, preset_id):
+        return {"value": {"agentPreset": preset_id,
+                          "content": self.COMPOSITION}}
+
+
+class SkillGateRunContractRegression(unittest.TestCase):
+    """The corpus gate names the endpoint DSH does not have, and admits it.
+
+    A previous revision called an ``evaluator`` RPC that DSH 0.2.0-rc.2 never
+    exposed: a call to a method that does not exist answers 404 at best and a
+    fabricated verdict at worst, and a gate that has to publish an observation
+    will fill in whatever it needs to. The dispatch now goes through the session
+    API that release really serves, and a client that cannot serve it
+    refuses with the missing piece named -- never with an invented verdict.
+
+    Every client fixture here subclasses ``_RosterClient``, the authorized
+    preset surface, because the runner refuses to dispatch against a mode it
+    has not verified. A fixture that quietly omits the roster tests something
+    weaker than it looks like: it proves the refusal, not the dispatch.
+    """
+
+    def _case(self):
+        return {
+            "case_id": "case-x", "type": "realization",
+            "input": {"task": "haz X", "target": "y"},
+        }
+
+    def test_a_client_without_the_session_api_never_yields_a_verdict(self):
+        class _OnlyRpc:
+            def rpc(self, endpoint, request=None, timeout=30):
+                raise AssertionError(
+                    "el gate no debe llamar a un endpoint inexistente")
+
+        client = _OnlyRpc()
+        with self.assertRaises(RuntimeError) as ctx:
+            skill_gate_run._dispatch(client, self._case(), "auditor", 1, None)
+        message = str(ctx.exception)
+        self.assertIn("create_creator_session", message)
+        self.assertIn("session/create", message)
+
+    def test_the_refusal_names_the_absent_endpoint_rather_than_success(self):
+        """What the message says, in full, is the measured carency."""
+        with self.assertRaises(RuntimeError) as ctx:
+            skill_gate_run._dispatch(object(), self._case(), "auditor", 1, None)
+        message = str(ctx.exception)
+        self.assertIn("no expone", message)
+        self.assertIn("session/create", message)
+        self.assertIn("evaluator", message)
+
+    def test_a_case_that_ran_but_was_not_answered_is_not_covered(self):
+        class _Client(_RosterClient):
+            def create_creator_session(self, **kwargs):
+                return "sess-1"
+            def send_prompt(self, session_id, prompt, *, request_id=None):
+                pass
+            def creator_observation(self, session_id, *, cursor=-1):
+                # A turn that ended with prose and no object to parse.
+                return {"cursor": 1, "events": [
+                    {"type": "turn/start", "seq": 1, "data": {"turn": 0}},
+                    {"type": "turn/end", "seq": 2, "data": {"turn": 0}},
+                    {"type": "assistant/message", "seq": 3,
+                     "data": {"text": "no pude responder"}},
+                ]}
+            def cancel_session(self, session_id):
+                pass
+
+        verdict, evidence = skill_gate_run._dispatch(
+            _Client(), self._case(), "auditor", 5, None)
+        self.assertEqual(verdict, "NOT_COVERED")
+        self.assertTrue(evidence.strip())
+
+    def test_narrated_prose_is_never_a_verdict(self):
+        """The fallback the runner used to have, pinned as refused.
+
+        This is the defect in one place: a mode that ends its turn saying
+        "TODO CORRECTO, PASS" in prose, persisting no object, must come back
+        NOT_COVERED. A gate that reads prose as a verdict lets any model score
+        itself by asserting it did well.
+        """
+        narrated = json.dumps({"verdict": "PASS", "evidence": "todo bien"})
+
+        class _Client(_RosterClient):
+            def create_creator_session(self, **kwargs):
+                return "sess-1"
+            def send_prompt(self, session_id, prompt, *, request_id=None):
+                pass
+            def creator_observation(self, session_id, *, cursor=-1):
+                return {"cursor": 1, "events": [
+                    {"type": "turn/start", "seq": 1, "data": {"turn": 0}},
+                    {"type": "turn/end", "seq": 2, "data": {"turn": 0}},
+                    {"type": "assistant/message", "seq": 3,
+                     "data": {"text": narrated}},
+                ]}
+            def cancel_session(self, session_id):
+                pass
+
+        verdict, evidence = skill_gate_run._dispatch(
+            _Client(), self._case(), "auditor", 5, None)
+        self.assertEqual(verdict, "NOT_COVERED")
+        self.assertNotIn("todo bien", evidence)
+
+    def test_the_verdict_comes_from_the_file_the_mode_persisted(self):
+        """The observation is read, not inferred from the transcript's last line:
+        the same file contract the acceptance reviewer reads its actor by."""
+        root = tempfile.mkdtemp(prefix="gate-case-")
+        self.addCleanup(shutil.rmtree, root, True)
+        case_dir = Path(root) / "case-x"
+        case_dir.mkdir()
+        (case_dir / "result.json").write_text(json.dumps(
+            {"verdict": "FAIL", "evidence": "el modo rompió el contrato"}),
+            encoding="utf-8")
+
+        class _Client(_RosterClient):
+            def create_creator_session(self, **kwargs):
+                return "sess-1"
+            def send_prompt(self, session_id, prompt, *, request_id=None):
+                pass
+            def creator_observation(self, session_id, *, cursor=-1):
+                return {"cursor": 1, "events": [
+                    {"type": "turn/start", "seq": 1, "data": {"turn": 0}},
+                    {"type": "turn/end", "seq": 2, "data": {"turn": 0}},
+                    # The mode narrating something else must not override what
+                    # it persisted.
+                    {"type": "assistant/message", "seq": 3,
+                     "data": {"text": "listo, todo bien"}},
+                ]}
+            def cancel_session(self, session_id):
+                pass
+
+        verdict, evidence = skill_gate_run._dispatch(
+            _Client(), self._case(), "auditor", 5, case_dir)
+        self.assertEqual(verdict, "FAIL")
+        self.assertEqual(evidence, "el modo rompió el contrato")
+
+    def test_every_case_gets_a_real_workspace_outside_the_framework(self):
+        """The mode under test has to be able to write its answer somewhere:
+        ``run_corpus`` always hands a case a directory that exists, and never
+        one inside the canonical tree.
+
+        The old dispatch passed ``None`` when no workspace was given, and
+        ``create_workspace`` stringified it into the literal "None".
+        """
+        seen = []
+
+        class _Client(_RosterClient):
+            def create_creator_session(self, *, workspace_path=None,
+                                       agent_preset=None, session_id=None):
+                # Checked while the fixture still exists: the temporary
+                # directory is removed when the run returns.
+                if workspace_path is not None and not Path(
+                        workspace_path).is_dir():
+                    seen.append(f"missing:{workspace_path}")
+                    return f"sess-{len(seen)}"
+                seen.append(workspace_path)
+                return f"sess-{len(seen)}"
+            def send_prompt(self, session_id, prompt, *, request_id=None):
+                pass
+            def creator_observation(self, session_id, *, cursor=-1):
+                return {"cursor": 1, "events": [
+                    {"type": "turn/start", "seq": 1, "data": {"turn": 0}},
+                    {"type": "turn/end", "seq": 2, "data": {"turn": 0}},
+                ]}
+            def cancel_session(self, session_id):
+                pass
+
+        class _CompatibleFixture(skill_gate_run.CompatibleEvaluator):
+            def prepare(self, client, corpus, mode, root):
+                self.root = root
+                return {case["case_id"]: mode for case in corpus["cases"]}
+            def verify_case(self, client, case, mode, path):
+                return (path.parent == self.root and path.is_dir()
+                        and not path.is_symlink())
+
+        payload = skill_gate_run.run_corpus(
+            _Client(), corpus_compiler.compile_corpus(LIBRARY),
+            mode="auditor", candidate_digest=CAND_DIGEST,
+            provider_name="fake", evaluator=_CompatibleFixture())
+        self.assertEqual(len(seen), len(payload["observations"]))
+        self.assertTrue(all(path is not None for path in seen), seen)
+        self.assertFalse([path for path in seen
+                          if str(path).startswith("missing:")], seen)
+        framework = ROOT
+        for path in seen:
+            self.assertNotIn(str(framework), str(Path(path).parent.parent))
+
+    def test_a_verdict_leaked_into_the_prompt_is_the_defect_not_the_case(self):
+        """The scenario the mode receives carries no expected verdict, digest or
+        sibling: a case that travels with its own answer measures reading."""
+        sent = skill_gate_run._case_scenario(self._case())
+        blob = json.dumps(sent)
+        for leaked in ("expected", "corpus_digest", "candidate_digest",
+                       "verdict", "provider"):
+            with self.subTest(leaked=leaked):
+                self.assertNotIn(leaked, blob)
+        self.assertEqual(sent["task"], "haz X")
+
+    def test_an_environment_that_cannot_serve_the_session_api_is_not_covered(self):
+        """The honest abstention the brief asks for, at the level that matters:
+        ``run_corpus`` against a client that cannot serve the session API.
+
+        A client carrying only an ``evaluator`` RPC is the shape of the broken
+        contract this regression was written for -- an endpoint DSH never had.
+        The run refuses before dispatching anything, as the RunnerUnavailable
+        the launcher already handles as an abstention: the missing piece is
+        named, no observation is claimed, and none of them is a PASS.
+        """
+        class _EvaluatorOnlyClient:
+            """What the old contract assumed: an endpoint this release lacks."""
+
+            def rpc(self, endpoint, request=None, timeout=30):
+                raise AssertionError("endpoint inexistente")
+
+        with self.assertRaises(skill_gate_run.RunnerUnavailable) as ctx:
+            skill_gate_run.run_corpus(
+                _EvaluatorOnlyClient(),
+                corpus_compiler.compile_corpus(LIBRARY),
+                mode="test-auditor", candidate_digest=CAND_DIGEST,
+                provider_name="dsh")
+        message = str(ctx.exception)
+        # The exact carency this regression was written for, in the message.
+        self.assertIn("list_agent_presets", message)
 
 
 if __name__ == "__main__":

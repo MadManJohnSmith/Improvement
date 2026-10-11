@@ -21,6 +21,7 @@ from composition_contract import ANTI_ESCALATION_PLUGIN, validate_operational_co
 from layout_contract import layout_from_paths, validate_mode_layout
 from mode_lifecycle import initialize_state
 from campaign_plan import write_campaign
+from host_validator import skill_frontmatter_issue
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -590,6 +591,15 @@ class Transaction:
             if (not entrypoint.is_file() or entrypoint.is_symlink() or
                     entrypoint.stat().st_nlink != 1):
                 raise TransactionError(f"SKILL.md inseguro o ausente en bundle: {name}")
+            # The packaged byte must load in DSH, not merely pass the generated
+            # contract: an unquoted ': ' in a description parses into a nested
+            # mapping in DSH's parser and the skill is silently discarded, so
+            # the activation path fails closed on the bytes it ships.
+            frontmatter = skill_frontmatter_issue(entrypoint, name)
+            if frontmatter:
+                raise TransactionError(
+                    f"SKILL.md del bundle no cargable en DSH: {name}: "
+                    f"{frontmatter}")
         return skill_root
 
     def _build_preset_bundle(self, generated, modes, generation_id):

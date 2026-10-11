@@ -50,6 +50,18 @@ DSH_MODULE_ROOT=/absolute/node_modules node tests/test_dsh_skill_root.mjs
 python3 -B -m unittest discover -s tests -v
 ```
 
+### Description sin comillas: descarte silencioso
+
+`SKILL.md` con `description` plana que contiene `: ` no carga. El parser YAML que usa DSH sobre el cuerpo del frontmatter lanza `Nested mappings are not allowed in compact mappings`, `parseSkillFile` atrapa el error y devuelve `undefined`, así que el skill no entra en el catálogo y la tool `skill` devuelve `unknown or no longer available`: una sesión cataloga cero skills sin un fallo visible. Medido con `@deepseek-ai/dsh` 0.2.0-rc.2.
+
+La corrección canónica es entrecomillar `name` y `description` con comillas dobles; también cargan la comilla simple y los valores planos que no llevan `: `, así que la regresión no retira generaciones antiguas válidas. El prompt Creator cita explícitamente esas comillas, la validación Host rechaza la forma plana en los bytes `generated` y en los `packaged` antes de ACTIVE, y `tests/test_dsh_frontmatter_shape.mjs` prueba el comportamiento contra el loader real.
+
+```bash
+DSH_MODULE_ROOT=/absolute/node_modules node tests/test_dsh_frontmatter_shape.mjs
+```
+
+Sin `DSH_MODULE_ROOT` ese test sale por la rama de skip y no prueba nada: un skip no es una prueba, así que si se toca la regresión hay que ejecutarla con la variable puesta.
+
 ## Presets y plugin actuales
 
 Los presets de Syncify/RehabWeb y `workflow-write` demostraron composición/routing/subagentes/escritura. Son fixtures de referencia del MVP, no distribución final ni defaults de terceros. El lanzamiento automático carga `workflow-write.mjs` como overlay `--patch` (`scripts/dsh-plugins/cordis-patch.yml`) sobre el perfil del titular: sin instalación en el home DSH ni dependencias; `DSH_PLUGIN_PATCH=0` lo omite.
@@ -78,8 +90,9 @@ sola con `DSH_HOME` y el padre común como cwd. Crea una única sesión Creator;
 preset Creator no debe delegar, abrir subagentes ni iniciar workflows. La instancia
 queda activa al terminar.
 
-Creator genera exactamente dos presets seleccionables: `<proyecto>-auditor` y
-`<proyecto>-continuous-repair`. Cada modo contiene `mode.json`, `preset.yml`,
+Creator genera tres presets seleccionables: `<proyecto>-auditor`,
+`<proyecto>-continuous-repair` y `<proyecto>-implementer` (este último para cambios
+pedidos, no hallazgos). Cada modo contiene `mode.json`, `preset.yml`,
 `agent.cordis.yml` y `SKILL.md`. Su composición debe montar persona, bash, fs,
 fs-search, skill-filesystem y tool-skill; el Host retiene una composición incompleta
 o con filas de subagente/delegación, workflow, web/red o plugin-manager. Cada
@@ -95,7 +108,7 @@ instala mediante `pluginManager/installBundle`, consulta `agentPresets/list` y s
 considera la instalación activa cuando ambos IDs del recibo aparecen sin diagnóstico
 `broken`. El runtime vigente ya no lee la ruta legacy `$DSH_HOME/.agent-presets`.
 
-Los dos modos comparten `<Proyecto>-workspace/mode-state`; Host preflightea e
+Los tres modos comparten `<Proyecto>-workspace/mode-state`; Host preflightea e
 inicializa schemas estrictos, caps de archivo/registro y slot candidato. La persona
 obliga a cargar primero el skill homónimo. Auditor solo usa `workflow_write` para
 estado. Repair no usa write/edit; cambia código por bash con workdir candidato,

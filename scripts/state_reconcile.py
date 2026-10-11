@@ -9,16 +9,20 @@ alone can never be trusted to describe them:
 * a finding stays `OPEN` in the findings ledger while its work item is already
   `VERIFIED`, because the finding only moves to `RESOLVED` when a later audit
   observes the fix; the queue then offers work that is already done;
-* an integrated candidate keeps its worktree and branch on disk until somebody
-  remembers to remove them, which is how four integrated candidates once filled
-  the operator's disk.
+* an integrated candidate keeps its shadow (or historical worktree) on disk
+  until somebody retires it; independent shadow history cannot prove product
+  integration from commit ancestry alone.
 
 Every operation here is fail-closed and mechanical: it asks git and the state
 the same question the operator would ask, and reports what it found instead of
 repairing what it did not prove.
 """
 
+import hashlib
 import json
+import os
+import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -31,9 +35,15 @@ class ReconcileError(ValueError):
 
 
 def _git(product, *arguments, check=True):
-    finished = subprocess.run(
-        ["git", "-C", str(product), *arguments], capture_output=True, text=True,
-        timeout=120)
+    try:
+        finished = subprocess.run(
+            ["git", "-C", str(product), *arguments], capture_output=True, text=True,
+            timeout=120, env={**os.environ, "GIT_NO_LAZY_FETCH": "1",
+                              "GIT_NO_REPLACE_OBJECTS": "1",
+                              "GIT_TERMINAL_PROMPT": "0"})
+    except subprocess.TimeoutExpired as error:
+        raise ReconcileError("ABSTAINED: git excedió 120s; no se retira nada; "
+                             "el operador debe verificar acceso al repositorio") from error
     if check and finished.returncode != 0:
         raise ReconcileError(
             f"git {' '.join(arguments)} falló: {(finished.stderr or finished.stdout).strip()}")
@@ -403,17 +413,223 @@ def repoint(product, workspace, revision):
             "status": candidate.get("status")}
 
 
-def retire(product, workspace):
-    """Remove an integrated candidate's worktree and branch, or say why not.
+def _abstain(reason):
+    raise ReconcileError(
+        "ABSTAINED: " + reason + "; decisión del operador: conservar la sombra "
+        "y el recibo, revisar git diff del producto desde la base y de la "
+        "sombra desde shadow-base, integrar/verificar el patch manualmente; "
+        "si no se puede demostrar equivalencia exacta, decidir su custodia "
+        "o retirada manual fuera de --retire")
 
-    Removing the worktree is only safe once the work it held is provably in the
-    canonical branch, so every condition is checked before anything is deleted:
-    the candidate is recorded as INTEGRATED, its head is an ancestor of the
-    canonical HEAD, the path is a worktree this repository registered, the
-    branch is the recorded one at the recorded head, and the worktree is either
-    clean or its diff still hashes to what the record says was verified. A
-    candidate that fails any of them is left exactly as it is.
+
+def _entry(root, revision, path):
+    """Read an exact path from a Git tree, without using a glob pathspec."""
+    result = _git(root, "ls-tree", "-r", "-z", "--full-tree", revision,
+                  "--", f":(literal){path}").stdout
+    if not result:
+        return None
+    entries = [line for line in result.split("\0") if line]
+    if len(entries) != 1 or "\t" not in entries[0]:
+        _abstain("el árbol Git no identifica una única ruta")
+    meta, name = entries[0].split("\t", 1)
+    fields = meta.split()
+    if name != path or len(fields) != 3 or fields[0] not in ("100644", "100755") or fields[1] != "blob":
+        _abstain(f"ruta Git no regular: {path}")
+    return (fields[0], fields[2])
+
+
+def _safe_path(root, path):
+    if (not isinstance(path, str) or not path or path.startswith("/") or
+            any(part in ("", ".", "..") for part in path.split("/"))):
+        _abstain("changed_paths contiene ruta insegura")
+    target = root
+    for part in path.split("/")[:-1]:
+        target /= part
+        if target.is_symlink():
+            _abstain("changed_paths atraviesa un enlace simbólico")
+    return root / path
+
+
+def _shadow_status(shadow):
+    """The entire dirty inventory (not just the paths asserted by the state)."""
+    # A cone makes whole paths invisible to this inventory. `git
+    # sparse-checkout set --cone` marks every out-of-cone tracked path
+    # `S` (skip-worktree), and `git status` then reports nothing for them --
+    # deleting such a file by hand would print ` D outside.txt`, the same
+    # deletion performed by the cone prints nothing -- so the output below can
+    # call a shadow clean while it still holds content. The three ignore
+    # sources need no separate ask: `.gitignore`, `.git/info/exclude` and
+    # `core.excludesFile` are all reported by `--ignored=matching` as `!!`,
+    # which this loop abstains on.
+    if _git(shadow, "config", "core.sparseCheckout",
+            check=False).stdout.strip().lower() in ("true", "1", "yes", "on"):
+        _abstain("la sombra tiene checkout disperso y git status omite rutas del cono")
+    data = _git(shadow, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+                "--ignored=matching").stdout
+    paths = []
+    for entry in data.split("\0"):
+        if not entry:
+            continue
+        if len(entry) < 4 or entry[2] != " " or entry[:2] not in (" M", " D", "??"):
+            _abstain("la sombra contiene cambios preparados, ignorados o no previstos")
+        paths.append(entry[3:])
+    return paths
+
+
+def _shadow_retire(product, workspace, candidate):
+    """Refuse to delete a Host shadow, even when the patch is proven exactly.
+
+    Histories are independent. A common SHA or an INTEGRATED status cannot prove
+    anything, so every gate below compares each changed path's *before* tree at
+    the product's recorded base with shadow-base, and its *after* tree at the
+    canonical HEAD with the recorded, still-dirty candidate. The gates are kept
+    and unchanged: they prove the patch reached the canonical tree. They cannot
+    prove the converse, that the shadow is nothing *but* that patch, so nothing
+    here deletes — see the retirement block at the end.
     """
+    from onboard import checked
+
+    try:
+        product, workspace = checked(product), checked(workspace)
+    except ValueError:
+        _abstain("producto/workspace con enlace simbólico o ruta no absoluta")
+    if (not product.is_dir() or not workspace.is_dir() or
+            product.parent != workspace.parent or not (workspace / "mode-state").is_dir() or
+            (workspace / "mode-state").is_symlink() or
+            (workspace / "mode-state" / "work-items.json").is_symlink()):
+        _abstain("producto/workspace/estado fuera del layout Host")
+    digest = candidate.get("finding_ids_digest")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        _abstain("digest de hallazgos inválido")
+    name = f"repair-{digest[:16]}"
+    if (candidate.get("path") != f"{workspace.name}/candidates/{name}" or
+            candidate.get("branch") != "candidate"):
+        _abstain("ruta o rama no coinciden con la identidad Host")
+    shadow = workspace / "candidates" / name
+    receipt = workspace / f"{name}.receipt"
+    try:
+        checked(shadow)
+        checked(receipt)
+    except ValueError:
+        _abstain("enlace simbólico en candidata o recibo")
+    if (not shadow.is_dir() or not receipt.is_file() or
+            receipt.stat().st_size > 256 or
+            not (shadow / ".git").is_dir() or (shadow / ".git").is_symlink() or
+            (shadow / ".gitmodules").exists() or (shadow / ".gitmodules").is_symlink() or
+            (shadow / ".git" / "objects" / "info" / "alternates").exists() or
+            (shadow / ".git" / "commondir").exists()):
+        _abstain("sombra/recibo ausente o Git no independiente; no se infiere retiro anterior")
+    base, head = candidate.get("base_revision"), candidate.get("head")
+    if (not isinstance(base, str) or not re.fullmatch(r"[0-9a-f]{40,64}", base) or
+            not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head)):
+        _abstain("revisiones de candidata inválidas")
+    try:
+        contents = receipt.read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        _abstain("recibo Host ilegible")
+    if contents != f"{base}\n{digest}\n{head}\n":
+        _abstain("recibo Host no corresponde exactamente al estado")
+    if (_git(shadow, "rev-parse", "--absolute-git-dir").stdout.strip() != str(shadow / ".git") or
+            _git(shadow, "rev-parse", "--show-toplevel").stdout.strip() != str(shadow) or
+            _git(shadow, "symbolic-ref", "--short", "HEAD").stdout.strip() != "candidate" or
+            _git(shadow, "rev-parse", "--verify", "refs/tags/shadow-base").stdout.strip() != head or
+            _git(shadow, "rev-parse", "HEAD").stdout.strip() != head):
+        _abstain("sombra derivó de la identidad recibida o contiene commits propios")
+    refs = set(_git(shadow, "for-each-ref", "--format=%(refname)").stdout.splitlines())
+    if refs != {"refs/heads/candidate", "refs/tags/shadow-base"}:
+        _abstain("sombra contiene referencias Git ajenas al patch verificado")
+    if (_git(shadow, "fsck", "--full", "--no-reflogs", "--unreachable",
+             check=False).stdout.strip()):
+        _abstain("sombra contiene objetos Git sin integrar que la retirada borraría")
+    worktrees = _git(shadow, "worktree", "list", "--porcelain").stdout.count("worktree ")
+    if worktrees != 1:
+        _abstain("sombra contiene worktrees Git registrados además del principal")
+    canonical = _git(product, "rev-parse", "HEAD").stdout.strip()
+    if (not _is_ancestor(product, base, canonical) or
+            _git(product, "rev-parse", "--show-toplevel").stdout.strip() != str(product) or
+            _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout):
+        _abstain("producto no está limpio o su base no pertenece a la historia canónica")
+    paths = candidate.get("changed_paths")
+    digest_recorded = candidate.get("candidate_diff_digest")
+    if (not isinstance(paths, list) or not paths or len(paths) != len(set(paths)) or
+            not isinstance(digest_recorded, str) or
+            not re.fullmatch(r"[0-9a-f]{64}", digest_recorded)):
+        _abstain("no existe huella exacta del patch registrado")
+    if set(_shadow_status(shadow)) != set(paths):
+        _abstain("sombra limpia o su inventario difiere del patch registrado")
+    fingerprint = hashlib.sha256()
+    for path in sorted(paths, key=os.fsencode):
+        target = _safe_path(shadow, path)
+        raw = os.fsencode(path)
+        fingerprint.update(len(raw).to_bytes(8, "big"))
+        fingerprint.update(raw)
+        try:
+            mode = target.lstat().st_mode
+        except FileNotFoundError:
+            fingerprint.update(b"D")
+            after = None
+        else:
+            if not stat.S_ISREG(mode):
+                _abstain(f"la candidata contiene entrada no regular: {path}")
+            data = target.read_bytes()
+            fingerprint.update(b"F")
+            fingerprint.update(len(data).to_bytes(8, "big"))
+            fingerprint.update(data)
+            after = ("100755" if mode & 0o111 else "100644",
+                     _git(shadow, "hash-object", "--no-filters", str(target)).stdout.strip())
+        before = _entry(shadow, head, path)
+        product_before = _entry(product, base, path)
+        product_after = _entry(product, canonical, path)
+        if before != product_before or after != product_after or before == after:
+            _abstain(f"no se prueba la integración exacta del patch en {path}")
+    if fingerprint.hexdigest() != digest_recorded:
+        _abstain("la huella actual difiere del patch verificado")
+
+    if (_git(product, "rev-parse", "HEAD").stdout.strip() != canonical or
+            _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout or
+            set(_shadow_status(shadow)) != set(paths)):
+        _abstain("producto o sombra cambiaron durante la comprobación")
+    # Reject symlinks and mounted subtrees, even though retirement abstains.
+    root_device = shadow.stat().st_dev
+    for directory, names, files in os.walk(shadow, followlinks=False):
+        for name in names + files:
+            member = Path(directory) / name
+            mode = member.lstat().st_mode
+            if (not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)) or
+                    member.lstat().st_dev != root_device or os.path.ismount(member)):
+                _abstain("sombra contiene enlace, entrada especial o montaje")
+    # ------------------------------------------------------------------
+    # Retirada automática DESHABILITADA (2026-10-11).
+    #
+    # Todas las puertas de arriba se mantienen: demuestran que el patch
+    # verificado está en el árbol canónico. Lo que ninguna puede demostrar es
+    # lo contrario, que la sombra no contiene nada más, y el borrado automático
+    # se llevaría también eso:
+    #   * `git status` nunca inventa el contenido de `.git/`: un archivo en
+    #     `.git/operator-notes` o `.git/lfs/objects/private` se borraría con
+    #     `shutil.rmtree` sin que ninguna puerta lo viera.
+    #   * la inspección de `git fsck` miraba solo `stdout` con `check=False`:
+    #     los códigos de salida no se leían y `GIT_OBJECT_DIRECTORY` en el
+    #     entorno puede ocultar un objeto local.
+    #   * los flags `skip-worktree`/`assume-unchanged` esconden de `git status`
+    #     ediciones sobre un archivo trackeado, así que esas ediciones privadas
+    #     de un trackeado también se borrarían.
+    #   * las comparaciones finales miran hashes de contenido, pero el borrado
+    #     venía después: una edición concurrente, o un archivo que aparece tras
+    #     el walk final, se pierde; `shutil.rmtree` no es atómico y puede borrar
+    #     en parte antes de fallar.
+    # La retirada queda aquí como decisión manual del operador.
+    # ------------------------------------------------------------------
+    _abstain("la sombra no está inventariada como conjunto de contenido exclusivo y "
+             "desechable —`git status` no ve `.git/` ni los flags `skip-worktree`/"
+             "`assume-unchanged`— y retirarla automáticamente podría borrar contenido "
+             "sin dueño; la retirada es una decisión manual del operador: listar a mano "
+             "la sombra y su `.git/` (por ejemplo con `du -sh` y `find`) y borrarla solo "
+             "cuando se confirme que no hay nada que conservar")
+
+
+def retire(product, workspace):
+    """Retire a legacy worktree; abstain from deleting a Host shadow."""
     product, workspace = Path(product), Path(workspace)
     state = workspace / "mode-state"
     candidate = _work_items(state).get("candidate")
@@ -423,37 +639,45 @@ def retire(product, workspace):
         raise ReconcileError(
             f"la candidata está en {candidate.get('status')!r}; solo se retira una INTEGRATED")
 
-    name = Path(candidate.get("path", "")).name
+    recorded_path = candidate.get("path")
+    if not isinstance(recorded_path, str):
+        _abstain("ruta registrada inválida")
+    # Dispatch by exact namespace, not a candidate basename. A legacy worktree
+    # with the same suffix cannot be adopted as a shadow (or vice versa).
+    if recorded_path.startswith(f"{workspace.name}/candidates/"):
+        return _shadow_retire(product, workspace, candidate)
+
+    name = Path(recorded_path).name
+    if (recorded_path != name or not re.fullmatch(r"[A-Za-z0-9_.-]+-repair-[0-9a-f]{16}", name) or
+            not isinstance(candidate.get("branch"), str) or
+            not re.fullmatch(r"dsh/repair-[0-9a-f]{16}", candidate["branch"])):
+        _abstain("identidad de worktree legacy inválida")
+    path = product.parent / name
+    if path.is_symlink() or product.is_symlink() or workspace.is_symlink():
+        _abstain("enlace simbólico en ruta legacy")
+    branch = candidate["branch"]
     registered = next((entry for entry in _worktree_records(product)
-                       if Path(entry["path"]).name == name), None)
-    branch = candidate.get("branch")
+                       if entry["path"] == str(path)), None)
     if registered is None:
-        if _git(product, "show-ref", "--verify", "--quiet", str(branch),
-                check=False).returncode != 0:
+        if (not path.exists() and
+                _git(product, "show-ref", "--verify", "--quiet",
+                     f"refs/heads/{branch}", check=False).returncode != 0):
             return {"retired": True, "already": True,
                     "reason": "worktree y rama ya no existen"}
-        _git(product, "branch", "-D", str(branch))
-        return {"retired": True, "already": False, "worktree": None, "branch": branch}
+        _abstain("rama o ruta legacy existe sin worktree registrado")
     if registered.get("branch") != branch:
         raise ReconcileError(
             f"el worktree registrado apunta a {registered.get('branch')!r}, no a {branch!r}")
-
     head = candidate.get("head")
-    if not _is_ancestor(product, head):
+    if (not isinstance(head, str) or not _is_ancestor(product, head)):
         raise ReconcileError(
             f"{head} no está en la rama canónica; retirar el worktree perdería trabajo sin integrar")
-    if registered.get("head") != head:
-        raise ReconcileError(
-            f"el worktree está en {registered.get('head')!r}, no en la cabeza registrada {head}")
-    path = Path(registered["path"])
-    # The worktree is a linked checkout outside the product's own tree, so its
-    # cleanliness is asked from inside it, not with a pathspec the product
-    # repository refuses to resolve.
-    dirty = _git(path, "status", "--porcelain=v1").stdout.strip()
-    if dirty:
-        raise ReconcileError(
-            "el worktree tiene cambios sin integrar; no se retira nada")
-
+    if registered.get("head") != head or _git(product, "rev-parse", f"refs/heads/{branch}").stdout.strip() != head:
+        raise ReconcileError("la rama/worktree difiere de la cabeza registrada")
+    if _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout:
+        _abstain("producto canónico sucio")
+    if _git(path, "status", "--porcelain=v1", "--untracked-files=all").stdout.strip():
+        raise ReconcileError("el worktree tiene cambios sin integrar; no se retira nada")
     _git(product, "worktree", "remove", str(path))
-    _git(product, "branch", "-D", str(branch))
+    _git(product, "branch", "-D", branch)
     return {"retired": True, "already": False, "worktree": str(path), "branch": branch}

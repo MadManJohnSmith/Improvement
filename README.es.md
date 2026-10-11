@@ -16,9 +16,9 @@ integra.
 
 Al instalarlo, genera **dos modos hechos a la medida de tu proyecto**. El **auditor**
 examina el código y registra cada hallazgo con su evidencia (`archivo:línea`) y su
-severidad. El **reparador** corrige en un worktree aislado, verifica cada arreglo contra
-los comandos reales de tu proyecto y deja tu árbol intacto. Nada llega a tu rama sin pasar
-por ti.
+severidad. El **reparador** corrige en un repositorio sombra aislado, verifica cada arreglo
+contra los comandos reales de tu proyecto y deja tu árbol intacto. Nada llega a tu rama sin
+pasar por ti.
 
 Es un framework probado en tres campañas completas sobre repositorios reales: Syncify
 (una app de música en Rust/Tauri/Vue), RehabWeb (una app clínica en Django/Vue) y LoboApp
@@ -72,7 +72,7 @@ estructura que sobrevive a los ciclos:
 - un **auditor** que examina tu proyecto y persiste hallazgos con evidencia
   (`archivo:línea`), severidad y deduplicación por `(hallazgo, revisión)`;
 - un **reparador** que toma los hallazgos, reclama una candidata de trabajo aislada en un
-  worktree hermano, la corrige, verifica y **te deja el árbol de tu producto intacto**;
+  repositorio sombra del workspace, la corrige, verifica y **te deja el árbol de tu producto intacto**;
 - una **memoria en disco** (`<proyecto>-workspace/mode-state`) con topes estrictos por
   fichero y por registro: crece hasta su límite y se compacta, no se satura;
 - una **frontera de integración clara**: el modo deja el candidato verificado y tú haces
@@ -98,14 +98,17 @@ biblioteca congelado con su digest al instalar: lo que tu modo reutiliza es exac
 lo que el digest firmó, no una versión deslizada después. Es el flujo que generó los
 modos de RehabWeb, LoboApp y del propio framework.
 
-**La biblioteca mejora con evidencia, no con opiniones.** Sus 55 escenarios se compilan
-en casos ejecutables cuyo veredicto esperado solo conoce el Host. Ningún cambio de una
-skill base entra sin puntuar en un gate que únicamente acepta mejora estricta: los
-intentos rechazados quedan con su score antes/después y la razón del rechazo alimenta el
-siguiente intento, para que el framework no pague dos veces la misma corrección. El
-ejecutor es `bootstrap.py skill-gate-run`: contra una sesión DSH con tu proyecto, el
-bucle completo queda en tus manos — usas los modos, produces observaciones, el gate
-puntúa, la biblioteca solo puede mejorar.
+**Cambiar la biblioteca exige evidencia, no opiniones.** Los 55 casos apuntan a 25
+skills, no a los modos generados auditor o reparador. El oráculo de veredictos pertenece
+al Host: ni el texto libre de un modo ni un clasificador puntúan esos casos. Existen
+`compile-corpus` y el gate de holdout ligado, pero hoy el CLI `skill-gate-run` **se
+abstiene antes de crear una sesión DSH**: carece de un adaptador evaluador Host
+compatible que verifique el layout y la disponibilidad efectiva de la skill de cada
+caso. Un ensayo real anterior con SC-123 dio `NOT_COVERED` al despachar el caso de una
+skill a un modo auditor con layout incompatible, no un score aprobado. Solo observaciones
+ligadas a corpus y candidata por un evaluador verificado podrían entrar en
+`bound-skill-gate`; hasta entonces no hay mejora operacional de la biblioteca demostrada.
+Véase [el procedimiento del gate](docs/usage.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
 
 ## Cómo se usa
 
@@ -120,15 +123,18 @@ Con los dos presets activos en DSH, operas con mensajes cortos:
 | Reparar lo auditado | «Repara los hallazgos de la auditoría; no publiques.» |
 | Reparar hallazgos concretos | «Repara A-SEC-01 y A-SEC-02; no publiques.» |
 
-Cada auditoría deja un handoff con el siguiente prompt listo para copiar. Cuando el
-reparador termina, integras con un `git merge --ff-only` normal: el commit y el push
-siguen siendo tuyos.
+Cada auditoría deja un handoff con el siguiente prompt listo para copiar. La candidata
+vigente es un repositorio sombra provisionado por el Host, con `.git` propio, no una rama
+de tu proyecto: no comparte ancestry para fusionarla. Revisa y valida el diff/patch
+completo contra la verificación registrada antes de aplicarlo en tu proyecto; commit y
+publicación solo por tu decisión. [Procedimiento del operador](docs/usage.md#integración-y-recuperación-de-espacio-operador).
 
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
 
-*El ciclo completo, incluido el cierre del aprendizaje: las observaciones de cada campaña
-puntúan la biblioteca en el gate de holdout. Es un diagrama explorable: cada relación se
-puede trazar y el tema cambia claro/oscuro en la [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+*Ciclo operativo conceptual. El cierre del aprendizaje aún no es operativo: las
+observaciones de las campañas no puntúan automáticamente el corpus de 25 skills. Es un
+diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscuro en la
+[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
 
 ## Los términos que verás
 
@@ -138,14 +144,14 @@ puede trazar y el tema cambia claro/oscuro en la [versión interactiva](https://
 | Modo | Cada uno de los dos agentes generados para tu proyecto: el auditor y el reparador. |
 | Hallazgo | Un defecto registrado con evidencia (`archivo:línea`), severidad, causa y prevención. |
 | Handoff | El registro que deja cada auditoría, con el siguiente prompt listo para copiar. |
-| Candidata | El worktree hermano y aislado donde el reparador cambia código. |
+| Candidata | El repositorio sombra aislado en el workspace donde el reparador cambia código. |
 | `mode-state` | La memoria en disco del workspace: hallazgos, handoffs, verificaciones y recibos. |
 | Plan de capacidades | El inventario de los comandos reales de test y análisis de tu proyecto, firmado al instalar. |
 | RETAINED | Un turno retenido: terminó con un resultado legible y sin salirse del contrato. |
 | VERIFIED / RESOLVED | El trabajo verificado y los defectos cerrados, cada uno con su evidencia. |
 | Biblioteca base | Las 21 skills base inmutables desde las que se componen los modos, con escenarios ejecutables y fuentes registradas. |
 | Ancla de evidencia | El fragmento literal de código que fija la ubicación de un hallazgo; la herramienta la calcula y rechaza lo que no puede colocar. |
-| Gate de holdout | El cerrojo que puntúa cualquier cambio de la biblioteca contra casos ejecutables y solo acepta mejora estricta. |
+| Gate de holdout | La decisión ligada sobre observaciones completas y verificadas de los casos; hoy el runner por defecto se abstiene por falta de un adaptador evaluador Host compatible. |
 
 ## Verificación contra tu proyecto real, nunca con stubs
 
@@ -242,7 +248,9 @@ borra del dispositivo lo que guardaste, pero el código solo quitaba una clave; 
 las notas seguían ahí y reaparecían al volver a entrar. «Repara F-01 y F-02; no
 publiques.» produjo el arreglo con sus pruebas de regresión en 7 ficheros y 353 líneas,
 verificado con **`flutter test` real** (125 pruebas en verde) y `flutter analyze` sin
-incidencias, e integrado con `bb01cba..eb25ec3`: commit, fast-forward y push del operador.
+incidencias, e integrada por el operador (candidata worktree, commit, fast-forward, push):
+`bb01cba..eb25ec3`. Esa campaña es anterior al diseño de sombra: hoy el framework entrega
+un patch y la fusión ya no forma parte de él.
 
 Esta campaña encontró los dos fallos que ninguna prueba sintética habría visto: el
 framework emitía un comando de verificación que su propia shell no podía ejecutar, y el
@@ -286,8 +294,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **939 pruebas en
-verde**.
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1085 pruebas en verde** (11 omitidas sin runtime externo).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 
@@ -310,15 +317,29 @@ Lo que se recorrió, desde prompts de una línea hasta el resultado verificado:
 | Validador Host | `READY_FOR_ACCEPTANCE`, 10 de 10 capas PASS sobre paquete real |
 | Memoria de campaña | `MEMORY_RECONCILED`, 6 entradas invalidadas en bloque al cambiar un fichero |
 
-Lo que **no** se probó, y no se afirma: el **Creator end-to-end** no terminó —un
-turno headless real con el prompt íntegro (29 llamadas de herramienta, 734.064
-tokens, cwd correcto) no persistió `generated/generation-manifest.json` y el run
-acabó `RETAINED`; el **corpus gate** no pudo correr contra un modo real porque
-`dsh web` no sirvió en ese entorno, así que se abstuvo fail-closed nombrando lo
-que faltaba; y `git worktree add` fue denegado por el sandbox de sesión
+Lo que **no** se probó, y no se afirma: el **Creator end-to-end** no terminó en el pase
+del 2026-10-10 —un turno headless real con el prompt íntegro (29 llamadas de herramienta,
+734.064 tokens, cwd correcto) no persistió `generated/generation-manifest.json` y el run
+acabó `RETAINED`. Un ensayo X3 posterior sí generó 19 artefactos y llegó a `ACTIVE`, pero
+**antes** de corregir la contabilidad del presupuesto Creator por run: no acredita el
+gate vigente. El ensayo **X3 post-budget** acabó `RETAINED` con 912.727 `totalTokens`
+frente a un presupuesto de 1,25 M tokens, detenido por el guard predictivo, no `ACTIVE`.
+El **corpus gate** no puntuó un modo real —el pase del 2026-10-10
+se abstuvo sin sesión DSH utilizable y el ensayo posterior de SC-123, caso de una
+skill despachado a un modo auditor con layout incompatible, dio `NOT_COVERED`. El
+perfil copiado de la campaña llevaba `node_modules/` vacío, pero `dsh web` sí arrancó
+con home nuevo; DSH 0.2.0-rc.2 no tiene endpoint `evaluator`, y el CLI actual carece
+del adaptador Host compatible que verifique layout y skill efectiva antes de
+`session/create`. Por otro lado, `git worktree add` fue denegado por el sandbox de sesión
 (`Read-only file system` más `no approval channel is available`), así que las
-candidatas se hicieron clones dentro del workspace en vez de los worktrees hermanos
-que pide el contrato. El procedimiento completo para preparar ese tipo de sesión
+candidatas se hicieron clones dentro del workspace. El contrato respondió a esa
+medida: la candidata es ahora un **repositorio sombra que provisiona el Host bajo
+el workspace**, con `.git` propio y un recibo que el modo solo verifica —probado en
+código y fixture, a la espera de una corrida Creator íntegra. La sesión web posterior
+(`x1-preset-real`) sí resolvió el preset real, cargó su skill y ejecutó los centinelas,
+pero se detuvo por presupuesto en 241.912 `totalTokens` **antes de editar nada**: sin
+diff de reparación, sin checks y sin prueba del ciclo completo. El procedimiento
+completo para preparar ese tipo de sesión
 real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
 ## Qué obtienes en tu repo
@@ -384,12 +405,13 @@ persistido, la reparación verificada en una candidata externa y la abstención 
 autoridad, todo conducido por una **sesión DSH real** el 2026-10-10.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
 estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md), y lo que
-esa pasada no pudo probar —Creator end-to-end, el corpus gate contra un modo real, el
-worktree hermano— queda dicho como tal en el [estado comprobado](docs/status.md).
+esa pasada no pudo probar —Creator end-to-end, el corpus de 25 skills contra un modo real,
+una corrida Creator íntegra con la sombra provisionada por el Host— queda dicho como tal en el
+[estado comprobado](docs/status.md), siempre como historia con su fecha.
 
 Si la sesión se cae a mitad de turno — y en una developer preview pasa — el trabajo no se
 pierde: una candidata interrumpida se reanuda verificando la identidad exacta registrada
-(mismo worktree, misma base, mismo digest de hallazgos) sin descartar el diff, y
+(misma sombra, misma base, mismo digest de hallazgos) sin descartar el diff, y
 `bootstrap.py state` reconcilia el estado con tu repositorio cuando algo se movió por
 fuera, con recibos en lugar de silencios.
 

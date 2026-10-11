@@ -460,6 +460,37 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(tx.TransactionError, "Colisión de skill"):
             self.install()
 
+    def test_packaged_skill_rejects_unquoted_colon_before_active(self):
+        skill = self.generated / "skills/project-check/SKILL.md"
+        skill.write_text("---\nname: project-check\ndescription: Modo auditor "
+                         "fixture: contrato operativo\n---\n# Check\n")
+        with self.assertRaisesRegex(tx.TransactionError,
+                                    "bundle no cargable en DSH: project-check"):
+            self.install()
+        self.assertFalse((self.workspace / ".dsh-managed/ACTIVE").exists())
+        self.assertEqual(self.client.installed, [])
+
+    def test_packaged_skill_checks_copied_bytes_before_active(self):
+        """The bundle is validated after copy, not by trusting generated/."""
+        source = self.generated / "skills/project-check/SKILL.md"
+        source.write_text("---\nname: project-check\ndescription: \"Modo "
+                          "auditor fixture: contrato operativo\"\n---\n# Check\n")
+        original_copy = tx._copy_tree
+
+        def copy_then_corrupt(from_dir, target):
+            original_copy(from_dir, target)
+            if target.name == "project-check" and target.parent.name == "skills":
+                (target / "SKILL.md").write_text(
+                    "---\nname: project-check\ndescription: Modo auditor "
+                    "fixture: contrato operativo\n---\n# Check\n")
+
+        with unittest.mock.patch("transaction._copy_tree", side_effect=copy_then_corrupt):
+            with self.assertRaisesRegex(tx.TransactionError,
+                                        "bundle no cargable en DSH: project-check"):
+                self.install()
+        self.assertFalse((self.workspace / ".dsh-managed/ACTIVE").exists())
+        self.assertEqual(self.client.installed, [])
+
     def test_bundle_rejects_symlink_in_skill_resources(self):
         resource = self.generated / "skills/project-check/resources/guide.txt"
         resource.unlink()

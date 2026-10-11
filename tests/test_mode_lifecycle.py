@@ -40,6 +40,145 @@ def _placeholders(command):
 
 
 class ModeLifecycleTests(unittest.TestCase):
+    def test_host_repair_shadow_identity_and_exact_recorded_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            workspace = session / layout["workspace_root"]
+            receipt = mode_lifecycle.provision_repair(
+                product, workspace, ["A-02", "A-01", "A-01"], declared_base=base)
+            digest = mode_lifecycle.repair_identity(base, ["A-01", "A-02"])
+            self.assertEqual(receipt["finding_ids_digest"], digest)
+            self.assertEqual(receipt["branch"], "candidate")
+            self.assertFalse(receipt["reused"])
+            candidate = Path(receipt["path"])
+            self.assertEqual(candidate, workspace / "candidates" / f"repair-{digest[:16]}")
+            self.assertEqual(Path(subprocess.check_output(
+                ["git", "-C", str(candidate), "rev-parse", "--absolute-git-dir"],
+                text=True).strip()), candidate / ".git")
+            self.assertNotIn(str(candidate), subprocess.check_output(
+                ["git", "-C", str(product), "worktree", "list", "--porcelain"], text=True))
+            self.assertEqual(receipt["head"], subprocess.check_output(
+                ["git", "-C", str(candidate), "rev-parse", "shadow-base"], text=True).strip())
+            self.assertNotEqual(receipt["head"], base)
+            self.assertTrue(Path(receipt["receipt"]).is_file())
+            def command(template, finding_digest=digest, diff=None):
+                raw = template(layout).replace("<digest16>", digest[:16]).replace(
+                    "<full-base>", base).replace("<declared-base>", base).replace(
+                    "<finding-ids-digest>", finding_digest)
+                if diff:
+                    raw = raw.replace("<candidate-diff-digest>", diff)
+                return subprocess.run(raw, shell=True, cwd=session,
+                                      capture_output=True, text=True)
+            self.assertEqual(command(repair_provision_command).returncode, 0)
+            initial = self._read_record_evidence(command(repair_recording_command))
+            self.assertEqual(initial["status"], "PROVISIONED")
+            self.assertEqual(initial["head"], receipt["head"])
+            state = workspace / "mode-state"
+            state.mkdir()
+            state_file = state / "work-items.json"
+            state_file.write_text(json.dumps({"schema_version": 1,
+                                             "candidate": initial, "items": []}))
+            (candidate / "tracked.txt").write_text("fixed\n")
+            dirty = self._read_record_evidence(command(repair_recording_command))
+            self.assertEqual(dirty["status"], "DIRTY")
+            self.assertEqual(dirty["changed_paths"], ["tracked.txt"])
+            self.assertNotEqual(command(repair_resume_command, diff=dirty["candidate_diff_digest"]).returncode, 0)
+            state_file.write_text(json.dumps({"schema_version": 1,
+                                             "candidate": dirty, "items": []}))
+            self.assertIn("__IMPROVEMENT_DIRTY_RESUME_OK__",
+                          command(repair_resume_command, diff=dirty["candidate_diff_digest"]).stdout)
+            again = mode_lifecycle.provision_repair(
+                product, workspace, ["A-01", "A-02"], declared_base=base)
+            self.assertTrue(again["reused"])
+            self.assertEqual((candidate / "tracked.txt").read_text(), "fixed\n")
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
+
+    def test_external_bwrap_read_only_product_writable_shadow_repair_session(self):
+        bwrap = shutil.which("bwrap")
+        if not bwrap:
+            self.skipTest("bubblewrap not available")
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+            session, product, layout, base = self._provision_fixture(Path(tmp))
+            workspace = session / layout["workspace_root"]
+            probe = subprocess.run([bwrap, "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind",
+                                    str(workspace), str(workspace), "--", "/bin/sh", "-c", "true"],
+                                   capture_output=True, text=True)
+            if probe.returncode:
+                self.skipTest("bubblewrap user namespace unavailable: " + probe.stderr[:160])
+            receipt = mode_lifecycle.provision_repair(product, workspace, ["A-01"],
+                                                      declared_base=base)
+            digest = receipt["finding_ids_digest"]
+            candidate = Path(receipt["path"])
+            before = (product / "tracked.txt").read_bytes()
+            def run(template, status="", diff=""):
+                command = template(layout).replace("<digest16>", digest[:16]).replace(
+                    "<full-base>", base).replace("<declared-base>", base).replace(
+                    "<finding-ids-digest>", digest).replace("<candidate-diff-digest>", diff)
+                return subprocess.run([bwrap, "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind",
+                                       str(workspace), str(workspace), "--chdir", str(session),
+                                       "--", "/bin/sh", "-c", command],
+                                      capture_output=True, text=True)
+            self.assertEqual(run(repair_provision_command).returncode, 0)
+            first = self._read_record_evidence(run(repair_recording_command))
+            self.assertEqual(first["status"], "PROVISIONED")
+            state = workspace / "mode-state"
+            state.mkdir()
+            state_file = state / "work-items.json"
+            state_file.write_text(json.dumps({"schema_version": 1,
+                                             "candidate": first, "items": []}))
+            (candidate / "tracked.txt").write_bytes(b"repair inside writable shadow\n")
+            dirty = self._read_record_evidence(run(repair_recording_command))
+            state_file.write_text(json.dumps({"schema_version": 1,
+                                             "candidate": dirty, "items": []}))
+            resumed = run(repair_resume_command, diff=dirty["candidate_diff_digest"])
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            blocked = subprocess.run([bwrap, "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind",
+                                      str(workspace), str(workspace), "--", "/bin/sh", "-c",
+                                      f"printf BAD > '{product / 'tracked.txt'}'"],
+                                     capture_output=True, text=True)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertEqual((product / "tracked.txt").read_bytes(), before)
+            self.assertEqual((candidate / "tracked.txt").read_bytes(),
+                             b"repair inside writable shadow\n")
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
+
+    def test_host_repair_rejects_legacy_worktree_symlink_and_receipt_collision(self):
+        for mutation in ("legacy-worktree", "target-symlink", "marker-symlink",
+                         "missing-receipt", "wrong-receipt", "dirty-product"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                session, product, layout, base = self._provision_fixture(Path(tmp))
+                workspace = session / layout["workspace_root"]
+                digest = mode_lifecycle.repair_identity(base, ["A-01"])
+                target = workspace / "candidates" / f"repair-{digest[:16]}"
+                marker = workspace / f"repair-{digest[:16]}.receipt"
+                if mutation == "legacy-worktree":
+                    legacy = session / f"{PRODUCT}-repair-{digest[:16]}"
+                    subprocess.run(["git", "-C", str(product), "worktree", "add", "-b",
+                                    f"dsh/repair-{digest[:16]}", str(legacy), base],
+                                   capture_output=True, check=True)
+                elif mutation == "target-symlink":
+                    target.parent.mkdir()
+                    target.symlink_to(product)
+                elif mutation == "marker-symlink":
+                    marker.symlink_to(product / "tracked.txt")
+                elif mutation in ("missing-receipt", "wrong-receipt"):
+                    mode_lifecycle.provision_repair(product, workspace, ["A-01"], declared_base=base)
+                    if mutation == "missing-receipt":
+                        marker.unlink()
+                    else:
+                        marker.write_text("0" * 40 + "\n" + digest + "\n" + "0" * 40 + "\n")
+                else:
+                    (product / "tracked.txt").write_text("dirty\n")
+                with self.assertRaisesRegex((ValueError, RuntimeError), "RETAINED|peligrosa"):
+                    mode_lifecycle.provision_repair(product, workspace, ["A-01"],
+                                                    declared_base=base)
+                if mutation == "target-symlink":
+                    self.assertTrue(target.is_symlink())
+                if mutation == "legacy-worktree":
+                    self.assertFalse(target.exists())
+
     def test_user_change_shadow_is_distinct_from_audited_repair_and_resumes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -248,13 +387,15 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(candidate["candidate_root"],
                          "${session-cwd}/<workspace>/candidates/repair-<digest16>")
         self.assertEqual(candidate["candidate_workdir"],
-                         "Syncify-repair-<digest16>")
+                         "Syncify-workspace/candidates/repair-<digest16>")
         self.assertEqual(candidate["provision_workdir"], "omitted-session-cwd")
         self.assertEqual(candidate["provision_command"],
                          repair_provision_command(layout))
         self.assertEqual(candidate["unrelated_candidates"], "ignore-preserve")
-        self.assertEqual(candidate["worktree_list_scope"],
-                         "target-path-and-target-branch-only")
+        self.assertEqual(candidate["provision"], "Host-provision_repair-shadow-only")
+        self.assertNotIn("worktree add", candidate["provision_command"])
+        self.assertIn("__IMPROVEMENT_SHADOW_PROVISIONED__",
+                      candidate["provision_command"])
         self.assertEqual(candidate["resume_policy"], "exact-recorded-only")
         self.assertEqual(candidate["resume_statuses"],
                          ["DIRTY", "RETAINED-pending-verification"])
@@ -273,7 +414,7 @@ class ModeLifecycleTests(unittest.TestCase):
                          "reconcile-then-resume")
         self.assertEqual(candidate["stale_base_policy"],
                          "re-anchor-when-declared-base-is-ancestor-of-clean-head")
-        self.assertIn("candidate-diff-nonempty",
+        self.assertIn("safe-nonempty-diff",
                       candidate["stale_record_precondition"])
         self.assertEqual(candidate["candidate_diff_command"],
                          repair_candidate_diff_command(layout))
@@ -300,10 +441,33 @@ class ModeLifecycleTests(unittest.TestCase):
         return session, product, layout, base
 
     def _candidate_name(self, digest):
-        return f"{PRODUCT}-repair-{digest}"
+        return f"{PRODUCT}-workspace/candidates/repair-{digest}"
 
     def _candidate(self, session, digest):
         return session / self._candidate_name(digest)
+
+    def _seed_shadow(self, session, layout, base, digest, declared=None):
+        """Legacy command tests use chosen digest16; Host receipt fixture only."""
+        import shadow_candidate
+        product = session / layout["product_root"]
+        workspace = session / layout["workspace_root"]
+        if not re.fullmatch(r"[0-9a-f]{16}", digest):
+            return
+        if ((declared is not None and not re.fullmatch(r"[0-9a-f]{40,64}", declared)) or
+            subprocess.run(["git", "-C", str(product), "merge-base", "--is-ancestor",
+                            declared if declared is not None else base, base],
+                           capture_output=True).returncode):
+            return
+        target = workspace / "candidates" / f"repair-{digest}"
+        if target.exists() or target.is_symlink():
+            return
+        target, created = shadow_candidate.provision(product, workspace, digest,
+                                                      base_ref=declared or base)
+        if created:
+            full_digest = digest + "0" * 48
+            (workspace / f"repair-{digest}.receipt").write_text(
+                f"{base}\n{full_digest}\n"
+                f"{subprocess.check_output(['git', '-C', str(target), 'rev-parse', 'HEAD'], text=True).strip()}\n")
 
     def _run_command(self, template, session, layout, base,
                      digest="0123456789abcdef", diff_digest=None, declared=None):
@@ -312,11 +476,13 @@ class ModeLifecycleTests(unittest.TestCase):
                 "<declared-base>", base if declared is None else declared)
         if diff_digest is not None:
             command = command.replace("<candidate-diff-digest>", diff_digest)
+        command = command.replace("<finding-ids-digest>", digest + "0" * 48)
         return subprocess.run(command, cwd=session, shell=True,
                               capture_output=True, text=True)
 
     def _run_provision(self, session, layout, base, digest="0123456789abcdef",
                        declared=None):
+        self._seed_shadow(session, layout, base, digest, declared)
         return self._run_command(repair_provision_command, session, layout, base,
                                  digest, declared=declared)
     def _capture_diff(self, session, layout, base, digest):
@@ -327,9 +493,14 @@ class ModeLifecycleTests(unittest.TestCase):
         self.assertEqual(marker, "__IMPROVEMENT_CANDIDATE_DIFF__")
         return digest_value, json.loads(paths)
 
-    def _run_resume(self, session, layout, base, digest, diff_digest):
-        return self._run_command(
-            repair_resume_command, session, layout, base, digest, diff_digest)
+    def _run_resume(self, session, layout, base, digest, diff_digest,
+                    finding_digest=None):
+        command = repair_resume_command(layout).replace(
+            "<digest16>", digest).replace("<full-base>", base).replace(
+            "<candidate-diff-digest>", diff_digest).replace(
+            "<finding-ids-digest>", finding_digest or digest + "0" * 48)
+        return subprocess.run(command, cwd=session, shell=True,
+                              capture_output=True, text=True)
 
     def _run_record(self, session, layout, base, digest, finding_digest=None):
         command = repair_recording_command(layout).replace(
@@ -360,8 +531,8 @@ class ModeLifecycleTests(unittest.TestCase):
                 "base_revision": base,
                 "finding_ids_digest": digest + "0" * 48,
                 "path": self._candidate_name(digest),
-                "branch": f"dsh/repair-{digest}",
-                "head": base,
+                "branch": "candidate",
+                "head": subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip(),
                 "status": "PROVISIONED",
             })
 
@@ -371,7 +542,7 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(recovered["status"], "DIRTY")
             self.assertEqual(recovered["changed_paths"], ["tracked.txt"])
             self.assertEqual(recovered["path"], self._candidate_name(digest))
-            self.assertEqual(recovered["head"], base)
+            self.assertEqual(recovered["head"], claimed["head"])
             self.assertEqual(recovered["base_revision"], base)
             self.assertEqual(recovered["finding_ids_digest"], digest + "0" * 48)
             self.assertEqual(
@@ -381,6 +552,11 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(product), "status", "--porcelain=v1"], text=True), "")
 
+            state = session / layout["workspace_root"] / "mode-state"
+            state.mkdir()
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": recovered, "items": [],
+            }) + "\n")
             resumed = self._run_resume(session, layout, base, digest,
                                        recovered["candidate_diff_digest"])
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
@@ -402,7 +578,7 @@ class ModeLifecycleTests(unittest.TestCase):
 
             with self.subTest(mutation="unregistered-target"):
                 candidate = session / self._candidate_name(digest)
-                candidate.mkdir()
+                candidate.mkdir(parents=True)
                 result = self._run_record(session, layout, base, digest)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(candidate.joinpath("tracked.txt").exists())
@@ -451,7 +627,7 @@ class ModeLifecycleTests(unittest.TestCase):
         """IMP-AUD-008: un PASS tiene que nombrar el árbol que verificó.
 
         El contrato prohíbe hacer commit de una candidata, así que el árbol
-        verificado suele ser un worktree DIRTY cuyo HEAD sigue siendo su base y
+        verificado suele ser una sombra DIRTY cuyo HEAD sigue siendo shadow-base y
         el arreglo vive en el diff sin commitear. `candidate_head` no lo
         distingue de la revisión anterior al arreglo, y medido en el self-test
         los siete registros llevaban dos cabezas, ambas anteriores al cambio.
@@ -467,8 +643,8 @@ class ModeLifecycleTests(unittest.TestCase):
             base = "a" * 40
             diff = "b" * 64
             candidate = {"base_revision": base, "finding_ids_digest": "c" * 64,
-                         "path": "Product-repair-" + "d" * 16,
-                         "branch": "dsh/repair-" + "d" * 16,
+                         "path": "Product-workspace/candidates/repair-" + "d" * 16,
+                         "branch": "candidate",
                          "head": base, "status": "DIRTY",
                          "candidate_diff_digest": diff,
                          "changed_paths": ["lib/example.py"]}
@@ -827,7 +1003,7 @@ class ModeLifecycleTests(unittest.TestCase):
             digest = "4e4e4e4e4e4e4e4e"
             result = self._run_provision(session, layout, base, digest)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue((session / f"my product-repair-{digest}").is_dir())
+            self.assertTrue((workspace / "candidates" / f"repair-{digest}").is_dir())
 
     def _run_reconcile(self, session, layout, base, finding_ids):
         command = repair_reconcile_command(layout).replace(
@@ -844,14 +1020,30 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(self._run_provision(
                 session, layout, base, digest).returncode, 0)
             candidate = session / self._candidate_name(digest)
+            shadow_head = subprocess.check_output(
+                ["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip()
+            (session / layout["workspace_root"] / f"repair-{digest}.receipt").write_text(
+                f"{base}\n{hashlib.sha256((base + chr(10) + finding_ids).encode()).hexdigest()}\n{shadow_head}\n")
             tracked = candidate / "tracked.txt"
 
             tracked.write_bytes(b"first pass bytes\n")
-            first_digest, _ = self._capture_diff(session, layout, base, digest)
+            first_digest, first_paths = self._capture_diff(session, layout, base, digest)
+            state = session / layout["workspace_root"] / "mode-state"
+            state.mkdir()
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": {
+                    "base_revision": base,
+                    "finding_ids_digest": hashlib.sha256((base + "\n" + finding_ids).encode()).hexdigest(),
+                    "path": self._candidate_name(digest), "branch": "candidate",
+                    "head": shadow_head, "status": "DIRTY",
+                    "candidate_diff_digest": first_digest,
+                    "changed_paths": first_paths}, "items": [],
+            }) + "\n")
             tracked.write_bytes(b"second pass bytes after recording\n")
             before = tracked.read_bytes()
 
-            stale_resume = self._run_resume(session, layout, base, digest, first_digest)
+            stale_resume = self._run_resume(session, layout, base, digest, first_digest,
+                                            finding_digest=hashlib.sha256((base + "\n" + finding_ids).encode()).hexdigest())
             self.assertNotEqual(stale_resume.returncode, 0)
 
             reconciled = self._run_reconcile(session, layout, base, finding_ids)
@@ -861,15 +1053,19 @@ class ModeLifecycleTests(unittest.TestCase):
             record = json.loads(payload)
             self.assertEqual(record["status"], "DIRTY")
             self.assertEqual(record["path"], self._candidate_name(digest))
-            self.assertEqual(record["branch"], f"dsh/repair-{digest}")
-            self.assertEqual(record["head"], base)
+            self.assertEqual(record["branch"], "candidate")
+            self.assertEqual(record["head"], subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip())
             self.assertEqual(record["base_revision"], base)
             self.assertEqual(record["finding_ids_digest"], hashlib.sha256(
                 (base + "\n" + finding_ids).encode()).hexdigest())
             self.assertEqual(record["changed_paths"], ["tracked.txt"])
             current_digest = record["candidate_diff_digest"]
+            (state / "work-items.json").write_text(json.dumps({
+                "schema_version": 1, "candidate": record, "items": [],
+            }) + "\n")
 
-            resumed = self._run_resume(session, layout, base, digest, current_digest)
+            resumed = self._run_resume(session, layout, base, digest, current_digest,
+                                       finding_digest=hashlib.sha256((base + "\n" + finding_ids).encode()).hexdigest())
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
             self.assertEqual(tracked.read_bytes(), before)
             self.assertEqual(subprocess.check_output(
@@ -920,9 +1116,9 @@ class ModeLifecycleTests(unittest.TestCase):
                 "schema_version": 1, "items": [],
                 "candidate": {"base_revision": base,
                               "finding_ids_digest": digest + "0" * 48,
-                              "path": candidate.name,
-                              "branch": f"dsh/repair-{digest}",
-                              "head": base, "status": "PROVISIONED"},
+                              "path": self._candidate_name(digest),
+                              "branch": "candidate",
+                              "head": subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip(), "status": "PROVISIONED"},
             }) + "\n")
             schema = mode_lifecycle.state_schema()
             value = json.loads((state / "work-items.json").read_text())
@@ -934,9 +1130,9 @@ class ModeLifecycleTests(unittest.TestCase):
                 "schema_version": 1, "items": [],
                 "candidate": {"base_revision": base,
                               "finding_ids_digest": digest + "0" * 48,
-                              "path": candidate.name,
-                              "branch": f"dsh/repair-{digest}",
-                              "head": base, "status": "DIRTY"},
+                              "path": self._candidate_name(digest),
+                              "branch": "candidate",
+                              "head": subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip(), "status": "DIRTY"},
             }) + "\n")
             with self.assertRaises(ValueError):
                 mode_lifecycle._valid(
@@ -1152,10 +1348,11 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             candidate = self._candidate(session, "0123456789abcdef")
             self.assertTrue(candidate.is_dir())
-            self.assertEqual(candidate.resolve(), session.resolve() / candidate.name)
+            self.assertEqual(candidate.resolve(), session.resolve() / self._candidate_name("0123456789abcdef"))
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(candidate), "rev-parse", "HEAD"],
-                text=True).strip(), base)
+                text=True).strip(), subprocess.check_output(
+                    ["git", "-C", str(candidate), "rev-parse", "shadow-base"], text=True).strip())
 
     def test_repair_provision_command_creates_registered_sibling_and_keeps_canonical_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1165,17 +1362,19 @@ class ModeLifecycleTests(unittest.TestCase):
             candidate = session / self._candidate_name("0123456789abcdef")
             self.assertTrue(candidate.is_dir())
             self.assertFalse((product / candidate.name).exists())
-            self.assertEqual(candidate.resolve(), session.resolve() / candidate.name)
+            self.assertEqual(candidate.resolve(), session.resolve() / self._candidate_name("0123456789abcdef"))
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(candidate), "rev-parse", "HEAD"],
-                text=True).strip(), base)
+                text=True).strip(), subprocess.check_output(
+                    ["git", "-C", str(candidate), "rev-parse", "shadow-base"], text=True).strip())
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(candidate), "branch", "--show-current"],
-                text=True).strip(), "dsh/repair-0123456789abcdef")
+                text=True).strip(), "candidate")
             worktrees = subprocess.check_output(
                 ["git", "-C", str(product), "worktree", "list", "--porcelain"],
                 text=True)
-            self.assertIn(f"worktree {candidate.resolve()}\n", worktrees)
+            self.assertNotIn(f"worktree {candidate.resolve()}\n", worktrees)
+            self.assertTrue((candidate / ".git").is_dir())
             self.assertEqual(subprocess.check_output(
                 ["git", "-C", str(product), "status", "--porcelain=v1"],
                 text=True), "")
@@ -1209,9 +1408,9 @@ class ModeLifecycleTests(unittest.TestCase):
             record = {
                 "base_revision": base,
                 "finding_ids_digest": digest + "0" * 48,
-                "path": candidate.name,
-                "branch": f"dsh/repair-{digest}",
-                "head": base,
+                "path": self._candidate_name(digest),
+                "branch": "candidate",
+                "head": subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip(),
                 "status": "DIRTY",
                 "candidate_diff_digest": diff_digest,
                 "changed_paths": paths,
@@ -1246,9 +1445,9 @@ class ModeLifecycleTests(unittest.TestCase):
                 record = {
                     "base_revision": base,
                     "finding_ids_digest": digest + "0" * 48,
-                    "path": candidate.name,
-                    "branch": f"dsh/repair-{digest}",
-                    "head": base,
+                    "path": self._candidate_name(digest),
+                    "branch": "candidate",
+                    "head": subprocess.check_output(["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True).strip(),
                     "status": "DIRTY",
                     "candidate_diff_digest": diff_digest,
                     "changed_paths": paths,
@@ -1264,8 +1463,8 @@ class ModeLifecycleTests(unittest.TestCase):
                 else:
                     record["status"] = "PATCH_READY"
                 exact_record = (record is not None and
-                    record["path"] == candidate.name and
-                    record["branch"] == f"dsh/repair-{digest}" and
+                    record["path"] == self._candidate_name(digest) and
+                    record["branch"] == "candidate" and
                     record["base_revision"] == base and
                     record["finding_ids_digest"] == digest + "0" * 48 and
                     record["status"] in ("DIRTY", "RETAINED"))
@@ -1354,7 +1553,8 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual((dirty_path / "tracked.txt").read_text(),
                              "unrelated dirty bytes\n")
             self.assertFalse(stale_path.exists())
-            self.assertIn(f"worktree {target.resolve()}\n", after_list)
+            self.assertNotIn(f"worktree {target.resolve()}\n", after_list)
+            self.assertTrue((target / ".git").is_dir())
 
     def test_repair_provision_command_rejects_path_and_branch_collisions(self):
         for collision in ("path", "branch"):
@@ -1363,12 +1563,13 @@ class ModeLifecycleTests(unittest.TestCase):
                 digest = "fedcba9876543210"
                 candidate = session / self._candidate_name(digest)
                 if collision == "path":
-                    candidate.mkdir()
+                    candidate.mkdir(parents=True)
                 else:
+                    legacy = session / f"{PRODUCT}-repair-{digest}"
                     subprocess.run([
-                        "git", "-C", str(product), "branch",
-                        f"dsh/repair-{digest}", base,
-                    ], check=True)
+                        "git", "-C", str(product), "worktree", "add", "-b",
+                        f"dsh/repair-{digest}", str(legacy), base,
+                    ], check=True, capture_output=True)
                 result = self._run_provision(session, layout, base, digest)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((product / candidate.name).exists())
@@ -1384,8 +1585,8 @@ class ModeLifecycleTests(unittest.TestCase):
             candidate = {
                 "base_revision": "a" * 40,
                 "finding_ids_digest": "b" * 64,
-                "path": "Syncify-repair-bbbbbbbbbbbbbbbb",
-                "branch": "dsh/repair-bbbbbbbbbbbbbbbb",
+                "path": "Syncify-workspace/candidates/repair-bbbbbbbbbbbbbbbb",
+                "branch": "candidate",
                 "head": "c" * 40,
                 "status": "INTEGRATED",
             }

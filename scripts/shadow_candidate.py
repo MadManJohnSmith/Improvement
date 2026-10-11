@@ -24,6 +24,7 @@ applies it, and the framework never does.
 
 import hashlib
 import os
+import re
 import shlex
 from pathlib import Path
 import shutil
@@ -46,7 +47,7 @@ class ShadowError(RuntimeError):
 
 
 def candidate_root(workspace, digest16):
-    if not isinstance(digest16, str) or len(digest16) != 16 or set(digest16) > set("0123456789abcdef"):
+    if not isinstance(digest16, str) or not re.fullmatch(r"[0-9a-f]{16}", digest16):
         raise ShadowError(f"digest de candidata inválido: {digest16!r}")
     return Path(workspace) / SHADOW_DIR / f"repair-{digest16}"
 
@@ -103,17 +104,24 @@ def provision(product, workspace, digest16, base_ref=None):
     discard work that is still in flight.
     """
     product, workspace = Path(product), Path(workspace)
-    if product.is_symlink():
-        raise ShadowError("el producto no puede ser un enlace simbólico")
-    if not product.is_dir():
-        raise ShadowError(f"el producto no existe: {product}")
+    if product.is_symlink() or not product.is_dir():
+        raise ShadowError("el producto debe ser un directorio real")
+    if (workspace.is_symlink() or (workspace.exists() and not workspace.is_dir()) or
+            (product / ".gitmodules").exists() or (product / ".gitmodules").is_symlink()):
+        raise ShadowError("workspace peligroso o producto con submódulos")
     target = candidate_root(workspace, digest16)
-    if target.exists():
-        if not (target / ".git").is_dir():
-            raise ShadowError(f"la candidata existe y no es un repositorio: {target}")
+    container = workspace / SHADOW_DIR
+    if container.is_symlink() or (container.exists() and not container.is_dir()):
+        raise ShadowError("raíz de candidatas peligrosa")
+    if target.exists() or target.is_symlink():
+        git_dir = target / ".git"
+        if (target.is_symlink() or not target.is_dir() or git_dir.is_symlink() or
+                not git_dir.is_dir() or
+                _git(target, "rev-parse", "--absolute-git-dir").stdout.strip() != str(git_dir)):
+            raise ShadowError(f"la candidata no tiene repositorio propio: {target}")
         _git(target, "rev-parse", "--verify", "HEAD")
         return target, False
-    (workspace / SHADOW_DIR).mkdir(mode=0o700, parents=True, exist_ok=True)
+    container.mkdir(mode=0o700, parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".shadow-", dir=workspace / SHADOW_DIR))
     try:
         files, total = _copy_tree(product, staging)
@@ -190,11 +198,10 @@ def patch_digest(candidate):
 
 
 def retire(candidate):
-    """Remove the shadow and its branch, only when it carries no work."""
+    """Refuse automatic disposal: Git status does not inventory all content."""
     candidate = Path(candidate)
     if not candidate.is_dir():
         return False
-    if _git(candidate, "status", "--porcelain=v1").stdout:
-        raise ShadowError("la candidata tiene cambios sin integrar; no se retira")
-    shutil.rmtree(candidate)
-    return True
+    raise ShadowError(
+        "ABSTAINED: la sombra puede contener archivos u objetos ajenos a Git; "
+        "conservarla y revisarla manualmente antes de decidir su retirada")

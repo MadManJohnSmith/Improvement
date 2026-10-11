@@ -50,7 +50,7 @@ Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación
 - Reparar todo lo persistido: «Repara los hallazgos de la auditoría; no publiques.»
 - Reparar IDs: «Repara A-01 y M-02; no publiques.»
 
-Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair deriva un worktree hermano mediante digest de revisión base completa e IDs seleccionados, ejecuta checks cerrados de path/symlink/worktree/branch/HEAD/dirty/stale/collision y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit: deja árbol sucio o patch y `candidate_commit: null`; un commit requiere otro prompt explícito. Drift de HEAD/status canónicos o diff fuera del candidato produce `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; no hay CAS/lease multiarchivo.
+Al seleccionar un preset, su primera acción debe cargar el skill exacto homónimo. Auditor persiste un handoff acotado en `<Proyecto>-workspace/mode-state`. Repair no deriva ningún worktree del producto: el Host provisiona una sombra en `<workspace>/candidates/repair-<digest16>` con **su propio `.git`** y un recibo que el modo solo verifica, y modifica/prueba solo mediante bash con workdir candidato. El prompt simple no autoriza commit ni merge ni push: deja el cambio en la sombra con `candidate_commit: null` y el digest de diff que el Host registra. Drift de HEAD/status canónicos, base declarada no ancestro o una sombra heredada sin recibo producen `RETAINED` sin más acción. Esto es enforcement contractual con regresiones, no aislamiento mecánico; no hay CAS/lease multiarchivo.
 
 ### Qué significa "verificado"
 
@@ -83,20 +83,52 @@ del código del producto sirven para investigar, no para verificar.
 
 ### Integración y recuperación de espacio (operador)
 
-El prompt simple no autoriza commit: el operador integra y después retira la candidata. Tras `git merge --ff-only <rama-dsh>` y `git push` en la rama canónica:
+El prompt simple no autoriza commit, merge ni push: el operador decide si integra. La
+candidata es una **sombra**, no un worktree del producto; comparte el contenido de base,
+pero no el historial Git. Una rama o un commit de la sombra **no se fusionan** con el
+producto. Flujo de revisión, sin orden de aplicación automática:
 
-1. Registrar `INTEGRATED` en `work-items.json.candidate` (solo el Host u el operador puede; los modos conservan el registro anterior y no lo borran).
-2. Retirar el worktree de esa candidata: `python3 -B scripts/bootstrap.py state --project <ruta-del-producto> --retire`. El comando hace el `git worktree remove` y el `git branch -D` **solo** si comprueba que la candidata está `INTEGRATED`, que su cabeza está en la rama canónica, que el worktree registrado es el suyo y coincide con la registrada, y que está limpio; si algo falla, no borra nada y dice por qué. Es idempotente: repetirlo informa de que ya no hay worktree ni rama.
+1. Identificar la candidata en el recibo del Host y el estado de `mode-state`; comprobar
+   base canónica, producto limpio y veredictos de los tests ejecutados. Si hubo drift o
+   `RETAINED`, no tratar el resultado como verificado.
+2. Obtener un diff completo entre el contenido del producto en esa base y la sombra,
+   incluyendo ficheros añadidos, borrados, renombrados, cambios sin commit y cambios
+   commiteados; excluir los directorios `.git` y artefactos no propuestos. Examinar rutas,
+   binarios y contenido del patch antes de aplicarlo. `shadow_candidate.diff_command`
+   expresa la comparación sin ancestry (`git diff --no-index --binary`), pero su salida
+   cruda sobre las raíces puede incluir metadatos `.git` y prefijos de ruta de ambas
+   copias: no es un patch listo para aplicar sin revisión y normalización.
+3. Contrastar la lista de rutas y el digest de contenido del contrato
+   `candidate_diff_command` con la candidata **tal como está ahora** y con el registro de
+   verificación; esa línea es un digest y un JSON de rutas, **no el patch**. Tampoco usar
+   `shadow_candidate.patch_digest` como identidad de cambios pendientes: calcula un diff
+   de `shadow-base` a `HEAD` y omite cambios sin commit. Si no se puede atribuir el patch
+   íntegro al árbol verificado, detenerse y volver a verificar.
+4. Solo tras esa revisión, probar que el patch se aplica limpiamente en el producto,
+   aplicarlo bajo control del operador, ejecutar allí los checks del proyecto y revisar el
+   resultado antes de hacer commit. La publicación remota también exige decisión del
+   operador; usar la identidad configurada del repositorio, nunca una forzada por comando.
 
-El paso 2 no es cosmético: cada candidata puede acarrear decenas de GB de artefactos de compilación y varias rondas seguidas agotan el disco, lo que corta DSH a mitad de un turno. Comprobado en el piloto de Syncify, donde cuatro candidatas integradas sumaban unos 320 GB y el disco lleno tumbó dos turnos de Repair.
+Nada de esto borra la sombra. `bootstrap.py state --retire` comprueba la evidencia
+de integración de una sombra, pero **ABSTAINED** en vez de borrarla o borrar su recibo:
+no hay inventario exclusivo de todo su contenido (incluido `.git/`) que pruebe que es
+desechable. Conservar la candidata y su evidencia; su eventual retirada exige que el
+operador liste y revise manualmente el contenido y el espacio (por ejemplo con `find`
+y `du -sh`) y decida fuera de `--retire`. Para worktrees legacy registrados fuera de
+`<workspace>/candidates/`, `--retire` mantiene la retirada verificada anterior.
 
-Regla del operador al integrar: commit, fast-forward y push con la identidad que el
-repositorio tiene configurada (`git config user.name`/`user.email`), nunca con una
-forzada por comando. Ocurrió en dos pilotos: siete commits quedaron atribuidos a un
-nombre que no era el del repo y hubo que reescribir la historia con
-`rebase --exec`/`--force-with-lease`, verificando árboles idénticos y re-apuntando a
-mano los SHA anotados en los artefactos. El framework no hace commits, así que esta
-regla es suya; el trabajo de reparar el efecto ya no existe.
+El tamaño no es un detalle: cada candidata es una copia completa del producto, y varias se
+acumulan hasta llenar el disco. **En los pilotos anteriores el producto sí usaba worktree**,
+y allí `state --retire` hacía el `git worktree remove` y el `git branch -D` con comprobaciones
+previas; esas instrucciones y aquella recuperación de espacio (piloto de Syncify: cuatro
+candidatas integradas, unos 320 GB, dos turnos de Repair caídos) se describen como
+antecedente medido, no como el procedimiento vigente.
+
+Regla del operador al integrar: commit y push con la identidad que el repositorio tiene
+configurada. Ocurrió en dos pilotos: siete commits quedaron atribuidos a un nombre que no era
+el del repo y hubo que reescribir la historia con `rebase --exec`/`--force-with-lease`,
+verificando árboles idénticos y re-apuntando a mano los SHA anotados en los artefactos. El
+framework no hace commits, así que esta regla es suya.
 
 ### Decidir si un cambio de biblioteca de skills entra
 
@@ -142,8 +174,13 @@ Un `git worktree` guarda índice y HEAD en el `.git/worktrees/` **del producto**
 producto en solo lectura —que es lo que el sandbox impone— hasta `git add` falla dentro de la
 candidata. Por eso la candidata se crea en `<workspace>/candidates/repair-<digest16>` con **su
 propio `.git`**: una sola raíz escribible cubre candidata y estado, y el producto queda en solo
-lectura real. La integración ya no es una rama que fusionar sino el patch que produce
-`candidate_diff_command`, y lo aplica el operador.
+lectura real. La integración **ya no es una rama que fusionar** porque la sombra no tiene
+ancestry con el producto: lo que se produce es un diff/patch, y quien decide aplicarlo eres tú.
+
+Esto es el estado **actual**. En pilotos anteriores sí se trabajó con worktrees y allí la
+integración era `git merge --ff-only` de la rama candidata y la limpieza pasaba por
+`state --retire`; sus métricas siguen siendo evidencia de aquellas corridas, no la
+descripción del procedimiento vigente.
 
 ### Compilar el corpus y ligar el gate a lo que se midió
 El `skill-gate` anterior acepta un mapa suelto: no sabe qué corpus produjo esas observaciones ni a qué candidato
@@ -171,16 +208,32 @@ que para todos los commits es una puerta que la gente desactiva.
 ### Ejecutar el corpus y no repetir lo ya rechazado
 ```bash
 python3 -B scripts/bootstrap.py skill-gate-run --corpus /ruta/externa/corpus.json \
-  --mode <proyecto>-auditor --candidate-digest <sha256> --observations /ruta/externa/obs.json
+  --mode <proyecto>-auditor --candidate-digest <sha256> --output /ruta/externa/obs.json 2>/ruta/externa/abstain.json
 python3 -B scripts/bootstrap.py bound-skill-gate ... --buffer /ruta/externa/reflexion.jsonl
 python3 -B scripts/bootstrap.py skill-gate-reflect --buffer /ruta/externa/reflexion.jsonl \
   --corpus-digest <sha256>
 ```
-`skill-gate-run` despacha cada caso compilado contra un modo real y escribe observaciones ligadas a
-corpus, candidata y versión de compilador; el prompt del evaluador no lleva el veredicto esperado, y un
-caso que no pudo correr vuelve `NOT_COVERED` con el motivo, nunca un `PASS` asumido. **Sin una sesión
-DSH autenticada se abstiene nombrando lo que falta**, porque el framework no instala ni invoca
-proveedores.
+La secuencia es `compile-corpus` → `skill-gate-run` (hoy: `ABSTAINED` sin excepción por
+adaptador ausente, ver abajo) → `bound-skill-gate` **solo si** un evaluador Host real y
+verificado produjera observaciones completas y ligadas para baseline y candidata. Las rutas
+son externas al repositorio.
+El contrato que declara `skill-gate-run` —y que hoy no puede cumplir, ver abajo— es despachar
+cada caso compilado contra un modo real y escribir observaciones ligadas a corpus, candidata
+y versión de compilador; el prompt del evaluador no lleva el veredicto esperado, un caso que
+no pudo correr vuelve `NOT_COVERED` con el motivo, nunca un `PASS` asumido. Y **el fichero se
+escribe en `--output`**, no en `--observations`: ese flag no existe en el CLI.
+
+**El procedimiento hoy termina en ABSTAIN antes de gastar en una sesión.** El runner exige
+un adaptador evaluador Host compatible que, antes de crear
+ninguna sesión, verifique dos cosas que el preset operacional del CLI no puede: el cwd
+compatible por caso (el corpus necesita un `cwd` nuevo por caso y un preset operativo tiene
+una raíz de sesión fija) y la disponibilidad efectiva de la skill objetivo sobre los 25
+objetivos del corpus (aparecer en el roster prueba que la skill existe, no que un mode
+actual puede invocarla). Sin ese adaptador, el comando se abstiene nombrando la pieza
+que falta y **no crea la sesión**; la respuesta es la misma que usa el launcher para
+decir que falta DSH, así que no puede haber dos motivos distintos para el mismo silencio.
+No hay que forzarlo: un `PASS` fabricado no es una observación, y el texto libre de un mode
+no puntúa el corpus —el oráculo es del Host.
 
 Con `--buffer`, un rechazo queda registrado con su puntuación de holdout antes y después, y **reenviar
 una candidata ya rechazada contra ese mismo corpus se niega sin puntuarla**: los mismos bytes sobre el

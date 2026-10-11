@@ -44,6 +44,10 @@ class HostPrevalidationFailed(ValueError):
     """Creator output exists but must be rejected by Host acceptance."""
 
 
+class CreatorUsageAmbiguous(ValueError):
+    """The durable DSH observation cannot establish token consumption."""
+
+
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
 PROMPT_VERSION = "1.0.0"
@@ -305,9 +309,9 @@ distinto: los comandos que cambian código usan el workdir candidato exacto.
 No crean sesiones descendientes, subagentes ni workflows.
 
 Cada `SKILL.md` de `generated/skills/<name>/` y `generated/modes/<name>/` lleva
-frontmatter YAML mínimo válido, con `name: <name>` idéntico al directorio y
-`description` no vacía. Más skills específicas justificadas con procedimiento
-recurrente, evidencia, fronteras y prueba."""
+el frontmatter mínimo válido exigido en «Salida obligatoria», con `name: <name>`
+idéntico al directorio y `description` no vacía. Más skills específicas
+justificadas con procedimiento recurrente, evidencia, fronteras y prueba."""
 
     elif prompt_type == "material_change_regeneration":
         objective = f"""## Objetivo — Regeneración por cambio material
@@ -469,10 +473,13 @@ La identidad es SHA-256 de `full-base + LF + IDs seleccionados únicos ordenados
 los primeros 16 hex en `candidates/repair-<digest16>`. El contrato declara `candidate_root`
 exacto `${{session-cwd}}/<workspace>/candidates/repair-<digest16>` y `candidate_workdir`
 relativo `<workspace>/candidates/repair-<digest16>` y `provision_workdir:
-omitted-session-cwd`. Provisiona desde el cwd de sesión con `workdir` omitido ejecutando el
+omitted-session-cwd`. Verifica desde el cwd de sesión con `workdir` omitido ejecutando el
 `provision_command` central exacto, sustituyendo sus tres
 placeholders `<digest16>`, `<full-base>` y `<declared-base>` ya validados:
-`{repair_command}`.
+`{repair_command}`. **Ese comando es una puerta de solo lectura sobre la sombra que el
+Host ya provisionó, no una provisión**: el contrato declara
+`provision: Host-provision_repair-shadow-only`, y sin recibo del Host el resultado es
+`RETAINED`; clonar, hacer `worktree add` o inicializar git en bash está prohibido.
 **La candidata es un repositorio sombra con su propio `.git`, no un worktree del producto.**
 Un worktree guarda índice y HEAD en el `.git/worktrees/` del producto, así que con el
 producto en solo lectura —que es lo que el sandbox impone— hasta `git add` falla dentro de
@@ -483,7 +490,7 @@ producto queda de solo lectura real. Está prohibido crear o aceptar una candida
 `candidate_diff_command`; el operador lo aplica.
 La verificación del candidato usa el entrypoint propio del producto listado en el plan de
 capacidades (`.dsh-managed/capability-plan.json`, escrito por el Host al instalar): su comando de
-pruebas y, cuando exista, su lint, ejecutados contra el worktree candidato; el `command` de todo
+pruebas y, cuando exista, su lint, ejecutados contra la sombra candidata; el `command` de todo
 registro de verificación es ese entrypoint. Un arnés, mock o copia del código del producto escrita
 a mano es material de investigación y jamás se registra como resultado de verificación
 (`real_stack_verification.evidence: product-own-entrypoint-only`): no demuestra el comportamiento
@@ -509,10 +516,10 @@ base y digest de hallazgos, estado `DIRTY` o `RETAINED` pendiente de verificaci�
 evidencia `candidate_diff_digest` + `changed_paths`. Captura esa evidencia con el comando
 central `{repair_diff_command}`. Reanuda sin cambiar bytes únicamente con el comando
 central `{repair_resume}`, sustituyendo sus tres slots por valores ya validados. Este
-recomprueba worktree registrado exacto, HEAD base, canonical limpio/inalterado, diff no
+recomprueba sombra registrada exacta, HEAD base, canonical limpio/inalterado, diff no
 vacío y byte-idéntico, paths completos confinados a archivos regulares sin symlinks y
 ausencia de submódulos. Registro ausente o discrepancia de digest/path/base/status deja
-la colisión `RETAINED`; nunca adopta un worktree sucio arbitrario.
+la colisión `RETAINED`; nunca adopta una sombra sucia arbitraria.
 Declara además `record_before_first_edit: true`, `record_statuses:
 ["PROVISIONED","DIRTY"]`, `unrecorded_dirty_target: RETAINED-never-adopted`,
 `interrupted_turn_recovery: recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command`
@@ -530,15 +537,14 @@ turno interrumpido: se recupera con el `recording_command`, jamás creando otra 
 descartando su diff.
 Para creación o reutilización limpia ejecuta literalmente el `provision_command` central,
 cuyos `provision_checks` se limitan a invariantes canónicos y a la identidad target: path
-y branch target ausentes o reutilizables como el mismo worktree, HEAD/base y limpieza del
-target al reutilizar, sin colisión del target. Puede leer el `git worktree list` completo
-solo para comparar el path target y la branch target. El contrato declara
+y branch target ausentes o reutilizables como la misma sombra, HEAD/base y limpieza del
+target al reutilizar, sin colisión del target. El contrato declara
 `unrelated_candidates: ignore-preserve`: está expresamente prohibido validar supuestos
 sobre candidatas ajenas o bloquear, modificar o borrar una por estar dirty, clean, stale
 o en otra base. No improvisa: solo una incompatibilidad del target queda RETAINED con
 una acción concreta. Las
 llamadas bash posteriores que modifican o prueban código usan `workdir` exactamente
-`{product_root}-repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica y
+`{workspace_root}/candidates/repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica y
 prueba solo candidato; lo deja sucio o produce patch. `candidate_commit` es null salvo
 una solicitud de usuario separada y explícita que autorice commit. Nunca
 merge/push/publish.
@@ -550,6 +556,19 @@ protocolo de escritor único/lease o tool Host equivalente. Debe funcionar con
 `Repara los hallazgos de la auditoría; no publiques.` sin JSON, paths ni configuración.
 
 ## Salida obligatoria
+
+Todo `SKILL.md` de `generated/skills/<name>/` y de `generated/modes/<name>/`
+lleva frontmatter YAML mínimo válido con `name` idéntico al directorio y
+`description` no vacía. Escribe `name` y `description` **siempre con comillas
+dobles**: `name: "<name>"` y `description: "<texto>"`. Está prohibido usar valor
+plano sin comillas cuando el texto contenga `: ` (dos puntos y espacio), `#` o
+empiece por `-`: el parser YAML de DSH rechaza `description: Modo auditor del
+proyecto fixture: contrato operativo` con `Nested mappings are not allowed
+in compact mappings` y descarta el skill en silencio. Si la descripción
+contiene comillas, escápalas al estilo JSON. No emplees un bloque escalar
+`description: >-`: la prevalidación Host, que no implementa YAML completo, lo
+rechaza antes de GENERATED. Un frontmatter inválido bloquea el paquete antes
+de ACTIVE; esto aplica también a regeneración y skill_lifecycle.
 
 Escribe bajo `{run_dir}/generated/`:
 - `generation-manifest.json` (status: GENERATED, con schema_version, generation_id, status, project: {{name, root_identity, base_revision}}, creator: {{session_ref, runtime_version}}, framework: {{revision}}, artifacts: [{{path, type, sha256}}], required_capabilities, forbidden_capabilities, effective_routing_digest, context_policy: {{skill_entrypoint_max_bytes, support_file_max_bytes, warning_ratio}}, license_provenance)
@@ -1106,18 +1125,17 @@ class CreatorSession:
 
     def check_budget(self, *, now=None):
         """Check the limits frozen in ``run.json`` for this invocation."""
-        if self.start_time is None:
-            return True
-        now = time.time() if now is None else now
-        elapsed = now - self.start_time
-        if elapsed > self.timeout_seconds:
+        if self.token_count >= self.max_tokens:
             raise ValueError(
-                f"Timeout: {elapsed:.0f}s excede {self.timeout_seconds}s"
+                f"Límite de tokens Creator alcanzado: {self.token_count} >= {self.max_tokens}"
             )
-        if self.token_count > self.max_tokens:
-            raise ValueError(
-                f"Token budget excedido: {self.token_count} > {self.max_tokens}"
-            )
+        if self.start_time is not None:
+            now = time.time() if now is None else now
+            elapsed = now - self.start_time
+            if elapsed > self.timeout_seconds:
+                raise ValueError(
+                    f"Timeout: {elapsed:.0f}s excede {self.timeout_seconds}s"
+                )
         return True
 
     def verify_generation_output(self):
@@ -1182,7 +1200,15 @@ class CreatorSession:
         return manifest
 
     def create_finish(self, manifest):
-        """Create finish.json to mark generation complete."""
+        """Create finish.json to mark generation complete.
+
+        The budget is re-checked here rather than only in the supervision loop:
+        a run that goes terminal and quiescent is accepted by the caller without
+        going through the loop's budget branch, and a state persisted that way by
+        an earlier version would otherwise reach GENERATED over an exceeded
+        limit.
+        """
+        self.check_budget()
         gen_id = manifest.get("generation_id", "unknown")
         finish_path = self.run_dir / "finish.json"
         if not finish_path.exists():
@@ -1265,6 +1291,25 @@ def _patched_launch_command(command):
     if not DSH_PLUGIN_PATCH.is_file():
         return list(command)
     return [*command, "--patch", str(DSH_PLUGIN_PATCH)]
+
+
+def dsh_headless_command(command=("npx", "-y", "@deepseek-ai/dsh",
+                                 "--profile", "headless")):
+    """Argv oficial de un turno headless, con el overlay del framework.
+
+    ``--patch`` es una flag del lanzador, no de la app, así que compone con
+    cualquier perfil: la fila del overlay queda al final del árbol compuesto
+    sea cual sea el perfil que la monte. Resolver el argv headless por el mismo
+    sitio que ``launch_dsh_web`` es lo que evita que una sesión headless se
+    quede con una herramienta menos: ``workflow_write`` lo registra el overlay,
+    y sin él el inventario headless vuelve al ``write`` de upstream, que el
+    sandbox rechaza con ``sandbox_permissions`` del mismo modo (el defecto del
+    piloto que documenta ``_patched_launch_command``).
+
+    Devuelve el argv; no lanza el proceso. El escape sigue siendo
+    ``DSH_PLUGIN_PATCH=0``, heredado del camino web en lugar de redefinido aquí.
+    """
+    return _patched_launch_command(command)
 
 
 def _terminate_process(process, *, wait_timeout=5):
@@ -1814,6 +1859,7 @@ def _new_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
     now = now_fn()
     budget = run_doc.get("budget") or {}
     max_seconds = int(budget.get("max_seconds", 1800))
+    max_tokens = int(budget.get("max_tokens", 500000))
     return {
         "schema_version": SCHEMA_VERSION,
         "generation_id": prep["generation_id"],
@@ -1821,6 +1867,17 @@ def _new_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
         "request_id": "creator-request-" + secrets.token_hex(16),
         "prompt_digest": prep["prompt_digest"],
         "deadline": now + max_seconds,
+        # The token limit is frozen with the deadline so a resumed run is
+        # measured against the budget the run was created under.
+        "max_tokens": max_tokens,
+        # Per-``seq`` usage of every real step folded so far. Resuming starts
+        # from this accumulated evidence, never from zero.
+        "usage_by_seq": {},
+        "usage_steps": 0,
+        "usage_input_tokens": 0,
+        "usage_output_tokens": 0,
+        "usage_cache_read_tokens": 0,
+        "usage_tokens": 0,
         "cursor": -1,
         "reason": "DISPATCH_PENDING",
         "created_at": _now_iso(),
@@ -1840,10 +1897,53 @@ def _load_or_create_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
             raise ValueError("creator-session.json no corresponde al prompt persistido")
         if state.get("generation_id") != prep["generation_id"]:
             raise ValueError("creator-session.json no corresponde a este run")
-        return state, False
+        return _reconcile_resumed_usage(state), False
     state = _new_session_state(run_dir, prep, run_doc, now_fn=now_fn)
     _write_json(path, state)
     return state, True
+
+
+def _reconcile_resumed_usage(state):
+    """Re-derive the resumed token account from its own persisted segments.
+
+    The folded totals are recomputed from ``usage_by_seq`` rather than trusted,
+    so a truncated or hand-edited state cannot under-report spend. A limit that
+    disagrees with the run currently on disk fails closed instead of silently
+    relaxing the budget.
+    """
+    max_tokens = int(state.get("max_tokens", 500000))
+    usage_by_seq = state.get("usage_by_seq")
+    if usage_by_seq is None:
+        usage_by_seq = {}
+    if not isinstance(usage_by_seq, dict):
+        raise CreatorUsageAmbiguous(
+            "creator-session.json con usage_by_seq inválido al reanudar")
+    reconciled = {}
+    for seq, usage in usage_by_seq.items():
+        # JSON always decodes object keys as strings. Accept in-memory int
+        # keys too, but reject ambiguous aliases such as "01" and bool.
+        if ((isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0)
+                or (isinstance(seq, str) and re.fullmatch(r"0|[1-9][0-9]*", seq))):
+            key = str(seq)
+        else:
+            raise CreatorUsageAmbiguous(
+                "creator-session.json con seq de usage inválido al reanudar")
+        if key in reconciled or not isinstance(usage, dict):
+            raise CreatorUsageAmbiguous(
+                f"usage_by_seq persistido inválido para seq {seq} al reanudar")
+        reconciled[key] = _normalise_usage(usage)
+    state["usage_by_seq"] = reconciled
+    state["usage_steps"] = len(reconciled)
+    state["usage_input_tokens"] = sum(
+        item["inputTokens"] for item in reconciled.values())
+    state["usage_output_tokens"] = sum(
+        item["outputTokens"] for item in reconciled.values())
+    state["usage_cache_read_tokens"] = sum(
+        item["cacheReadTokens"] for item in reconciled.values())
+    state["usage_tokens"] = sum(
+        item["totalTokens"] for item in reconciled.values())
+    state["max_tokens"] = max_tokens
+    return state
 
 
 def _call_create_session(client, run_dir, session_id):
@@ -1874,13 +1974,83 @@ def _manifest_exists(run_dir):
 
 
 def _event_request_id(event):
-    """Extract only the durable direct-user RPC identity, never fuzzy JSON."""
+    """Extract only the durable direct-user RPC identity, never fuzzy JSON.
+
+    DSH also emits ``user/message`` records that are not our prompt: a
+    ``runtime-context`` snapshot and the skill-catalog record are synthesised
+    by the runtime with no ``rpcId``. Taking any rpcId found in that payload
+    would attribute a turn we never started, so only the direct user source
+    counts for correlating ``turn/end``.
+    """
     if event.get("type") != "user/message":
         return None
-    data = event.get("data") or {}
-    message = data.get("message", data) if isinstance(data, dict) else {}
-    source = message.get("source") if isinstance(message, dict) else None
-    return source.get("rpcId") if isinstance(source, dict) else None
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return None
+    source = data.get("source")
+    if not isinstance(source, dict) or source.get("kind") not in (None, "user"):
+        return None
+    return source.get("rpcId")
+
+
+def _normalise_usage(usage):
+    """Return the billable segment of one persisted usage object.
+
+    ``totalTokens`` is the authoritative billable figure DSH reports on every
+    real ``assistant/message``: in X3 79 of those records carry ``data.usage``
+    and 76 report ``totalTokens`` above ``inputTokens + outputTokens``
+    because cache reads are billed there, so ``in + out`` alone would
+    undercount by 76 of 79 steps. The cache component is folded separately so
+    the budget is auditable without ever double counting it, and a persisted
+    segment that is missing or self-contradictory fails closed instead of
+    quietly relaxing the budget.
+    """
+    if not isinstance(usage, dict):
+        raise CreatorUsageAmbiguous(
+            "usage de DSH no es un objeto; coste real desconocido")
+    for value in (usage.get("inputTokens"), usage.get("outputTokens")):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise CreatorUsageAmbiguous(
+                f"usage de DSH inválido: {usage!r}; coste real desconocido")
+    cache_read = usage.get("cacheReadTokens")
+    if cache_read is None:
+        cache_read = 0
+    elif isinstance(cache_read, bool) or not isinstance(cache_read, int) or cache_read < 0:
+        raise CreatorUsageAmbiguous(
+            f"usage de DSH con cacheReadTokens={cache_read!r} inválido; "
+            "coste real desconocido")
+    cached_billable = usage["inputTokens"] + usage["outputTokens"] + cache_read
+    total = usage.get("totalTokens")
+    if total is None:
+        # A segment persisted before the billable total was folded.
+        total = cached_billable
+    elif (isinstance(total, bool) or not isinstance(total, int)
+          or total < cached_billable):
+        raise CreatorUsageAmbiguous(
+            f"usage de DSH contradictorio: {usage!r}; coste real desconocido")
+    return {
+        "inputTokens": usage["inputTokens"],
+        "outputTokens": usage["outputTokens"],
+        "cacheReadTokens": cache_read,
+        "totalTokens": total,
+    }
+
+
+def _event_usage(event):
+    """Return the per-step real usage a DSH record reports.
+
+    Usage only rides on ``assistant/message`` records; ``step/start`` and
+    ``step/end`` carry no usage at all. A record with no ``usage`` key is not
+    billable evidence, but an unusable ``usage`` object makes the real cost
+    unknown, which fails closed rather than silently undercounting.
+    """
+    if not isinstance(event, dict) or event.get("type") != "assistant/message":
+        return None
+    data = event.get("data")
+    if not isinstance(data, dict) or "usage" not in data:
+        raise CreatorUsageAmbiguous(
+            "assistant/message DSH sin usage; coste real desconocido")
+    return _normalise_usage(data["usage"])
 
 
 def _fold_observation(state, observation):
@@ -1891,13 +2061,29 @@ def _fold_observation(state, observation):
     terminal_reason = state.get("terminal_reason")
     cursor = state.get("cursor", -1)
     open_turn = state.get("open_turn")
+    # Per-segment monotonic usage. Keyed by the durable ``seq`` of the record
+    # that reported it, because a resumed run replays pages already folded and
+    # a re-poll can resend the same records: a key guarantees the same real
+    # usage is never added twice.
+    usage_by_seq = state.get("usage_by_seq")
+    if not isinstance(usage_by_seq, dict):
+        usage_by_seq = {}
+    usage_steps = state.get("usage_steps")
+    if (isinstance(usage_steps, bool) or not isinstance(usage_steps, int)
+            or usage_steps < 0):
+        usage_steps = 0
     for event in events:
         if not isinstance(event, dict):
-            continue
+            raise CreatorUsageAmbiguous(
+                "evento DSH no es un objeto; coste real desconocido")
         seq = event.get("seq")
-        if isinstance(seq, int):
-            cursor = max(cursor, seq)
-        data = event.get("data") or {}
+        # Without a durable sequence number the same step could be folded
+        # twice, so the account is refused instead of guessed.
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise CreatorUsageAmbiguous(
+                "evento DSH sin seq durable; no se puede desduplicar")
+        cursor = max(cursor, seq)
+        data = event.get("data")
         if event.get("type") == "turn/start" and isinstance(data, dict):
             open_turn = data.get("turn")
         if _event_request_id(event) == state["request_id"]:
@@ -1910,6 +2096,27 @@ def _fold_observation(state, observation):
             if request_turn is not None and data.get("turn") == request_turn:
                 terminal = True
                 terminal_reason = data.get("reason", "turn/end")
+        usage = _event_usage(event)
+        if usage is None:
+            # ``turn/start``, ``turn/end`` and ``user/message`` never bill:
+            # they are the correlation records, already processed above.
+            continue
+        # JSON serialises dict keys as strings, so a resumed state carries
+        # str(seq). Normalising on a str key is what actually prevents a
+        # replayed page from being counted a second time.
+        key = str(seq)
+        if key in usage_by_seq:
+            if usage_by_seq[key] != usage:
+                # The same durable step reporting two different figures is
+                # either a replay of an edited record or a fork; neither can
+                # be measured, so the account is refused rather than
+                # reconciled by silently preferring one of them.
+                raise CreatorUsageAmbiguous(
+                    "mismo seq con usage distinto en DSH; coste real "
+                    f"ambiguo en seq {seq}")
+            continue
+        usage_by_seq[key] = usage
+        usage_steps += 1
     observed_cursor = observation.get("cursor")
     if isinstance(observed_cursor, int):
         cursor = max(cursor, observed_cursor)
@@ -1921,6 +2128,13 @@ def _fold_observation(state, observation):
     jobs = observation.get("jobs") or []
     active_jobs = any(job.get("status") in ACTIVE_JOB_STATES for job in jobs
                       if isinstance(job, dict))
+    # Summing per ``seq`` keeps the total monotonic: each real step contributes
+    # once no matter how many times its record is replayed.
+    usage_input = sum(item["inputTokens"] for item in usage_by_seq.values())
+    usage_output = sum(item["outputTokens"] for item in usage_by_seq.values())
+    usage_cache_read = sum(
+        item["cacheReadTokens"] for item in usage_by_seq.values())
+    usage_total = sum(item["totalTokens"] for item in usage_by_seq.values())
     state.update({
         "cursor": cursor,
         "request_seen": request_seen,
@@ -1932,6 +2146,15 @@ def _fold_observation(state, observation):
         "descendant_running": descendant_running,
         "child_running": descendant_running,
         "active_jobs": active_jobs,
+        "usage_by_seq": usage_by_seq,
+        "usage_steps": usage_steps,
+        "usage_input_tokens": usage_input,
+        "usage_output_tokens": usage_output,
+        "usage_cache_read_tokens": usage_cache_read,
+        # The billable budget is the sum DSH reports per step, so cache
+        # reads count: X3 shows 76 of 79 real records where totalTokens
+        # exceeds inputTokens + outputTokens.
+        "usage_tokens": usage_total,
     })
     state["quiescent"] = (terminal and not state["running"] and
                           not descendant_running and not active_jobs)
@@ -1959,14 +2182,50 @@ def _observe_creator(client, state):
     return observer(state["session_id"], cursor=state.get("cursor", -1))
 
 
+def _creator_usage_tokens(state):
+    """Monotonic real tokens folded so far, or ``None`` when not measurable."""
+    tokens = state.get("usage_tokens")
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
+        return None
+    return tokens
+
+
 def _supervise_creator(session, client, state, *, poll_seconds=5,
                        cancel_grace_seconds=30, now_fn=time.time,
                        sleep_fn=time.sleep):
-    """Require correlated ``turn/end`` and whole-session quiescence."""
+    """Require correlated ``turn/end``, quiescence and a respected budget.
+
+    Real usage is folded on every observation and the token limit is evaluated
+    BEFORE success can be declared: a final turn that fits quiescence but
+    already exceeds the frozen ``max_tokens`` is retained for that excess, not
+    accepted. Only then does the loop cancel a still-live session rather than
+    letting DSH bill one more step.
+    """
     while True:
         observation = _observe_creator(client, state)
         _fold_observation(state, observation)
         _save_session_state(session.run_dir, state, reason="OBSERVING")
+
+        # Budget first: the limit is a property of this run, not of the
+        # current turn, so an exceeded attempt is never ACTIVE or GENERATED.
+        used = _creator_usage_tokens(state)
+        if used is not None and used >= session.max_tokens:
+            _save_session_state(session.run_dir, state,
+                                reason="CANCELLING_TOKEN_BUDGET")
+            try:
+                client.cancel_session(state["session_id"])
+            except Exception as exc:
+                return _mark_recovery_required(
+                    session, state,
+                    f"Límite de tokens Creator; cancelación DSH no "
+                    f"confirmada: {exc}")
+            reason = (f"Límite de tokens Creator excedido: {used} >= "
+                      f"{session.max_tokens}; cancelación confirmada y sesión "
+                      "quiescente")
+            return _await_confirmed_quiescence(
+                session, client, state, reason,
+                cancel_deadline=now_fn() + cancel_grace_seconds,
+                poll_seconds=poll_seconds, now_fn=now_fn, sleep_fn=sleep_fn)
 
         if state.get("quiescent"):
             if _manifest_exists(session.run_dir):
@@ -2003,28 +2262,35 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
             except Exception as exc:
                 return _mark_recovery_required(
                     session, state, f"Timeout; cancelación DSH no confirmada: {exc}")
-            cancel_deadline = now + cancel_grace_seconds
-            while now_fn() <= cancel_deadline:
-                observation = _observe_creator(client, state)
-                _fold_observation(state, observation)
-                _save_session_state(session.run_dir, state,
-                                    reason="WAITING_FOR_QUIESCENCE")
-                if (not state.get("running") and
-                        not state.get("descendant_running") and
-                        not state.get("active_jobs")):
-                    reason = ("Timeout de Creator; cancelación confirmada y "
-                              "sesión quiescente")
-                    _save_session_state(session.run_dir, state,
-                                        reason="CANCELLED_QUIESCENT")
-                    return session.retain(reason)
-                sleep_fn(poll_seconds)
-            return _mark_recovery_required(
-                session, state,
-                "Timeout de Creator; no se confirmó quiescencia tras cancelar")
+            return _await_confirmed_quiescence(
+                session, client, state,
+                "Timeout de Creator; cancelación confirmada y sesión quiescente",
+                cancel_deadline=now + cancel_grace_seconds,
+                poll_seconds=poll_seconds, now_fn=now_fn, sleep_fn=sleep_fn)
 
         # A terminal event is insufficient while the parent, any transitive
         # descendant, or any reached session's job remains active.
         sleep_fn(poll_seconds)
+
+
+def _await_confirmed_quiescence(session, client, state, reason, *,
+                                cancel_deadline, poll_seconds, now_fn, sleep_fn):
+    """Retain only once DSH confirms the session is fully quiescent."""
+    while now_fn() <= cancel_deadline:
+        observation = _observe_creator(client, state)
+        _fold_observation(state, observation)
+        _save_session_state(session.run_dir, state,
+                            reason="WAITING_FOR_QUIESCENCE")
+        if (not state.get("running") and
+                not state.get("descendant_running") and
+                not state.get("active_jobs")):
+            _save_session_state(session.run_dir, state,
+                                reason="CANCELLED_QUIESCENT")
+            return session.retain(reason)
+        sleep_fn(poll_seconds)
+    return _mark_recovery_required(
+        session, state,
+        f"{reason}; no se confirmó quiescencia tras cancelar")
 
 
 def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
@@ -2073,6 +2339,13 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
             # Host boundary without adopting the session or replaying prompt.
             if (state.get("terminal") and state.get("quiescent")
                     and _manifest_exists(run_dir)):
+                used = _creator_usage_tokens(state)
+                if used is None or used >= session.max_tokens:
+                    _save_session_state(run_dir, state, reason="TOKEN_BUDGET_EXCEEDED")
+                    reason = (f"Límite de tokens Creator excedido: {used} >= "
+                              f"{session.max_tokens}; no se acepta un paquete "
+                              "terminal sin revisar su gasto")
+                    return session.retain(reason)
                 try:
                     manifest = session.verify_generation_output()
                 except HostPrevalidationFailed as exc:

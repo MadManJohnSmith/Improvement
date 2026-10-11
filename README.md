@@ -16,9 +16,9 @@ decide what gets integrated.
 
 On install, it generates **two modes tailored to your project**. The **auditor** examines
 the code and records every finding with its evidence (`file:line`) and its severity. The
-**repairer** fixes things in an isolated worktree, verifies every fix against your
-project's real commands, and leaves your tree intact. Nothing reaches your branch without
-going through you.
+**repairer** fixes things in an isolated shadow repository, verifies every fix against
+your project's real commands, and leaves your tree intact. Nothing reaches your branch
+without going through you.
 
 It is a framework proven in three full campaigns on real repositories: Syncify (a music
 app in Rust/Tauri/Vue), RehabWeb (a clinical app in Django/Vue), and LoboApp (a Flutter
@@ -71,7 +71,7 @@ with different criteria. Improvement puts that into a structure that survives th
 - an **auditor** that examines your project and persists findings with evidence
   (`file:line`), severity, and deduplication by `(finding, revision)`;
 - a **repairer** that takes the findings, claims an isolated work candidate in a sibling
-  worktree, fixes it, verifies it, and **leaves your product's tree intact**;
+  workspace, fixes it, verifies it, and **leaves your product's tree intact**;
 - a **memory on disk** (`<project>-workspace/mode-state`) with strict caps per file and
   per record: it grows up to its limit and compacts, it does not saturate;
 - a **clear integration boundary**: the mode leaves the verified candidate and you make
@@ -96,14 +96,16 @@ with its digest at install time: what your mode reuses is exactly what the diges
 not a version that drifted afterwards. This is the flow that generated the modes of
 RehabWeb, LoboApp, and the framework itself.
 
-**The library improves on evidence, not on opinions.** Its 55 scenarios compile into
-executable cases whose expected verdict only the Host knows. No base-skill change gets in
-without scoring on a gate that only accepts strict improvement: rejected attempts are
-kept with their before/after scores, and the reason for the rejection feeds the next
-attempt, so the framework never pays twice for the same correction. The executor is
-`bootstrap.py skill-gate-run`: against a DSH session with your project, the full loop is
-in your hands — use the modes, produce observations, the gate scores, the library can
-only get better.
+**Library changes need evidence, not opinions.** The 55 cases target 25 skills, not
+the generated auditor or repairer modes. The Host owns their expected verdicts; a mode's
+free-form answer or a classifier cannot score them. `compile-corpus` and the bound
+holdout gate exist, but the CLI `skill-gate-run` currently **ABSTAINS before creating a
+DSH session**: it has no compatible Host evaluator adapter to verify each case's
+layout and effective target skill. A prior real attempt on SC-123 returned `NOT_COVERED`
+after dispatching a skill case to an auditor mode with the wrong layout, not a passing
+corpus score. Only observations bound to this corpus and candidate by a verified
+evaluator could be submitted to `bound-skill-gate`; until then no operational library
+improvement has been demonstrated. See [the gate procedure](docs/usage.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
 
 ## How to use it
 
@@ -118,15 +120,18 @@ With the two presets active in DSH, you operate with short messages:
 | Repair what was audited | «Repara los hallazgos de la auditoría; no publiques.» |
 | Repair specific findings | «Repara A-SEC-01 y A-SEC-02; no publiques.» |
 
-Every audit leaves a handoff with the next prompt ready to copy. When the repairer
-finishes, you integrate with a normal `git merge --ff-only`: the commit and the push are
-still yours.
+Every audit leaves a handoff with the next prompt ready to copy. The current repair
+candidate is a Host-provisioned shadow repository with its own `.git`, not a branch of
+your project: there is no shared ancestry to merge. Review and validate the complete
+diff/patch against the recorded verification before applying it in your project; commit
+and publish only by your decision. [Operator procedure](docs/usage.md#integración-y-recuperación-de-espacio-operador).
 
 ![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
 
-*The full cycle, including the learning close-out: each campaign's observations score the
-library at the holdout gate. It is an explorable diagram: every relationship can be
-traced, and the theme switches light/dark, in the [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+*Conceptual operating cycle. The learning close-out is not yet operational: campaign
+observations do not automatically score the 25-skill corpus. It is an explorable diagram:
+every relationship can be traced, and the theme switches light/dark, in the
+[interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
 
 ## Terms you will see
 
@@ -136,14 +141,14 @@ traced, and the theme switches light/dark, in the [interactive version](https://
 | Mode | Each of the two agents generated for your project: the auditor and the repairer. |
 | Finding | A defect recorded with evidence (`file:line`), severity, cause, and prevention. |
 | Handoff | The record every audit leaves behind, with the next prompt ready to copy. |
-| Candidate | The isolated sibling worktree where the repairer changes code. |
+| Candidate | The isolated shadow repository in the workspace where the repairer changes code. |
 | `mode-state` | The workspace's on-disk memory: findings, handoffs, verifications, and receipts. |
 | Capability plan | The inventory of your project's real test and analysis commands, signed at install. |
 | RETAINED | A retained turn: it ended with a readable result and without stepping outside the contract. |
 | VERIFIED / RESOLVED | The verified work and the closed defects, each with its evidence. |
 | Skills library | The 21 immutable base skills the modes are composed from, with executable scenarios and recorded sources. |
 | Evidence anchor | The literal code snippet that pins where a finding lives; the tool computes the location and rejects what it cannot place. |
-| Holdout gate | The lock that scores any library change against executable cases and only accepts strict improvement. |
+| Holdout gate | The bound decision on complete, verified case observations; the default runner currently abstains without a compatible Host evaluator adapter. |
 
 ## Verification against your real project, never with stubs
 
@@ -242,8 +247,9 @@ the device what you saved, but the code only removed one key; progress and notes
 still there and reappeared when you logged back in. «Repara F-01 y F-02; no
 publiques.» produced the fix with its regression tests in 7 files and 353 lines,
 verified with **a real `flutter test`** (125 tests green) and `flutter analyze` with no
-issues, and integrated with `bb01cba..eb25ec3`: commit, fast-forward, and push by the
-operator.
+issues, and integrated by the operator (candidate worktree, commit, fast-forward, push):
+`bb01cba..eb25ec3`. That campaign predates the shadow design — today the framework would
+deliver a patch instead, and merging is no longer part of it.
 
 This campaign found the two failures no synthetic test would have seen: the framework
 emitted a verification command its own shell could not execute, and the sandbox left the
@@ -287,7 +293,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **939 tests green**.
+Framework suite: **1085 tests green** (11 skipped without external runtime).
 
 ### The most recent one: the modes driven by a real DSH session (2026-10-10)
 
@@ -311,13 +317,26 @@ What was walked through from one-line prompts to the verified outcome:
 | Memory of the campaign | `MEMORY_RECONCILED`, 6 entries invalidated in block when a file changed |
 
 What was **not** proven, and is not claimed: the **Creator end-to-end** did not
-finish — a real headless turn with the whole prompt (29 tool calls, 734,064 tokens,
-correct cwd) did not persist `generated/generation-manifest.json` and the run ended
-`RETAINED`; the **corpus gate** could not run against a real mode because `dsh web`
-would not serve in that environment, so it abstained fail-closed naming what was
-missing; and `git worktree add` was denied by the session sandbox
+finish in the 2026-10-10 pass — a real headless turn with the whole prompt (29 tool calls,
+734,064 tokens, correct cwd) did not persist `generated/generation-manifest.json` and the run
+ended `RETAINED`. A later X3 trial did generate 19 artifacts and reached `ACTIVE`, but
+**before** the Creator per-run budget-accounting correction; it is not evidence for the
+current budget gate. The **post-budget X3** trial ended `RETAINED` at 912,727 `totalTokens`
+against a 1.25M-token budget, stopped by the predictive guard, not `ACTIVE`. The
+**corpus gate** did not score a real mode — the 2026-10-10 pass
+abstained without a usable DSH session, and the later SC-123 skill case, dispatched
+to an auditor mode with the wrong layout, returned `NOT_COVERED`. The copied campaign
+profile had an empty `node_modules/`, but `dsh web` did start with a fresh home;
+DSH 0.2.0-rc.2 has no `evaluator` endpoint, and today's CLI lacks the compatible
+Host adapter needed to verify case layout and effective skills before `session/create`.
+Separately, `git worktree add` was denied by the session sandbox
 (`Read-only file system` plus `no approval channel is available`), so the candidates
-were in-workspace clones instead of the sibling worktrees the contract asks for. The
+were in-workspace clones. The contract answered that measurement: the candidate is now
+a **shadow repository the Host provisions under the workspace**, with its own `.git` and
+a receipt the mode only verifies — proven in code and fixture, still waiting for a full
+Creator run. The later `x1-preset-real` web session did resolve the real preset, load its
+skill and run the sentinels, but it stopped on budget at 241,912 `totalTokens` **before
+editing anything**: no repair diff, no checks, no full-cycle proof. The
 full procedure for preparing that kind of real session is a permanent skill:
 `skills/dsh-maintenance-session/SKILL.md`.
 
@@ -387,11 +406,12 @@ authority, all driven by a **real DSH session** on 2026-10-10. The Apache-2.0 li
 and the `v0.1.0-beta` tag are already published.
 What is left for the stable release is in the
 [launch plan](docs/plans/10-lanzamiento-publico.md), and what that pass could not
-prove — Creator end-to-end, the corpus gate against a real mode, the sibling
-worktree — is listed as such in the [verified status](docs/status.md).
+prove — Creator end-to-end, running the 25-skill corpus against a real mode, a full
+Creator run with the Host-provisioned shadow — is listed as such in the
+[verified status](docs/status.md), always as history with its date.
 
 If the session dies mid-turn — and in a developer preview it does — the work is not lost:
-an interrupted candidate resumes by verifying the exact recorded identity (same worktree,
+an interrupted candidate resumes by verifying the exact recorded identity (same shadow,
 same base, same findings digest) without discarding the diff, and `bootstrap.py state`
 reconciles the state with your repository when something moved outside it, with receipts
 instead of silences.

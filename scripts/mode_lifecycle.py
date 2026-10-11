@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import zlib
 from pathlib import Path
 
 
@@ -209,60 +210,140 @@ def verify_implementation(product, workspace, request, receipt, *, acceptance_co
             "command": acceptance_command}
 
 
+def repair_identity(base_revision, finding_ids):
+    """Bind a repair to the effective canonical base and selected finding IDs."""
+    if (not isinstance(base_revision, str) or
+            not re.fullmatch(r"[0-9a-f]{40,64}", base_revision) or
+            not isinstance(finding_ids, (list, tuple)) or
+            not finding_ids or
+            any(not isinstance(item, str) or not item.strip() for item in finding_ids)):
+        raise ValueError("base o hallazgos inválidos: RETAINED")
+    ids = sorted({item.strip() for item in finding_ids})
+    if any("\n" in item or "," in item for item in ids):
+        raise ValueError("identificador de hallazgo ambiguo: RETAINED")
+    return hashlib.sha256((base_revision + "\n" + "\n".join(ids)).encode()).hexdigest()
+
+
+def provision_repair(product, workspace, finding_ids, *, declared_base):
+    """Host-only: create or reuse a bound shadow with a private Git directory.
+
+    The mode never provisions. A legacy sibling worktree or a shadow missing its
+    Host receipt is not migrated or adopted. Dirty reuse is only a Host identity
+    check; the mode still needs an exact recorded DIRTY resume or a PROVISIONED
+    recovery before changing code.
+    """
+    import shadow_candidate
+    from onboard import checked
+
+    product, workspace = checked(product), checked(workspace)
+    if (not product.is_dir() or not workspace.is_dir() or
+            product.parent != workspace.parent):
+        raise ValueError("raíces de producto/workspace inválidas: RETAINED")
+    base = _git_read(product, "rev-parse", "HEAD")
+    digest = repair_identity(base, finding_ids)
+    if _git_read(product, "status", "--porcelain=v1"):
+        raise ValueError("producto canónico sucio: RETAINED")
+    if (not isinstance(declared_base, str) or
+            not re.fullmatch(r"[0-9a-f]{40,64}", declared_base) or
+            subprocess.run(["git", "-C", str(product), "merge-base", "--is-ancestor",
+                            declared_base, base], capture_output=True).returncode):
+        raise ValueError("base declarada no es ancestro: RETAINED")
+    target = shadow_candidate.candidate_root(workspace, digest[:16])
+    marker = workspace / f"repair-{digest[:16]}.receipt"
+    # An old worktree can share the finding identity without being a shadow.
+    # Refuse it even if a separate target could otherwise be created.
+    legacy = product.parent / f"{product.name}-repair-{digest[:16]}"
+    worktrees = _git_read(product, "worktree", "list", "--porcelain")
+    if (legacy.exists() or legacy.is_symlink() or
+            f"branch refs/heads/dsh/repair-{digest[:16]}" in worktrees.splitlines()):
+        raise ValueError("worktree legacy: migración manual requerida: RETAINED")
+    if target.parent.is_symlink() or marker.is_symlink():
+        raise ValueError("ruta de candidata/recibo peligrosa: RETAINED")
+    if target.exists() or target.is_symlink() or marker.exists():
+        if (target.is_symlink() or not target.is_dir() or not marker.is_file() or
+                (target / ".git").is_symlink() or not (target / ".git").is_dir()):
+            raise ValueError("colisión o recibo incompleto: RETAINED")
+        shadow_head = _git_read(target, "rev-parse", "--verify", "shadow-base")
+        expected = f"{base}\n{digest}\n{shadow_head}\n"
+        try:
+            marker_matches = marker.stat().st_size <= 256 and marker.read_text(
+                encoding="ascii") == expected
+        except (OSError, UnicodeError):
+            marker_matches = False
+        if not marker_matches:
+            raise ValueError("identidad de candidata no coincide: RETAINED")
+        reused = True
+    else:
+        target, _ = shadow_candidate.provision(product, workspace, digest[:16],
+                                             base_ref=declared_base)
+        shadow_head = _git_read(target, "rev-parse", "--verify", "shadow-base")
+        # A crash after creation but before this receipt is intentionally
+        # retained on retry, not accepted as an unrecorded candidate.
+        with marker.open("x", encoding="ascii") as stream:
+            stream.write(f"{base}\n{digest}\n{shadow_head}\n")
+        reused = False
+    if (Path(_git_read(target, "rev-parse", "--absolute-git-dir")) != target / ".git" or
+            _git_read(target, "rev-parse", "--show-toplevel") != str(target) or
+            _git_read(target, "symbolic-ref", "--short", "HEAD") != "candidate" or
+            _git_read(target, "rev-parse", "HEAD") != shadow_head or
+            (target / ".gitmodules").exists() or (target / ".gitmodules").is_symlink() or
+            _git_read(product, "rev-parse", "HEAD") != base or
+            _git_read(product, "status", "--porcelain=v1")):
+        raise ValueError("candidata o canónico derivó: RETAINED")
+    return {"path": str(target), "base_revision": base,
+            "finding_ids_digest": digest, "head": shadow_head,
+            "branch": "candidate", "receipt": str(marker), "reused": reused}
+
+
 def _repair_target(layout, kind="repair"):
     _candidate_kind(kind)
     product = shlex.quote("./" + layout["product_root"])
-    candidate_prefix = shlex.quote(layout["product_root"] + "-" + kind + "-")
+    workspace = shlex.quote("./" + layout["workspace_root"])
     return (
-        f"product={product}; candidate_name={candidate_prefix}\"$digest16\"; "
-        f"branch=\"dsh/{kind}-$digest16\"; expected=\"$PWD/$candidate_name\"; "
-        "candidate=\"$expected\"; test -d \"$product\" -a ! -L \"$product\"; "
+        f"product={product}; workspace={workspace}; "
+        "case $digest16 in ????????????????) ;; *) exit 1;; esac; "
+        "case $digest16 in *[!0-9a-f]*) exit 1;; esac; "
+        "candidate_name=\"${workspace#./}/candidates/repair-$digest16\"; "
+        "candidate=\"$PWD/$candidate_name\"; branch=candidate; "
+        "receipt=\"$workspace/repair-$digest16.receipt\"; "
+        "cg() { git -C \"$candidate\" \"$@\"; }; "
+        "test -d \"$product\" -a ! -L \"$product\"; "
+        "test -d \"$workspace/candidates\" -a ! -L \"$workspace\" "
+        "-a ! -L \"$workspace/candidates\"; "
         "test \"$(git -C \"$product\" rev-parse HEAD)\" = \"$full_base\"; "
         "test -z \"$(git -C \"$product\" status --porcelain=v1)\"; "
-        "test \"$(realpath -m -- \"$candidate\")\" = \"$expected\"; "
-        "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
-        "path_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :); "
-        "branch_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :); ")
+        "worktrees=$(git -C \"$product\" worktree list --porcelain); "
+        "! printf '%s\\n' \"$worktrees\" | "
+        "grep -Fqx \"branch refs/heads/dsh/repair-$digest16\"; "
+        "test ! -e \"$PWD/$(basename \"$product\")-repair-$digest16\" "
+        "-a ! -L \"$PWD/$(basename \"$product\")-repair-$digest16\"; "
+        "test -d \"$candidate/.git\" -a ! -L \"$candidate\" -a ! -L \"$candidate/.git\"; "
+        "test \"$(realpath -- \"$candidate\")\" = \"$candidate\"; "
+        "test \"$(cg rev-parse --absolute-git-dir)\" = \"$candidate/.git\"; "
+        "test \"$(cg symbolic-ref --short HEAD)\" = candidate; "
+        "test ! -e \"$candidate/.gitmodules\" -a ! -L \"$candidate/.gitmodules\"; "
+        "test -f \"$receipt\" -a ! -L \"$receipt\"; "
+        "test \"$(wc -l < \"$receipt\")\" = 3; "
+        "{ IFS= read -r receipt_base; IFS= read -r receipt_digest; "
+        "IFS= read -r receipt_head; } < \"$receipt\"; "
+        "test \"$receipt_base\" = \"$full_base\"; "
+        "test \"${#receipt_digest}\" = 64; "
+        "test \"${receipt_digest#\"$digest16\"}\" != \"$receipt_digest\"; "
+        "test \"$(cg rev-parse --verify refs/tags/shadow-base)\" = \"$receipt_head\"; "
+        "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; ")
 
 
 def repair_provision_command(layout, kind="repair"):
-    _candidate_kind(kind)
-    """Return the exact target-scoped clean create/reuse command.
-
-    The command takes exactly three substitutions, `digest16`, `full_base` and
-    `declared_base`, each a quoted shell variable the mode substitutes from
-    validated values before running it. The third one is what makes the
-    re-anchor mechanical: a shell cannot be asked to believe a proof, so
-    `git merge-base --is-ancestor` runs here against the declared base of the
-    audit and fails the turn when the relation does not hold. Leaving it to
-    the persona is what produced a re-anchor that could claim a proof it never
-    ran.
-    """
+    """Read-only mode gate for a Host-provisioned shadow (never creates it)."""
     _candidate_kind(kind)
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
-        "declared_base='<declared-base>'; "
-        + _repair_target(layout, kind) +
-        "case \"$declared_base\" in "
-        "*[!0-9a-f]*|'') exit 1;; esac; "
+        "declared_base='<declared-base>'; " + _repair_target(layout, kind) +
+        "case $declared_base in ''|*[!0-9a-f]*) exit 1;; esac; "
+        "test ${#declared_base} = ${#full_base}; "
         "git -C \"$product\" merge-base --is-ancestor \"$declared_base\" \"$full_base\"; "
-        "if test ! -e \"$candidate\" -a ! -L \"$candidate\" && "
-        "! git -C \"$product\" show-ref --verify --quiet \"refs/heads/$branch\"; then "
-        "test \"$path_count\" = 0 -a \"$branch_count\" = 0; "
-        "git -C \"$product\" worktree add -b \"$branch\" \"$candidate\" \"$full_base\"; "
-        "else test -d \"$candidate\" -a ! -L \"$candidate\"; "
-        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
-        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
-        "test -z \"$(git -C \"$candidate\" status --porcelain=v1)\"; fi; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
-        "worktrees=\"$(git -C \"$product\" worktree list --porcelain)\"; "
-        "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"worktree $expected\" || :)\" = 1; "
-        "test \"$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :)\" = 1")
+        "test -z \"$(git -C \"$candidate\" status --porcelain=v1)\"; "
+        "printf '__IMPROVEMENT_SHADOW_PROVISIONED__ %s\\n' \"$candidate\"")
 
 
 _CANDIDATE_DIFF_SCRIPT = r'''import hashlib,json,os,stat,subprocess,sys
@@ -293,9 +374,9 @@ print("__IMPROVEMENT_CANDIDATE_DIFF__ "+actual+" "+json.dumps([os.fsdecode(p) fo
 
 
 def _candidate_diff_invocation(expected):
-    encoded = base64.b64encode(_CANDIDATE_DIFF_SCRIPT.encode()).decode()
-    return ("python3 -c 'import base64;exec(base64.b64decode(\"" + encoded +
-            "\"))' \"$candidate\" " + expected)
+    encoded = base64.b85encode(zlib.compress(_CANDIDATE_DIFF_SCRIPT.encode(), 9)).decode()
+    return ("python3 -c 'import base64,zlib;exec(zlib.decompress(base64.b85decode(\"" +
+            encoded + "\")))' \"$candidate\" " + expected)
 
 
 def repair_candidate_diff_command(layout, kind="repair"):
@@ -303,9 +384,7 @@ def repair_candidate_diff_command(layout, kind="repair"):
     _candidate_kind(kind)
     return ("set -eu; digest16='<digest16>'; full_base='<full-base>'; " +
             _repair_target(layout, kind) +
-            "test -d \"$candidate\" -a ! -L \"$candidate\"; "
-            "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
-            "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; " +
+        "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; " +
             _candidate_diff_invocation("-"))
 
 
@@ -321,18 +400,40 @@ def _candidate_diff_capture_shell():
         "case \"$diff_paths\" in \\[*\\]) ;; *) exit 1;; esac; ")
 
 
+_RESUME_RECORD_SCRIPT = r'''import json,os,re,sys
+p,base,digest,name,head,mode,expected,paths=sys.argv[1:]
+if os.path.islink(p) or not os.path.isfile(p) or os.stat(p).st_size>262144: raise SystemExit(1)
+try: r=json.load(open(p,encoding="utf-8"))["candidate"]
+except (OSError,ValueError,KeyError,TypeError): raise SystemExit(1)
+if not isinstance(r,dict) or any(r.get(k)!=v for k,v in {"base_revision":base,"finding_ids_digest":digest,"path":name,"branch":"candidate","head":head}.items()): raise SystemExit(1)
+if r.get("status") not in ("DIRTY","RETAINED") or set(r)!={"base_revision","finding_ids_digest","path","branch","head","status","candidate_diff_digest","changed_paths"}: raise SystemExit(1)
+if not isinstance(r["candidate_diff_digest"],str) or not re.fullmatch("[0-9a-f]{64}",r["candidate_diff_digest"]): raise SystemExit(1)
+if not isinstance(r["changed_paths"],list) or not r["changed_paths"] or not all(isinstance(x,str) and x for x in r["changed_paths"]): raise SystemExit(1)
+if mode=="resume" and (r["candidate_diff_digest"]!=expected or r["changed_paths"]!=json.loads(paths)): raise SystemExit(1)
+'''
+_RESUME_GUARD_PACKED = base64.b85encode(zlib.compress(_RESUME_RECORD_SCRIPT.encode(), 9)).decode()
+
+
+def _resume_record_guard(mode, expected="-", paths="'[]'"):
+    return ("python3 -c 'import base64,zlib;exec(zlib.decompress(base64.b85decode(\"" +
+            _RESUME_GUARD_PACKED + "\")))' \"$workspace/mode-state/work-items.json\" "
+            '"$full_base" "$receipt_digest" "$candidate_name" "$receipt_head" ' +
+            mode + " " + expected + " " + paths)
+
+
 def _candidate_record_json(marker, dirty):
     """printf of the exact candidate object the mode must persist verbatim.
 
     Field order matches the state schema required list; the path is the
-    relative candidate name (the schema forbids a leading slash) and head is
-    the base revision the candidate was provisioned at. DIRTY adds the diff
+    relative path below the workspace (the schema forbids a leading slash).
+    Head is the shadow-base revision bound to the canonical base by the Host
+    receipt, not the canonical revision itself. DIRTY adds the diff
     digest and the changed-path array captured by the guarded diff command.
     """
     fields = ('{"base_revision":"%s","finding_ids_digest":"%s","path":"%s",'
               '"branch":"%s","head":"%s","status":"%s"')
     args = ('"$full_base" "$finding_ids_digest" "$candidate_name" "$branch" '
-            '"$full_base"')
+            '"$receipt_head"')
     if dirty:
         return ("printf '" + marker + " " + fields +
                 ",\"candidate_diff_digest\":\"%s\",\"changed_paths\":%s}\\n' "
@@ -342,31 +443,21 @@ def _candidate_record_json(marker, dirty):
 
 
 def repair_recording_command(layout, kind="repair"):
-    _candidate_kind(kind)
     """Return the exact command that records candidate evidence into mode state.
 
-    The command prints the exact JSON object to persist verbatim as
-    work-items.json.candidate after the __IMPROVEMENT_CANDIDATE_RECORD__
-    marker. The single recorded transition is PROVISIONED (clean, no diff) ->
-    DIRTY (diff captured). A candidate is only ever touched by the mode after
-    its identity is already durably recorded, so an interrupted turn never
-    strands a dirty worktree that the strict resume path would refuse. The
-    object is schema-valid by construction (relative candidate path, head at
-    base), so persistence requires no hand-assembly: any field the mode adds,
-    removes, or rewrites is a deviation from the contract, not a fix.
+    Print the exact work-items.json.candidate object: PROVISIONED (clean) or
+    DIRTY (diff captured). The Host receipt binds the independent shadow HEAD
+    to the canonical base. An interrupted PROVISIONED turn can be re-recorded
+    as DIRTY, but an unrecorded dirty shadow must never be adopted.
     """
     _candidate_kind(kind)
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
         "finding_ids_digest='<finding-ids-digest>'; " + _repair_target(layout, kind) +
-        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
-        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
-        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
-        "if test -n \"$(git -C \"$candidate\" status --porcelain=v1)\"; then "
-        + _candidate_diff_capture_shell() + _candidate_record_json(
+        "test \"$finding_ids_digest\" = \"$receipt_digest\"; "
+        "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; "
+        "if test -n \"$(git -C \"$candidate\" status --porcelain=v1)\"; then " +
+        _candidate_diff_capture_shell() + _candidate_record_json(
             "__IMPROVEMENT_CANDIDATE_RECORD__", True) +
         "; else " + _candidate_record_json(
             "__IMPROVEMENT_CANDIDATE_RECORD__", False) + "; fi")
@@ -399,13 +490,9 @@ def repair_reconcile_command(layout, kind="repair"):
         encoded + "\"))' \"$full_base\" '<finding-ids-lf-separated>'); "
         "digest16=$(printf '%s' \"$finding_ids_digest\" | cut -c1-16); " +
         _repair_target(layout, kind) +
-        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
-        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
-        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; "
-        + _candidate_diff_capture_shell() +
+        "test \"$finding_ids_digest\" = \"$receipt_digest\"; "
+        "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; " +
+        _resume_record_guard("reconcile") + "; " + _candidate_diff_capture_shell() +
         _candidate_record_json("__IMPROVEMENT_CANDIDATE_RECONCILE__", True))
 
 
@@ -415,13 +502,11 @@ def repair_resume_command(layout, kind="repair"):
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
         "expected_diff_digest='<candidate-diff-digest>'; " + _repair_target(layout, kind) +
-        "test -d \"$candidate\" -a ! -L \"$candidate\"; "
-        "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
-        "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" rev-parse --show-toplevel)\" = \"$expected\"; "
-        "test \"$(git -C \"$candidate\" symbolic-ref --short HEAD)\" = \"$branch\"; "
-        "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; " +
-        _candidate_diff_invocation('"$expected_diff_digest"') + "; "
+        "test \"$receipt_digest\" = '<finding-ids-digest>'; "
+        "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; " +
+        _candidate_diff_capture_shell() +
+        _resume_record_guard("resume", '"$expected_diff_digest"', '"$diff_paths"') + "; "
+        "test \"$diff_digest\" = \"$expected_diff_digest\"; "
         "printf '__IMPROVEMENT_DIRTY_RESUME_OK__\\n'")
 
 
@@ -571,10 +656,10 @@ def persona_prefix(preset_id, role=None):
             "Verify the candidate with the product's own entrypoint listed in the capability "
             "plan (.dsh-managed/capability-plan.json, written by the Host at install): its test "
             "command and, when the plan lists one, its lint command, executed against the "
-            "candidate worktree. A verification record's command is always that entrypoint, and "
+            "candidate shadow repository. A verification record's command is always that entrypoint, and "
             "its candidate_diff_digest is the one recorded for the candidate in "
-            "work-items.json, copied verbatim: the candidate is not committed, so its HEAD still "
-            "equals its base and the diff digest is the only fingerprint of the tree the entrypoint "
+            "work-items.json, copied verbatim: the shadow is not committed by the mode; its HEAD "
+            "equals shadow-base (not the canonical base) and its diff digest fingerprints the tree the entrypoint "
             "actually ran against. A record naming a different digest is evidence about something "
             "else, and the preflight drops it with a receipt "
             "(verification-identity: candidate-diff-digest-must-match-work-items). A "
@@ -600,7 +685,11 @@ def persona_prefix(preset_id, role=None):
             "written): a finding counts as verified only when every entrypoint that could run "
             "said PASS, and two records that say PASS and FAIL about the same finding on the "
             "same tree are refused as a contradiction, not resolved in your favour. "
-            "The base recorded in findings, handoffs, and work items is audit provenance, not a lock. "
+            "The Host, outside the mode sandbox, runs provision_repair(product, workspace, "
+            "selected_finding_ids, declared_base=declared_base) before this turn. Its receipt records "
+            "the canonical full_base, finding digest and shadow HEAD. Without that receipt, RETAINED: "
+            "never clone, worktree-add, or initialize Git in bash. The base recorded in findings, "
+            "handoffs, and work items is audit provenance, not a lock. "
             "Before provisioning, if that declared base differs from the current canonical product "
             "HEAD, require the canonical product clean and pass the declared base as the "
             "`declared_base` placeholder: the provision command runs the ancestry proof itself "
@@ -616,7 +705,9 @@ def persona_prefix(preset_id, role=None):
             "centrally generated resume_command only when that record exactly matches target path, "
             "branch, base, finding digest, stored candidate_diff_digest, and status DIRTY or RETAINED; "
             "otherwise dirty target collision is RETAINED. Never adopt an unrecorded dirty worktree. "
-            "The resume command must prove registered identity, HEAD at base, canonical unchanged and "
+            "Legacy worktrees are not shadows: migration is fail-closed, never reinterpret a .git file "
+            "as a Host receipt. The resume command must prove Host receipt and private .git identity, "
+            "HEAD at shadow-base, canonical unchanged and "
             "clean, a nonempty byte-identical candidate diff, safe regular changed paths, and no "
             "submodule or symlink. "
             "Every candidate record is the exact JSON object the central commands print after their "
@@ -646,20 +737,14 @@ def persona_prefix(preset_id, role=None):
             "was interrupted: recover it with the recording command, never with a fresh create, and "
             "never by discarding its diff. If that first claim cannot be persisted, make no code "
             "change at all and report RETAINED. "
-            "Provision only from the unchanged session cwd: the provisioning bash call "
-            "MUST omit workdir (never use '.' as a code-changing workdir) and run the exact centrally "
-            "generated provision_command after substituting the three validated "
-            "placeholders and nothing else: digest16, full_base and declared_base "
-            "(the declared base of the selected findings, unchanged after a re-anchor). "
-            "candidate_root is <workspace>/candidates/repair-<digest16>, a shadow repo "
-            "with own .git, never sharing the product .git. "
-            "The command may inspect the full worktree list only to match that target path and target "
-            "branch. Never validate assumptions about, modify, delete, or let unrelated candidates "
-            "block provisioning; unrelated_candidates is ignore-preserve. After provisioning, verify "
-            "the target realpath and registered worktree path equal that exact sibling. Every later "
-            "code-changing bash call MUST use workdir exactly equal to the candidate_workdir relative "
-            "to session cwd, never '.'. Any target collision, mismatch, nested candidate, or other pwd "
-            "drift is RETAINED with no further action.")
+            "The provision_command is a read-only gate for the Host shadow, not a provisioning "
+            "operation. Its bash call MUST omit workdir and substitute only digest16, full_base and "
+            "declared_base (the selected findings' declared base). candidate_root is "
+            "<workspace>/candidates/repair-<digest16>, an own-.git shadow. Missing receipt, a "
+            "legacy sibling worktree, or any target collision means RETAINED, not fallback clone. "
+            "Unrelated candidates are ignored and preserved. Every later code-changing bash call "
+            "MUST use workdir exactly equal to the candidate_workdir relative to session cwd, never "
+            "'.'. Any target collision or pwd drift is RETAINED with no escalation.")
     raise ValueError(f"unsupported mode role: {role!r}")
 
 
@@ -803,11 +888,11 @@ def expected_lifecycle(role, layout):
             },
             "candidate_location": "shadow-repo-under-workspace",
             "identity": "sha256(full-base-lf-sorted-unique-finding-ids)",
-            "directory_template": f"{layout['product_root']}-repair-<digest16>",
-            "branch_template": "dsh/repair-<digest16>",
+            "directory_template": "repair-<digest16>",
+            "branch_template": "candidate",
             "candidate_root": "${session-cwd}/<workspace>/candidates/repair-<digest16>",
             "forbidden_candidate_location": "under-product-root-or-git",
-            "candidate_workdir": f"{layout['product_root']}-repair-<digest16>",
+            "candidate_workdir": f"{layout['workspace_root']}/candidates/repair-<digest16>",
             "provision_workdir": "omitted-session-cwd",
             "provision_command": repair_provision_command(layout),
             "recording_command": repair_recording_command(layout),
@@ -821,37 +906,25 @@ def expected_lifecycle(role, layout):
             "stale_record_policy": "reconcile-then-resume",
             "stale_base_policy": "re-anchor-when-declared-base-is-ancestor-of-clean-head",
             "stale_record_precondition": [
-                "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
-                "registered-worktree-exact-identity", "target-head-equals-full-base",
-                "canonical-head-and-clean-unchanged", "candidate-diff-nonempty",
-                "changed-paths-candidate-confined-regular-no-symlink", "no-submodules",
+                "exact-target-path-branch-base-finding-digest", "own-git-receipt",
+                "canonical-clean", "safe-nonempty-diff",
             ],
             "resume_required_checks": [
-                "strict-work-items-candidate", "exact-target-path-branch-base-finding-digest",
-                "stored-candidate-diff-digest", "registered-worktree-exact-identity",
-                "target-head-equals-full-base", "canonical-head-and-clean-unchanged",
-                "candidate-diff-nonempty-and-digest-matches", "changed-path-list-complete",
-                "changed-paths-candidate-confined-regular-no-symlink", "no-submodules",
+                "exact-recorded-identity-and-status", "own-git-receipt-shadow-head",
+                "canonical-clean", "safe-diff-digest-and-paths-match",
             ],
             "unrecorded_dirty_target": "RETAINED-never-adopted",
             "interrupted_turn_recovery": "recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command",
             "provision_checks": [
-                "canonical-real-directory-not-symlink", "canonical-git-clean",
-                "full-base-revision-matches",
-                "declared-base-is-ancestor-of-full-base",
-                "target-path-absent-or-real-directory-not-symlink",
-                "target-path-listed-worktree-if-present", "target-branch-absent-or-target-reuse",
-                "target-path-and-branch-identify-same-worktree-on-reuse",
-                "target-head-equals-full-base-on-clean-reuse", "target-clean-on-clean-reuse",
-                "dirty-reuse-exact-recorded-resume-command-only",
-                "no-target-path-branch-worktree-collision",
+                "canonical-clean-ancestor", "Host-receipt-base-digest-shadow-head",
+                "own-git-not-worktree", "clean-reuse-only",
+                "legacy-worktree-fail-closed",
             ],
             "unrelated_candidates": "ignore-preserve",
-            "worktree_list_scope": "target-path-and-target-branch-only",
-            "provision": "git-worktree-add-or-exact-safe-reuse",
+            "provision": "Host-provision_repair-shadow-only",
             "collision_policy": "retain-target-collision-no-improvisation",
             "patch_root": "candidate-only",
-            "candidate_diff_check": "git-diff-from-full-base-candidate-only",
+            "candidate_diff_check": "byte-digest-from-shadow-candidate-only",
             "commit": "forbidden-without-separate-explicit-user-prompt",
             "forbidden": ["canonical-product-write", "write-tool", "edit-tool", "merge", "push", "publish"],
             "writes": ["work-items.json", "verification-results.jsonl", "handoffs.jsonl"],
@@ -1032,8 +1105,8 @@ def state_schema():
                     {"work_item_id": text, "finding_id": text, "base_revision": revision, "status": {"enum": ["PENDING", "IN_PROGRESS", "VERIFIED", "RETAINED"]}},
                     {"work_item_id": "W-01", "finding_id": "A-01", "base_revision": "a" * 40, "status": "PENDING"}),
                 "candidate": {"type": ["object", "null"], "required": ["base_revision", "finding_ids_digest", "path", "branch", "head", "status"], "additionalProperties": False,
-                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^dsh/repair-[0-9a-f]{16}$"}, "head": revision, "status": {"enum": ["PROVISIONED", "DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
-                    "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-repair-bbbbbbbbbbbbbbbb", "branch": "dsh/repair-bbbbbbbbbbbbbbbb", "head": "a" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
+                    "properties": {"base_revision": revision, "finding_ids_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^[^/][^\\0]*$"}, "branch": {"type": "string", "pattern": "^candidate$"}, "head": revision, "status": {"enum": ["PROVISIONED", "DIRTY", "PATCH_READY", "RETAINED", "INTEGRATED"]}, "candidate_diff_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "changed_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}, "maxItems": 200}},
+                    "example": {"base_revision": "a" * 40, "finding_ids_digest": "b" * 64, "path": "Product-workspace/candidates/repair-bbbbbbbbbbbbbbbb", "branch": "candidate", "head": "d" * 40, "status": "DIRTY", "candidate_diff_digest": "c" * 64, "changed_paths": ["src/example.py"]}}},
             "verification-results.jsonl": {"format": "jsonl", "limit": LIMITS["verification-results.jsonl"],
                 "max_bytes": BYTE_LIMITS["verification-results.jsonl"], "dedupe_key": ["finding_id", "candidate_head", "command"],
                 "record": _record_schema(["finding_id", "candidate_head", "candidate_diff_digest", "result", "command"],
@@ -1265,9 +1338,9 @@ def _bind_verification_records(state, staged, preserve_expected):
     """Refuse a PASS that does not name the candidate actually verified.
 
     The contract forbids committing a candidate without a separate prompt, so
-    the tree a verification ran against is normally a DIRTY worktree whose HEAD
-    still equals its base: `candidate_head` alone cannot distinguish it from
-    the revision before the repair. The diff digest is the only fingerprint of
+    the tree a verification ran against is normally a DIRTY shadow whose HEAD
+    still equals its shadow-base: `candidate_head` alone cannot distinguish it
+    from the revision before the repair. The diff digest is the only fingerprint of
     the repaired tree, so a record that does not carry the one registered in
     `work-items.json` is evidence about something else and leaves the live state
     with a receipt naming it.

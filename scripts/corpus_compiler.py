@@ -2,12 +2,13 @@
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import acceptance_harness
 
 SCHEMA_VERSION = 1
-COMPILER_VERSION = "d11-corpus-1"
+COMPILER_VERSION = "d11-corpus-2"
 MAX_CASES = 256
 SUPPORTED_TYPES = frozenset({
     "positive", "negative", "boundary", "capability-denial",
@@ -16,6 +17,15 @@ SUPPORTED_TYPES = frozenset({
 VERDICTS = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_COVERED"})
 ACTIONS = frozenset({"accept", "reject", "abstain"})
 _HEX = frozenset("0123456789abcdef")
+# A case_id becomes a directory name in the run workspace, so the grammar is
+# the security boundary, not a style preference. Only the library's own
+# ``SC-<digits>`` form is allowed: no separators, no dots, no unicode tricks.
+# That removes ``..``, absolute paths and drive-style prefixes by construction
+# rather than by a blacklist that the next input invents a way around.
+CASE_ID_RE = re.compile(r"SC-[0-9]{1,32}")
+CASE_ID_MAX_LEN = 64
+ORACLE_FIELDS = frozenset({"expected", "verdict", "oracle", "evidence_type",
+                           "type"})
 
 
 class CorpusError(ValueError):
@@ -38,6 +48,29 @@ def _digest(value):
 
 def _is_digest(value):
     return isinstance(value, str) and len(value) == 64 and set(value) <= _HEX
+
+
+def _is_case_id(value):
+    """The directory names a case may become.
+
+    ``SC-101`` is the whole of it. The grammar is what keeps ``..``,
+    an absolute path or a drive prefix out of the workspace path
+    ``run_corpus`` builds, so it is checked on the way in at the source too:
+    a corpus that only validates after compilation would have already
+    materialised the escaping id as a case name.
+    """
+    return (isinstance(value, str) and len(value) <= CASE_ID_MAX_LEN
+            and CASE_ID_RE.fullmatch(value) is not None)
+
+
+def _contains_oracle(value):
+    if isinstance(value, dict):
+        return (any(isinstance(key, str) and key.casefold() in ORACLE_FIELDS
+                    for key in value)
+                or any(_contains_oracle(item) for item in value.values()))
+    if isinstance(value, list):
+        return any(_contains_oracle(item) for item in value)
+    return False
 
 
 def _strict_object(value, required, allowed, label):
@@ -79,11 +112,18 @@ def _source_records(library):
         _require(value["schema_version"] == 1, f"unsupported scenario schema: {path}")
         _require(isinstance(scenario_id, str) and scenario_id,
                  f"invalid scenario_id: {path}")
+        _require(_is_case_id(scenario_id),
+                 f"scenario_id {scenario_id!r} does not satisfy the "
+                 f"directory-safe grammar: {path}")
         _require(scenario_id not in ids, f"duplicate scenario_id: {scenario_id}")
         ids.add(scenario_id)
         _require(scenario_type in SUPPORTED_TYPES,
                  f"unknown scenario type {scenario_type!r}: {path}")
         _require(isinstance(target, str) and target, f"invalid target_skill: {path}")
+        _require(isinstance(value["input"], dict) and value["input"],
+                 f"invalid scenario input: {path}")
+        _require(not _contains_oracle(value["input"]),
+                 f"scenario input exposes an oracle: {path}")
         resolved = skills.get(target, [])
         _require(len(resolved) == 1,
                  f"target_skill {target!r} resolves {len(resolved)} times")
@@ -110,7 +150,7 @@ def validate_corpus(corpus):
         fields = {"schema_version", "case_id", "type", "target_skill", "input"}
         _strict_object(case, fields, fields, f"cases[{index}]")
         _require(case["schema_version"] == SCHEMA_VERSION, "wrong case schema_version")
-        _require(isinstance(case["case_id"], str) and case["case_id"], "invalid case_id")
+        _require(_is_case_id(case["case_id"]), "invalid case_id")
         _require(case["case_id"] not in ids, f"duplicate case_id: {case['case_id']}")
         ids.add(case["case_id"])
         _require(case["type"] in SUPPORTED_TYPES, "unknown case type")
@@ -121,8 +161,14 @@ def validate_corpus(corpus):
         _require(isinstance(public.get("task"), str) and public["task"],
                  "case input needs task")
         _require(public.get("target") == case["target_skill"], "case target mismatch")
-        _require(not ({"expected", "verdict", "oracle"} & set(public)),
+        _require(not _contains_oracle(public),
                  "public case input exposes an oracle")
+        fixture = public.get("scenario_fixture")
+        _require(isinstance(fixture, dict) and fixture,
+                 "public case needs its scenario_fixture")
+        _require(isinstance(public.get("scenario_description"), str)
+                 and public["scenario_description"].strip(),
+                 "public case needs its scenario_description")
     identity = {key: corpus[key] for key in
                 ("schema_version", "compiler_version", "source_digest", "cases")}
     _require(_digest(identity) == corpus["corpus_digest"], "corpus_digest mismatch")
@@ -135,13 +181,20 @@ def compile_corpus(library):
     cases = []
     for _, scenario in records:
         token = hashlib.sha256(_canonical(scenario)).hexdigest()[:16]
+        public = acceptance_harness._public_input(
+            scenario["type"], scenario["target_skill"], token)
+        # The generic task template alone throws away the scenario's actual
+        # conditions. Keep every source fact and its description in the public
+        # fixture; expected/verdict/evidence_type remain Host-only. The runner
+        # sends this whole input, never the type label or the oracle.
+        public["scenario_description"] = scenario["description"]
+        public["scenario_fixture"] = scenario["input"]
         cases.append({
             "schema_version": SCHEMA_VERSION,
             "case_id": scenario["scenario_id"],
             "type": scenario["type"],
             "target_skill": scenario["target_skill"],
-            "input": acceptance_harness._public_input(
-                scenario["type"], scenario["target_skill"], token),
+            "input": public,
         })
     identity = {"schema_version": SCHEMA_VERSION,
                 "compiler_version": COMPILER_VERSION,

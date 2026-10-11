@@ -138,6 +138,26 @@ class ShadowCandidateTest(unittest.TestCase):
         self.assertIn("trabajo en curso",
                       (candidate / "a.txt").read_text(encoding="utf-8"))
 
+    def test_existing_shadow_symlink_or_gitfile_is_never_adopted(self):
+        target = shadow_candidate.candidate_root(self.workspace, "0123456789abcdef")
+        target.parent.mkdir()
+        target.symlink_to(self.product, target_is_directory=True)
+        with self.assertRaises(shadow_candidate.ShadowError):
+            shadow_candidate.provision(self.product, self.workspace, "0123456789abcdef")
+        target.unlink()
+        target.mkdir()
+        (target / ".git").write_text("gitdir: " + str(self.product / ".git") + "\n")
+        with self.assertRaises(shadow_candidate.ShadowError):
+            shadow_candidate.provision(self.product, self.workspace, "0123456789abcdef")
+
+    def test_candidate_container_symlink_is_refused_without_external_write(self):
+        destination = self.tmp / "destination"
+        destination.mkdir()
+        (self.workspace / "candidates").symlink_to(destination, target_is_directory=True)
+        with self.assertRaises(shadow_candidate.ShadowError):
+            shadow_candidate.provision(self.product, self.workspace, "0123456789abcdef")
+        self.assertEqual(list(destination.iterdir()), [])
+
     def test_a_candidate_directory_that_is_not_a_repository_is_refused(self):
         root = shadow_candidate.candidate_root(self.workspace, "0123456789abcdef")
         root.mkdir(parents=True)
@@ -219,12 +239,15 @@ class ShadowCandidateTest(unittest.TestCase):
             shadow_candidate.retire(candidate)
         self.assertTrue(candidate.is_dir())
 
-    def test_retiring_a_clean_shadow_removes_it(self):
+    def test_retiring_a_clean_shadow_abstains_to_preserve_private_content(self):
         candidate, _ = shadow_candidate.provision(
             self.product, self.workspace, "0123456789abcdef")
-        self.assertTrue(shadow_candidate.retire(candidate))
-        self.assertFalse(candidate.exists())
-        self.assertFalse(shadow_candidate.retire(candidate))
+        private = candidate / ".git" / "operator-notes"
+        private.write_text("solo la operadora decide si se borra\n", encoding="utf-8")
+        with self.assertRaisesRegex(shadow_candidate.ShadowError, "ABSTAINED"):
+            shadow_candidate.retire(candidate)
+        self.assertTrue(candidate.exists())
+        self.assertTrue(private.exists())
 
     def test_a_base_that_is_not_an_ancestor_is_refused(self):
         # A ref that merely lags the product is still an ancestor; the case

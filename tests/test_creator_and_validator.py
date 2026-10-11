@@ -783,6 +783,291 @@ class CreatorTests(Base):
         run = json.loads((self.run_dir / "run.json").read_text())
         self.assertEqual(run["status"], "RECOVERY_REQUIRED")
 
+    # -- Real token accounting (DSH X1: token_count was never incremented) --
+
+    @staticmethod
+    def _usage_event(seq, *, turn=1, inp=100, out=50, cache=0, total=None):
+        """One real DSH record that carries usage, shaped like the live feed.
+
+        Usage rides on ``assistant/message`` only: ``step/start`` and
+        ``step/end`` never carry it, so a fold that looked for it there would
+        measure nothing. Real DSH also bills cache reads inside
+        ``totalTokens``, so ``total`` can exceed ``inp + out``.
+        """
+        return {"seq": seq, "type": "assistant/message",
+                "data": {"turn": turn, "step": seq,
+                         "usage": {"inputTokens": inp, "outputTokens": out,
+                                   "totalTokens": (
+                                       inp + out + cache
+                                       if total is None else total),
+                                   "cacheReadTokens": cache}}}
+
+    def test_token_budget_was_never_enforced_before(self):
+        """Regression witness: the counter existed but was never incremented."""
+        session = cc.CreatorSession(self.run_dir, max_tokens=10)
+        self.assertEqual(session.token_count, 0)
+        self.assertIsInstance(session.max_tokens, int)
+        # A session that has consumed nothing still has a budget object: the
+        # bug was that nothing ever fed it, not that the check was missing.
+        self.assertTrue(session.check_budget(now=0.0))
+        session.token_count = 11
+        with self.assertRaises(ValueError) as ctx:
+            session.check_budget(now=0.0)
+        self.assertIn("tokens", str(ctx.exception))
+
+    def test_token_limit_is_inclusive_not_exclusive(self):
+        session = cc.CreatorSession(self.run_dir, max_tokens=250)
+        session.token_count = 250
+        with self.assertRaises(ValueError):
+            session.check_budget(now=0.0)
+        session.token_count = 249
+        self.assertTrue(session.check_budget(now=0.0))
+
+    def test_fold_counts_real_usage_once_per_record(self):
+        state = {"request_id": "req", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 2,
+            "events": [self._usage_event(1), self._usage_event(2)],
+            "running": True, "descendants": [], "jobs": []})
+        self.assertEqual(state["usage_tokens"], 300)
+        self.assertEqual(state["usage_steps"], 2)
+        self.assertEqual(state["usage_input_tokens"], 200)
+        self.assertEqual(state["usage_output_tokens"], 100)
+
+    def test_fold_ignores_step_events_that_carry_no_usage(self):
+        """DSH puts usage on assistant/message, never on step/start|end."""
+        state = {"request_id": "req", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 4,
+            "events": [
+                {"seq": 1, "type": "step/start", "data": {"turn": 1, "step": 1}},
+                self._usage_event(2),
+                {"seq": 3, "type": "step/end", "data": {"turn": 1, "step": 2}},
+                {"seq": 4, "type": "turn/end", "data": {"turn": 1}},
+            ],
+            "running": False, "descendants": [], "jobs": []})
+        self.assertEqual(state["usage_tokens"], 150)
+
+    def test_fold_counts_replayed_and_repeated_pages_once(self):
+        """A resumed run re-reads pages it already folded: no double count."""
+        state = {"request_id": "req", "cursor": -1}
+        first = [self._usage_event(i) for i in (1, 2, 3)]
+        cc._fold_observation(state, {
+            "cursor": 3, "events": list(first), "running": True,
+            "descendants": [], "jobs": []})
+        self.assertEqual(state["usage_tokens"], 450)
+        # The same three records, plus a new one, arrive again (page replay).
+        cc._fold_observation(state, {
+            "cursor": 4, "events": [*first, self._usage_event(4)],
+            "running": True, "descendants": [], "jobs": []})
+        self.assertEqual(state["usage_tokens"], 600)
+        self.assertEqual(state["usage_steps"], 4)
+
+    def test_fold_survives_json_round_trip_of_the_same_state(self):
+        """creator-session.json is reloaded and re-folded on resume."""
+        state = {"request_id": "req", "cursor": -1}
+        cc._fold_observation(state, {
+            "cursor": 2, "events": [self._usage_event(1), self._usage_event(2)],
+            "running": True, "descendants": [], "jobs": []})
+        # JSON turns dict keys into strings; reloading must not reset spend.
+        state = json.loads(json.dumps(state))
+        cc._fold_observation(state, {
+            "cursor": 3, "events": [self._usage_event(1), self._usage_event(3)],
+            "running": True, "descendants": [], "jobs": []})
+        self.assertEqual(state["usage_tokens"], 450)
+        self.assertEqual(state["usage_steps"], 3)
+
+    def test_fold_fails_closed_on_ambiguous_usage(self):
+        state = {"request_id": "req", "cursor": -1}
+        for bad in ({"inputTokens": 10},
+                    {"inputTokens": "10", "outputTokens": 2},
+                    {"inputTokens": True, "outputTokens": 2},
+                    {"inputTokens": -5, "outputTokens": 2}):
+            event = {"seq": 9, "type": "assistant/message",
+                     "data": {"turn": 1, "usage": bad}}
+            with self.assertRaises(cc.CreatorUsageAmbiguous):
+                cc._fold_observation(dict(state), {
+                    "cursor": 9, "events": [event], "running": True,
+                    "descendants": [], "jobs": []})
+
+    def test_fold_rejects_undeduplicatable_usage(self):
+        """Without a durable seq the same step could be counted twice."""
+        state = {"request_id": "req", "cursor": -1}
+        with self.assertRaises(cc.CreatorUsageAmbiguous):
+            cc._fold_observation(state, {
+                "cursor": 0,
+                "events": [{"type": "assistant/message",
+                            "data": {"usage": {"inputTokens": 1,
+                                               "outputTokens": 1}}}],
+                "running": True, "descendants": [], "jobs": []})
+
+    def _token_client(self, usage_events, *, running=True, cancelled=None):
+        class Client:
+            authenticated = True
+            observations = list(usage_events)
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                events = inner.observations.pop(0) if inner.observations else []
+                return {"cursor": cursor + 1 + len(events), "events": events,
+                        "running": (running and not
+                                    (cancelled and cancelled[0])),
+                        "children": [], "jobs": []}
+            def cancel_session(inner, session_id):
+                if cancelled is not None:
+                    cancelled[0] = True
+                return {"accepted": True}
+        return Client()
+
+    def test_running_session_exceeding_token_budget_is_cancelled(self):
+        """The gate stops before another turn: excess spend is cancelled."""
+        cancelled = [False]
+        events = [
+            [self._usage_event(1, inp=400, out=50),
+             self._usage_event(2, inp=400, out=50),
+             self._usage_event(3, inp=400, out=50)],
+        ]
+        client = self._token_client(events, cancelled=cancelled)
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_tokens"] = 500
+        cc._update_json(self.run_dir / "run.json", run)
+        result = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            cancel_grace_seconds=5, now_fn=lambda: 1000.0,
+            sleep_fn=lambda _seconds: None)
+        self.assertTrue(cancelled[0], "el presupuesto debe cancelar la sesión")
+        self.assertEqual(result["result"], "RETAINED")
+        self.assertIn("tokens", result["reason"])
+        state = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertEqual(state["usage_tokens"], 1350)
+
+    def test_token_cancel_without_quiescence_marks_recovery_required(self):
+        class Client:
+            authenticated = True
+            def create_creator_session(inner, *, workspace_path,
+                                       agent_preset=None, session_id=None):
+                return session_id
+            def send_prompt(inner, session_id, prompt, request_id=None):
+                inner.request_id = request_id
+                return {"accepted": True}
+            def creator_observation(inner, session_id, cursor=-1):
+                # The turn is over but a live child keeps the whole session
+                # unquiescent: cancelling alone must not be treated as done.
+                return {"cursor": cursor + 1,
+                        "events": [self._usage_event(1, inp=900, out=900)],
+                        "running": True,
+                        "children": [{"sessionId": "child",
+                                      "running": True}],
+                        "jobs": []}
+            def cancel_session(inner, session_id):
+                return {"accepted": True}
+
+        client = Client()
+        clock = iter([1000.0, 1000.0, 1001.0, 1002.0, 1003.0, 1004.0])
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_tokens"] = 100
+        cc._update_json(self.run_dir / "run.json", run)
+        result = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            cancel_grace_seconds=1, now_fn=lambda: next(clock),
+            sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "RECOVERY_REQUIRED")
+        run = json.loads((self.run_dir / "run.json").read_text())
+        self.assertEqual(run["status"], "RECOVERY_REQUIRED")
+
+    def test_resume_keeps_accumulated_usage_and_stops_on_excess(self):
+        """A persisted first poll survives JSON reload before the next poll."""
+        cancelled = [False]
+        client = self._token_client(
+            [[self._usage_event(1, inp=300, out=100),
+              self._usage_event(2, inp=200, out=100)]], cancelled=cancelled)
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_tokens"] = 500
+        cc._update_json(self.run_dir / "run.json", run)
+        prep = cc.CreatorSession(self.run_dir).prepare()
+        state, _ = cc._load_or_create_session_state(
+            self.run_dir, prep, run, now_fn=lambda: 1000.0)
+        cc._fold_observation(state, {
+            "cursor": 1, "events": [self._usage_event(1, inp=300, out=100)],
+            "running": True, "children": [], "jobs": []})
+        cc._save_session_state(self.run_dir, state, reason="OBSERVING")
+        self.assertEqual(state["usage_tokens"], 400)
+        # Replay of seq 1 plus seq 2 crosses the same frozen budget.
+        second = cc.run_creator(
+            self.run_dir, client=client, poll_seconds=0,
+            cancel_grace_seconds=5, now_fn=lambda: 1000.0,
+            sleep_fn=lambda _seconds: None)
+        self.assertEqual(second["result"], "RETAINED")
+        self.assertTrue(cancelled[0])
+        state = json.loads((self.run_dir / "creator-session.json").read_text())
+        self.assertEqual(state["usage_tokens"], 700)
+        self.assertEqual(state["usage_steps"], 2)
+
+    def test_resumed_state_with_tampered_usage_fails_closed(self):
+        """A hand-edited state cannot hide spend that already happened."""
+        prep = cc.CreatorSession(self.run_dir).prepare()
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        state, created = cc._load_or_create_session_state(
+            self.run_dir, prep, run_doc, now_fn=lambda: 100.0)
+        self.assertTrue(created)
+        # The persisted segments are authoritative; the folded totals are
+        # recomputed from them, so editing the totals hides nothing.
+        state["usage_by_seq"] = {"1": {"inputTokens": 10, "outputTokens": 5,
+                                       "cacheReadTokens": 0,
+                                       "totalTokens": 15}}
+        state["usage_tokens"] = 0  # deliberately wrong
+        cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, state)
+        resumed = cc._reconcile_resumed_usage(state)
+        self.assertEqual(resumed["usage_tokens"], 15)
+        # A segment that contradicts itself, or an alias of the same step,
+        # cannot be reconciled at all and refuses the run.
+        for bad in ({"1": {"inputTokens": 10, "outputTokens": 5,
+                           "totalTokens": 3}},
+                    {"01": {"inputTokens": 1, "outputTokens": 1,
+                            "totalTokens": 2},
+                     "1": {"inputTokens": 2, "outputTokens": 2,
+                           "totalTokens": 4}}):
+            with self.assertRaises(cc.CreatorUsageAmbiguous):
+                cc._reconcile_resumed_usage({**state, "usage_by_seq": bad})
+
+    def test_resumed_state_reconciles_usage_from_segments(self):
+        prep = cc.CreatorSession(self.run_dir).prepare()
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        state, _ = cc._load_or_create_session_state(
+            self.run_dir, prep, run_doc, now_fn=lambda: 100.0)
+        state["usage_by_seq"] = {"7": {"inputTokens": 11, "outputTokens": 4}}
+        cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, state)
+        state = cc._reconcile_resumed_usage(state)
+        self.assertEqual(state["usage_tokens"], 15)
+        self.assertEqual(state["usage_input_tokens"], 11)
+        self.assertEqual(state["usage_output_tokens"], 4)
+
+    def test_new_session_state_freezes_both_limits(self):
+        prep = cc.CreatorSession(self.run_dir).prepare()
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        run_doc["budget"] = {"max_tokens": 1234, "max_seconds": 20}
+        cc._update_json(self.run_dir / "run.json", run_doc)
+        state = cc._new_session_state(self.run_dir, prep, run_doc,
+                                      now_fn=lambda: 50.0)
+        self.assertEqual(state["max_tokens"], 1234)
+        self.assertEqual(state["deadline"], 70.0)
+        self.assertEqual(state["usage_tokens"], 0)
+
+    def test_session_state_persists_no_prompt_or_secret(self):
+        events = [[{"seq": 1, "type": "user/message",
+                    "data": {"turn": 1, "source": {"rpcId": "req"},
+                             "message": {"text": "super-secret-turn-text"}}}]]
+        client = self._token_client(events)
+        cc.run_creator(self.run_dir, client=client, wait=False,
+                        now_fn=lambda: 100.0)
+        text = (self.run_dir / cc.CREATOR_SESSION_FILE).read_text()
+        self.assertNotIn("super-secret-turn-text", text)
+        self.assertIn("usage_by_seq", text)
+
     def test_session_create_binds_workspace_not_bare_cwd(self):
         """session/create takes a workspaceId, never a bare cwd (M-pilot:
         cwd-only sessions stay ungrouped and confine workspace-write to the
@@ -948,7 +1233,9 @@ class CreatorTests(Base):
         self.assertIn("prohibido validar supuestos\nsobre candidatas ajenas", prompt)
         self.assertIn("<workspace>/candidates/repair-<digest16>", prompt)
         self.assertIn("omitted-session-cwd", prompt)
-        self.assertIn("Provisiona desde el cwd de sesión con `workdir` omitido", prompt)
+        self.assertIn("puerta de solo lectura sobre la sombra que el\nHost ya provisionó", prompt)
+        self.assertIn(
+            "Verifica desde el cwd de sesión con `workdir` omitido", prompt)
         self.assertIn("repositorio sombra con su propio `.git`", prompt)
         self.assertIn("índice y HEAD en el `.git/worktrees/` del producto", prompt)
         self.assertIn("prohibido crear o aceptar una candidata bajo\n`./project/...`", prompt)
@@ -957,6 +1244,17 @@ class CreatorTests(Base):
         self.assertIn("candidate_commit", prompt)
         self.assertIn("scripts/host_validator.py", prompt)
         self.assertIn("Antes de emitir `status: GENERATED`", prompt)
+        # A plain ': ' in a description is discarded by DSH's YAML parser, so
+        # the regulated prompt must name the quoting rather than say "valid
+        # YAML" and leave the scalar shape to the Creator's guess. The rule
+        # lives in the shared "Salida obligatoria" section, so it also reaches
+        # regeneration and skill_lifecycle prompts.
+        self.assertIn("siempre con comillas\ndobles", prompt)
+        self.assertIn('`name: "<name>"`', prompt)
+        self.assertIn('`description: "<texto>"`', prompt)
+        self.assertIn("Está prohibido usar valor\nplano sin comillas", prompt)
+        self.assertIn("Nested mappings are not allowed\nin compact mappings", prompt)
+        self.assertIn("esto aplica también a regeneración y skill_lifecycle", prompt)
 
     def test_prompt_embeds_materialized_library(self):
         """The versioned prompt lists the real base skills and catalog gates."""
@@ -982,6 +1280,25 @@ class CreatorTests(Base):
             )
             self.assertIn(ptype, prompt)
             self.assertIn("Invariantes", prompt)
+
+    def test_frontmatter_quoting_rule_reaches_every_prompt_type(self):
+        """A regeneration that only touches a skill must not lose the rule.
+
+        Every one of the five prompt types can emit a SKILL.md, so the quoting
+        requirement is stated in the shared "Salida obligatoria" section rather
+        than only in the onboarding objective.
+        """
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        proj_manifest = {"base_revision": "rev-test"}
+        idx = {"entries": []}
+        for ptype in cc.PROMPT_TYPES:
+            prompt = cc.build_creator_prompt(
+                self.run_dir, run_doc, proj_manifest, idx,
+                prompt_type=ptype,
+                context={"reason": "test retention", "skill_name": "test-skill"},
+            )
+            self.assertIn('`description: "<texto>"`', prompt, ptype)
+            self.assertIn("Nested mappings are not allowed", prompt, ptype)
 
 
 def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
@@ -2112,7 +2429,8 @@ class ValidatorTests(Base):
         contract = mode["mode_lifecycle"]["repair_candidate"]
         self.assertEqual(contract["forbidden"], [
             "canonical-product-write", "write-tool", "edit-tool", "merge", "push", "publish"])
-        self.assertEqual(contract["provision"], "git-worktree-add-or-exact-safe-reuse")
+        self.assertEqual(contract["provision"],
+                         "Host-provision_repair-shadow-only")
         self.assertEqual(contract["candidate_location"],
                          "shadow-repo-under-workspace")
         self.assertEqual(contract["candidate_root"],
@@ -2120,13 +2438,16 @@ class ValidatorTests(Base):
         self.assertEqual(contract["forbidden_candidate_location"],
                          "under-product-root-or-git")
         self.assertEqual(contract["candidate_workdir"],
-                         "project-repair-<digest16>")
+                         "workspace/candidates/repair-<digest16>")
         self.assertEqual(contract["provision_workdir"], "omitted-session-cwd")
-        self.assertIn('candidate="$expected"', contract["provision_command"])
-        self.assertIn('git -C "$product" worktree add', contract["provision_command"])
-        self.assertEqual(contract["unrelated_candidates"], "ignore-preserve")
-        self.assertEqual(contract["worktree_list_scope"],
-                         "target-path-and-target-branch-only")
+        # The mode never provisions: the command is a read-only gate over the
+        # shadow the Host already created, and it must not create a worktree
+        # (the product is read-only, so `worktree add` would fail there).
+        self.assertNotIn("worktree add", contract["provision_command"])
+        self.assertNotIn('candidate="$expected"', contract["provision_command"])
+        self.assertIn("test -d \"$candidate/.git\"", contract["provision_command"])
+        self.assertIn("__IMPROVEMENT_SHADOW_PROVISIONED__",
+                      contract["provision_command"])
         self.assertEqual(contract["collision_policy"],
                          "retain-target-collision-no-improvisation")
         self.assertEqual(contract["resume_policy"], "exact-recorded-only")
@@ -2142,12 +2463,46 @@ class ValidatorTests(Base):
         self.assertIn("candidate_diff_command", contract)
         self.assertIn("resume_command", contract)
         self.assertIn("recording_command", contract)
-        self.assertIn("strict-work-items-candidate",
+        self.assertIn("exact-recorded-identity-and-status",
                       contract["resume_required_checks"])
         self.assertEqual(contract["commit"],
                          "forbidden-without-separate-explicit-user-prompt")
         self.assertTrue(contract["candidate_commit_nullable"])
-        self.assertIn("full-base-revision-matches", contract["provision_checks"])
+        self.assertEqual(contract["provision_checks"], [
+            "canonical-clean-ancestor", "Host-receipt-base-digest-shadow-head",
+            "own-git-not-worktree", "clean-reuse-only", "legacy-worktree-fail-closed",
+        ])
+        self.assertIn("stale_record_policy", contract)
+        self.assertEqual(contract["stale_record_policy"], "reconcile-then-resume")
+
+    def test_bash_provisioned_candidate_lifecycle_is_retained(self):
+        """The mode must never provision: the old bash worktree contract fails.
+
+        Evidence, not preference: a package whose repair `mode_lifecycle` still
+        declares `git-worktree-add-or-exact-safe-reuse` with a `provision_command`
+        that runs `git worktree add` is exactly what the session of 2026-10-10
+        could not execute (`Read-only file system` +
+        `[sandbox: file access denied under workspace-write mode]`), because a
+        worktree keeps its index and HEAD in the *product's* `.git`. The Host
+        provisions a shadow with its own `.git`, and any other contract is
+        rejected rather than run.
+        """
+        generated, manifest = self.make_package()
+        mode_path = generated / "modes/project-continuous-repair/mode.json"
+        mode = json.loads(mode_path.read_text())
+        contract = mode["mode_lifecycle"]["repair_candidate"]
+        contract["provision"] = "git-worktree-add-or-exact-safe-reuse"
+        contract["provision_command"] += '; git -C "$product" worktree add -b dsh/x "$candidate"'
+        mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+        for artifact in manifest["artifacts"]:
+            if artifact["path"] == "modes/project-continuous-repair/mode.json":
+                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("role contract", " ".join(
+            report.layers["contracts"]["details"]))
 
     def test_wrong_role_lifecycle_is_retained(self):
         generated, manifest = self.make_package()
@@ -2180,6 +2535,30 @@ class ValidatorTests(Base):
         self.assertIn("exact preset bootstrap contract", " ".join(
             report.layers["contracts"]["details"]))
 
+    def test_repair_persona_that_hands_provisioning_to_the_mode_is_retained(self):
+        """A persona telling the mode to provision the candidate in bash fails.
+
+        The 2026-10-10 session measured why: under `workspace-write` the product's
+        `.git` is read-only, so `git worktree add` (or a `git clone` from bash)
+        either fails with `Read-only file system` or concedes the mode the write the
+        contract forbids. The Host provisions the shadow; the mode may only run the
+        read-only gate, so a persona that reassigns that work is rejected by the
+        validator instead of being trusted.
+        """
+        generated, _ = self.make_package()
+        composition = generated / "modes/project-continuous-repair/agent.cordis.yml"
+        text = composition.read_text()
+        old = "The provision_command is a read-only gate for the Host shadow, " \
+              "not a provisioning operation."
+        self.assertIn(old, text)
+        composition.write_text(text.replace(
+            old,
+            "Provisiona la candidata en bash con git worktree add si no existe."))
+        report = hv.validate_package(generated, run_dir=self.run_dir)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("exact preset bootstrap contract", " ".join(
+            report.layers["contracts"]["details"]))
+
     def test_persona_without_session_cwd_startup_retained(self):
         generated, _ = self.make_package()
         composition = generated / "modes/project-auditor/agent.cordis.yml"
@@ -2198,7 +2577,9 @@ class ValidatorTests(Base):
         self.assertIn("including workspace-write or danger-full-access", prefix)
         self.assertIn("denial or schema error is RETAINED with no retry", prefix)
         repair_prefix = persona_prefix("project-continuous-repair")
-        self.assertIn("provisioning bash call MUST omit workdir", repair_prefix)
+        self.assertIn("read-only gate for the Host shadow, not a provisioning",
+                      repair_prefix)
+        self.assertIn("Its bash call MUST omit workdir", repair_prefix)
         self.assertIn("Before provisioning, read and strictly validate work-items.json", repair_prefix)
         self.assertIn("Never adopt an unrecorded dirty worktree", repair_prefix)
         self.assertIn("Claim the candidate before you edit it", repair_prefix)
@@ -2357,6 +2738,172 @@ class ValidatorTests(Base):
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("description must be non-empty", " ".join(
             report.layers["contracts"]["details"]))
+
+    # --- Fail-closed DSH YAML frontmatter -------------------------------
+    # A plain description containing ': ' parses into a nested mapping in the
+    # parser DSH loads skills with (@deepseek-ai/dsh 0.2.0-rc.2, yaml.parse),
+    # which silently drops the skill and leaves an empty catalog. Quoted
+    # descriptions survive, which is why Host must reject unquoted ones before
+    # ACTIVE rather than after (see ARQUITECTURA_FLUJO_AGENTES.md).
+    def test_unquoted_description_with_colon_space_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: Modo auditor del "
+            "proyecto fixture: contrato operativo\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("frontmatter", details)
+
+    def test_unquoted_mode_description_with_colon_space_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "modes/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: Auditor: contrato "
+            "operativo\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("modes/project-auditor/SKILL.md", details)
+
+    def test_json_quoted_description_with_colon_is_accepted(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: \"Modo auditor del "
+            "proyecto fixture: contrato operativo\"\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+
+    def test_legacy_plain_safe_description_is_still_accepted(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: Generated project "
+            "skill\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+
+    def test_plain_description_with_hash_comment_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: project #auditor\n"
+            "---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+
+    def test_plain_description_starting_with_hash_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: # auditor del proyecto\n"
+            "---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+
+    def test_plain_description_ending_in_colon_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: contrato:\n"
+            "---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+
+    def test_trailing_yaml_indicator_description_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: - auditor del "
+            "proyecto\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+
+    def test_duplicate_frontmatter_key_is_retained(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: one\n"
+            "description: two\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("duplicate", details)
+
+    def test_description_resolving_to_non_text_is_retained(self):
+        """A scalar the implicit-type table turns non-string is not a description.
+
+        DSH's parseSkillFile reads a field through stringField, which requires
+        text: `description: true` or `description: 0x11` parses fine and is then
+        dropped as a skill without name/description, again silently.
+        """
+        generated, _ = self.make_package()
+        skill = generated / "skills/project-auditor/SKILL.md"
+        samples = ["true", "FALSE", "null", "~", "0", "01", "-1", "1.0",
+                   "1.2e3", "0x11", "0o77", ".nan", ".inf"]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                skill.write_text(
+                    f"---\nname: project-auditor\ndescription: {sample}\n"
+                    "---\n# Auditor\n")
+                report = hv.validate_package(generated)
+                details = " ".join(report.layers["contracts"]["details"])
+                self.assertFalse(report.layers["contracts"]["passed"], sample)
+                self.assertIn("frontmatter description must be", details, sample)
+
+    def test_description_staying_text_through_scalar_forms_is_accepted(self):
+        """Values that still parse as text keep working: quoting is the fix.
+
+        The quoted forms are what the regulated prompt mandates, and they are
+        asserted here to show the check is about the scalar shape rather than a
+        keyword blacklist.
+        """
+        generated, _ = self.make_package()
+        skill = generated / "skills/project-auditor/SKILL.md"
+        for sample in ['"true"', '"0"', '"0x11"', '"~"']:
+            with self.subTest(sample=sample):
+                skill.write_text(
+                    f"---\nname: project-auditor\ndescription: {sample}\n"
+                    "---\n# Auditor\n")
+                report = hv.validate_package(generated)
+                self.assertTrue(report.layers["contracts"]["passed"], sample)
+
+    def test_single_quoted_description_with_colon_is_accepted(self):
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: 'Modo auditor: "
+            "contrato'\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+
+    def test_block_scalar_description_is_retained_fail_closed(self):
+        """Block scalars are opaque to this minimal reader and so are rejected.
+
+        The prompt Creator now mandates double quotes, so a block scalar is not
+        a legacy shape this Host would have shipped: failing closed here says so
+        before ACTIVE instead of trusting a shape the reader cannot value.
+        """
+        generated, _ = self.make_package()
+        (generated / "skills/project-auditor/SKILL.md").write_text(
+            "---\nname: project-auditor\ndescription: >-\n  Modo auditor: "
+            "contrato operativo\n---\n# Auditor\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+
+    def test_routing_contract_requires_loadable_skill_frontmatter(self):
+        generated, manifest = self.make_package()
+        skill = generated / "skills/project-auditor/SKILL.md"
+        skill.write_text("---\nname: project-auditor\ndescription: a: b\n"
+                         "---\n# Auditor\n")
+        digest = cc._digest_bytes(skill.read_bytes())
+        for artifact in manifest["artifacts"]:
+            if artifact.get("path") == "skills/project-auditor/SKILL.md":
+                artifact["sha256"] = digest
+        report = hv.validate_package(generated)
+        details = " ".join(report.layers["contracts"]["details"])
+        self.assertFalse(report.layers["contracts"]["passed"])
+        # The skill layer reports the exact frontmatter defect; the routing
+        # gate adds that the entrypoint is not loadable, without either issue
+        # letting the roster reach an activation with a silent skill.
+        self.assertTrue(
+            "routing sin skill cargable" in details or
+            "frontmatter description must be" in details, details)
 
     def test_missing_anti_escalation_plugin_is_retained(self):
         generated, _ = self.make_package()

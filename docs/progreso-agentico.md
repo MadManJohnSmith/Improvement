@@ -1,7 +1,6 @@
 # Progreso agéntico de Improvement — vista de una página
 
-**Actualización:** 2026-10-10 (rama `dev`, HEAD `992e318`, con `scripts/mode_lifecycle.py`
-modificado sin commitear y `.zcodeignore` sin rastrear).
+**Actualización:** 2026-10-11 (estado derivado de ensayos externos, sin afirmar que las modificaciones locales estén integradas).
 
 **Qué es este documento:** una sola lectura del estado de **todos** los hitos
 C/D/E/F/G/M/P/U y B0–B4, con el estado derivado de la evidencia citada y no de la
@@ -47,9 +46,19 @@ Límite conservado de la familia (fila B0): **no equivale al flujo de incorporac
 | C7 | Promoción y distribución de piloto | HECHO | vivo | `PLAN_IMPLEMENTACION.md:44` |
 
 **C2 necesita una nota que su fila no lleva.** El 2026-10-10 un turno headless real
-con `creator-prompt.md` íntegro **no** persistió `generated/generation-manifest.json`
+con el `creator-prompt.md` del run íntegro **no** persistió `generated/generation-manifest.json`
 y el run quedó `RETAINED`. La fila C2 sigue `HECHO` porque su gate propio se cumplió
-en su momento; el pase de 2026-10-10 **no revalida C2** con DSH real. Ver X2.
+en su momento; aquel pase **no revalidó C2**. La causa medida fue la falta del overlay
+en headless: sin él `write` caía en la fila de upstream rechazada por el sandbox.
+Después, el ensayo X3 sí probó `creator_client.dsh_headless_command` con overlay y
+una generación real ACTIVE. Esa prueba fue **anterior** al ajuste del presupuesto
+Creator por run; no valida una generación post-presupuesto. Ver X2 y X3.
+
+**Aviso de puntero:** `creator-prompt.md` no vive en el árbol canónico; lo
+escribe `scripts/creator_client.py:1062` dentro del run dir del workspace
+externo, así que solo es citable por run, no por ruta del repo. La nota mantiene
+la referencia como nombre de fichero precisamente para no apuntar a un camino
+que aquí no existe.
 
 ## D1–D9 · Deuda declarada (vigente en el índice)
 
@@ -71,7 +80,7 @@ en su momento; el pase de 2026-10-10 **no revalida C2** con DSH real. Ver X2.
 |---|---|---|---|---|
 | E1 | Commit transaccional de `mode-state` | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:85` |
 | E2 | Memoria episódica e índice | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:86` |
-| E3 | Ejecutor del gate de biblioteca | HECHO 2026-10-01 (con corrida del operador solo) | vivo | `PLAN_IMPLEMENTACION.md:87` |
+| E3 | Ejecutor del gate de biblioteca | MECANISMO HECHO; EJECUCIÓN NO | vivo | `PLAN_IMPLEMENTACION.md:87` |
 | E4 | Confinamiento del reparador | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:88` |
 | E5 | Honestidad de la cobertura de stacks | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:89` |
 | E6 | Cerrar el bucle de lectura de la memoria episódica | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:90` |
@@ -80,8 +89,12 @@ en su momento; el pase de 2026-10-10 **no revalida C2** con DSH real. Ver X2.
 | E9 | La mitad de reflexión del RSI | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:93` |
 
 El índice canónico sigue con E10–E23, todas `HECHO` en su fila. E3 conserva su
-límite: la corrida con credenciales es del operador y el ejecutor se abstiene
-fail-closed sin proveedor.
+límite y conviene no leerlo como «probado»: el mecanismo del ejecutor está en código y
+protegido por regresiones, pero **no hay corrida operacional con modo real** porque
+`skill-gate-run` se abstiene antes de `session/create` al no existir un adaptador
+evaluador Host que verifique layout y skill efectiva por caso (`scripts/skill_gate_run.py:604-608`).
+Correr el corpus con credenciales propias es una decisión del operador, no un resultado
+del framework.
 
 ## F1–F6 · Propuestas del borrador de orquestación externa (familia cerrada)
 
@@ -147,10 +160,12 @@ llevan su propia advertencia de «CONTENIDO HISTÓRICO — NO EJECUTAR».
 | P10 | Piloto tardis (Syncify) con DSH real | HECHO | vivo | `PLAN_IMPLEMENTACION.md:61` |
 | P11 | Gate de holdout para la biblioteca | IMPLEMENTED_NOT_VERIFIED | vivo | `docs/status.md:130` |
 
-**P11 es el límite que más conviene no suavizar:** el gate existe y decide, pero
-**ningún cambio de biblioteca ha pasado por él con evidencia de un agente real**
-porque producirlas exige un proveedor que configura el operador. El 2026-10-10 el
-corpus gate se abstuvo fail-closed nombrando la pieza que faltaba.
+**P11 es el límite que más conviene no suavizar:** el gate ligado existe y decide
+sobre observaciones verificadas, pero **ningún cambio de biblioteca ha pasado por él
+con evidencia de un agente real**. Los 55 casos comprueban 25 skills, no los modos;
+el CLI del runner se abstiene antes de crear sesión al faltar un evaluador Host
+compatible por caso. La abstención del pase del 2026-10-10 y el `NOT_COVERED` de SC-123
+son evidencia de dos límites distintos, no scores de mejora.
 
 ## P0–P9 · Fases del plan de ejecución de arquitectura completa (RETIRADA del árbol)
 
@@ -193,13 +208,13 @@ la invalidación fail-closed de memoria (`MEMORY_RECONCILED`, 6 invalidados). Es
 ejercita el mecanismo, **no** la aceptación operativa: el producto era ficticio y la
 campaña no cerra reglas de un repositorio real.
 
-## X1–X3 · Deuda abierta por el pase del 2026-10-10
+## X1–X3 · Evidencia posterior al pase del 2026-10-10
 
-| ID | Unidad | Estado derivado | Evidencia |
+| ID | Unidad | Estado derivado | Evidencia y límite |
 |---|---|---|---|
-| X1 | Candidata de reparación sin `worktree` del producto | BLOQUEADO por el sandbox DSH | `docs/status.md`; el `worktree add` falló con `Read-only file system` + `file access denied`; las candidatas se crearon clones dentro del workspace |
-| X2 | `dsh web` servible, o Creator sin él | PENDIENTE (bloqueado en este entorno) | el perfil web del home de campaña no arrancó (`node_modules/` vacío); el turno Creator no persistió el manifest |
-| X3 | Corpus gate contra un modo real | BLOQUEADO | el gate se abstuvo fail-closed: `no hay sesión DSH utilizable` |
+| X1 | Candidata de reparación sin `worktree` del producto | HOST/SHADOW Y PRESET REAL PROBADOS; ciclo íntegro con preset NO PROBADO | En `x1-live`, un producto ficticio y DSH headless ejercitaron provisión Host fuera del modo, `PROVISIONED → DIRTY`, diff verificado, tests 3/3 y reanudación exacta; el producto quedó intacto. El envoltorio `bwrap` corregido denegó escritura al producto, pero headless no compuso el preset (0 llamadas a `skill`) y dos turnos sumaron 386.441 tokens frente a 250k. En `x1-preset-real`, DSH web resolvió el preset real y cargó su skill, con puerta read-only sobre la sombra del Host; el supervisor detuvo la ejecución **antes de editar** por predicción de superar 120k (104.372 medidos, 129.898 proyectados). No hubo `DIRTY`, tests verdes ni reanudación en esa sesión. Ensayos externos: `x1-live/RESULTADO.md` y `x1-preset-real/RESULTADO.md` |
+| X2 | Servidor web y transporte de evaluación | ARRANQUE PROBADO; EVALUADOR HOST AUSENTE | `dsh web` sí arrancó en `0.2.0-rc.2`; el fallo del pase anterior fue el home copiado con `profiles/web/node_modules/` vacío, no un bloqueo actual del arranque. **No existe** un endpoint `evaluator` en esa versión: el gate usa la API real de sesiones (`session/create` + `session/prompt` + `session/page`), pero el CLI no tiene un adaptador evaluador Host compatible que verifique `cwd` por caso y skill efectiva antes de crear sesión (`scripts/skill_gate_run.py:604-608`). Esto es distinto de la generación Creator y del targeting del corpus |
+| X3 | Creator y corpus gate contra modo real | CREATOR ACTIVE PRE-PRESUPUESTO; CORPUS NOT_COVERED | Con overlay headless model-facing, Creator generó un manifest `GENERATED` con 19 artefactos y `bootstrap accept`/Host activaron `ACTIVE` (ensayo externo `ensayo-x3-actualizado.md`). **Ocurrió antes del arreglo del budget Creator**; no acredita generación post-budget. En `corpus-fixed`, el frontmatter corregido permitió `skills/list` con 4 skills `modelInvocable` y `skill` reales, y se despachó un caso de 55 (`SC-123`). El gate dio `NOT_COVERED`: el caso compilado apuntaba a la **skill** `source-driven-development`, no al modo `fixture-auditor` que se despachó, y el modo exigió un layout de CWD (`ensayo-x3/fixture/workspace`) que el gate no le dio (sesiona en `case-workspaces/SC-123`), así que `__IMPROVEMENT_LAYOUT_OK__` no salió, el modo narró `RETAINED` sin `workflow_write` y `result.json` no existe. El gate no inventó PASS. Ensayos externos: `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
 
 ## Cómo llegar a la evidencia
 

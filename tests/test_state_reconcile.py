@@ -7,22 +7,25 @@ after their work item was VERIFIED, and an integrated candidate whose worktree
 and branch stayed on disk. The reconciler asks git the same questions the
 operator would ask, and every refusal has to leave the repository untouched.
 """
+import hashlib
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import state_reconcile
+import mode_lifecycle
 
 
 def _git(path, *arguments):
-    subprocess.run(["git", "-C", str(path), *arguments], check=True,
-                   capture_output=True, text=True)
+    return subprocess.run(["git", "-C", str(path), *arguments], check=True,
+                          capture_output=True, text=True)
 
 
 class StateReconcileTests(unittest.TestCase):
@@ -207,6 +210,196 @@ class StateReconcileTests(unittest.TestCase):
         self._write_state(dict(candidate, status="DIRTY"))
         with self.assertRaisesRegex(state_reconcile.ReconcileError, "solo se retira una INTEGRATED"):
             state_reconcile.retire(self.product, self.workspace)
+
+    def _shadow(self):
+        """Provision through Host, then record its exact dirty patch in state."""
+        host = mode_lifecycle.provision_repair(
+            self.product, self.workspace, ["A-01"], declared_base=self.base)
+        shadow = Path(host["path"])
+        (shadow / "a.txt").write_text("fixed\n")
+        raw = b"a.txt"
+        data = b"fixed\n"
+        digest = hashlib.sha256(len(raw).to_bytes(8, "big") + raw + b"F" +
+                                len(data).to_bytes(8, "big") + data).hexdigest()
+        record = {"base_revision": host["base_revision"],
+                  "finding_ids_digest": host["finding_ids_digest"],
+                  "path": f"{self.workspace.name}/candidates/{shadow.name}",
+                  "branch": host["branch"], "head": host["head"],
+                  "status": "INTEGRATED", "candidate_diff_digest": digest,
+                  "changed_paths": ["a.txt"]}
+        self._write_state(record)
+        return shadow, record
+
+    def test_shadow_retire_requires_exact_product_patch_and_receipt(self):
+        """Exact integration evidence is not enough to delete a Host shadow.
+
+        The patch is proven in the canonical tree, the receipt matches the
+        state and the shadow is clean, and retirement still abstains: the
+        deletion could not be made fail-closed. `git status` never inventories
+        `.git/`, `skip-worktree`/`assume-unchanged` hide edits to tracked files
+        from it, and the content comparison ran *before* the non-atomic
+        `shutil.rmtree`, so private files inside the shadow's own `.git/` and
+        any concurrent edit were deleted with no gate ever seeing them.
+        """
+        shadow, record = self._shadow()
+        receipt = Path(self.workspace / f"{shadow.name}.receipt")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED.*integración exacta"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        # With *only* the recorded dirty patch, every gate passes. Even this
+        # exact integration evidence must not authorize deletion.
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError,
+                r"ABSTAINED.*conjunto de contenido exclusivo.*manual"):
+            state_reconcile.retire(self.product, self.workspace)
+        # Additional content: an extra working file, an ignored one and a
+        # private file inside the shadow's own `.git/`.
+        (shadow / "operator-notes.txt").write_text("notas sin commitear\n")
+        (shadow / ".gitignore").write_text("build.log\n")
+        (shadow / "build.log").write_text("logs\n")
+        (shadow / ".git" / "operator-notes").write_text("notas privadas en .git\n")
+        before = {path: path.read_bytes()
+                  for path in sorted(shadow.rglob("*"))
+                  if path.is_file() and ".git/objects" not in str(path)}
+
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+
+        self.assertTrue(shadow.exists())
+        self.assertTrue(receipt.exists())
+        self.assertTrue(shadow.is_dir())
+        self.assertTrue(shadow.joinpath("a.txt").is_file())
+        self.assertEqual(shadow.joinpath("a.txt").read_bytes(), b"fixed\n")
+        for path, content in before.items():
+            self.assertTrue(path.exists(), f"{path} fue borrado")
+            self.assertEqual(path.read_bytes(), content, f"{path} fue modificado")
+        self.assertTrue(shadow.joinpath(".git", "operator-notes").is_file())
+        self.assertEqual(
+            shadow.joinpath(".git", "operator-notes").read_bytes(),
+            b"notas privadas en .git\n")
+        # The operator's integration is the only thing the product gained: the
+        # shadow's own commit never entered the canonical history.
+        self.assertEqual(_git(self.product, "rev-list", "--count", "HEAD").stdout.strip(),
+                         "2")
+        self.assertFalse(_git(self.product, "status", "--porcelain=v1").stdout)
+
+    def test_shadow_retire_refuses_dirty_extra_clean_or_modified_product(self):
+        shadow, record = self._shadow()
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        (shadow / "extra.txt").write_text("unintegrated\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        (shadow / "extra.txt").unlink()
+        _git(shadow, "add", "a.txt")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        _git(shadow, "reset", "-q", "a.txt")
+        (shadow / "a.txt").write_text("one\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        (shadow / "a.txt").write_text("another patch\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        (shadow / "a.txt").write_text("fixed\n")
+        (self.product / "a.txt").write_text("local edit\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED.*producto"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+
+    def test_shadow_retire_refuses_missing_or_foreign_receipt_and_symlinks(self):
+        shadow, record = self._shadow()
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        receipt = self.workspace / f"{shadow.name}.receipt"
+        original = receipt.read_text()
+        receipt.unlink()
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        receipt.write_text(self.base + "\n" + "f" * 64 + "\n" + record["head"] + "\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "recibo Host"):
+            state_reconcile.retire(self.product, self.workspace)
+        receipt.unlink()
+        receipt.symlink_to(shadow / "a.txt")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "enlace simbólico"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+        receipt.unlink()
+        receipt.write_text(original)
+        (shadow / "other-link").symlink_to(self.product / "a.txt")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+
+    def test_shadow_retire_never_adopts_a_legacy_worktree_or_foreign_git(self):
+        shadow, record = self._shadow()
+        branch = f"dsh/repair-{record['finding_ids_digest'][:16]}"
+        legacy = self.session / f"{self.product.name}-repair-{record['finding_ids_digest'][:16]}"
+        _git(self.product, "worktree", "add", "-q", "-b", branch, str(legacy))
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(legacy.exists())
+        self.assertTrue(legacy.joinpath(".git").exists())
+        self.assertTrue(shadow.exists())
+
+    def test_shadow_retire_preserves_product_with_external_git_dir(self):
+        external = self.session / "external-git"
+        _git(self.product, "init", "-q", "--separate-git-dir", str(external))
+        self.base = self._rev()
+        shadow, record = self._shadow()
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(external.is_dir())
+        self.assertTrue(shadow.exists())
+
+    def test_bootstrap_state_retire_abstains_without_touching_either_tree(self):
+        """The operator command exits 1 with the reason and deletes nothing."""
+        shadow, record = self._shadow()
+        (self.product / "a.txt").write_text("different\n")
+        _git(self.product, "commit", "-qam", "not integrated")
+        process = subprocess.run(
+            ["/usr/bin/python3", "-B", str(ROOT / "scripts" / "bootstrap.py"),
+             "state", "--project", str(self.product), "--retire"],
+            capture_output=True, text=True, timeout=180)
+        self.assertEqual(process.returncode, 1)
+        self.assertIn("ABSTAINED", process.stderr)
+        self.assertTrue(shadow.exists())
+        self.assertEqual((self.product / "a.txt").read_text(), "different\n")
+
+    def test_shadow_retire_abstains_when_git_hangs(self):
+        """Git that does not answer is a refusal, not a silent deletion."""
+        shadow, record = self._shadow()
+        with patch.object(state_reconcile.subprocess, "run",
+                          side_effect=subprocess.TimeoutExpired("git", 120)):
+            with self.assertRaisesRegex(state_reconcile.ReconcileError, "120s"):
+                state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+
+    def test_shadow_retire_refuses_a_declared_integration_it_cannot_prove(self):
+        """A status that claims INTEGRATED without the patch proving it."""
+        shadow, record = self._shadow()
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        # A body that followed the record verbatim would commit the shadow into
+        # history, which is exactly what the shadow's contract forbids.
+        self.assertFalse(shadow.joinpath(".git", "refs", "heads", "dsh").exists())
+        # Even with the integration proven the shadow is not deleted, so its own
+        # commit never reaches the canonical history: the base commit plus the
+        # operator's integration, nothing else.
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+        self.assertEqual(
+            subprocess.run(["git", "-C", str(self.product), "rev-list", "--count", "HEAD"],
+                           capture_output=True, text=True, check=True).stdout.strip(), "2")
 
     def test_audit_scope_is_counted_from_the_handoff_id(self):
         """A complete audit that starts from the queue re-reports the queue.
@@ -407,6 +600,36 @@ class StateReconcileTests(unittest.TestCase):
                        "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}])
         report = state_reconcile.reconcile(self.product, self.workspace)
         self.assertEqual(report["uncovered_findings"], ["A-02", "A-03"])
+
+    def test_shadow_status_abstains_when_the_cone_hides_tracked_content(self):
+        """A cone marks tracked paths skip-worktree; status then reports none of them.
+
+        The inventory below the guard is a `git status` of the shadow, and a
+        cone prunes that inventory to the coned directories: every tracked path
+        outside the cone is marked `S` and stops being reported at all -- so a
+        shadow whose tracked content was replaced, or whose out-of-cone files
+        were deleted by hand, reports clean and would be deleted by a call that
+        asked nothing else. The guard is the only thing that sees it.
+        """
+        shadow, record = self._shadow()
+        (shadow / "outside.txt").write_text("one\n")
+        (shadow / "outside").mkdir()
+        (shadow / "outside" / "nested.txt").write_text("tracked\n")
+        _git(shadow, "add", "-A")
+        _git(shadow, "commit", "-qm", "tracked content outside the cone")
+        _git(shadow, "sparse-checkout", "set", "--cone", "nested-nonexistent")
+        # The inventory alone is blind: the paths stay tracked and marked
+        # skip-worktree, and `git status` says nothing about either of them.
+        plain = _git(shadow, "status", "--porcelain=v1", "--untracked-files=all",
+                     "--ignored=matching").stdout
+        self.assertNotIn("outside.txt", plain)
+        self.assertNotIn("outside/nested.txt", plain)
+        self.assertEqual(plain.strip(), "")
+        self.assertIn("S outside/nested.txt", _git(shadow, "ls-files", "-t").stdout)
+        with self.assertRaisesRegex(state_reconcile.ReconcileError,
+                                    "checkout disperso"):
+            state_reconcile._shadow_status(shadow)
+        self.assertTrue((shadow / "outside.txt").exists())
 
 
 if __name__ == "__main__":

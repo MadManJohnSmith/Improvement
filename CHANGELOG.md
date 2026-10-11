@@ -1,5 +1,55 @@
 # Cambios
 
+## Documentación y regresión del gate de biblioteca: ni PASS inventado ni gate operativo — 2026-10-11
+Solo cambios de documentación y de pruebas que leen documentación. Ni scripts, ni
+schemas, ni skills. Motivación: el runner `skill-gate-run` quedó fail-closed —exige un
+adaptador evaluador Host **compatible** que verifique antes de `session/create` el layout
+compatible por caso y la disponibilidad efectiva de cada skill objetivo; el CLI no lo
+ofrece, así que la respuesta es `ABSTAINED` con motivo—, y varios documentos seguían
+presentando el gate como operativo. Se corrigió sin reescribir el historial previo.
+- **`README.md` y `README.es.md`:** los párrafos que presentaban `skill-gate-run` como un
+  bucle listo describen ahora el estado real (los 55 casos apuntan a 25 skills, no a los
+  modos; el oráculo es del Host; hoy `ABSTAIN` antes de crear sesión). El pie del diagrama
+  operativo deja de afirmar que las observaciones puntúan la biblioteca: se declara
+  conceptual. El bloque «no se probó» del pase del 2026-10-10 corrige que la causa fue
+  `node_modules/` vacío del perfil: `dsh web` sí arrancó en la instalación real; lo
+  inexistente es el adaptador evaluador, `SC-123` dio `NOT_COVERED` por targeting/layout.
+- **`docs/usage.md`:** el comando de ejemplo usaba un flag inexistente (`--observations`);
+  el real es `--output`. Se documenta el procedimiento honesto completo
+  (`compile-corpus` → `skill-gate-run` en abstain → `bound-skill-gate` solo con
+  observaciones de evaluador real), con la advertencia de que un `PASS` fabricado no es
+  una observación.
+- **`docs/status.md`:** X2 se escribe en cuatro partes (arranque real, endpoint
+  `evaluator` inexistente, adaptador evaluador ausente, targeting skill-vs-modo) y la fila
+  del gate de holdout separa el mecanismo de su ejecución operativa.
+- **`PLAN_IMPLEMENTACION.md`:** la fila E3 pasa de «HECHO» a «HECHO (mecanismo; ejecución
+  sin evidencia)», con lo que protege la regresión y lo que sigue abierto.
+- **`docs/progreso-agentico.md`:** E3 deja de presentarse como corrida del operador, X2
+  nombra la carencia real y P11 separa mecanismo de ejecución.
+
+## Documentación acotada a la evidencia externa posterior — 2026-10-11
+
+Solo cambios de documentación y pruebas que leen documentación. Ni scripts, ni
+schemas, ni skills.
+
+- **`docs/progreso-agentico.md`: las filas X1/X2/X3 pasan a describir lo que se midió hoy.** X1 queda en «provisión del Host y obediencia del modo probadas; ciclo íntegro bajo preset real NO PROBADO»: en `x1-live` el modo headless persistió `PROVISIONED → DIRTY`, el Host verificó diff y los tests corrieron 3/3, pero headless no compuso preset (0 llamadas a `skill`); en `x1-preset-real` el preset real y su skill sí se cargaron bajo `bwrap`, y el supervisor detuvo el turno **antes de editar** por predicción de superar el presupuesto. X2 se desdobla: el arranque de `dsh web` era un falso bloqueo que ya quedó corregido, y lo inexistente es el endpoint `evaluator`. X3 separa Creator de corpus: Creator con overlay quedó ACTIVE con 19 artefactos, **probado antes del arreglo del presupuesto Creator**, así que no valida el gate vigente; el corpus dio `NOT_COVERED` porque compilaba una **skill** (`source-driven-development`) y despachó a un **modo** (`fixture-auditor`) que exigía un layout que el directorio del caso no tenía.
+- **`docs/status.md`:** fecha de actualización a 2026-10-11; se añade la distinción neta entre el falso bloqueo de arranque, el endpoint inexistente y el targeting skill/modo; se acota el párrafo de X1 al ciclo real medido; se declara que el presupuesto Creator se mide por run y que el ensayo ACTIVE es anterior a ese ajuste.
+- **`docs/workflows-lecciones.md`:** L09, L10 y L11 se reescriben contra la causa medida; entran dos lecciones nuevas, L16 (frontmatter sin comillas con `: ` y el rechazo `skill_frontmatter_issue`) y L17 (corpus que compila una skill y despacha a un modo). La tabla «no probado» sustituye la fila del Creator y la de `dsh web` por tres: la causada por el presupuesto, el ciclo íntegro bajo preset real y el corpus completo contra modo real. Las lecciones existentes en 1.2 se renumeran en consecuencia.
+- **`tests/test_workflow_lessons.py`:** `DEFINITION_ROWS` 27 → 29, la cifra que el árbol documenta.
+- **`docs/setup-dsh.md`:** la nota de los presets generados dice tres, con `implementer`, en lugar de dos.
+- **`README.md`/`README.es.md`:** la cifra vigente de la suite se **midió** con `unittest.TestLoader.discover` y `python3 -B -m unittest discover -s tests`, no se recordó: **1057 OK**, 11 skips sin runtime externo. Las cifras históricas de los pilotos (`743`, 125 de Flutter, 166) no se tocan porque son hechos de su momento.
+- Recuento vigente: `python3 -B -m unittest discover -s tests` → **1057 OK** (11 skips sin runtime externo).
+
+## Ajustes cross-owner: contrato de sombra, X1/X2/X3 y recuento — 2026-10-10
+
+- **Las regresiones de `tests/test_creator_and_validator.py` siguen al contrato nuevo.** Los asserts que exigían `git-worktree-add-or-exact-safe-reuse`, `candidate="$expected"`, `git -C "$product" worktree add`, `candidate_workdir` como `project-repair-<digest16>` y `worktree_list_scope` se sustituyen por los del contrato vigente `Host-provision_repair-shadow-only`: el `provision_command` es una **puerta de solo lectura** sobre la sombra que ya creó el Host (`test -d "$candidate/.git"`, sentinel `__IMPROVEMENT_SHADOW_PROVISIONED__`), y se añaden negativos con evidencia: `assertNotIn("worktree add", …)` y `assertNotIn('candidate="$expected"', …)`, porque bajo un producto read-only un `worktree add` falla justo en el `.git` del producto. `provision_checks` y `resume_required_checks` se afirman contra las listas que emite `mode_lifecycle.expected_lifecycle` (que ya incluía `Host-receipt-base-digest-shadow-head`, `own-git-not-worktree`, `legacy-worktree-fail-closed`, `stale_record_policy`) en vez de nombres que el código no producía. La persona de reparación se comprueba por lo que hoy dice («read-only gate for the Host shadow, not a provisioning», «Its bash call MUST omit workdir»), no por la frase antigua.
+- **`README` de presente sombra, historia de pilotos intacta.** Las afirmaciones vigentes («isolated worktree», la fila de términos «Candidate», la reanudación de «same worktree» y la lista de lo no probado) pasan a repositorio sombra bajo el workspace; los relatos de los pilotos y del pase del 2026-10-10 se conservan tal cual porque son hechos pasados con su evidencia, no afirmaciones sobre el árbol de hoy.
+- **X2 tenía un diagnóstico falso y se corrige.** Se midió el 2026-10-10 que `dsh web` **sí** arranca: con la instalación real `@deepseek-ai/dsh` `0.2.0-rc.2` fuera del canónico y un `DSH_HOME` vacío, `dsh web --port 17999` imprimió una URL autenticada y siguió sirviendo. Lo que no levantó en el pase fue el perfil web **del home de campaña**, copiado con `node_modules/` vacío. Además, **el endpoint `evaluator` no existe en DSH 0.2.0-rc.2**: el corpus gate ya despacha por la API de sesión (`session/create` + `session/prompt` + `session/page`) y un cliente que no puede servirla falla nombrando la pieza que falta.
+- **X1: resuelto en código, sin afirmar sesión real.** `mode_lifecycle.provision_repair` + `shadow_candidate` crean la candidata como repositorio sombra con `.git` propio bajo el workspace, ligada a la base canónica y a los hallazgos, con recibo de identidad que la sesión solo verifica. La prosa del `provision_command` y de la persona de reparación en `scripts/creator_client.py` se ajusta al contrato sombra. Lo demostrado es código + fixture (`bwrap` con producto read-only y sombra escribible): **queda pendiente una corrida Creator íntegra** que lo ejerza.
+- **X3: la causa del `RETAINED` de Creator queda explicada.** La sesión headless corría **sin el overlay del framework**, así que `workflow_write` no estaba en el inventario y `write` caía en la fila de upstream que el sandbox rechaza con `sandbox_permissions` del mismo modo. `creator_client.dsh_headless_command` compone `--patch` en el argv headless exactamente como el camino web (escape `DSH_PLUGIN_PATCH=0` heredado), y el workaround ya está en el árbol.
+- **El recuento vigente es el que corre.** Los README publicaban **950** y la suite descubierta ya tenía **970**: el número se ajusta al recuento real actual, no a una salida histórica.
+- Suite: `python3 -B -m unittest tests.test_creator_and_validator` → **125 OK**; suite completa → **972 OK** (11 skips, los mismos de runtime DSH en vivo). Sin commit ni push.
+
 ## Documentación del pase sobre DSH real y vista única de hitos — 2026-10-10
 
 - **El pase integral quedó documentado, con sus bloqueos.** `docs/status.md` gana una sección que separa lo medido de lo no probado, citando comando y artefacto por fila: canal real de inferencia (`PING-OK`, `totalTokens = 6552`, `completed`), auditor con `evidence/audit-finding.md`, reparador (commit `ab5c0c6`, diff `+1 -3`, tests PASS, producto intacto), implementador (commit `95aa9b2`, 6/6 tests nuevos), `FAIL → reparación → PASS` en dos runs verificados, `MEMORY_RECONCILED` con 6 invalidados, skills cargadas en sesión real (3/2/1 por rol; turno trivial → 0), abstención real, validador 10/10, antifraude del corpus (0.488 < 1.000) y confinamiento del canónico. Lo que **no** se probó queda dicho: `dsh web` no sirvió (perfil `web` sin `node_modules`, sin RPC `session/create` ni endpoint `evaluator`, corpus gate abstained fail-closed con `no hay sesión DSH utilizable`); el Creator end-to-end no persistió `generated/generation-manifest.json` y el run acabó `RETAINED`; `git worktree add` falló con `Read-only file system` + `[sandbox: file access denied under workspace-write mode]` y la escalada recibió `no approval channel is available`, así que las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace. El coste no fue medible en dinero: se declara en tokens.

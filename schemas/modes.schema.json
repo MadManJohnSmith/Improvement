@@ -134,7 +134,6 @@
                   "interrupted_turn_recovery",
                   "provision_checks",
                   "unrelated_candidates",
-                  "worktree_list_scope",
                   "provision",
                   "collision_policy"
                 ]
@@ -284,11 +283,10 @@
               "const": "shadow-repo-under-workspace"
             },
             "directory_template": {
-              "type": "string",
-              "pattern": "^[^/]+-repair-<digest16>$"
+              "const": "repair-<digest16>"
             },
             "branch_template": {
-              "const": "dsh/repair-<digest16>"
+              "const": "candidate"
             },
             "candidate_root": {
               "const": "${session-cwd}/<workspace>/candidates/repair-<digest16>"
@@ -298,7 +296,7 @@
             },
             "candidate_workdir": {
               "type": "string",
-              "pattern": "^[^/]+-repair-<digest16>$"
+              "pattern": "^[^/]+/candidates/repair-<digest16>$"
             },
             "provision_workdir": {
               "const": "omitted-session-cwd"
@@ -374,11 +372,8 @@
             "unrelated_candidates": {
               "const": "ignore-preserve"
             },
-            "worktree_list_scope": {
-              "const": "target-path-and-target-branch-only"
-            },
             "provision": {
-              "const": "git-worktree-add-or-exact-safe-reuse"
+              "const": "Host-provision_repair-shadow-only"
             },
             "collision_policy": {
               "const": "retain-target-collision-no-improvisation"

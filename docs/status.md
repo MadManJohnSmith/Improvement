@@ -1,12 +1,22 @@
 # Estado comprobado del framework
 
-**Actualización:** 2026-10-10
+**Actualización:** 2026-10-11
 **Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (C0–C7 completadas; campaña U6 implementada en parte, sin aceptación operativa; lifecycle EN CURSO/IMPLEMENTED_NOT_VERIFIED)
 **Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md) · [vista de una página de todos los hitos](progreso-agentico.md)
 
 Este documento registra únicamente el estado vigente. El detalle de iteraciones anteriores está en Git/`CHANGELOG.md`, no aquí.
 
-**Implementador (parcial, aceptación en un solo caso real):** el contrato Host/Creator admite un tercer preset `implementer` en generaciones nuevas y conserva las de dos roles; la transacción prueba publicación local de los tres. `mode_lifecycle.provision_implementation` liga petición exacta y base limpia a una sombra aislada en workspace, conserva el trabajo sucio al reanudar y `verify_implementation` mide diff y corre un caso de comportamiento en candidata (no valida aún que el comando sea un entrypoint del plan Host); las regresiones lo demuestran con producto temporal externo. **El 2026-10-10 un turno DSH real** sobre un producto ficticio dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido, sin commit/merge/push implícitos: el mecanismo se ejerció, en un solo caso y con la candidata creada como clon dentro del workspace. `skill_router` solo selecciona sobre roster cuya definición/entrypoint/bundle/recibo están ligados al manifest de la generación ACTIVE; abstiene si falta evidencia, presupuesto o integridad. **Sí se cargaron e invocaron skills en sesión DSH real** (auditor 3, reparador 2, implementador 1; un turno trivial no cargó ninguna), pero `skill_router` sigue siendo solo selector informativo y no se ha ejercido contra una sesión real. Sigue sin probarse confinamiento mecánico de bash en campaña ni `git worktree add` real. Workflow de usuario entra por `bootstrap workflow run`, no por plugin de modo; se mantiene la prohibición de filas delegat/subagent/workflow. No hay publicación remota.
+**Implementador (parcial, aceptación en un solo caso real):** el contrato Host/Creator admite un tercer preset `implementer` en generaciones nuevas y conserva las de dos roles; la transacción prueba publicación local de los tres. `mode_lifecycle.provision_implementation` liga petición exacta y base limpia a una sombra aislada en workspace, conserva el trabajo sucio al reanudar y `verify_implementation` mide diff y corre un caso de comportamiento en candidata (no valida aún que el comando sea un entrypoint del plan Host); las regresiones lo demuestran con producto temporal externo. **El 2026-10-10 un turno DSH real** sobre un producto ficticio dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido, sin commit/merge/push implícitos: el mecanismo se ejerció, en un solo caso y con la candidata creada como clon dentro del workspace. `skill_router` solo selecciona sobre roster cuya definición/entrypoint/bundle/recibo están ligados al manifest de la generación ACTIVE; abstiene si falta evidencia, presupuesto o integridad. **Sí se cargaron e invocaron skills en sesión DSH real** (auditor 3, reparador 2, implementador 1; un turno trivial no cargó ninguna), pero `skill_router` sigue siendo solo selector informativo y no se ha ejercitado contra una sesión real. **La reparación ya no pide un `worktree` del producto**: `mode_lifecycle.provision_repair` crea, desde el Host, un repositorio sombra con `.git` propio bajo el workspace y la sesión solo lo verifica y registra (contrato `Host-provision_repair-shadow-only`). **Probado en dos ensayos externos distintos, con límite bien acotado**: bajo headless DSH real (`x1-live`) la sombra del Host, `PROVISIONED → DIRTY`, el diff verificado, tests 3/3 y la reanudación exacta se ejercieron, con producto intacto; bajo web RPC con preset real y `bwrap` (`x1-preset-real`) el preset se resolvió, cargó su skill y ejecutó los sentinelas, pero el supervisor detuvo el turno por presupuesto a **241.912 totalTokens, antes de editar**; no hubo diff ni checks de reparación en ese turno, así que el ciclo íntegro con preset real **sigue sin probarse** (X1). Falta una corrida Creator íntegra que lo ejerza. Sigue sin probarse confinamiento mecánico de bash en campaña. Workflow de usuario entra por `bootstrap workflow run`, no por plugin de modo; se mantiene la prohibición de filas delegat/subagent/workflow. No hay publicación remota.
+
+**Integración y retiro de reparación:** la sombra del Host no comparte ancestry con el producto;
+el operador obtiene y revisa un diff completo, incluyendo cambios sin commit, antes de decidir
+si aplica un patch y verifica en el producto. `candidate_diff_command` registra identidad y rutas,
+no entrega un patch listo para aplicar; `shadow_candidate.patch_digest` compara `shadow-base`
+con `HEAD` y no cubre el trabajo sin commit. `state_reconcile.retire` sigue validando y retirando worktrees del diseño anterior y
+**ABSTAINED** ante las sombras actuales, incluso con evidencia: la retirada automática
+de una sombra quedó fuera porque no se puede inventariar todo su contenido como
+desechable. Los pilotos previos que usaron worktree son historia, no instrucciones de
+integración vigentes.
 
 ## Base técnica comprobada
 
@@ -77,7 +87,9 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 ## Qué pruebas no se ejecutan aquí
 
 La cuenta que se publica («NNN pruebas en verde») no es el total, y decirlo es
-justo lo que la hace publicable. **Once regresiones se saltan** en una máquina
+justo lo que la hace publicable. La cifra vigente se **mide**, no se recuerda:
+`python3 -B -m unittest discover -s tests` cerró el 2026-10-11 con
+`Ran 1085 tests … OK (skipped=11)`. **Once regresiones se saltan** en una máquina
 sin los componentes externos, y todas nombran el componente que falta:
 
 | componente ausente | qué se pierde |
@@ -121,13 +133,13 @@ Unidades incorporadas tras C7, guiadas por evidencia de sesiones DSH reales; el 
 | Aceptación Host aislada del Creator | HECHO | harness de aceptación del Host con evaluador y revisor aislados, casos ocultos con predicados privados, cardinalidad completa exigida y actores correlacionados con turnos reales de DSH; aceptación previa determinista (`READY_FOR_INSTALL`), sin afirmación de evaluación dinámica |
 | Instalación de modos como presets DSH | HECHO | modos con `mode.json`/`preset.yml`/`agent.cordis.yml`/`SKILL.md`; Creator recibe del run los basenames reales case-sensitive de producto/workspace y la ruta exacta de `mode-state`, y el Host contrasta esa identidad estructurada antes de aceptar/instalar; instala un bundle `@deepseek-ai/dsh-agent-preset`, exige `application=applied`, roster sano y composición/raíz candidatas vía `agentPresets/read`; una actualización `restart-required` queda recuperable hasta relanzar DSH y repetir `bootstrap install` |
 | Gate operativo y skills bundle-local | HECHO | composiciones fail-closed con las seis filas operativas, `dsh-tool-fs-search` configurado con `sampleOverCapGlobResults: false` y sin delegación/workflow/web/plugin-manager; frontmatter mínimo de modos/skills; copia completa y segura a `bundle/skills`, `includeDefaultRoots: false`, root absoluto del bundle y ambos IDs en recibo |
-| Handoff durable y candidato automático | HECHO | contrato/bootstrap/persona first-party con anti-escalada exacta (`escalation_channel: forbidden`, argumentos prohibidos para todos los valores y denegación/error schema → RETAINED sin retry), schemas/caps, preflight/migración conservadora, archivo transaccional por digest de evidencia inesperada y originales esperados incompatibles (source path/motivo/digest; 8 MiB/archivo y 32 MiB totales), proyección estricta solo de registros válidos o mapeos inequívocos, candidato digest y límites de commit implementados con regresiones. La reanudación sucia usa `resume_policy: exact-recorded-only`: antes de provisionar lee el `candidate` estricto de `work-items.json` y solo acepta el target determinista exactamente registrado con estado `DIRTY` o `RETAINED` pendiente de verificación, mismo path/branch/base/digest de hallazgos, identidad worktree y HEAD base, canonical limpio e inalterado, diff candidato no vacío con digest y lista completa de paths coincidentes, confinados a archivos regulares sin symlinks ni submódulos. Un comando central separado valida la reanudación sin exigir candidata limpia ni cambiar bytes; registro ausente o discrepante conserva la colisión `RETAINED` y nunca adopta un worktree sucio arbitrario. Antes de editar, Repair registra la candidata como `PROVISIONED` (`record_before_first_edit: true`, `record_statuses: [PROVISIONED, DIRTY]`); si ese registro no se persiste no cambia código y queda `RETAINED`, y tras el primer cambio lo actualiza a `DIRTY` con digest y paths del diff. Una candidata registrada que aparezca sucia por un turno interrumpido se recupera con ese mismo comando de registro, nunca creando otra ni descartando el diff; un target sucio sin registro sigue sin adoptarse (`unrecorded_dirty_target: RETAINED-never-adopted`). Si el registro coincide exactamente y solo su digest de diff quedó obsoleto, `stale_record_policy: reconcile-then-resume` recalcula la identidad desde la base y los IDs reales, re-mide el diff de esa candidata probada y reanuda sin intervención del operador; una discrepancia real de path, branch, base o hallazgos permanece `RETAINED`. Regresiones cubren dos turnos, rechazo de digest/path/base/status o registro ausente, rutas inseguras e invariancia canónica. El startup exige primera bash sin override (workdir omitido o `.`) y un `first_bash_command` exacto centralizado que empieza por `set -eu`, imprime `pwd`, valida basename/producto/workspace en un único `test` y solo entonces emite `__IMPROVEMENT_LAYOUT_OK__`; lifecycle y persona exigen ese `success_sentinel` exacto para continuar y retienen ante su ausencia o resultado no disponible, sin exigir marcador de exit code 0 porque DSH lo omite en éxitos. El cwd esperado es el basename del padre común real de producto/workspace. Auditor conserva candidata previa, incluido `INTEGRATED`, que solo Host/operador puede registrar. Lifecycle/persona lo fijan estructuralmente sin incrustar ruta absoluta del mantenedor. El Auditor declara además `bash_workdir: session-cwd-only-all-calls`: toda bash omite workdir o usa `.`, reescribe antes de invocar comandos para apuntar al producto mediante `git -C`/`npm --prefix`/`cargo --manifest-path` o equivalente, y cualquier override accidental retiene inmediatamente; Repair provisiona desde el cwd de sesión con workdir omitido y comando central exacto: calcula el destino absoluto con `$PWD`, crea el worktree hermano mediante `git -C ./<producto>` y verifica realpath/registro; después usa como workdir exactamente el nombre candidato relativo al cwd de sesión, nunca `.` ni una ruta anidada bajo producto. Schema, validador y persona exigen esos campos y `unrelated_candidates: ignore-preserve`; el preflight central comprueba solo invariantes canónicos y path/branch target, reutiliza únicamente esa identidad exacta y no bloquea ni altera worktrees ajenos clean, dirty o stale. Regresiones ejecutan el comando en repos temporales, prueban sibling/HEAD/rama/registro/limpieza canónica, reutilización exacta, preservación de múltiples candidatas ajenas y rechazo de colisiones del target. El reclamo y la reanudación tienen ya prueba DSH real: un turno de Repair persistió `PROVISIONED` antes de editar, re-registró `DIRTY` tras el primer cambio y volvió a registrarlo con digest nuevo tras ampliar la reparación, sin colisiones ni intervención del operador, y el operador integró solo con commit, fast-forward y push. Quedan como límites declarados que bash conserva alcance de escritura del padre y la actualización multiarchivo ordinaria no tiene CAS/lease: no se afirma aislamiento ni atomicidad concurrente. El mecanismo se ejercitó con DSH real en tres campañas (RehabWeb, LoboApp y el self-test del framework); lo que no se afirma son esos dos límites, no el contrato |
+| Handoff durable y candidato automático | HECHO (contrato; ciclo íntegro con preset real NO PROBADO) | Anti-escalada exacta (denegación/error schema → `RETAINED` sin retry), preflight y recibos durables. `mode_lifecycle.provision_repair` provisiona desde el Host una sombra con `.git` propio y recibo en `<workspace>/candidates/repair-<digest16>`; el modo verifica esa identidad, registra `PROVISIONED` antes de editar y `DIRTY` después, con digest de contenido y lista de rutas regulares. Reanuda solo la candidata exactamente registrada (`resume_policy: exact-recorded-only`); base o producto cambiados, colisión, symlink, recibo ausente o identidad discrepante retienen sin adoptar ni borrar trabajo ajeno. El auditor conserva el handoff y no escribe el producto. X1 headless DSH real probó `PROVISIONED → DIRTY`, diff, tests 3/3 y reanudación con producto intacto; X1 con preset web real cargó la skill y los sentinelas pero se detuvo por presupuesto antes de editar (241.912 `totalTokens`). Las tres campañas previas que creaban worktrees del producto e integraban por fast-forward son historia, no el procedimiento actual. El operador integra el patch revisado, sin merge de rama sombra; `state_reconcile.retire` no borra sombras: ABSTAINED ante ellas, incluso con evidencia exacta de integración. No se afirma aislamiento mecánico ni CAS/lease multiarchivo a partir del contrato. |
 | Piloto tardis (Syncify) | HECHO | cada salida del piloto se convirtió en cambio de flujo y regresión. Syncify cerró el ciclo con 77 hallazgos persistidos y atendidos por los modos, integración solo por commit/fast-forward/push del operador y CI verde (Rust + frontend + Python) en `b9413eb`; el registro de cierre declara D-01..D-04 como alcance condicionado, no como trabajo pendiente: SoundCloud/Apple Music dependen de credenciales del propietario. La auditoría encontró además que el registro de `candidate` que escribe un modo generado puede no cumplir el esquema (forma propia en vez de la del contrato), con lo que el preflight lo archivaría en silencio; esa unidad de endurecimiento es G1 y está cerrada |
 | Instalación limpia de principio a fin | HECHO | entorno sin contamination (clon nuevo de Improvement y de RehabWeb, home de DSH nuevo con solo credenciales y modelos, roster inicial de cuatro presets de fábrica) y un único `bootstrap.py install --project … --launch-dsh` que produce `Host: ACTIVE` con `rehabweb-auditor` y `rehabweb-continuous-repair`; después un prompt simple de auditoría persistió 45 hallazgos con handoff y un prompt de seis palabras reparó dos CRITICAL en una candidata hermana, con el producto intacto hasta que el operador integró |
 | Preparación de lanzamiento público | HECHO | G1–G3, re-anclaje de base y G7 (verificación contra el stack real, sin stubs) implementados y en suite verde (743 pruebas): el `recording_command` y el `reconcile_command` emiten el objeto JSON exacto a persistir verbatim (ruta relativa, head en base) —causa raíz del patrón RehabWeb de candidatas con campos extra o ruta absoluta—, la persona prohíbe añadir/cambiar campos, el preflight devuelve un informe que nombra lo que descarta y la instalación lo incluye en su resultado; `decisions.py` y `metrics.py` dejan de ser huérfanos y se cablean al cierre de turno del controlador Host (evento `turn` en `metrics/`, decisión ratificada en `decisions/`, fail-closed con unidad reconciliable); el estado activo gana `overflows.jsonl` como recibo de desbordamiento (caso Syncify 50/50 handoffs). G7 secerró además con la campaña de LoboApp: el plan nombra la capacidad por la ruta con la que puede invocarse (un `flutter test` desnudo era un `BLOCKED` injusto) y distingue «puede correr» de «esta sesión puede escribir en ella», pidiendo materializar con `cp -al` un SDK que se reescribe a sí mismo bajo `<workspace>/.stack/<stack>/` (17.659 ficheros, 0 bytes de disco). G0 quedó cerrada el 2026-09-30 con licencia Apache-2.0 elegida por el titular y `LICENSE` en la raíz, G5 el mismo día con README, quickstart no técnico y política de feedback, y G6 con el tag `v0.1.0-beta` publicado bajo autorización del titular; plan en [docs/plans/10-lanzamiento-publico.md](plans/10-lanzamiento-publico.md) |
-| Recuento y reconciliación del estado gestionado | HECHO | `persisted_count` dejó de ser una afirmación del modo: un `count_command` central recalcula desde `findings.jsonl` los hallazgos `OPEN` de la base declarada, exige que el handoff los cubra exactamente (rechazo mecánico en `workflow_write` antes de escribir, con `persist_order` declarado) e imprime el número que se reporta. `PARTIAL` se decide como veredicto derivado, no como valor de enum: un registro por entrypoint con PASS/FAIL/BLOCKED y peor resultado ganando, y contradicciones PASS/FAIL rechazadas. `scripts/state_reconcile.py` y `bootstrap.py state` reconcilian el estado con el repositorio: cabeza integrada que una reescritura de historia borró (con `--repoint` acotado y recibo en `overflows.jsonl`), hallazgos `OPEN` con work item `VERIFIED` y hallazgos que ningún handoff tomó; `--retire` retira worktree y rama solo con todas las condiciones probadas y es idempotente |
+| Recuento y reconciliación del estado gestionado | HECHO | `persisted_count` dejó de ser una afirmación del modo: un `count_command` central recalcula desde `findings.jsonl` los hallazgos `OPEN` de la base declarada, exige que el handoff los cubra exactamente (rechazo mecánico en `workflow_write` antes de escribir, con `persist_order` declarado) e imprime el número que se reporta. `PARTIAL` se decide como veredicto derivado, no como valor de enum: un registro por entrypoint con PASS/FAIL/BLOCKED y peor resultado ganando, y contradicciones PASS/FAIL rechazadas. `scripts/state_reconcile.py` y `bootstrap.py state` reconcilian el estado con el repositorio: cabeza integrada que una reescritura de historia borró (con `--repoint` acotado y recibo en `overflows.jsonl`), hallazgos `OPEN` con work item `VERIFIED` y hallazgos que ningún handoff tomó; `--retire` retira el worktree y la rama de una candidata `INTEGRATED` **del diseño anterior** solo con todas las condiciones probadas y es idempotente; hoy la candidata es una sombra sin ancestry y `retire` no la alcanza, así que su retirada es revisión manual del operador |
 | Ancla de evidencia del hallazgo | HECHO | `evidence.path` + `evidence.excerpt` con `line`/`located` calculados por la herramienta antes del write-intent: el fragmento ausente o ambiguo rechaza la escritura en vez de resolverse, y un hallazgo sin localización posible se persiste sin ancla, visible en `anchors`. El campo es opcional en el schema para no archivar la evidencia histórica: un registro antiguo de cinco campos sigue siendo válido. Técnica tomada de `alibaba/open-code-review` (`internal/diff/resolver.go`) y registrada en `library/source-registry.json` con el pin `a758d9c`; el diseño de RSI de `microsoft/skillopt` queda registrado como `CANDIDATE` sin adoptar su motor |
-| Gate de holdout para la biblioteca de skills | IMPLEMENTED_NOT_VERIFIED | `scripts/corpus_compiler.py` compila los 55 escenarios de `library/` en casos ejecutables deterministas ligados por `corpus_digest`, y el oráculo se deriva en el Host: el caso público lleva `task`, fixture y `evaluated_claim`, nunca el veredicto esperado. `bootstrap.py bound-skill-gate` puntúa observaciones **ligadas** a corpus, candidato y versión de compilador; `bootstrap.py skill-gate-commit-check` exige un informe aceptado cuando cambia el corpus y trata `abstain` como bloqueo, no como permiso. Probado con las cuatro decisiones contra el corpus real. **Sigue sin verificarse contra un modo:** producir observaciones exige un proveedor que configura el operador, así que ningún cambio de biblioteca ha pasado aún por el gate con evidencia de un agente real. Confinamiento mecánico del auditor, medido aparte |
+| Gate de holdout para la biblioteca de skills | IMPLEMENTED_NOT_VERIFIED | `scripts/corpus_compiler.py` compila los 55 escenarios de `library/` en casos ejecutables deterministas ligados por `corpus_digest`, y el oráculo se deriva en el Host: el caso público lleva `task`, fixture y `evaluated_claim`, nunca el veredicto esperado. `bootstrap.py bound-skill-gate` puntúa observaciones **ligadas** a corpus, candidato y versión de compilador; `bootstrap.py skill-gate-commit-check` exige un informe aceptado cuando cambia el corpus y trata `abstain` como bloqueo, no como permiso. Probado con las cuatro decisiones contra el corpus real. **Sigue sin verificarse contra un modo**, y la razón operativa ya no es solo el proveedor: `skill-gate-run` exige un adaptador evaluador Host que verifique antes de `session/create` el layout por caso y la skill efectiva de cada uno de los 25 objetivos; el CLI no lo ofrece, así que hoy abstiene (`scripts/skill_gate_run.py:604-608`). Los 55 casos son casos de 25 skills, no pruebas del modo auditor, y un intento real de SC-123 dio `NOT_COVERED` por targeting/layout, no por mejora medida. Confinamiento mecánico del auditor, medido aparte |
 
 ### Ejecutor de workflows en el Host (U1–U3) y campaña por defecto (U6)
 
@@ -181,25 +193,75 @@ El 2026-10-10 se ejecutó un ensayo con instalación real de `@deepseek-ai/dsh` 
 
 **No probado (queda declarado, no se rellena con suposición):**
 
-1. **`dsh web` no sirvió en este entorno.** El `profiles/web/` del home de campaña se copió con
-   `node_modules/` vacío, así que el servidor no arranca: sin RPC `session/create` ni endpoint
-   `evaluator`. Corolario medido: el corpus gate (`bootstrap.py skill-gate-run`) se abstuvo
-   fail-closed con `no hay sesión DSH utilizable: … No .credentials.yaml at <HOME>/.config/dsh`
-   (`scripts/skill_gate_run.py:33-44`, `scripts/creator_client.py:1673-1690`). El perfil headless
-   sí funcionó con el mismo home.
-2. **Creator end-to-end no se probó.** Un turno headless real con el `creator-prompt.md` íntegro
+1. **`dsh web` sí arranca en esta máquina; arrancar el servidor nunca fue el hueco.**
+   Comprobado el 2026-10-10 con la instalación real `@deepseek-ai/dsh` `0.2.0-rc.2` fuera del
+   canónico: `dsh web --port 17999` imprimió `dsh web: http://127.0.0.1:17999/?token=…` y
+   siguió sirviendo hasta el corte, con un `DSH_HOME` vacío. El pase del 2026-10-10 copió
+   `profiles/web/` **con `node_modules/` vacío**, y ahí el servidor no levantó; ese fue el
+   motivo real de aquella parada, no una carencia del producto. **Lo que sigue ausente es el
+   adaptador evaluador Host por caso**: el despacho del corpus gate va por la API de sesión
+   real (`session/create` + `session/prompt` + `session/page`) —no existe un endpoint
+   `evaluator` en DSH 0.2.0-rc.2 (error de una revisión anterior,
+   `scripts/skill_gate_run.py:64-83`, regresión en `tests/test_corpus_gate.py:623-631`)—, y
+   antes de crear sesión el runner exige además que el adaptador verifique el cwd compatible
+   por caso y la disponibilidad efectiva de cada skill objetivo; sin eso se abstiene
+   fail-closed y sin gastar (`scripts/skill_gate_run.py:604-608`, regresión en
+   `tests/test_skill_gate_run.py`). **El corpus tampoco es una prueba del modo auditor ni
+   viceversa:** sus 55 casos apuntan a 25 skills concretas, y el modo que la ejecutaría es
+   otro artefacto. Corolario medido del pase: el corpus gate
+   (`bootstrap.py skill-gate-run`) se abstuvo fail-closed con
+   `no hay sesión DSH utilizable: … No .credentials.yaml at <HOME>/.config/dsh`
+   (`scripts/skill_gate_run.py:33-44`, `scripts/creator_client.py:1673-1690`). Conviene no
+   confundir cuatro cosas distintas: que `dsh web` arranque (aquí sí, con home vacío), que
+   exista un endpoint `evaluator` (no existe en 0.2.0-rc.2), que exista un adaptador Host que
+   verifique layout y skill efectiva antes de `session/create` (tampoco: `ABSTAINED` sin
+   gasto) y que el corpus compile una **skill** y no el **modo** que la despacharía. La
+   cuarta es la causa medida de `NOT_COVERED` en el ensayo externo posterior
+   (`corpus-fixed`): el caso `SC-123` apuntaba a la skill `source-driven-development` y el gate
+   despachó al modo `fixture-auditor`, que además exigió el layout `<producto>/<workspace>` que
+   el directorio del caso no tenía; el gate leyó solo `result.json`, que el modo no escribió, y
+   se abstuvo fail-closed. Ni esa abstención ni aquella parada del home son un fallo del gate
+   que computa: el gate de holdout ligado (`bound-skill-gate`) sigue decidiendo sobre
+   observaciones reales y rechaza el `PASS` fabricado. Ver
+   [progreso-agentico.md](progreso-agentico.md), filas X2/X3.
+2. **Creator end-to-end no se probó en este pase.** Un turno headless real con el `creator-prompt.md` íntegro
    (29 tool calls, 734.064 tokens, cwd correcto) no persistió
    `generated/generation-manifest.json`; el run quedó `RETAINED`. El paquete que el validador
    Host aceptó en este pase lo produjeron las herramientas deterministas del framework a partir
-   del contrato canónico, **no** el modelo.
+   del contrato canónico, **no** el modelo. **Posteriormente, un ensayo externo sí generó con DSH real**
+   (overlay headless model-facing, manifest `GENERATED` con 19 artefactos, `bootstrap accept` y
+   Host → `ACTIVE`), pero esa prueba es **anterior** a la corrección de la contabilidad de
+   presupuesto Creator por run, así que aquel `ACTIVE` no acredita generación
+   post-presupuesto ni el gate vigente. Ver [progreso-agentico.md](progreso-agentico.md), fila X3.
 3. **`git worktree add` quedó bloqueado por el sandbox de sesión.** `git -C <producto> worktree add
    -b <rama> <sibling>` falla con `fatal: cannot lock ref … Read-only file system` más
    `[sandbox: file access denied under workspace-write mode]`; el intento de escalar recibió
    `sandbox escalation to "danger-full-access" requires approval, but no approval channel is
-   available`. Las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace, no
-   como worktrees hermanos: el aislamiento del producto se cumplió, el mecanismo exacto que exige
-   `mode_lifecycle.repair_provision_command` no pudo ejecutarse. Queda registrado como límite del
-   entorno DSH actual y como deuda en `PLAN_IMPLEMENTACION.md`.
+   available`. Ese límite es el origen del cambio de diseño: la candidata **ya no es un
+   worktree** sino un repositorio sombra con `.git` propio, provisionado por el Host, y la
+   provisión de reparación queda implementada con `mode_lifecycle.provision_repair` +
+   `shadow_candidate` (contrato `Host-provision_repair-shadow-only`,
+   `schemas/modes.schema.json`), con regresión negativa en fixture `bwrap` de producto
+   read-only y sombra escribible
+   (`tests/test_mode_lifecycle.py:97-146`:
+   `test_external_bwrap_read_only_product_writable_shadow_repair_session` y
+   `test_host_repair_rejects_legacy_worktree_symlink_and_receipt_collision`).
+   **Queda pendiente el ciclo íntegro bajo preset real**, porque lo demostrado hoy con sesión
+   DSH real es la provisión del Host y la obediencia del modo en el canal headless
+   (`x1-live`: `PROVISIONED → DIRTY`, diff verificado, tests 3/3, reanudación exacta), más el
+   preset resuelto, la skill cargada y los sentinelas ejecutados en web RPC
+   (`x1-preset-real`), pero en ese último turno el supervisor cortó a **241.912
+   totalTokens** **antes de editar** por el presupuesto. No hubo diff ni checks de
+   reparación: el contrato y sus fixtures siguen sin probar la corrida completa con preset.
+
+El presupuesto del Creator se mide **por run** y se evalúa antes de declarar éxito: los tokens
+reales se pliegan por cada `seq` observada, el límite queda congelado con el deadline para que
+una reanudación no lo relaje, y un turno final que cabe en reposo pero ya excedió el límite se
+retiene en vez de aceptarse (`scripts/creator_client.py:_supervise_creator`,
+`tests/test_creator_budget.py`). El ensayo X3 que dejó el Creator `ACTIVE` fue **anterior** a
+esa corrección de contabilidad y no acredita el gate vigente. El ensayo **X3 post-budget**
+quedó `RETAINED` a **912.727 totalTokens** frente a **1,25 M de presupuesto** por el guard
+predictivo; no produjo una generación `ACTIVE` bajo la contabilidad corregida.
 
 Tampoco se midió coste en dinero en este entorno: se declara en tokens (≈1.456.519 tokens en los
 seis turnos con uso medido). El pase es una muestra sobre un producto ficticio, no una campaña
@@ -265,8 +327,11 @@ sólo el operador puede producir**, y conviene nombrarla para que no se confunda
 
 - **El gate de biblioteca todavía no ha puntuado observaciones de un agente real.** El
   ejecutor existe (`bootstrap.py skill-gate-run`), el corpus es ejecutable y el gate decide, pero
-  correrlo exige una sesión DSH con proveedor configurado. Sin ella el ejecutor **se abstiene
-  nombrando lo que falta**, que es lo correcto y no un resultado.
+  correrlo exige, además de una sesión DSH con proveedor configurado, un **adaptador evaluador
+  Host compatible** que verifique antes de `session/create` el layout por caso y la skill
+  efectiva de cada uno de los 25 objetivos del corpus; el CLI no lo ofrece, así que hoy el
+  comando se abstiene. Sin esas dos piezas el ejecutor **se abstiene nombrando lo que falta**,
+  que es lo correcto y no un resultado.
 - **El confinamiento mecánico está medido y aplicado como contrato, no comprovado en una
   campaña.** `tests/test_auditor_confinement.py` lo prueba contra el runtime real con `EROFS`;
   que un proyecto real lo ejerza bajo el flujo completo es lo que la beta comprueba.
@@ -282,16 +347,15 @@ producir observaciones exige un proveedor que configura el operador, y el framew
 instala ni lo invoca. Hasta que eso ocurra, **ningún cambio de biblioteca ha pasado por el
 gate con evidencia de un agente real**, y así queda dicho.
 
-**D2: el auditor se puede confinar en el núcleo; el reparador no, y ya se sabe por qué.**
-Contra `0.1.7-rc.2` instalado, la raíz escribible de `workspace-write` es el cwd de sesión,
-y el producto es hermano del workspace **dentro** de ese cwd: la bash lo clobberaba de
-verdad. Apuntar la política al workspace en vez de a la raíz de sesión lo corrige —el
+**D2: el auditor se puede confinar en el núcleo; el worktree del reparador no.**
+Contra `0.1.7-rc.2` instalado, la raíz escribible de `workspace-write` era el cwd de sesión,
+y el producto hermano del workspace quedaba **dentro** de ese cwd: la bash lo clobberaba de
+verdad. Apuntar la política al workspace en vez de a la raíz de sesión lo corrigió —el
 producto queda fuera de `writableRoots()`, la bash recibe `EROFS` real y el auditor **sigue
-pudiendo persistir sus hallazgos**—, que es lo que se creía imposible. El reparador sigue
-bloqueado por una razón medida: `writableRoots()` admite **una sola** raíz configurable y el
-reparador necesita dos, su candidata y el estado compartido; además `git worktree add`
-registra el worktree en el `.git` del producto, que en una sesión confinada es de solo
-lectura. **Esa medida se confirmó el 2026-10-10 sobre DSH real**: `git -C <producto> worktree add -b <rama> <sibling>` devolvió `fatal: cannot lock ref … Read-only file system` más `[sandbox: file access denied under workspace-write mode]`, y las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace, no como worktrees hermanos. Cerrarlo exige que el Host aprovisione la candidata fuera de la sesión confinada, que es exactamente lo que `mode_lifecycle.provision_implementation` ya hace para `kind=implement`.
+pudiendo persistir sus hallazgos**—. En el diseño previo, el reparador estaba bloqueado:
+`writableRoots()` admitía **una sola** raíz configurable y necesitaba dos, candidata y
+estado compartido; además `git worktree add` registraba el worktree en el `.git` del
+producto, que en una sesión confinada es de solo lectura. **Esa medida se confirmó el 2026-10-10 sobre DSH real**: `git -C <producto> worktree add -b <rama> <sibling>` devolvió `fatal: cannot lock ref … Read-only file system` más `[sandbox: file access denied under workspace-write mode]`, y las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace, no como worktrees hermanos. Por eso el diseño ya no pide un worktree: `mode_lifecycle.provision_repair` (+ `shadow_candidate`) crea la candidata como **repositorio sombra con `.git` propio bajo el workspace, desde el Host**, con contrato `Host-provision_repair-shadow-only` y recibo de identidad; el modo solo lo verifica y lo registra. Pendiente: una corrida Creator íntegra que lo ejerza en sesión real.
 Todo está fijado en `tests/test_auditor_confinement.py` contra el runtime real.
 
 **E6: la memoria se escribía y nadie la leía.** La auditoría de cierre de este

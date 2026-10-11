@@ -37,6 +37,68 @@ SCHEMA_VERSION = 1
 SUPPORT_FILE_MAX_BYTES = 25600
 
 
+# Evidencia medida con el parser de DSH (@deepseek-ai/dsh 0.2.0-rc.2,
+# yaml.parse sobre el cuerpo del frontmatter, tabla completa en los tests):
+# un valor plano que contenga ': ' (dos puntos más espacio) o que termine en
+# ':' rompe la línea con «Nested mappings are not allowed in compact
+# mappings», y parseSkillFile descarta el skill en silencio dejando el catálogo
+# vacío. También fallan los indicadores YAML iniciales - @ * % & | > ! ? #, y
+# '{'/'[' declarar flow map/seq; '#' a mitad de clave inicia un comentario y
+# trunca el texto. Un escalar que la tabla de tipos implícitos convierte en
+# número, booleano o nulo no es `description` para `stringField`, así que se
+# descarta igual: sólo el entrecomillado lo rescata.
+#
+# El árbol canónico no instala dependencias, así que no se replica un parser:
+# se aceptan los dos escalares entrecomillados -las formas que DSH cargó en el
+# ensayo- y los valores planos que la medición confirma inertes, la
+# compatibilidad heredada. Cualquier otra forma se rechaza en lugar de asumir
+# que YAML la interpreta bien: es fail-closed, no un parser completo.
+_PLAIN_UNSAFE_START = set("[]{}&*!|>'\"%@`-?#")
+
+# Scalars the YAML 1.1 implicit-type table turns into a non-string, so the
+# frontmatter field ceases to be text and parseSkillFile drops the skill.
+# Measured on the DSH parser: '0', '01', '-1', '1.0', '1.2e3', '0x11', '0o77'
+# become numbers; 'true'/'TRUE'/'false' booleans; 'null'/'NULL'/'~'/'.nan'/
+# '.inf' null. The quoted forms are the fix, so those launch the same
+# rejection path. '1_000' and '-inf' stay text, so they are not matched.
+_IMPLICIT_NON_TEXT = re.compile(
+    r"(?i)\A(?:"
+    r"[+-]?\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?"  # 0, 01, -1, 1.0, 1.2e3
+    r"|[+-]?\.\d[\d_]*(?:[eE][+-]?\d+)?"             # .5, .5e3
+    r"|[+-]?0[xX][0-9a-f_]+|[+-]?0[oO][0-7_]+"       # 0x11, 0o77
+    r"|null|~|\.nan|\.inf"                            # null and its aliases
+    r"|true|false"                                    # booleans
+    r")\Z")
+
+
+def _minimal_yaml_text(value):
+    """The text of a scalar DSH parses as inert text, or None otherwise."""
+    if value.startswith('"'):
+        # JSON is a strict subset of YAML double-quoted scalars, so json.loads
+        # reads exactly what DSH's yaml.parse reads for the same bytes. The
+        # escape set of YAML 1.2 is the ECMA-262 set, so this holds for '\\u'
+        # and '\\/' too, not only for the quotes.
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            return None
+        return parsed if isinstance(parsed, str) else None
+    if value.startswith("'"):
+        if not re.fullmatch(r"'(?:[^']|'')*'", value):
+            return None
+        return value[1:-1].replace("''", "'")
+    if re.match(r"[|>][+-]?[0-9]?$", value.split("\n", 1)[0].rstrip()):
+        return None
+    body = value.strip()
+    if not body or body[0] in _PLAIN_UNSAFE_START:
+        return None
+    if value.rstrip().endswith(":") or ": " in value or " #" in value:
+        return None
+    if _IMPLICIT_NON_TEXT.match(body):
+        return None
+    return body
+
+
 def _yaml_scalar(value):
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
@@ -44,10 +106,15 @@ def _yaml_scalar(value):
     return value
 
 
-def _skill_frontmatter_issue(path, expected_name):
-    """Validate minimal DSH frontmatter without accepting general YAML."""
+def skill_frontmatter_issue(path, expected_name):
+    """Validate minimal DSH frontmatter without accepting general YAML.
+
+    Callable on the generated contract and on the packaged bundle: it reads
+    the exact bytes the loader will read, so a description that DSH discards
+    here is a package rejected instead of a silent empty catalog.
+    """
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError) as error:
         return str(error)
     if not lines or lines[0].strip() != "---":
@@ -61,10 +128,19 @@ def _skill_frontmatter_issue(path, expected_name):
     for line in lines[1:end]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*", line)
+        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*):\s+(.*?)\s*", line)
         if not match:
             return "invalid minimal YAML frontmatter"
-        values[match.group(1)] = _yaml_scalar(match.group(2))
+        key, raw = match.groups()
+        if key in values:
+            return f"duplicate YAML frontmatter key {key!r}"
+        parsed = _minimal_yaml_text(raw)
+        if parsed is None:
+            return (
+                f"frontmatter {key} must be a quoted scalar or a plain scalar "
+                "without ': ': an unquoted ': ' fails the DSH YAML parser and "
+                "the skill is discarded")
+        values[key] = parsed
     if values.get("name") != expected_name:
         return f"frontmatter name must equal directory name {expected_name!r}"
     if not values.get("description", "").strip():
@@ -555,7 +631,7 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
         preset_ids.add(preset_id)
         roles.add(role)
 
-        skill_issue = _skill_frontmatter_issue(mode_dir / "SKILL.md", mode_dir.name)
+        skill_issue = skill_frontmatter_issue(mode_dir / "SKILL.md", mode_dir.name)
         if skill_issue:
             issues.append(f"{mode_dir.relative_to(generated)}/SKILL.md: {skill_issue}")
         if layout is not None:
@@ -589,7 +665,7 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
                 issues.append(
                     f"{skill_dir.relative_to(generated)} missing regular SKILL.md")
                 continue
-            skill_issue = _skill_frontmatter_issue(entrypoint, skill_dir.name)
+            skill_issue = skill_frontmatter_issue(entrypoint, skill_dir.name)
             if skill_issue:
                 issues.append(
                     f"{entrypoint.relative_to(generated)}: {skill_issue}")
@@ -628,7 +704,7 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
         routing_rows.append((name, doc["routing"]))
         entrypoint = generated / "skills" / name / "SKILL.md"
         if (not entrypoint.is_file() or entrypoint.is_symlink() or
-                _skill_frontmatter_issue(entrypoint, name)):
+                skill_frontmatter_issue(entrypoint, name)):
             issues.append(f"routing sin skill cargable {name!r}: {rel}")
         if f"skills/{name}/SKILL.md" not in {
                 item.get("path") for item in manifest.get("artifacts", [])}:
