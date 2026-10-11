@@ -9,8 +9,10 @@ nunca se había alcanzado sí se ejerce**.
 - **La sombra quedó sucia con el defecto canónico reparado**: `redondearMonetario` pasó de
   `Math.round(valor)` a `Math.round(valor * 100) / 100`, y `totalConIva` redondea sobre la
   tarifa ya redondeada. Es el fix que exige el comentario de contrato de la propia función.
-- **Verificación real: 3/3 tests en verde contra la sombra**, y el producto canónico quedó
-  limpio (`git status` vacío).
+- **El fix es correcto verificado a mano: 3/3 tests en verde contra la sombra** (ejecutados por
+  el operador desde fuera, no por el modo), y el producto canónico quedó limpio
+  (`git status` vacío). El contrato sigue sin ejercicio: la verificación que el modo debía
+  registrar no llegó a escribirse.
 - **Falta un tramo corto**: segunda reclamación de la sombra ya sucia, registro de verificación
   con el `candidate_diff_digest` copiado de `work-items.json` y cierre `DIRTY`. El ciclo íntegro
   bajo preset real sigue sin probarse, pero ya no es un problema de arranque: está acotado a

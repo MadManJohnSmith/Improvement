@@ -351,7 +351,8 @@ billed 243,165 `totalTokens`; two of them were stopped **before editing anything
 provisioning alone cost 48,694 tokens. A fourth turn at a 200,000 ceiling
 **did reach the edit**:
 180,107 tokens across 11 steps, the shadow left dirty with the canonical defect
-repaired, and 3/3 tests green against the shadow with the product untouched. What
+repaired. The fix is sound — 3/3 tests green against the shadow, run by the operator from
+outside, and the product untouched — but the contract is still unexercised. What
 is still missing is the closing leg: the dirty re-claim, the verification record
 carrying the `candidate_diff_digest` from `work-items.json`, and the `DIRTY` close.
 The full cycle under a real preset is not yet proven. The
