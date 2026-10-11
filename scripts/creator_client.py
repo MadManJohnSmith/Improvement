@@ -1202,13 +1202,17 @@ class CreatorSession:
     def create_finish(self, manifest):
         """Create finish.json to mark generation complete.
 
-        The budget is re-checked here rather than only in the supervision loop:
-        a run that goes terminal and quiescent is accepted by the caller without
-        going through the loop's budget branch, and a state persisted that way by
-        an earlier version would otherwise reach GENERATED over an exceeded
-        limit.
+        This method deliberately does not gate the budget. The only counter it
+        can read (``token_count``) is never fed in production, so the check
+        would compare zero against the limit and always pass: a gate that
+        cannot fail reads as enforcement without being any, which is worse than
+        no gate. Token limit enforcement belongs to the callers that hold
+        folded real usage -- the supervision loop before accepting a turn, and
+        ``run_creator`` before adopting a terminal package -- and this
+        method's third caller only re-materialises the finish of a run already
+        accepted as ``GENERATED``, which is immutability and is not re-litigated
+        here.
         """
-        self.check_budget()
         gen_id = manifest.get("generation_id", "unknown")
         finish_path = self.run_dir / "finish.json"
         if not finish_path.exists():

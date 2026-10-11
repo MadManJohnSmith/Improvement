@@ -60,9 +60,25 @@ Leer eventos `session`, `step_end.usage`, `turn_end.reason.kind` y `final`:
 `final.text` con `turn_end.reason.kind = completed` y `totalTokens` > 0 acredita
 el canal. Un `final.text` por sí solo no es prueba de éxito funcional.
 
+## Contabilidad real: `totalTokens`, no `input + output`
+El gasto de un turno viaja en los eventos durables `assistant/message.data.usage`,
+no en un resumen final. `totalTokens` **incluye las lecturas de caché**, así que
+puede exceder con mucho `inputTokens + outputTokens`: medir `input + output` y
+declarar el total subestima el coste. Sumar turnos sin deduplicar por `seq`
+cuenta dos veces el mismo evento. El control de presupuesto se evalúa **antes**
+de declarar éxito, por corrida y no por mensaje: un turno que cabría en la
+quiescencia pero ya excede el límite congelado se retiene, no se acepta.
+
 ## Modo y límites de la sesión
 - `--json` emite JSONL y `--session-id` reanuda una sesión persistida; la tarea
   va por argumento o por stdin (`-`).
+- Si un turno headless quiesce y no escribe: el inventario puede haber caído al
+  `write` del upstream porque falta el overlay. `scripts/dsh-plugins/cordis-patch.yml`
+  registra `workflow-write`; sin él, el sandbox rechaza la escritura con el
+  error de `sandbox_permissions`. Componer el argv con
+  `creator_client.dsh_headless_command()` (o Añadir `--patch <overlay>` a mano)
+  en vez de escribir el argv a pelo; `DSH_PLUGIN_PATCH=0` lanza sin overlay,
+  solo para reproducir el fallo.
 - El modo de sandbox de sesión (`workspace-write`) puede **negar operaciones
   fuera de su scope**, y `git worktree add` sobre un producto hermano falla con
   `Read-only file system` / `file access denied`. Un intento de escalar a
