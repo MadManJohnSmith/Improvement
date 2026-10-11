@@ -1,4 +1,4 @@
-"""Transactional publication of exactly two DSH user presets."""
+"""Transactional publication of legacy two and new three DSH presets."""
 import contextlib
 import io
 import json
@@ -250,6 +250,38 @@ class TransactionTests(unittest.TestCase):
             self.install_bound(generation="gen-1", verdict_path=borrowed)
         self.assertFalse((self.workspace / ".dsh-managed" / "ACTIVE").exists())
 
+    def test_three_presets_are_packaged_with_implementer_and_legacy_two_still_activate(self):
+        # The two-mode fixture below is a previous generation, not a cap.
+        role = "implementer"
+        preset_id = f"project-{role}"
+        mode = self.generated / "modes" / preset_id
+        mode.mkdir()
+        layout = {"session_root": self.root.name, "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace",
+                  "state_root": "Syncify-workspace/mode-state"}
+        lifecycle = expected_lifecycle(role, layout)
+        (mode / "mode.json").write_text(json.dumps({
+            "preset_id": preset_id, "role": role, "reads": [layout["product_root"]],
+            "writes": [layout["state_root"]], "mode_lifecycle": lifecycle}) + "\n")
+        (mode / "preset.yml").write_text(f"name: {preset_id}\n")
+        (mode / "agent.cordis.yml").write_text(mode_composition(preset_id))
+        (mode / "SKILL.md").write_text(
+            f"---\nname: {preset_id}\ndescription: implementer mode\n---\n"
+            f"# {preset_id}\n```json mode-layout\n"
+            f"{json.dumps(layout, separators=(',', ':'))}\n```\n"
+            f"```json mode-lifecycle\n"
+            f"{json.dumps(lifecycle, separators=(',', ':'))}\n```\n")
+        self.client = Client(ids=("project-auditor", "project-continuous-repair",
+                                  preset_id))
+        result = self.install(client=self.client)
+        self.assertEqual(result["result"], "ACTIVE")
+        self.assertEqual(set(result["published_presets"]), set(self.client.ids))
+        receipt = json.loads((self.workspace / ".dsh-managed" /
+                              "published-presets.json").read_text())
+        bundle = Path(receipt["bundle_path"])
+        self.assertTrue((bundle / "skills" / preset_id / "SKILL.md").is_file())
+        self.assertIn(f"preset-{preset_id}", (bundle / "cordis.patch.yml").read_text())
+
     def test_publishes_two_presets_and_shared_state_then_activates(self):
         result = self.install()
         self.assertEqual(result["result"], "ACTIVE")
@@ -365,6 +397,52 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(tx.TransactionError, "prohibited plugin rows"):
             self.install()
         self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+    def test_router_selects_only_host_accepted_installed_skill_and_abstains(self):
+        import skill_router
+        skill = self.generated / "skills" / "project-check"
+        routing = {"actions": ["implement"], "modes": ["implementador"],
+                   "requires": {"language": "python"},
+                   "capability_set": ["read_product"], "context_bytes": 100}
+        contracts = self.generated / "contracts"
+        contracts.mkdir()
+        contract = {"schema_version": 1, "kind": "skill", "name": "project-check",
+                    "motive": "test", "domain": ["test"], "reuse_source": "composition",
+                    "inputs": [], "outputs": [], "required_capabilities": [],
+                    "forbidden_capabilities": [], "files": [
+                        {"path": "SKILL.md", "type": "skill-entrypoint"}],
+                    "behavior_test": "test", "provenance": {"license": "MIT"},
+                    "routing": routing}
+        (contracts / "project-check.skill.json").write_text(json.dumps(contract) + "\n")
+        manifest_path = self.generated / "generation-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["effective_routing_digest"] = skill_router._digest(
+            [("project-check", routing)])
+        manifest_path.write_text(json.dumps(manifest) + "\n")
+        instance = tx.Transaction(self.workspace, dsh_home=self.home, client=Client())
+        observations = [{"fact": "language", "value": "python",
+                         "evidence_sha256": "a" * 64}]
+        self.assertEqual(instance.select_project_skills(
+            observations, {"action": "implement"}, mode="implementador",
+            budget=200)["abstain"], "no_active_generation")
+        self.install(client=instance.client)
+        selected = instance.select_project_skills(
+            observations, {"action": "implement"}, mode="implementador",
+            budget=200)
+        self.assertEqual(selected["allowed"], ["project-check"])
+        self.assertFalse(selected["scope"]["authorizes_execution"])
+        self.assertEqual(instance.select_project_skills(
+            observations, {"action": "implement"}, mode="implementador",
+            budget=20)["abstain"], "context_budget_exceeded")
+        self.assertEqual(instance.select_project_skills(
+            observations, {"action": "implement"}, mode="implementador",
+            budget=200, denied=["project-check"])["abstain"],
+            "no_eligible_skill")
+        # A bundled skill changed after publication cannot be selected.
+        (instance.install_root / "bundles/gen-1/skills/project-check/resources/guide.txt").write_text("tampered\n")
+        self.assertEqual(instance.select_project_skills(
+            observations, {"action": "implement"}, mode="implementador",
+            budget=200)["abstain"], "bundle_not_confirmed")
 
     def test_bundle_contains_scoped_anti_escalation_plugin(self):
         self.install()

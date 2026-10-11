@@ -322,6 +322,91 @@ class Transaction:
                 f"host-verdict corresponde a otra generación: {doc_gen}")
         return doc
 
+    def select_project_skills(self, observations, intent, *, mode, budget,
+                              denied=()):
+        """Select only from active Host-accepted and bundled skills.
+
+        Selection is not invocation or authority. Legacy generations without
+        routing metadata abstain; a claimed name is never sufficient to load.
+        """
+        import skill_router
+        generation_id = self._active_generation_id()
+        if not generation_id:
+            return {"allowed": [], "abstain": "no_active_generation"}
+        if not SAFE_NAME.fullmatch(generation_id):
+            return {"allowed": [], "abstain": "invalid_active_generation"}
+        generated = self.generations / generation_id
+        if not generated.is_dir() or generated.is_symlink():
+            return {"allowed": [], "abstain": "active_generation_missing"}
+        manifest_path = generated / "generation-manifest.json"
+        if not manifest_path.is_file() or manifest_path.is_symlink():
+            return {"allowed": [], "abstain": "active_manifest_missing"}
+        manifest = _json(manifest_path)
+        rows = []
+        skills = []
+        contracts = generated / "contracts"
+        if contracts.is_symlink():
+            return {"allowed": [], "abstain": "unsafe_contract"}
+        if contracts.is_dir():
+            for path in sorted(contracts.glob("*.json")):
+                if path.is_symlink():
+                    return {"allowed": [], "abstain": "unsafe_contract"}
+                doc = _json(path)
+                if not isinstance(doc, dict) or "routing" not in doc:
+                    continue
+                if doc.get("kind") != "skill":
+                    return {"allowed": [], "abstain": "unapproved_routing"}
+                import generation_contracts as gc
+                gc.validate("skill-contract", doc)
+                name = doc["name"]
+                rows.append((name, doc["routing"]))
+                skills.append({"name": name, "routing": doc["routing"]})
+        if not rows:
+            return {"allowed": [], "abstain": "no_approved_routing"}
+        if (skill_router._digest(sorted(rows)) !=
+                manifest.get("effective_routing_digest")):
+            return {"allowed": [], "abstain": "roster_digest_mismatch"}
+        receipt_path = self.install_root / "published-presets.json"
+        if not receipt_path.is_file() or receipt_path.is_symlink():
+            return {"allowed": [], "abstain": "bundle_not_confirmed"}
+        receipt = _json(receipt_path)
+        bundle_root = self.install_root / "bundles" / generation_id
+        if (receipt.get("generation_id") != generation_id or
+                receipt.get("bundle_path") != str(bundle_root) or
+                not bundle_root.is_dir() or bundle_root.is_symlink() or
+                receipt.get("sha256") != hashlib.sha256(json.dumps(
+                    _inventory(bundle_root), sort_keys=True).encode()).hexdigest()):
+            return {"allowed": [], "abstain": "bundle_not_confirmed"}
+        bundle = bundle_root / "skills"
+        if not bundle.is_dir() or bundle.is_symlink():
+            return {"allowed": [], "abstain": "bundle_not_confirmed"}
+        try:
+            _safe_tree(generated)
+            _safe_tree(bundle_root)
+            modes = self._mode_presets(generated)
+        except (ValueError, TransactionError):
+            return {"allowed": [], "abstain": "unsafe_or_invalid_active_generation"}
+        if self.client is None or not self._active_presets_match(modes, bundle):
+            return {"allowed": [], "abstain": "active_presets_not_confirmed"}
+        for skill in skills:
+            name = skill["name"]
+            if not SAFE_NAME.fullmatch(name):
+                return {"allowed": [], "abstain": "unsafe_skill_name"}
+            source_dir = generated / "skills" / name
+            installed_dir = bundle / name
+            source = source_dir / "SKILL.md"
+            installed = installed_dir / "SKILL.md"
+            if (not source_dir.is_dir() or source_dir.is_symlink() or
+                    not installed_dir.is_dir() or installed_dir.is_symlink() or
+                    not source.is_file() or source.is_symlink() or
+                    not installed.is_file() or installed.is_symlink() or
+                    _inventory(source_dir) != _inventory(installed_dir)):
+                return {"allowed": [], "abstain": "skill_not_installed"}
+        roster = {"approval_sha256": manifest["effective_routing_digest"],
+                  "skills": skills}
+        return skill_router.select(observations, intent, roster, mode=mode,
+                                   budget=budget, denied=denied)
+
     def _mode_presets(self, generated):
         modes_root = generated / "modes"
         if not modes_root.is_dir() or modes_root.is_symlink():
@@ -339,7 +424,7 @@ class Transaction:
             required = ("mode.json", "preset.yml", "agent.cordis.yml", "SKILL.md")
             if (preset_id != mode_dir.name or not SAFE_NAME.fullmatch(
                     preset_id or "") or role not in
-                    ("auditor", "continuous-repair") or
+                    ("auditor", "continuous-repair", "implementer") or
                     any(not (mode_dir / name).is_file() or
                         (mode_dir / name).is_symlink() for name in required)):
                 raise TransactionError(f"Preset de modo inválido: {mode_dir}")
@@ -352,10 +437,11 @@ class Transaction:
                 raise TransactionError(
                     f"Contrato de modo inválido: {mode_dir}: {error}") from error
             modes.append((preset_id, role, mode_dir))
-        if (len(modes) != 2 or len({preset_id for preset_id, _, _ in modes}) != 2 or
-                {role for _, role, _ in modes} != {
-                    "auditor", "continuous-repair"}):
-            raise TransactionError("Se requieren exactamente dos presets finales")
+        roles = [role for _, role, _ in modes]
+        if (len(modes) not in (2, 3) or len(set(roles)) != len(modes) or
+                not {"auditor", "continuous-repair"} <= set(roles) or
+                set(roles) - {"auditor", "continuous-repair", "implementer"}):
+            raise TransactionError("Se requieren auditor y continuous-repair, con implementer opcional")
         return modes
 
     def _resolve_capabilities(self):
@@ -393,10 +479,6 @@ class Transaction:
 
     @staticmethod
     def _roster_items(value):
-        value = value.get("value", value) if isinstance(value, dict) else value
-        if isinstance(value, dict):
-            return value.get("items", value.get("presets", []))
-        return value if isinstance(value, list) else []
         value = value.get("value", value) if isinstance(value, dict) else value
         if isinstance(value, dict):
             return value.get("items", value.get("presets", []))

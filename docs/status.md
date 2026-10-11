@@ -1,10 +1,12 @@
 # Estado comprobado del framework
 
-**Actualización:** 2026-10-08
+**Actualización:** 2026-10-10
 **Arquitectura vigente:** [v3.0](../ARQUITECTURA_FLUJO_AGENTES.md) (C0–C7 completadas; campaña U6 implementada en parte, sin aceptación operativa; lifecycle EN CURSO/IMPLEMENTED_NOT_VERIFIED)
-**Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md)
+**Índice de progreso:** [C0–C7 y post-C7](../PLAN_IMPLEMENTACION.md) · [vista de una página de todos los hitos](progreso-agentico.md)
 
 Este documento registra únicamente el estado vigente. El detalle de iteraciones anteriores está en Git/`CHANGELOG.md`, no aquí.
+
+**Implementador (parcial, aceptación en un solo caso real):** el contrato Host/Creator admite un tercer preset `implementer` en generaciones nuevas y conserva las de dos roles; la transacción prueba publicación local de los tres. `mode_lifecycle.provision_implementation` liga petición exacta y base limpia a una sombra aislada en workspace, conserva el trabajo sucio al reanudar y `verify_implementation` mide diff y corre un caso de comportamiento en candidata (no valida aún que el comando sea un entrypoint del plan Host); las regresiones lo demuestran con producto temporal externo. **El 2026-10-10 un turno DSH real** sobre un producto ficticio dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido, sin commit/merge/push implícitos: el mecanismo se ejerció, en un solo caso y con la candidata creada como clon dentro del workspace. `skill_router` solo selecciona sobre roster cuya definición/entrypoint/bundle/recibo están ligados al manifest de la generación ACTIVE; abstiene si falta evidencia, presupuesto o integridad. **Sí se cargaron e invocaron skills en sesión DSH real** (auditor 3, reparador 2, implementador 1; un turno trivial no cargó ninguna), pero `skill_router` sigue siendo solo selector informativo y no se ha ejercido contra una sesión real. Sigue sin probarse confinamiento mecánico de bash en campaña ni `git worktree add` real. Workflow de usuario entra por `bootstrap workflow run`, no por plugin de modo; se mantiene la prohibición de filas delegat/subagent/workflow. No hay publicación remota.
 
 ## Base técnica comprobada
 
@@ -150,9 +152,58 @@ Regresiones de U1–U3: `tests/test_workflow_executor.py`, `tests/test_workflow_
 | `verificar-final` (gate) | PASS/FAIL/BLOCKED desde el ledger; FAIL aborta y retiene, BLOCKED retiene. |
 | `cerrar` (gate) | Solo emite PASS (0) sin leer el ledger; no acredita por sí mismo que las verificaciones anteriores hayan pasado. |
 
-El `result_contract` de cada ask exige `path` y admite `evidence_name` (por defecto `.`); `if_veredicto` lee `evidence/veredicto.json` desde el gate anterior y emite `ASK_SKIPPED` si no coincide. La carga de resultados confina rutas/symlinks y aplica presupuestos (200 ficheros, 8 MiB por fichero, 256 MiB por raíz, JSON de resultado hasta 1 MiB): sobrepasarlos retiene. El preflight estático de joins rechaza en carga un registro mayor de 4096 B (50 dependencias aceptadas; 55 rechazadas en regresión). `scripts/campaign.py` solo lee el ledger `mode-state/verification-results.jsonl` del producto, **no lo escribe**: sin capacidad el valor es BLOCKED; con capacidad pero sin registros utilizables, FAIL. Los gates de verificación escriben BLOCKED como valor de `veredicto.json`, no existe evento `BLOCKED` propio del journal. Nota de límite comprobable: el gate que sale 1 registra fallo, no `STEP_COMPLETED`; la condición `if_veredicto` exige que el gate fuente esté completado, así que un `FAIL` seguido de reparación **retiene** (`ask-veredicto-sin-resultado`) en el ejecutor actual en vez de despachar el ask. Esto impide presentar el ciclo de reparación como funcionando de extremo a extremo.
+El `result_contract` de cada ask exige `path` y admite `evidence_name` (por defecto `.`); `if_veredicto` lee `evidence/veredicto.json` desde el gate anterior y emite `ASK_SKIPPED` si no coincide. La carga de resultados confina rutas/symlinks y aplica presupuestos (200 ficheros, 8 MiB por fichero, 256 MiB por raíz, JSON de resultado hasta 1 MiB): sobrepasarlos retiene. El preflight estático de joins rechaza en carga un registro mayor de 4096 B (50 dependencias aceptadas; 55 rechazadas en regresión). `scripts/campaign.py` solo lee el ledger `mode-state/verification-results.jsonl` del producto, **no lo escribe**: sin capacidad el valor es BLOCKED; con capacidad pero sin registros utilizables, FAIL. Los gates de verificación escriben BLOCKED como valor de `veredicto.json`, no existe evento `BLOCKED` propio del journal. El despacho FAIL→reparación **funciona**: un gate que sale 1 con `on_fail: continue` registra `STEP_FAILED` y queda en `failed_gates`, que `if_verdicto` acepta como fuente (`scripts/workflow.py:1547-1553`), así que el ask condicionado a su `FAIL` se despacha y el run acaba `RUN_COMPLETED` (regresión: `tests/test_workflow_ask.py:682-703`). Lo que no se ha probado es el ciclo completo con DSH real ni con el producto canónico.
 
 **Qué no existe aún:** aceptación de U6 ni corrida de campaña con DSH real. El sondeo en vivo anterior terminó en `plan ilegible` (sin run dir ni journal), no en PASS. Tampoco existen evento `BLOCKED` propio, `schema_version: 2`, `gate.cwd`, dos planes separados, escritura Host del ledger, `bootstrap campaign` ni clasificación universal de códigos; la integración con `acceptance.py` sigue siendo riesgo abierto. U4 (bundle) no se ejecutó y requiere autorización explícita; U5 (skill-doctrina en `library/`) no se ejecutó y requiere gate de biblioteca con sesión real del operador.
+
+### Pase integral sobre DSH real (2026-10-10): qué se midió y qué no
+
+El 2026-10-10 se ejecutó un ensayo con instalación real de `@deepseek-ai/dsh` `0.2.0-rc.2` (versión confirmada con `npm view`), un `DSH_HOME` de campaña aislado fuera del canónico y un producto **ficticio** con git real y un defecto conocido. Nada tocó el producto real del operador ni `~/.dsh`. Los artefactos viven fuera del repositorio canónico. El procedimiento verificado para reproducir la sesión quedó como skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
+
+**Comprobado en este pase, con comando y artefacto:**
+
+| Comprobación | Resultado |
+|---|---|
+| Canal real de inferencia | `dsh --profile headless --json` con `DSH_HOME` aislado: `final.text = "PING-OK"`, `turn_end.reason.kind = completed`, `totalTokens = 6552`, exit 0 |
+| Fixture ficticio en rojo | `FAILED (failures=1)` `70 != 30` antes de reparar |
+| `bootstrap install` | run `CREATED`, run dir externo al canónico |
+| Auditor real | 13 tool calls, `evidence/audit-finding.md` (2.030 B) con excerpt literal y salida de test |
+| Reparador real | candidata externa `candidate-repair-ensayo-1`, commit `ab5c0c6`, diff `+1 -3`, tests PASS, producto intacto |
+| Implementador real | candidata `candidate-implement-nivel`, commit `95aa9b2`, 6/6 tests nuevos OK, producto sin `nivel_alerta` |
+| Workflow FAIL → reparación → PASS | run `r-5d7d11…` `RETAINED cause: gate-abort:gate-producto`; run `r-7761c0…` `COMPLETED` |
+| Journals | `workflow.py verify` VERIFIED en ambos run dirs |
+| Memoria de campaña | `MEMORY_RECONCILED {base 693ba47…, invalidated: 6, hits: 0, misses: 0}` |
+| Skills en sesión real | auditor cargó 3, reparador 2, implementador 1; turno trivial → 0 tool calls |
+| Abstención real | turno con `Decision: I abstain` verificado con write-probe, producto intacto |
+| Validador Host | `READY_FOR_ACCEPTANCE`, 10/10 capas PASS sobre paquete real |
+| Corpus gate antifraude | `action: reject` — candidato inventado pierde en partición de entrenamiento (0.488 < 1.000) |
+| Confinamiento canónico | intento de escritura desde el repo canónico denegado; reintento con `danger-full-access` rechazado sin canal de aprobación |
+
+**No probado (queda declarado, no se rellena con suposición):**
+
+1. **`dsh web` no sirvió en este entorno.** El `profiles/web/` del home de campaña se copió con
+   `node_modules/` vacío, así que el servidor no arranca: sin RPC `session/create` ni endpoint
+   `evaluator`. Corolario medido: el corpus gate (`bootstrap.py skill-gate-run`) se abstuvo
+   fail-closed con `no hay sesión DSH utilizable: … No .credentials.yaml at <HOME>/.config/dsh`
+   (`scripts/skill_gate_run.py:33-44`, `scripts/creator_client.py:1673-1690`). El perfil headless
+   sí funcionó con el mismo home.
+2. **Creator end-to-end no se probó.** Un turno headless real con el `creator-prompt.md` íntegro
+   (29 tool calls, 734.064 tokens, cwd correcto) no persistió
+   `generated/generation-manifest.json`; el run quedó `RETAINED`. El paquete que el validador
+   Host aceptó en este pase lo produjeron las herramientas deterministas del framework a partir
+   del contrato canónico, **no** el modelo.
+3. **`git worktree add` quedó bloqueado por el sandbox de sesión.** `git -C <producto> worktree add
+   -b <rama> <sibling>` falla con `fatal: cannot lock ref … Read-only file system` más
+   `[sandbox: file access denied under workspace-write mode]`; el intento de escalar recibió
+   `sandbox escalation to "danger-full-access" requires approval, but no approval channel is
+   available`. Las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace, no
+   como worktrees hermanos: el aislamiento del producto se cumplió, el mecanismo exacto que exige
+   `mode_lifecycle.repair_provision_command` no pudo ejecutarse. Queda registrado como límite del
+   entorno DSH actual y como deuda en `PLAN_IMPLEMENTACION.md`.
+
+Tampoco se midió coste en dinero en este entorno: se declara en tokens (≈1.456.519 tokens en los
+seis turnos con uso medido). El pase es una muestra sobre un producto ficticio, no una campaña
+sobre un repositorio real del operador.
 
 ### `stack_coverage`: qué stack está probado y cuál está solo declarado
 
@@ -240,7 +291,7 @@ pudiendo persistir sus hallazgos**—, que es lo que se creía imposible. El rep
 bloqueado por una razón medida: `writableRoots()` admite **una sola** raíz configurable y el
 reparador necesita dos, su candidata y el estado compartido; además `git worktree add`
 registra el worktree en el `.git` del producto, que en una sesión confinada es de solo
-lectura. Cerrarlo exige que el Host aprovisione la candidata fuera de la sesión confinada.
+lectura. **Esa medida se confirmó el 2026-10-10 sobre DSH real**: `git -C <producto> worktree add -b <rama> <sibling>` devolvió `fatal: cannot lock ref … Read-only file system` más `[sandbox: file access denied under workspace-write mode]`, y las candidatas se crearon como `git clone --no-hardlinks` dentro del workspace, no como worktrees hermanos. Cerrarlo exige que el Host aprovisione la candidata fuera de la sesión confinada, que es exactamente lo que `mode_lifecycle.provision_implementation` ya hace para `kind=implement`.
 Todo está fijado en `tests/test_auditor_confinement.py` contra el runtime real.
 
 **E6: la memoria se escribía y nadie la leía.** La auditoría de cierre de este

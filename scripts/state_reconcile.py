@@ -143,12 +143,26 @@ def memory(workspace):
     units = sorted({entry.get("unit") for entry in episodes.read_episodes(workspace)
                     if isinstance(entry.get("unit"), str) and entry["unit"]})
     signatures = set(episodes.read_index(workspace)["signatures"])
-    claimed = set()
+    claimed, contradicted = set(), set()
     for record in latest_findings(state).values():
         evidence = record.get("evidence")
         prior = evidence.get("prior_episode") if isinstance(evidence, dict) else None
-        if isinstance(prior, dict) and isinstance(prior.get("unit"), str):
-            claimed.add(prior["unit"])
+        if not isinstance(prior, dict) or not isinstance(prior.get("unit"), str):
+            continue
+        claimed.add(prior["unit"])
+        # The citation is recalled by the fingerprint of the quoted code, which
+        # the tool puts on `evidence.fingerprint` and the mode is not allowed to
+        # write. A citation naming a unit that closed a *different* defect is not
+        # a deletion, and checking the unit alone would wave it through: the unit
+        # is there, so is the memory, and the finding still says a repeat nobody
+        # proved. Stale in that specific way it names a repair that does not
+        # close the defect it is filed against, which is exactly the duplicate
+        # the memory exists to stop. It is reported separately from
+        # `unknown_claimed_units` because the two mean different repairs: one
+        # needs the memory restored, the other needs the finding re-derived.
+        if prior["unit"] in units and not episodes.citation_valid(
+                workspace, prior, evidence.get("fingerprint")):
+            contradicted.add(prior["unit"])
     return {
         "signatures": counted["signatures"],
         "episodes": counted["episodes"],
@@ -159,6 +173,7 @@ def memory(workspace):
         # rather than tolerated: a repeat nobody can trace is not a repeat the
         # memory proved.
         "unknown_claimed_units": sorted(claimed - set(units)),
+        "contradicted_claims": sorted(contradicted),
         "known_signatures": len(signatures),
     }
 

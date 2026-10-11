@@ -582,6 +582,21 @@ class TestPositiveCorpus(unittest.TestCase):
     def test_mode_contract_golden(self):
         gc.validate("mode-contract", _golden_mode_contract())
 
+    def test_implementer_contract_has_independent_request_lifecycle(self):
+        doc = _golden_mode_contract()
+        doc["role"] = "implementer"
+        doc["name"] = "TestProject-implementer"
+        doc["preset_id"] = "testproject-implementer"
+        doc["mode_lifecycle"] = expected_lifecycle("implementer", {
+            "session_root": "parent", "product_root": "TestProject",
+            "workspace_root": "TestProject-workspace",
+            "state_root": "TestProject-workspace/mode-state"})
+        gc.validate("mode-contract", doc)
+        schema = json.loads((ROOT / "schemas/modes.schema.json").read_text())
+        self.assertIn("implementer", schema["properties"]["role"]["enum"])
+        self.assertEqual(doc["mode_lifecycle"]["implementation_candidate"]["request_kind"],
+                         "user-change-not-audited-finding")
+
     def test_skill_contract_golden(self):
         gc.validate("skill-contract", _golden_skill_contract())
 

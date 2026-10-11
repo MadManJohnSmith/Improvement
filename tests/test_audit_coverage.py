@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import os
+from datetime import date
 from pathlib import Path
 import subprocess
 import sys
@@ -28,11 +29,12 @@ class AuditCoverageTest(unittest.TestCase):
         ]
         self.snapshot = audit.inventory(self.product)
 
-    def consolidate(self, units=None, snapshot=None, findings=None):
+    def consolidate(self, units=None, snapshot=None, findings=None, today=None):
         return audit.consolidate(self.product, 'c1', 'base1',
                                  self.units if units is None else units,
                                  [] if findings is None else findings,
-                                 self.snapshot if snapshot is None else snapshot)
+                                 self.snapshot if snapshot is None else snapshot,
+                                 today=today)
 
     def test_deterministic_snapshot_and_explicit_exclusions(self):
         hidden = self.product / '.git'
@@ -119,6 +121,66 @@ class AuditCoverageTest(unittest.TestCase):
         snapshot['exclusions']['b.py']['kind'] = 'directory'
         with self.assertRaisesRegex(ValueError, 'obsoleto'):
             self.consolidate(units=self.units[:1], snapshot=snapshot)
+
+    def test_an_owned_exclusion_survives_until_its_own_date(self):
+        # The hole in coverage is somebody's decision, so it carries who made
+        # it and when it stops applying. None of that decides whether the
+        # exclusion is allowed today: only the date does.
+        today = date(2026, 10, 10)
+        exclusion = {'reason': 'Vendored until the 3.0 cut', 'owner': 'alan',
+                     'receipt': 'INV-2026-01', 'expires_at': '2026-12-31'}
+        snapshot = audit.inventory(self.product, {'b.py': exclusion}, today=today)
+        self.assertEqual(snapshot['exclusions']['b.py']['owner'], 'alan')
+        self.assertEqual(snapshot['exclusions']['b.py']['expires_at'], '2026-12-31')
+        result = self.consolidate(units=self.units[:1], snapshot=snapshot)
+        self.assertEqual(result['coverage']['excluded_entries'], 1)
+
+    def test_an_expired_exclusion_does_not_persist_by_silence(self):
+        yesterday = date(2026, 1, 1)
+        exclusion = {'reason': 'Vendored', 'owner': 'alan',
+                     'receipt': 'INV-2026-01', 'expires_at': yesterday.isoformat()}
+        snapshot = audit.inventory(self.product, {'b.py': exclusion},
+                                   today=date(2025, 12, 1))
+        # The snapshot was legal when it was taken. What is not allowed is
+        # validating coverage against it later, which is how an exclusion that
+        # nobody looked at again would quietly become permanent.
+        with self.assertRaisesRegex(ValueError, 'expirada'):
+            self.consolidate(units=self.units[:1], snapshot=snapshot,
+                             today=date(2026, 1, 2))
+        # Writing a new one that is already expired is refused the same way.
+        with self.assertRaisesRegex(ValueError, 'expirada'):
+            audit.inventory(self.product, {'b.py': exclusion}, today=date(2026, 1, 2))
+        with self.assertRaisesRegex(ValueError, 'expirada'):
+            audit.inventory(self.product,
+                            {'b.py': dict(exclusion, expires_at='2026-01-01')},
+                            today=date(2026, 1, 2))
+
+    def test_an_owned_exclusion_needs_all_three_deciding_fields(self):
+        full = {'reason': 'Vendored', 'owner': 'alan',
+                'receipt': 'INV-2026-01', 'expires_at': '2027-01-01'}
+        for missing in ('reason', 'owner', 'receipt', 'expires_at'):
+            with self.subTest(dropped=missing):
+                with self.assertRaises(ValueError):
+                    audit.inventory(self.product,
+                                    {k: v for k, v in full.items() if k != missing})
+        for missing in ('reason', 'owner', 'receipt'):
+            with self.subTest(blank=missing):
+                with self.assertRaisesRegex(
+                        ValueError, 'sin justificación|Fecha de exclusión'):
+                    audit.inventory(self.product, {'b.py': dict(full, **{missing: ''})})
+        for value in ('not-a-date', '2026-1-1', '20260101', ''):
+            with self.subTest(bad_date=value):
+                with self.assertRaisesRegex(ValueError, 'Fecha de exclusión'):
+                    audit.inventory(self.product, {'b.py': dict(full, expires_at=value)})
+
+    def test_a_legacy_reason_only_exclusion_still_validates(self):
+        # Snapshots taken before the owner/receipt/expiry fields existed must not
+        # be invalidated: the hole was authorized the same way, it just was not
+        # written down. That is what forces re-justification now, not archive.
+        snapshot = audit.inventory(self.product, {'b.py': 'Outside agreed scope'})
+        self.assertEqual(set(snapshot['exclusions']['b.py']), {'kind', 'reason'})
+        result = self.consolidate(units=self.units[:1], snapshot=snapshot)
+        self.assertEqual(result['coverage']['excluded_entries'], 1)
 
     def test_inventory_rejects_links_special_files_and_unsafe_paths(self):
         link = self.product / 'link'

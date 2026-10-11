@@ -251,13 +251,18 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
         objective = f"""## Objetivo
 
 Genera un paquete completo y específico para el proyecto `{project_name}`.
-El paquete debe incluir exactamente dos modos finales y presets DSH seleccionables:
+El paquete debe incluir tres modos finales y presets DSH seleccionables:
 - `{project_name}-auditor`
 - `{project_name}-continuous-repair`
+- `{project_name}-implementer` (cambio pedido por el usuario, no hallazgo auditado)
+
+Generaciones antiguas con los dos primeros siguen siendo válidas para rollback;
+una generación nueva incluye implementer y prueba aceptación del comportamiento pedido.
 
 Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
-`preset_id` igual al directorio y `role` (`auditor` o `continuous-repair`). Cada
+`preset_id` igual al directorio y `role` (`auditor`, `continuous-repair` o
+`implementer`). Cada
 `agent.cordis.yml` monta exactamente las filas operativas necesarias: persona
 `@deepseek-ai/dsh-persona` con `config.prefix` igual al bootstrap exacto exigido
 por el Host para ese preset (primera acción: cargar vía tool-skill el skill cuyo
@@ -272,7 +277,7 @@ modos fijan `escalation_channel: forbidden`: jamás envían `sandbox_permissions
 `justification`, con ningún valor (incluidos `workspace-write` y `danger-full-access`),
 incluso como reintento tras denegación o error de schema; cualquiera de esos fallos deja
 `RETAINED` sin reintento. La guía de escalada del runtime no aplica.
-Los dos presets usan exclusivamente la identidad sibling autoritativa, exacta y
+Los tres presets usan exclusivamente la identidad sibling autoritativa, exacta y
 case-sensitive derivada al generar: cwd esperado por basename `{session_root}`, producto
 `{product_root}`, workspace `{workspace_root}` y estado relativo `{state_root}`. No
 incluyas la ruta absoluta del mantenedor ni sintetices nombres desde `{project_name}`.
@@ -371,7 +376,7 @@ Ejecuta las capacidades internas en orden:
 
 ## Identidad de layout obligatoria
 
-En ambos modos usa la identidad sibling autoritativa exacta y case-sensitive: cwd de
+En cada modo usa la identidad sibling autoritativa exacta y case-sensitive: cwd de
 sesión esperado por basename `{session_root}`, producto `{product_root}`, workspace
 `{workspace_root}` y mode-state `{state_root}`. Nunca derives esos nombres de
 `{project_name}` ni incluyas una ruta absoluta del mantenedor. Cada `mode.json`
@@ -448,6 +453,15 @@ write/edit, y cualquier comando que cambie código usa bash con workdir exactame
 al candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
 los vuelve a comprobar tras cada fase y ante cualquier drift queda RETAINED sin más
 acciones. Comprueba además que el diff pertenece solo al candidato.
+
+Implementer usa `expected_lifecycle("implementer", layout)` y el prefijo persona
+`persona_prefix(preset_id, "implementer")` exacto. No convierte la petición de cambio
+en finding_id. La candidata kind=implement se provisiona SOLO por Host a partir de
+petición exacta y base limpia con `provision_implementation`, en espacio `implement/`
+del workspace, con `.git` propio. La persona no inventa un worktree ni obtiene
+escritura canónica; cualquier falta de recibo o deriva es RETAINED. Aceptación:
+caso verificable del comportamiento nuevo y entrypoints reales del producto;
+FAIL/BLOCKED no son PASS. Ningún prompt concede commit, merge, push ni publicación.
 
 Continuous Repair incluye el procedimiento exacto de `expected_lifecycle`: el prompt
 simple autoriza crear/reusar y editar el candidato, no commit/merge/push/publicación.
@@ -543,6 +557,7 @@ Escribe bajo `{run_dir}/generated/`:
 - `capabilities.json`
 - `modes/{project_name}-auditor/`
 - `modes/{project_name}-continuous-repair/`
+- `modes/{project_name}-implementer/`
 - `skills/` (skills justificadas)
 - `contracts/`
 - `acceptance-plan.json`
@@ -582,7 +597,16 @@ para `schemas/skills.schema.json`. `kind` es opcional únicamente para preservar
 contratos schema v1 previos; no lo omitas en salidas nuevas ni infieras variantes
 por campos como `motive`.
 En `generation-manifest.json`, todo archivo cuyo basename sea `SKILL.md` debe
-usar artifact `type: "skill-entrypoint"`.
+usar artifact `type: "skill-entrypoint"`. Si una skill declara `routing`,
+Creator asocia nombre exacto de `skills/<name>/SKILL.md` con acciones/modos,
+hechos observados y capabilities de selección (no permisos). El Host deriva
+`effective_routing_digest` como SHA-256 del JSON canónico de la lista ordenada
+`[[name,routing],...]` usando `skill_router._digest`; no vale un digest narrado.
+Los nombres de `routing.modes` son `auditor`, `reparador`, `implementador` (vocabulario
+del router); mapean respectivamente a los roles `auditor`, `continuous-repair`,
+`implementer`. Ante ninguna skill elegible, hechos sin evidencia o presupuesto,
+la respuesta debe decir `ABSTAIN` y la causa, no improvisar un nombre. Ningún
+modelo o probabilidad otorga autoridad; el Host aprueba antes de instalar.
 
 Antes de emitir `status: GENERATED`, ejecuta la prevalidación Host read-only:
 ```bash
@@ -595,7 +619,7 @@ entonces deja el manifest en estado GENERATED y solicita aceptación.
 ## Invariantes
 
 1. Solo emitir status GENERATED; nunca ACCEPTED/ACTIVE
-2. Exactamente dos modos finales específicos del proyecto
+2. Tres modos finales específicos del proyecto en generaciones nuevas; las previas con dos siguen válidas
 3. No modificar Host, validadores ni artefactos Host del run (`tests/`,
    `inputs/runtime-capabilities.json`, `validation/`, `acceptance/`); el
    `generated/capabilities.json` declarativo sí forma parte de la salida
@@ -618,7 +642,7 @@ entonces deja el manifest en estado GENERATED y solicita aceptación.
    automáticamente, así que una denegación ahí es final: se reporta al
    delegante, nunca se reintenta con escalada
 10. `generated/capabilities.json.required_capabilities` debe cubrir la unión de
-    capacidades requeridas por ambos modos. Reparación gestionada requiere
+    capacidades requeridas por los modos generados. Reparación gestionada requiere
     `candidate_write`, nunca `product_write` ni escritura canónica. Ninguna
     capacidad requerida puede aparecer en `forbidden_capabilities`
 

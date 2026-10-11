@@ -1940,11 +1940,20 @@ class ValidatorTests(Base):
         self.assertEqual(report.verdict, "READY_FOR_ACCEPTANCE")
 
     def test_cli_requires_authoritative_run_layout(self):
+        stderr = io.StringIO()
         with unittest.mock.patch.object(sys, "argv", [
-                "host_validator.py", "--generated", "unused"]):
+                "host_validator.py", "--generated", "unused"]), \
+                contextlib.redirect_stderr(stderr):
             with self.assertRaises(SystemExit) as failure:
                 hv.main()
         self.assertEqual(failure.exception.code, 2)
+        # argparse writes its usage complaint to stderr, which `redirect_stdout`
+        # does not capture. Left alone it lands in the output of every full
+        # suite run, printed on the progress-dot line, and reads as a real
+        # failure of the validator. Capturing it here keeps the suite output
+        # clean while still asserting the complaint is the expected one.
+        self.assertIn("--run-dir", stderr.getvalue())
+        self.assertIn("error:", stderr.getvalue())
 
     def _run_cli(self, generated, run_dir):
         argv = ["host_validator.py", "--generated", str(generated),
@@ -2024,6 +2033,54 @@ class ValidatorTests(Base):
         self.assertFalse(report.passed)
         self.assertIn("reuse_reference required",
                       " ".join(report.layers["contracts"]["details"]))
+
+    def test_routing_contract_requires_loadable_manifested_skill_and_digest(self):
+        import skill_router
+        generated, manifest = self.make_package()
+        contracts = generated / "contracts"
+        contracts.mkdir()
+        routing = {"actions": ["audit"], "modes": ["auditor"],
+                   "requires": {"language": "python"},
+                   "capability_set": ["read_product"], "context_bytes": 100}
+        doc = {"schema_version": 1, "kind": "skill", "name": "project-extra",
+               "motive": "test", "domain": ["test"], "reuse_source": "composition",
+               "inputs": [], "outputs": [], "required_capabilities": [],
+               "forbidden_capabilities": [], "files": [
+                   {"path": "SKILL.md", "type": "entrypoint"}],
+               "behavior_test": "SC-001", "provenance": {"license": "MIT"},
+               "routing": routing}
+        contract = contracts / "project-extra.skill.json"
+        contract.write_text(json.dumps(doc) + "\n")
+        manifest["artifacts"].append({"path": "contracts/project-extra.skill.json",
+                                       "type": "contract",
+                                       "sha256": cc._digest_bytes(contract.read_bytes())})
+        manifest["effective_routing_digest"] = skill_router._digest(
+            [("project-extra", routing)])
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("routing sin skill cargable", " ".join(
+            report.layers["contracts"]["details"]))
+        skill = generated / "skills" / "project-extra"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: project-extra\ndescription: Extra\n---\n# Extra\n")
+        manifest["artifacts"].append({"path": "skills/project-extra/SKILL.md",
+                                       "type": "skill-entrypoint",
+                                       "sha256": cc._digest_bytes((skill / "SKILL.md").read_bytes())})
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertTrue(report.layers["contracts"]["passed"],
+                        report.layers["contracts"]["details"])
+        manifest["effective_routing_digest"] = "b" * 64
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        report = hv.validate_package(generated)
+        self.assertFalse(report.layers["contracts"]["passed"])
+        self.assertIn("effective_routing_digest", " ".join(
+            report.layers["contracts"]["details"]))
 
     def test_valid_package_ready(self):
         generated, _ = self.make_package()

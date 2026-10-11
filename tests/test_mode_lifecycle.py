@@ -40,6 +40,92 @@ def _placeholders(command):
 
 
 class ModeLifecycleTests(unittest.TestCase):
+    def test_user_change_shadow_is_distinct_from_audited_repair_and_resumes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product, workspace = root / "product", root / "workspace"
+            product.mkdir(); workspace.mkdir()
+            subprocess.run(["git", "init", "-q", str(product)], check=True)
+            (product / "value.py").write_text("def value(): return 1\n")
+            (product / "test_value.py").write_text(
+                "from value import value\nassert value() == 2\n")
+            subprocess.run(["git", "-C", str(product), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(product), "-c", "user.name=Test",
+                            "-c", "user.email=test@example.invalid", "commit",
+                            "-qm", "base"], check=True)
+            base = subprocess.check_output(["git", "-C", str(product),
+                                             "rev-parse", "HEAD"], text=True).strip()
+            request = "Cambiar value() a 2"
+            with self.assertRaises(ValueError):
+                mode_lifecycle.implementation_identity(base, " ")
+            receipt = mode_lifecycle.provision_implementation(
+                product, workspace, request, declared_base=base)
+            candidate = Path(receipt["path"])
+            self.assertIn("/implement/candidates/", str(candidate))
+            self.assertNotEqual(candidate / ".git", product / ".git")
+            self.assertFalse(receipt["reused"])
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=["/usr/bin/python3", "-B", "test_value.py"])["verdict"],
+                "BLOCKED")
+            (candidate / "value.py").write_text("def value(): return 2\n")
+            again = mode_lifecycle.provision_implementation(
+                product, workspace, request, declared_base=base)
+            self.assertTrue(again["reused"])
+            self.assertEqual((candidate / "value.py").read_text(),
+                             "def value(): return 2\n")
+            passed = mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=["/usr/bin/python3", "-B", "test_value.py"])
+            self.assertEqual(passed["verdict"], "PASS")
+            self.assertEqual(len(passed["candidate_diff_digest"]), 64)
+            self.assertEqual((product / "value.py").read_text(),
+                             "def value(): return 1\n")
+            with self.assertRaisesRegex(ValueError, "candidata/producto derivó"):
+                mode_lifecycle.verify_implementation(
+                    product, workspace, "Otra petición", receipt,
+                    acceptance_command=["/usr/bin/python3", "-B", "test_value.py"])
+            (candidate / "value.py").write_text("def value(): return 3\n")
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=["/usr/bin/python3", "-B", "test_value.py"])["verdict"],
+                "FAIL")
+            subprocess.run(["git", "-C", str(candidate), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(candidate), "commit", "-qm", "bad"],
+                           check=True)
+            with self.assertRaisesRegex(ValueError, "HEAD de candidata derivó"):
+                mode_lifecycle.provision_implementation(
+                    product, workspace, request, declared_base=base)
+
+    def test_implementer_refuses_dirty_product_and_false_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product, workspace = root / "product", root / "workspace"
+            product.mkdir(); workspace.mkdir()
+            subprocess.run(["git", "init", "-q", str(product)], check=True)
+            (product / "value.py").write_text("v = 1\n")
+            subprocess.run(["git", "-C", str(product), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(product), "-c", "user.name=Test",
+                            "-c", "user.email=test@example.invalid", "commit",
+                            "-qm", "base"], check=True)
+            base = subprocess.check_output(["git", "-C", str(product),
+                                             "rev-parse", "HEAD"], text=True).strip()
+            (product / "value.py").write_text("v = 2\n")
+            with self.assertRaisesRegex(ValueError, "canónico sucio"):
+                mode_lifecycle.provision_implementation(
+                    product, workspace, "feature", declared_base=base)
+            self.assertFalse((workspace / "implement").exists())
+            (product / "value.py").write_text("v = 1\n")
+            receipt = mode_lifecycle.provision_implementation(
+                product, workspace, "feature", declared_base=base)
+            candidate = Path(receipt["path"])
+            (candidate / "value.py").write_text("v = 2\n")
+            marker = workspace / ("implement-" + receipt["request_sha256"][:16] + ".json")
+            marker.write_text("{}\n")
+            with self.assertRaisesRegex(ValueError, "otra petición/base"):
+                mode_lifecycle.provision_implementation(
+                    product, workspace, "feature", declared_base=base)
+
     def test_startup_check_is_exact_and_fails_closed_as_one_test(self):
         layout = {"session_root": "Syncify", "product_root": "Syncify",
                   "workspace_root": "Syncify-workspace"}

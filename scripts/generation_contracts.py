@@ -94,6 +94,21 @@ REUSE_SOURCES = frozenset([
 ])
 
 # ---------------------------------------------------------------------------
+# Routing metadata for local skill selection (scripts/skill_router.py)
+# ---------------------------------------------------------------------------
+
+try:
+    from . import skill_router as _skill_router  # package import
+except ImportError:
+    import skill_router as _skill_router  # direct script / Host sibling import
+
+ROUTING_ACTIONS = _skill_router.ACTIONS
+ROUTING_CAPABILITIES = _skill_router.CAPABILITIES
+ROUTING_MAX_CONTEXT_BYTES = _skill_router.MAX_BUDGET
+ROUTING_MAX_FACTS = _skill_router.MAX_FACTS
+ROUTING_MODES = _skill_router.MODES
+
+# ---------------------------------------------------------------------------
 # Scenario types
 # ---------------------------------------------------------------------------
 
@@ -1095,7 +1110,7 @@ def validate_mode_contract(doc):
         _require(isinstance(doc["preset_id"], str) and
                  re.fullmatch(r"[a-z0-9][a-z0-9-]*", doc["preset_id"]),
                  f"{schema}.preset_id")
-    _require_enum(doc["role"], {"auditor", "continuous-repair"},
+    _require_enum(doc["role"], {"auditor", "continuous-repair", "implementer"},
                   f"{schema}.role")
     try:
         from mode_lifecycle import validate_lifecycle_contract
@@ -1134,6 +1149,50 @@ def validate_mode_contract(doc):
                     f"{schema}.provenance")
 
 
+def _require_routing(routing, schema):
+    """Optional Creator-approved routing metadata for local skill selection.
+
+    The values are the router's closed vocabularies, so a contract that
+    validates here cannot carry a fact the router would ignore. The metadata is
+    selection input only: it never grants a capability and it is never an
+    authority to invoke anything, exactly as `scripts/capabilities.py` says of
+    the capability plane.
+    """
+    prefix = f"{schema}.routing"
+    _require_type(routing, dict, prefix)
+    _require_fields(routing, ["actions", "modes", "requires",
+                              "capability_set", "context_bytes"], prefix)
+    _reject_unknown(routing, ["actions", "modes", "requires",
+                              "capability_set", "context_bytes"], prefix)
+    for field, vocabulary in (("actions", ROUTING_ACTIONS),
+                              ("modes", ROUTING_MODES),
+                              ("capability_set", ROUTING_CAPABILITIES)):
+        values = routing[field]
+        _require_type(values, list, f"{prefix}.{field}")
+        _require(len(values) <= len(vocabulary)
+                 and (field == "capability_set" or bool(values)),
+                 f"{prefix}.{field} must be a subset of the closed vocabulary"
+                 + (" (non-empty)" if field != "capability_set" else ""))
+        _require(len(values) == len(set(values)),
+                 f"{prefix}.{field}: duplicate values")
+        for value in values:
+            _require_enum(value, vocabulary, f"{prefix}.{field}")
+    facts = routing["requires"]
+    _require_type(facts, dict, f"{prefix}.requires")
+    _require(0 < len(facts) <= ROUTING_MAX_FACTS,
+             f"{prefix}.requires must have 1..{ROUTING_MAX_FACTS} facts")
+    for name, value in facts.items():
+        where = f"{prefix}.requires[{name!r}]"
+        _require(re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name) is not None,
+                 f"{where}: name must be a lowercase identifier")
+        _require_type(value, str, where)
+        _require(0 < len(value) <= 128, f"{where}: value must be 1..128")
+    size = routing["context_bytes"]
+    _require(isinstance(size, int) and not isinstance(size, bool)
+             and 1 <= size <= ROUTING_MAX_CONTEXT_BYTES,
+             f"{prefix}.context_bytes must be 1..{ROUTING_MAX_CONTEXT_BYTES}")
+
+
 def validate_skill_contract(doc):
     """Validate a skill contract document."""
     schema = "skill-contract"
@@ -1146,7 +1205,7 @@ def validate_skill_contract(doc):
     known = required + [
         "kind", "evidence", "reuse_justification", "reuse_reference", "replaces",
         "prohibited_tools", "hot_paths", "load_test",
-        "activation_criteria", "invariants", "anti_goals",
+        "activation_criteria", "invariants", "anti_goals", "routing",
     ]
     _require_fields(doc, required, schema)
     _reject_unknown(doc, known, schema)
@@ -1165,6 +1224,9 @@ def validate_skill_contract(doc):
         _require("reuse_justification" in doc
                  and _is_nonempty_str(doc["reuse_justification"]),
                  f"{schema}: reuse_justification required when reuse_source is 'extension'")
+
+    if "routing" in doc:
+        _require_routing(doc["routing"], schema)
 
     _require_type(doc["files"], list, f"{schema}.files")
     _require(len(doc["files"]) > 0, f"{schema}: files must not be empty")

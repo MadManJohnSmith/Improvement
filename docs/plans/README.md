@@ -6,6 +6,7 @@ Estos documentos descomponen la arquitectura aprobada en iteraciones adaptables.
 
 - `ARQUITECTURA_FLUJO_AGENTES.md` es la norma.
 - `PLAN_IMPLEMENTACION.md` es el índice único de progreso.
+- `docs/progreso-agentico.md` es la vista de una página de todos los hitos C/D/E/F/G/M/P/U con su estado derivado; no sustituye al índice.
 - `docs/plans/` contiene procedimientos detallados para ejecutar cada etapa y actualizarla sin crear backlogs paralelos.
 - `docs/status.md` conserva los hechos comprobados.
 

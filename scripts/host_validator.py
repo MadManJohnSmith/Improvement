@@ -516,12 +516,12 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
                     f"{rel}: reuse_reference {ref!r} no existe en la "
                     "biblioteca del run")
 
-    # Exactly two selectable user presets, one per final role. New mode
-    # contracts carry preset_id/role and their DSH composition beside mode.json.
+    # Legacy two-mode generations remain valid; a third implementer is optional.
+    # Contracts carry preset_id/role and their DSH composition beside mode.json.
     mode_dirs = sorted(path for path in (generated / "modes").glob("*")
                        if path.is_dir())
-    if len(mode_dirs) != 2:
-        issues.append("generated/modes must contain exactly 2 mode directories")
+    if len(mode_dirs) not in (2, 3):
+        issues.append("generated/modes must contain 2 or 3 mode directories")
     roles = set()
     preset_ids = set()
     for mode_dir in mode_dirs:
@@ -546,8 +546,10 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
         if not isinstance(preset_id, str) or not re.fullmatch(
                 r"[a-z0-9][a-z0-9-]*", preset_id or ""):
             issues.append(f"{mode_dir.relative_to(generated)} preset_id invalid")
-        if role not in {"auditor", "continuous-repair"}:
+        if role not in {"auditor", "continuous-repair", "implementer"}:
             issues.append(f"{mode_dir.relative_to(generated)} role invalid")
+        if role in roles:
+            issues.append(f"Duplicate mode role: {role}")
         if preset_id in preset_ids:
             issues.append(f"Duplicate preset_id: {preset_id}")
         preset_ids.add(preset_id)
@@ -569,8 +571,9 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
             issues.append(
                 f"{mode_dir.relative_to(generated)}/agent.cordis.yml invalid "
                 f"operational composition: {error}")
-    if roles != {"auditor", "continuous-repair"}:
-        issues.append("Final modes must contain auditor and continuous-repair roles")
+    if not {"auditor", "continuous-repair"} <= roles or roles - {
+            "auditor", "continuous-repair", "implementer"}:
+        issues.append("Final modes must contain auditor and continuous-repair roles; implementer is optional")
 
     skills_root = generated / "skills"
     if skills_root.exists() and (not skills_root.is_dir() or skills_root.is_symlink()):
@@ -590,6 +593,51 @@ def _validate_layer_contracts(report, manifest, generated, run_dir=None):
             if skill_issue:
                 issues.append(
                     f"{entrypoint.relative_to(generated)}: {skill_issue}")
+
+    # A routing name must correspond to the exact installable skill tree, not
+    # merely to a contract in prose. Old generations without routing remain
+    # compatible and simply cannot claim automatic selection.
+    routing_names = set()
+    routing_rows = []
+    for art in contract_arts:
+        rel = art.get("path", "")
+        if not rel.startswith("contracts/") or not rel.endswith(".json"):
+            continue
+        path = generated / rel
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(doc, dict) or "routing" not in doc:
+            continue
+        try:
+            kind = _contract_kind(doc, rel)
+        except gc.ContractError as error:
+            issues.append(f"routing contract inválido {rel}: {error}")
+            continue
+        if kind != "skill":
+            issues.append(f"routing solo se permite en skill-contract: {rel}")
+            continue
+        name = doc.get("name")
+        if name in routing_names or not isinstance(name, str):
+            issues.append(f"routing duplicado/inválido: {rel}")
+            continue
+        routing_names.add(name)
+        routing_rows.append((name, doc["routing"]))
+        entrypoint = generated / "skills" / name / "SKILL.md"
+        if (not entrypoint.is_file() or entrypoint.is_symlink() or
+                _skill_frontmatter_issue(entrypoint, name)):
+            issues.append(f"routing sin skill cargable {name!r}: {rel}")
+        if f"skills/{name}/SKILL.md" not in {
+                item.get("path") for item in manifest.get("artifacts", [])}:
+            issues.append(f"routing sin entrypoint manifestado: {rel}")
+    if routing_rows:
+        import skill_router as router
+        expected_digest = router._digest(sorted(routing_rows))
+        if manifest.get("effective_routing_digest") != expected_digest:
+            issues.append("effective_routing_digest no liga roster aprobado")
 
     # Check provenance entries
     for prov in manifest.get("license_provenance", []):

@@ -2,6 +2,7 @@
 """Contratos deterministas para ciclos de auditoría y reparación externa."""
 import hashlib
 import json
+from datetime import date
 from pathlib import Path
 import re
 import stat
@@ -13,6 +14,16 @@ FINDING_STATES = {'READY_FOR_REPAIR', 'RETAINED', 'UNVERIFIED', 'DUPLICATE', 'NE
 CYCLE_STATES = {'PLANNED', 'AUDITING', 'AUDIT_COMPLETE', 'REPAIRING', 'QA_PENDING',
                 'REAUDIT_PENDING', 'CYCLE_REVIEW', 'CYCLE_COMPLETE', 'ARCHIVED',
                 'RETAINED', 'UNVERIFIED', 'BLOCKED', 'STALE', 'INTERRUPTED', 'RECOVERY_REQUIRED'}
+# An exclusion is a hole in the audit's coverage that somebody chose to leave,
+# so it cannot be written by the auditor and then forgotten. Two fields decide
+# when it stops being allowed: who accepted the hole, and the date it stops
+# applying. Both are optional so a snapshot written before this existed still
+# validates, but when they are present they are enforced -- an exclusion that
+# outlives its own expiry is refused, which forces re-justification instead of
+# letting the hole become permanent by never being looked at again.
+EXCLUSION_FIELDS = frozenset(
+    {'kind', 'reason', 'owner', 'receipt', 'expires_at'})
+_DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 
 def digest(data):
@@ -48,7 +59,29 @@ def _relative_name(raw):
     return path
 
 
-def inventory(root, exclusions=None):
+def _exclusion(value, now):
+    if isinstance(value, str):
+        if not value.strip():
+            raise ValueError('Exclusión sin justificación')
+        return {'reason': value}
+    if not isinstance(value, dict) or set(value) != {'reason', 'owner', 'receipt', 'expires_at'}:
+        raise ValueError('Exclusión requiere motivo, owner, receipt y expires_at')
+    if any(not isinstance(value[k], str) or not value[k].strip()
+           for k in ('reason', 'owner', 'receipt')):
+        raise ValueError('Exclusión sin justificación, owner o receipt')
+    expiry = value['expires_at']
+    if not isinstance(expiry, str) or not _DATE_PATTERN.fullmatch(expiry):
+        raise ValueError('Fecha de exclusión inválida')
+    try:
+        deadline = date.fromisoformat(expiry)
+    except ValueError as error:
+        raise ValueError('Fecha de exclusión inválida') from error
+    if deadline < now:
+        raise ValueError('Exclusión expirada: requiere nueva autorización')
+    return dict(value)
+
+
+def inventory(root, exclusions=None, *, today=None):
     """Snapshot regular files without reading explicitly excluded subtrees."""
     root = checked(root).resolve()
     if not root.is_dir():
@@ -57,10 +90,13 @@ def inventory(root, exclusions=None):
         exclusions = {}
     if not isinstance(exclusions, dict):
         raise ValueError('Exclusiones deben ser un mapa ruta a motivo')
+    now = today or date.today()
+    if not isinstance(now, date):
+        raise ValueError('today debe ser una fecha')
+    checked_exclusions = {}
     for name, reason in exclusions.items():
         _relative_name(name)
-        if not isinstance(reason, str) or not reason.strip():
-            raise ValueError('Exclusión sin justificación')
+        checked_exclusions[name] = _exclusion(reason, now)
     files, excluded = {}, {}
 
     def visit(directory):
@@ -70,11 +106,10 @@ def inventory(root, exclusions=None):
             mode = path.lstat().st_mode
             if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
                 raise ValueError(f'Entrada no regular: {name}')
-            if name in exclusions:
-                excluded[name] = {
-                    'kind': 'directory' if stat.S_ISDIR(mode) else 'file',
-                    'reason': exclusions[name],
-                }
+            if name in checked_exclusions:
+                excluded[name] = dict(
+                    checked_exclusions[name],
+                    kind='directory' if stat.S_ISDIR(mode) else 'file')
             elif stat.S_ISDIR(mode):
                 visit(path)
             else:
@@ -90,7 +125,7 @@ def inventory(root, exclusions=None):
     return {'version': 1, 'files': files, 'exclusions': excluded}
 
 
-def validate_coverage(root, owners, snapshot):
+def validate_coverage(root, owners, snapshot, *, today=None):
     if snapshot is None:
         return {'status': 'UNVERIFIED', 'coverage_gaps': ['INVENTORY_MISSING']}
     if (not isinstance(snapshot, dict) or snapshot.get('version') != 1
@@ -99,10 +134,16 @@ def validate_coverage(root, owners, snapshot):
         raise ValueError('Inventario v1 inválido')
     exclusions = {}
     for name, entry in snapshot['exclusions'].items():
-        if not isinstance(entry, dict) or set(entry) != {'kind', 'reason'}:
+        if not isinstance(entry, dict) or set(entry) not in (
+                {'kind', 'reason'}, EXCLUSION_FIELDS):
             raise ValueError('Exclusión inválida')
-        exclusions[name] = entry['reason']
-    current = inventory(root, exclusions)
+        # The value goes back in the shape the snapshot took it: a legacy
+        # exclusion is the reason alone and must not be rewritten into the
+        # richer form, or `inventory` would return a different snapshot and the
+        # equality check below would call the auditor's own file stale.
+        exclusions[name] = (entry['reason'] if set(entry) == {'kind', 'reason'}
+                            else {k: entry[k] for k in entry if k != 'kind'})
+    current = inventory(root, exclusions, today=today)
     if current != snapshot:
         raise ValueError('Inventario obsoleto o alterado')
     if set(owners) - set(current['files']):
@@ -185,12 +226,12 @@ def _cycle_id(cycle_id):
     return cycle_id
 
 
-def consolidate(root, cycle_id, base_revision, units, findings, snapshot=None):
+def consolidate(root, cycle_id, base_revision, units, findings, snapshot=None, *, today=None):
     _cycle_id(cycle_id)
     owners = validate_units(root, units)
     if not isinstance(base_revision, str) or not base_revision.strip():
         raise ValueError('Base inválida')
-    coverage = validate_coverage(root, owners, snapshot)
+    coverage = validate_coverage(root, owners, snapshot, today=today)
     coverage['pending_units'] = [u['unit_id'] for u in units if u.get('status') != 'ACCEPTED']
     if not isinstance(findings, list):
         raise ValueError('Hallazgos inválidos')

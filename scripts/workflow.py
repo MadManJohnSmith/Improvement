@@ -72,6 +72,8 @@ from pathlib import Path
 from composition_contract import (ANTI_ESCALATION_PLUGIN,
                                   PROHIBITED_MODE_PLUGIN_TERMS,
                                   REQUIRED_MODE_PLUGINS)
+import workflow_evidence
+import workflow_reasoning
 
 MAX_RECORD = 4096
 MAX_STORE = 8 * 1024 * 1024
@@ -96,8 +98,8 @@ HEAD_KIND = 'workflow-head'
 CONTENT_KEYS = ('version', 'seq', 'event_id', 'kind', 'payload', 'prev_sha256')
 ENVELOPE_KEYS = frozenset(CONTENT_KEYS) | {'content_sha256'}
 KINDS = frozenset({'PLAN_LOADED', 'PHASE_STARTED', 'STEP_STARTED', 'STEP_COMPLETED',
-                   'ASK_SKIPPED', 'GATE_REJECTED', 'STEP_FAILED', 'ROUND_CAP_REACHED', 'RUN_RETAINED',
-                   'RUN_COMPLETED'})
+                   'ASK_SKIPPED', 'GATE_REJECTED', 'STEP_FAILED', 'ROUND_CAP_REACHED',
+                   'MEMORY_RECONCILED', 'RUN_RETAINED', 'RUN_COMPLETED'})
 STEP_TYPES = ('gate', 'join', 'fase', 'ask')
 FAIL_ACTIONS = ('retry', 'abort', 'continue')
 STEP_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
@@ -106,7 +108,8 @@ FIELD_RE = re.compile(r'^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$')
 SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 OBSERVATION_RE = re.compile(r'^observations/[0-9]{2,}-[A-Za-z0-9._-]{1,80}-(gate|join|ask)\.json$')
 OBS_NUMBER_RE = re.compile(r'^([0-9]+)-')
-TOP_KEYS = frozenset({'schema_version', 'name', 'workspace', 'run_root', 'preset', 'steps'})
+TOP_KEYS = frozenset({'schema_version', 'name', 'workspace', 'run_root', 'preset',
+                      'memory', 'reasoning_effort', 'steps'})
 REQUIRED_TOP = ('schema_version', 'name', 'workspace', 'steps')
 
 
@@ -212,6 +215,18 @@ def _validate_plan(value):
     preset = value.get('preset')
     if preset is not None and (not isinstance(preset, str) or not preset.strip() or len(preset) > 128):
         raise WorkflowError('plan inválido: preset inválido')
+    memory = value.get('memory')
+    if memory is not None and memory is not True:
+        raise WorkflowError('plan inválido: memory debe ser true')
+    # `reasoning_effort` es opcional; ausente o null = comportamiento legado.
+    # Cualquier otro valor desconocido falla, nunca se degrada.
+    if value.get('reasoning_effort') is None:
+        reasoning_effort = None
+    else:
+        try:
+            reasoning_effort = workflow_reasoning.validate(value['reasoning_effort'])
+        except workflow_reasoning.ReasoningError as error:
+            raise WorkflowError('plan inválido: ' + str(error)) from error
     raw_steps = value['steps']
     if not isinstance(raw_steps, list) or not raw_steps:
         raise WorkflowError('plan inválido: steps debe ser una lista no vacía')
@@ -224,7 +239,8 @@ def _validate_plan(value):
         if step['type'] == 'join':
             _check_join_record(step, index)
     return {'name': name, 'workspace': workspace, 'run_root': run_root,
-            'preset': preset, 'steps': steps}
+            'preset': preset, 'memory': memory is True, 'steps': steps,
+            'reasoning_effort': reasoning_effort}
 
 
 def _check_join_record(step, index):
@@ -248,7 +264,8 @@ def _validate_step(raw, previous_ids, index):
         raise WorkflowError('paso inválido: se esperaba un objeto' + where)
     unknown = set(raw) - {'id', 'type', 'depends', 'command', 'on_fail',
                           'name', 'max_rounds', 'prompt', 'prompt_file', 'timeout_s',
-                          'result_contract', 'preset', 'if_veredicto'}
+                          'result_contract', 'preset', 'if_veredicto',
+                          'reasoning_effort'}
     if unknown:
         raise WorkflowError('paso inválido: claves desconocidas: ' + ', '.join(sorted(unknown)) + where)
     step_id = raw.get('id')
@@ -364,6 +381,15 @@ def _validate_step(raw, previous_ids, index):
         step['result_contract'] = (None if contract is None else
                                    {'path': contract['path'],
                                     'evidence_name': contract.get('evidence_name', '.')})
+    # Igual que en el plan: ausente o null hereda; desconocido falla.
+    if raw.get('reasoning_effort') is None:
+        step['reasoning_effort'] = None
+    else:
+        try:
+            step['reasoning_effort'] = workflow_reasoning.validate(
+                raw['reasoning_effort'])
+        except workflow_reasoning.ReasoningError as error:
+            raise WorkflowError('paso inválido: ' + str(error) + where) from error
     return step
 
 
@@ -405,6 +431,59 @@ def _checkpoint(run_dir):
             or not isinstance(value.get('head_sha256'), str)):
         raise WorkflowError('punto de control inválido')
     return {'events': value['events'], 'head': value['head_sha256']}
+
+
+def _validate_reasoning_record(record, where):
+    """Estructura del registro de razonamiento (STEP_STARTED).
+
+    Campos: step_id, attempt, reasoning_effort (pedido), source (step/plan),
+    applied (None | nivel | status) y provider/model ya fijados. Sin None
+    implícito: un registro vacío o malformado falla, no se degrada.
+    """
+    if not isinstance(record, dict):
+        raise WorkflowError('registro de razonamiento inválido' + where)
+    base = {'step_id', 'step_type', 'attempt', 'reasoning_effort', 'source',
+            'applied', 'provider', 'model'}
+    keys = set(record)
+    if not base <= keys or keys - (base | {'status'}):
+        raise WorkflowError('registro de razonamiento inválido' + where)
+
+    def need_text(key, maxlen):
+        value = record.get(key)
+        if not isinstance(value, str) or not value or len(value) > maxlen:
+            raise WorkflowError('registro de razonamiento inválido' + where)
+
+    need_text('step_id', 64)
+    if record.get('step_type') not in STEP_TYPES:
+        raise WorkflowError('registro de razonamiento inválido' + where)
+    if not _is_int(record.get('attempt')) or record['attempt'] < 1:
+        raise WorkflowError('registro de razonamiento inválido' + where)
+    if record.get('source') not in ('step', 'plan'):
+        raise WorkflowError('registro de razonamiento inválido' + where)
+    try:
+        workflow_reasoning.validate(record.get('reasoning_effort'))
+    except ValueError as error:
+        raise WorkflowError('registro de razonamiento inválido: ' + str(error) + where) from error
+    applied = record.get('applied')
+    if applied not in (None, False):
+        try:
+            workflow_reasoning.validate(applied)
+        except ValueError as error:
+            raise WorkflowError('registro de razonamiento inválido: ' + str(error) + where) from error
+    if 'status' in record:
+        status = record.get('status')
+        if (not isinstance(status, str) or not status or len(status) > 256
+                or status != status.strip()):
+            raise WorkflowError('registro de razonamiento inválido' + where
+                                + ': status textual sin justificación')
+    # proveedor/modelo solo son obligatorios cuando el nivel llegó a aplicarse;
+    # una abstención documentada los deja vacíos en lugar de inventar ruta.
+    for key in ('provider', 'model'):
+        value = record.get(key)
+        if applied in (None, False) and value == '':
+            continue
+        if not isinstance(value, str) or not value or len(value) > 128:
+            raise WorkflowError('registro de razonamiento inválido' + where)
 
 
 def _validate_payload(kind, payload, where):
@@ -451,14 +530,19 @@ def _validate_payload(kind, payload, where):
         if max_rounds is not None and (not _is_int(max_rounds) or max_rounds < 1):
             raise WorkflowError('payload inválido para ' + kind + where)
     elif kind == 'STEP_STARTED':
-        exact('step_id', 'step_type', 'attempt')
+        base = {'step_id', 'step_type', 'attempt'}
+        keys = set(payload)
+        if not base <= keys or keys - (base | {'reasoning'}):
+            raise WorkflowError('payload inválido para ' + kind + where)
         need_text('step_id', 64)
         if payload['step_type'] not in STEP_TYPES:
             raise WorkflowError('payload inválido para ' + kind + where)
         need_int('attempt', 1)
+        if 'reasoning' in payload:
+            _validate_reasoning_record(payload['reasoning'], where)
     elif kind == 'STEP_COMPLETED':
         base = {'step_id', 'attempt', 'observation', 'output_sha256', 'deps'}
-        optional = {'prompt_sha256', 'result_sha256', 'result_path'}
+        optional = {'prompt_sha256', 'result_sha256', 'result_path', 'reasoning'}
         keys = set(payload)
         if not base <= keys or keys - (base | optional):
             raise WorkflowError('payload inválido para ' + kind + where)
@@ -466,6 +550,8 @@ def _validate_payload(kind, payload, where):
         need_int('attempt', 1)
         need_observation()
         need_sha('output_sha256')
+        if 'reasoning' in payload:
+            _validate_reasoning_record(payload['reasoning'], where)
         if 'prompt_sha256' in payload:
             need_sha('prompt_sha256')
         if 'result_sha256' in payload:
@@ -518,6 +604,18 @@ def _validate_payload(kind, payload, where):
         need_text('cause', 256)
     elif kind == 'RUN_COMPLETED':
         exact()
+    elif kind == 'MEMORY_RECONCILED':
+        exact('workspace', 'product', 'base', 'hits', 'misses', 'invalidated',
+              'bytes_saved', 'tokens_saved')
+        need_text('workspace', 4096)
+        need_text('product', 4096)
+        need_text('base', 64)
+        need_int('hits', 0)
+        need_int('misses', 0)
+        need_int('invalidated', 0)
+        need_int('bytes_saved', 0)
+        if payload['tokens_saved'] is not None:
+            need_int('tokens_saved', 0)
     else:  # kind ya validado contra KINDS por el llamante
         raise WorkflowError('kind de evento desconocido' + where)
 
@@ -704,6 +802,7 @@ class _JournalWriter:
         self.seq = seq
         self.prev = prev
         self.events = events
+        self.last_kind = None
         self.path = run_dir / JOURNAL_NAME
 
     def append(self, kind, payload, *, terminal=False):
@@ -732,6 +831,7 @@ class _JournalWriter:
         self.seq += 1
         self.events += 1
         self.prev = content_sha256
+        self.last_kind = kind
         _write_head(self.run_dir, self.events, content_sha256)
         return envelope
 
@@ -927,7 +1027,7 @@ def _ask_quiescent(client, session_id, state):
 def _empty_state():
     return {'completed': {}, 'failed_gates': {}, 'skipped': {}, 'attempts': {},
             'phase': None, 'phase_started_ids': set(), 'plan_sha256': None,
-            'pending_asks': {}}
+            'pending_asks': {}, 'started_reasoning': {}}
 
 
 def _latest_ask_dispatch(run_dir, step_id, attempt):
@@ -979,6 +1079,7 @@ def _replay(payloads, run_dir):
     failed_gates = {}
     started_types = {}
     started_counts = {}
+    started_reasoning = {}
     completed_counts = {}
     obs_digests = {}
     for envelope in payloads:
@@ -995,6 +1096,10 @@ def _replay(payloads, run_dir):
             state['attempts'][step_id] = max(state['attempts'].get(step_id, 0), payload['attempt'])
             started_types[step_id] = payload['step_type']
             started_counts[step_id] = started_counts.get(step_id, 0) + 1
+            if 'reasoning' in payload:
+                # El registro del nivel iniciado se conserva por (paso, intento):
+                # la reanudación lo reutiliza en lugar de recomputarlo.
+                started_reasoning[(step_id, payload['attempt'])] = dict(payload['reasoning'])
         elif kind == 'STEP_COMPLETED':
             state['completed'][payload['step_id']] = dict(payload)
             failed_gates.pop(payload['step_id'], None)
@@ -1081,6 +1186,7 @@ def _replay(payloads, run_dir):
                                                      state['attempts'][step_id])
     state['pending_asks'] = {step_id: pending for step_id, pending in pending_asks.items()
                              if pending is not None}
+    state['started_reasoning'] = started_reasoning
     return state
 
 
@@ -1100,12 +1206,16 @@ class _Run:
         self.phase = state['phase']
         self.phase_started_ids = state['phase_started_ids']
         self.pending_asks = state['pending_asks']
+        self.started_reasoning = state.get('started_reasoning', {})
         self.ask_client = ask_client
         self.run_id = run_id or ''
         self.campaign_manifest = campaign_manifest
         self.plan_sha256 = plan_sha256
         self.last_ask_observation = None  # Resultado del ask previo para WORKFLOW_OBSERVATION.
         self.retained_journaled = None
+        self.plan_memory = plan.get('memory') is True
+        self.memory_recorded = False
+        self.memory_report = None
         observations = run_dir / OBSERVATIONS_NAME
         top = 0
         if observations.is_dir():
@@ -1475,8 +1585,13 @@ class _Run:
                 return
         attempt = self.attempts.get(step_id, 0) + 1
         self.attempts[step_id] = attempt
-        self.record('STEP_STARTED', {'step_id': step_id, 'step_type': 'ask',
-                                     'attempt': attempt})
+        # Solo los pasos ask cambian inferencia; el resto hereda el declarado
+        # sin que eso le otorgue nada (ver gate/fase/join abajo).
+        reasoning = self._reasoning_for(step, attempt)
+        payload = {'step_id': step_id, 'step_type': 'ask', 'attempt': attempt}
+        if reasoning is not None:
+            payload['reasoning'] = reasoning
+        self.record('STEP_STARTED', payload)
         request_id = self._request_id(step_id, attempt)
         prompt_sha256 = _sha256_bytes(step['prompt'].encode('utf-8'))
         # Sesión NUEVA por intento con el preset verificado del proyecto;
@@ -1491,12 +1606,98 @@ class _Run:
             self._retain('ask-sesion-no-creada:' + step_id + ':' + _brief(error))
         self._write_ask_state(step_id, attempt, session_id, request_id,
                               prompt_sha256, 'dispatched')
+        if reasoning is not None:
+            self._apply_reasoning(step, session_id, reasoning)
         try:
             self.ask_client.send_prompt(session_id, step['prompt'], request_id=request_id)
         except (ValueError, OSError, urllib.error.URLError) as error:
             self._close_ask(session_id)
             self._retain('ask-despacho-fallo:' + step_id + ':' + _brief(error))
-        self._poll_ask(step, attempt, session_id, request_id, prompt_sha256)
+        # El registro (nivel aplicado o abstencion) viaja tambien con el
+        # STEP_COMPLETED: verify y la reanudacion leen lo mismo que el operador.
+        self._poll_ask(step, attempt, session_id, request_id, prompt_sha256,
+                       reasoning=reasoning)
+
+    def _reasoning_for(self, step, attempt):
+        """Registro de razonamiento del paso, o None si nada lo declara.
+
+        Pedido y fuente se derivan de la instantánea del plan, nunca del estado
+        en memoria. El nivel aplicado arranca sin aplicar y solo lo rellena
+        `_apply_reasoning` cuando el cliente lo aplica de verdad.
+        """
+        requested, source = workflow_reasoning.effective(self.plan, step)
+        if requested is None:
+            return None
+        return {'step_id': step['id'], 'step_type': step['type'],
+                'attempt': attempt, 'reasoning_effort': requested,
+                'source': source, 'applied': False, 'provider': '', 'model': ''}
+
+    def _replayed_reasoning(self, step, attempt):
+        """Registro ya iniciado para este intento, tal como quedó en journal.
+
+        La reanudación nunca recalcula ni renegocia el nivel: se lee del
+        registro del intento. Sin registro previo (plan sin declaración) o con
+        uno que ya no coincide con la instantánea se conserva el del journal:
+        un cambio de plan habría creado otro run dir por plan_sha256.
+        """
+        record = self.started_reasoning.get((step['id'], attempt))
+        if record is None:
+            return None
+        claimed = self._reasoning_for(step, attempt)
+        if claimed is not None:
+            claimed['applied'] = record.get('applied', False)
+            claimed['provider'] = record.get('provider', '')
+            claimed['model'] = record.get('model', '')
+            if 'status' in record:
+                claimed['status'] = record['status']
+            return claimed
+        return dict(record)
+
+    def _apply_reasoning(self, step, session_id, record):
+        """Aplica el nivel sobre la seleccion proveedor/modelo ya fijada.
+
+        El unico efecto admisible es el esfuerzo: proveedor y modelo salen de
+        la sesion y no se tocan. Cliente sin `selectSessionModel`, ruta que no
+        publica el nivel o un nivel devuelto distinto al pedido -> abstencion
+        explicita con motivo en el registro. NUNCA fallback silencioso a otro
+        modelo ni nivel, y NUNCA un PASS que no se gano la inferencia.
+        """
+        selector = getattr(self.ask_client, 'select_session_model', None)
+        selection = getattr(self.ask_client, 'active_selection', None)
+        if not callable(selector):
+            self._abstain_reasoning(record, 'cliente sin selectSessionModel: '
+                                            'nivel no aplicado')
+            return None
+        provider = selection.get('provider') if isinstance(selection, dict) else None
+        model = selection.get('model') if isinstance(selection, dict) else None
+        if (not isinstance(selection, dict) or not isinstance(provider, str)
+                or not isinstance(model, str)):
+            self._abstain_reasoning(record, 'sesion sin proveedor/modelo fijados: '
+                                            'nivel no aplicado')
+            return None
+        record['provider'] = provider
+        record['model'] = model
+        try:
+            applied = selector(session_id=session_id, provider=provider,
+                               model=model, level=record['reasoning_effort'])
+        except workflow_reasoning.ReasoningError as error:
+            self._abstain_reasoning(record, str(error))
+            return None
+        except (ValueError, OSError, urllib.error.URLError) as error:
+            self._abstain_reasoning(record, 'cliente sin soporte: ' + _brief(error))
+            return None
+        level = applied.get('applied') if isinstance(applied, dict) else None
+        if level != record['reasoning_effort']:
+            self._abstain_reasoning(record, 'nivel aplicado distinto del pedido: '
+                                            + repr(level))
+            return None
+        record['applied'] = level
+        return level
+
+    def _abstain_reasoning(self, record, reason):
+        """Abstencion registrada: el nivel no se aplica y se dice por que."""
+        record['applied'] = False
+        record['status'] = reason
 
     def _ask_resume(self, step, pending):
         """[corr-3]: intento sin terminal. Sesión viva -> re-envío del MISMO
@@ -1527,10 +1728,14 @@ class _Run:
             except (ValueError, OSError, urllib.error.URLError) as error:
                 self._close_ask(session_id)
                 self._retain('ask-despacho-fallo:' + step_id + ':' + _brief(error))
-        self._poll_ask(step, attempt, session_id, request_id, prompt_sha256, state)
+        # La reanudación no recalcula el nivel: lo reutiliza del registro del
+        # intento ya iniciado, así que una reanudación no renegocia esfuerzo.
+        reasoning = self._replayed_reasoning(step, attempt)
+        self._poll_ask(step, attempt, session_id, request_id, prompt_sha256,
+                       state, reasoning=reasoning)
 
     def _poll_ask(self, step, attempt, session_id, request_id, prompt_sha256,
-                  state=None):
+                  state=None, reasoning=None):
         step_id = step['id']
         if state is None:
             state = _new_ask_state()
@@ -1575,6 +1780,10 @@ class _Run:
         payload = {'step_id': step_id, 'attempt': attempt, 'observation': relative,
                    'output_sha256': _sha256_bytes(data), 'deps': deps,
                    'prompt_sha256': prompt_sha256}
+        if reasoning is not None:
+            # El nivel aplicado viaja con la prueba: queda en journal y en el
+            # ítem completado, así que verify y la reanudación lo leen igual.
+            payload['reasoning'] = dict(reasoning)
         if result_sha256 is not None:
             payload['result_sha256'] = result_sha256
             payload['result_path'] = result_path
@@ -1699,6 +1908,18 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     if has_ask and ask_client is None:
         return {'result': 'ABSTAINED',
                 'reason': 'plan con paso ask sin cliente DSH disponible'}
+    # El nivel pedido solo se registra como aplicable con cliente que lo aplica;
+    # si el run ya declara esfuerzo y el cliente no expone select_session_model,
+    # se abstiene antes de crear run dir: no se ejecuta una inferencia distinta
+    # de la pedida sin decirlo.
+    asks_effort = [step for step in plan['steps']
+                   if step['type'] == 'ask'
+                   and workflow_reasoning.effective(plan, step)[0] is not None]
+    if asks_effort and not callable(
+            getattr(ask_client, 'select_session_model', None)):
+        return {'result': 'ABSTAINED',
+                'reason': 'cliente DSH sin select_session_model: '
+                          'nivel pedido no aplicable'}
     if has_ask:
         # Preflight de abstención antes de tocar disco: sin preset declarado
         # o sin preset verificado no hay run dir ni journal.
@@ -1758,10 +1979,27 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     run = _Run(plan, run_dir, writer, state, ask_client=ask_client,
                run_id=_run_id_for(plan_sha256), campaign_manifest=campaign_manifest,
                plan_sha256=plan_sha256)
+    # La memoria solo mide; jamás decide. Se reconcilia antes del primer paso y
+    # se publica DESPUÉS de RUN_COMPLETED, así que un run retenido no deja
+    # memoria que la campaña siguiente pudiera tomar por evidencia.
+    memory_file = (resolved_root / workflow_evidence.MEMORY_NAME
+                   if plan['memory'] else None)
     try:
+        if memory_file is not None:
+            report = workflow_evidence.reconcile_hint(plan['workspace'], memory_file)
+            run.memory_report = report
+            run.record('MEMORY_RECONCILED', report)
         for step in plan['steps']:
             run.execute(step)
         run.record('RUN_COMPLETED', {})
+        if memory_file is not None and workflow_evidence.publishes_memory(
+                writer.last_kind):
+            try:
+                workflow_evidence.publish(plan['workspace'], memory_file)
+            except (OSError, workflow_evidence.EvidenceError) as error:
+                # RUN_COMPLETED ya es terminal: una pista que no se puede
+                # publicar no altera el veredicto, solo deja constancia.
+                run.memory_error = str(error)[:160]
     except _Retained as stop:
         return {'result': 'RETAINED', 'cause': stop.cause, 'run_dir': str(run_dir),
                 'events': writer.events, 'journaled': run.retained_journaled}

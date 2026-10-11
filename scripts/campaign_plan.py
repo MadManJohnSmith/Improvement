@@ -27,6 +27,10 @@ import tempfile
 
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import workflow_reasoning
+
 CAMPAIGN_RELATIVE = '.dsh-managed/campaign'
 PLAN_NAME = 'plan.json'
 MANIFEST_NAME = 'manifest.json'
@@ -47,6 +51,14 @@ ROUNDS_DEFAULT = 2
 ROUND_LABELS = ('pre', 'post')
 AUDITOR_MARKERS = ('auditor',)
 REPAIR_MARKERS = ('repar', 'repair')
+# Cada etapa declarada por el operador aterriza en un paso ask concreto. Un
+# gate NUNCA recibe esfuerzo: la política de inferencia no le da autoridad.
+STAGE_TO_STEP = {
+    'auditoria': 'auditar',
+    'implementacion': 'reparar',
+    'verificacion': None,  # gate: la política de inferencia no le da autoridad
+    'revision': None,       # gate: idem
+}
 
 AUDIT_PROMPT_TEXT = """\
 # Auditar el producto desde tus propias observaciones
@@ -134,8 +146,14 @@ def _gate_command(workspace, python, script, phase):
 
 
 def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
-                  python=None, script=None):
-    """Documento de plan v1 exacto, sin escribir nada en disco."""
+                  python=None, script=None, esfuerzos=None):
+    """Documento de plan v1 exacto, sin escribir nada en disco.
+
+    `esfuerzos` es la política del operador por etapa de campaña
+    (`workflow_reasoning.STAGES`). SIN opt-in el documento es byte-idéntico al
+    de siempre: no se añade ningún campo. Con opt-in, cada paso `ask` recibe
+    `reasoning_effort` y los gates/joints no cambian en absoluto.
+    """
     workspace = Path(workspace).resolve()
     if not workspace.is_dir():
         raise CampaignPlanError('workspace inexistente: ' + str(workspace))
@@ -146,6 +164,27 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
         raise CampaignPlanError('preset_id inválido')
     if not isinstance(rondas_max, int) or isinstance(rondas_max, bool) or rondas_max < 1:
         raise CampaignPlanError('rondas_max debe ser entero >= 1')
+    # Política de esfuerzo: solo etapas del vocabulario cerrado y solo si el
+    # operador la pide explícitamente. Nivel o etapa desconocidos fallan antes
+    # de generar nada, con el mismo error de dominio que el resto del plan.
+    stage_efforts = {}
+    if esfuerzos:
+        try:
+            stage_efforts = workflow_reasoning.stage_policy(esfuerzos)
+        except workflow_reasoning.ReasoningError as error:
+            raise CampaignPlanError(str(error)) from error
+        unknown = set(stage_efforts) - set(STAGE_TO_STEP)
+        if unknown:
+            raise CampaignPlanError('etapas de esfuerzo desconocidas: '
+                                    + ', '.join(sorted(unknown)))
+        # Una etapa sin paso ask al que aterrizar no puede quedar en silencio:
+        # el operador pidio una politica y el plan no la aplicaria en nada.
+        unroutable = sorted(stage for stage, prefix in STAGE_TO_STEP.items()
+                            if prefix is None and stage in stage_efforts)
+        if unroutable:
+            raise CampaignPlanError(
+                'etapas sin paso ask al que aplicar el esfuerzo: '
+                + ', '.join(unroutable))
     python = python or shutil.which('python3')
     script = script or str(Path(__file__).resolve().parent / 'campaign.py')
     if not python or not Path(python).is_absolute() or not Path(script).is_absolute():
@@ -180,6 +219,15 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
     steps.append({'id': 'cerrar', 'type': 'gate',
                   'command': _gate_command(workspace, python, script, 'cerrar'),
                   'on_fail': {'action': 'abort', 'rounds': 1}})
+    for stage, prefix in STAGE_TO_STEP.items():
+        if prefix is None or stage not in stage_efforts:
+            continue
+        for step in steps:
+            if step['type'] == 'ask' and (step['id'] == prefix
+                                          or step['id'].startswith(prefix + '-')):
+                # Precedencia paso > plan: el nivel de la etapa queda en el
+                # paso, nunca en el plan, para que la campaña quede explícita.
+                step['reasoning_effort'] = stage_efforts[stage]
     return {'schema_version': 1, 'name': 'campana-' + workspace.name,
             'workspace': str(workspace), 'preset': preset_ids[0], 'steps': steps}
 

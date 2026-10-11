@@ -67,6 +67,32 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertIn('C0', status)
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
+    def test_the_readmes_publish_the_real_session_both_ways(self):
+        """The 2026-10-10 pass is published as real work, and as unproven work.
+
+        The README is the public face, so it has to say both: what the real
+        DSH session actually did, and what it did not. A claim that only lists
+        the wins would read as a full pass, and the run that carries them ended
+        `RETAINED` on the Creator.
+        """
+        for name, proved, blocked, claim in (
+                ('README.md', 'real DSH session', 'Creator end-to-end',
+                 'and is not claimed'),
+                ('README.es.md', 'sesión DSH real', 'Creator end-to-end',
+                 'no se afirma')):
+            with self.subTest(readme=name):
+                text = self.read(name)
+                self.assertIn(proved, text,
+                              f"{name} no publica el caso real")
+                self.assertIn(blocked, text,
+                              f"{name} omite el límite que no se probó")
+                self.assertIn(claim, text,
+                              f"{name} nombra el caso real pero no dice qué "
+                              f"queda sin probar")
+                self.assertIn('ab5c0c6', text, "el commit verificado del reparador")
+                self.assertIn('docs/progreso-agentico.md', text,
+                              "la vista de hitos no está enlazada desde la portada")
+
     def test_status_documents_have_no_trailing_whitespace(self):
         # A status file that is one character per line is still valid markdown to
         # every reader and to the tests, and it is unreadable to a person. This
@@ -356,6 +382,184 @@ class ArchitectureConsistencyTest(unittest.TestCase):
                                       f"{discovered}; una cifra antigua tiene que decir que lo es")
             self.assertGreater(claims, 0,
                                f"{relative} no publica cifra de suite que comprobar")
+
+    def test_the_suite_runs_without_writing_to_stderr(self):
+        """CLIs that must exit 2 write their complaint to stderr by design.
+
+        `argparse` prints usage to stderr and it is stdout the tests redirect,
+        so one regression exercising `main()` with a missing required flag
+        leaves two lines of usage text in the output of *every* suite run,
+        printed over the progress dots where they read as a real failure. That
+        happened with `host_validator.main()` and its `--run-dir`: the suite
+        exited 1 for an unrelated reason while stderr advertised a broken
+        validator, and it was the only leak in the whole suite.
+
+        The fix is per-regression — capture stderr where the flag is missing —
+        and this test is the one that catches a return. It runs the tests that
+        drive a CLI's `main()` as a subprocess, the way the plan runs the
+        suite, and requires stderr to hold nothing but the runner's own
+        progress dots. A regression that moves a `main()` call back outside its
+        `redirect_stderr` fails here, naming the run, instead of leaving two
+        lines of argparse usage for whoever reads the suite output next.
+        """
+        result = subprocess.run(
+            ["/usr/bin/python3", "-B", "-m", "unittest",
+             "tests.test_creator_and_validator.ValidatorTests"],
+            cwd=str(ROOT), capture_output=True, text=True, timeout=900)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Everything the runner itself writes below the progress line is
+        # legitimate ("----", "Ran N tests", "OK", a traceback for a real
+        # failure). The complaint is the line *above* it: unittest prints the
+        # dots first and flushes, so a stray write interleaves there instead
+        # of landing where the report can hide it.
+        dots = [line for line in result.stderr.splitlines()
+                if line and re.fullmatch(r"[.sFEx]*", line)]
+        stray = []
+        for line in result.stderr.splitlines():
+            if not line.strip() or line in dots:
+                continue
+            if line.startswith(("-", "Ran ", "OK", "FAILED", "Traceback")) \
+                    or line.startswith("  ") or line.startswith("Assertion"):
+                continue
+            stray.append(line)
+        self.assertEqual(
+            stray, [],
+            "stderr de la suite con ruido: una regresión escribe fuera de "
+            "redirect_stderr y contamina la salida de toda la suite")
+
+    def test_the_progress_view_covers_every_milestone_family(self):
+        """A one-page view of the milestones is only one page if it has them all.
+
+        `docs/progreso-agentico.md` exists so no identifier has to be hunted
+        through the tree. The families are fixed by the vocabulary the other
+        documents already use, so a family that silently drops out is a hole in
+        the view and not a simplification: `U` in particular lives only in the
+        status document and would be the first to be forgotten.
+        """
+        progress = self.read('docs/progreso-agentico.md')
+        families = {
+            'B': ('B0', 'B4'),
+            'C': ('C0', 'C7'),
+            'D': ('D1', 'D9'),
+            'E': ('E1', 'E9'),
+            'F': ('F1', 'F6'),
+            'G': ('G0', 'G7'),
+            'M': ('M1', 'M9'),
+            'P': ('P0', 'P11'),
+            'U': ('U1', 'U6'),
+            'X': ('X1', 'X3'),
+        }
+        # Each family's own section heading, so a mention in passing inside
+        # prose does not count as coverage. Two of them (P) legitimately have
+        # more than one heading, and the ranges are written with an en dash or
+        # a hyphen depending on the section.
+        headings = {m.group(1) for m in re.finditer(
+            r'(?m)^## ([A-Z])[0-9][\u2013-]', progress)}
+        for family, (first, last) in sorted(families.items()):
+            with self.subTest(family=family):
+                self.assertIn(family, headings,
+                              f"falta una sección propia para la familia {family}")
+                self.assertIn(first, progress)
+                self.assertIn(last, progress)
+
+    def test_the_progress_view_marks_reused_history_as_history(self):
+        """A withdrawn family reused from Git must not read as live work.
+
+        `M` and the phases `P0`–`P9` are only reachable with
+        `git show c8aed51^:…`, and `docs/status.md` says plainly that no plan
+        from them lives in the current documentation. A view that lists them
+        without saying so invites someone to read them as a backlog.
+        """
+        progress = self.read('docs/progreso-agentico.md')
+        for family in ('M1', 'P0'):
+            with self.subTest(family=family):
+                row = next((line for line in progress.splitlines()
+                            if line.startswith(f"| {family} |")), None)
+                self.assertIsNotNone(
+                    row, f"no hay fila para {family}: la vista no lo cubre")
+                self.assertIn('RETIRADO', row.upper(),
+                              f"{family} tiene que decir que está retirado")
+        self.assertIn('git show c8aed51^', progress)
+        self.assertIn('homonimia', progress.lower(),
+                      'las dos acepciones de P exigen aviso de homonimia')
+
+    def test_no_document_claims_a_real_dsh_session_that_did_not_happen(self):
+        """The difference between what the real session did and did not do.
+
+        A claim that the Creator finished end-to-end, or that the corpus gate
+        ran against a real mode, is exactly the kind that reads as true and is
+        not: the run that produced these files ended `RETAINED`. The status
+        document carries the three blockers and the one retainer, and this test
+        keeps the vocabulary attached to them.
+        """
+        status = self.read('docs/status.md')
+        for phrase in ('Creator end-to-end no se probó',
+                       'no hay sesión DSH utilizable',
+                       'fatal: cannot lock ref',
+                       'RETAINED'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, status)
+        # The pass did happen and is recorded, so the limits are not the whole
+        # truth about it either.
+        self.assertIn('PING-OK', status)
+        self.assertIn('READY_FOR_ACCEPTANCE', status)
+
+    def test_the_progress_view_links_only_to_files_the_repository_has(self):
+        """A link that points at nothing is the most common way a view rots.
+
+        The one-page progress view is meant to be the entry point, so each
+        relative link in it is resolved against the tree: a moved document has
+        to fail here rather than in a reader's click.
+        """
+        progress = self.read('docs/progreso-agentico.md')
+        broken = []
+        for target in re.findall(r'\]\(([^)#]+?)(?:#[^)]*)?\)', progress):
+            if target.startswith(('http:', 'https:', 'mailto:')):
+                continue
+            for candidate in (ROOT / 'docs' / target, ROOT / target):
+                if candidate.is_file():
+                    break
+            else:
+                broken.append(target)
+        self.assertTrue(re.findall(r'\]\(([^)#]+?)\)', progress),
+                        "la vista no enlaza nada: el escaneo está roto")
+        self.assertEqual(broken, [],
+                         f"enlaces rotos en docs/progreso-agentico.md: {broken}")
+
+    def test_the_dsh_maintenance_skill_is_portable_and_never_leaks_a_secret(self):
+        """A permanent skill that teaches a real session is published like code.
+
+        It is installed into every user's project by `prepare_project_skills`,
+        which is where the other five are checked. Anything with a maintainer
+        path, a credential or an absolute DSH_HOME inside would be copied to a
+        stranger's tree and then never load or never be safe.
+        """
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import onboard
+        skill = ROOT / 'skills' / 'dsh-maintenance-session'
+        skill_md = skill / 'SKILL.md'
+        self.assertTrue(skill_md.is_file(),
+                        "skills/dsh-maintenance-session/SKILL.md no existe")
+        match = onboard.SKILL_FRONTMATTER.match(
+            skill_md.read_text(encoding='utf-8'))
+        self.assertIsNotNone(match, "frontmatter que un cargador no leería")
+        self.assertEqual(match.group(1), 'dsh-maintenance-session')
+        self.assertLessEqual(len(match.group(2)), 512)
+        text = skill_md.read_text(encoding='utf-8')
+        # The procedure has to be the verified one, not a paraphrase.
+        self.assertIn('--profile headless --json', text)
+        self.assertIn('DSH_HOME', text)
+        for forbidden in ('/home/', 'Improvement-herramientas',
+                          'NROUTER_API_KEY=sk', 'ssh-rsa', 'BEGIN PRIVATE KEY'):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text,
+                                 f"la skill publica {forbidden!r}")
+        # A symlink in the tree would install as a link and then dangle.
+        for part in skill.rglob('*'):
+            self.assertFalse(part.is_symlink(), f"{part.name}")
+            if part.is_file():
+                self.assertNotIn('/home/', part.read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

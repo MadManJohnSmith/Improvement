@@ -286,8 +286,40 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **848 pruebas en
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **939 pruebas en
 verde**.
+
+### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
+
+Syncify, RehabWeb, LoboApp y el propio framework fueron campañas sobre
+repositorios reales. La pasada del **2026-10-10** fue algo más acotado y conviene
+separarlo: un producto **ficticio** con git real y un defecto conocido, conducido
+por una sesión DSH real en un home de campaña aislado. Nada tocó el producto real
+del operador.
+
+Lo que se recorrió, desde prompts de una línea hasta el resultado verificado:
+
+| Paso | Qué pasó |
+|---|---|
+| El prompt de auditoría | el auditor encontró el defecto y persistió `evidence/audit-finding.md` con el código literal y la salida del test |
+| «Repáralo» en seis palabras | el reparador dejó una candidata externa, commit `ab5c0c6`, diff `+1 -3`, pruebas en verde, producto intacto |
+| «Implementa X» | el implementador dejó la candidata `candidate-implement-nivel`, commit `95aa9b2`, 6 tests nuevos |
+| El ciclo auditoría → reparación → pase | run `r-5d7d11…` `RETAINED cause: gate-abort:gate-producto`; run `r-7761c0…` `COMPLETED` |
+| Skills | el auditor cargó 3, el reparador 2, el implementador 1; un turno trivial no cargó ninguna |
+| Autoridad | ante falta de autorización, el turno se abstuvo —`Decision: I abstain`— y una sonda de escritura confirmó el producto intacto |
+| Validador Host | `READY_FOR_ACCEPTANCE`, 10 de 10 capas PASS sobre paquete real |
+| Memoria de campaña | `MEMORY_RECONCILED`, 6 entradas invalidadas en bloque al cambiar un fichero |
+
+Lo que **no** se probó, y no se afirma: el **Creator end-to-end** no terminó —un
+turno headless real con el prompt íntegro (29 llamadas de herramienta, 734.064
+tokens, cwd correcto) no persistió `generated/generation-manifest.json` y el run
+acabó `RETAINED`; el **corpus gate** no pudo correr contra un modo real porque
+`dsh web` no sirvió en ese entorno, así que se abstuvo fail-closed nombrando lo
+que faltaba; y `git worktree add` fue denegado por el sandbox de sesión
+(`Read-only file system` más `no approval channel is available`), así que las
+candidatas se hicieron clones dentro del workspace en vez de los worktrees hermanos
+que pide el contrato. El procedimiento completo para preparar ese tipo de sesión
+real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
 ## Qué obtienes en tu repo
 
@@ -347,9 +379,13 @@ Esto se lanza para testeo. Lo que ya está probado: instalación de principio a 
 intervención, desde un clon de GitHub y sin contaminación previa; el ciclo
 auditor→reparador→integración en tres campañas reales; verificación ejecutada contra el
 entrypoint real del producto (Flutter y Django, sin stubs) con la evidencia persistida y
-validada mecánicamente; y la memoria alcanzando sus topes con compactación y recibo.
+validada mecánicamente; y el ciclo auditoría → reparación → pase, el hallazgo
+persistido, la reparación verificada en una candidata externa y la abstención sin
+autoridad, todo conducido por una **sesión DSH real** el 2026-10-10.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
-estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md).
+estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md), y lo que
+esa pasada no pudo probar —Creator end-to-end, el corpus gate contra un modo real, el
+worktree hermano— queda dicho como tal en el [estado comprobado](docs/status.md).
 
 Si la sesión se cae a mitad de turno — y en una developer preview pasa — el trabajo no se
 pierde: una candidata interrumpida se reanuda verificando la identidad exacta registrada
@@ -372,6 +408,7 @@ produce.
 - [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html), como HTML explorables
 - [Preparación de DSH](docs/setup-dsh.md)
 - [Estado comprobado](docs/status.md)
+- [Progreso de hitos, una página](docs/progreso-agentico.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
 - [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)

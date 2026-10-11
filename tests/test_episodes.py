@@ -105,6 +105,44 @@ class EpisodesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             episodes.recall(self.workspace)
 
+    def test_a_citation_is_true_only_for_an_episode_that_closed_that_defect(self):
+        # The tool echoes {unit, evidence, repair} from the index and computes the
+        # signature separately at evidence.fingerprint, so a citation is checked
+        # against the signature the finding was filed under, not only its unit.
+        self._close(unit="unit-1", fingerprint="fp-1", path="src/a.py",
+                   excerpt="token = 1")
+        self._close(unit="unit-2", fingerprint="fp-2", path="src/other.py",
+                   excerpt="zzz")
+        self.assertTrue(episodes.citation_valid(
+            self.workspace, {"unit": "unit-2", "evidence": "e", "repair": "r"},
+            "fp-2"))
+        # The unit is present and the memory is intact, but this repair closed
+        # another defect: the citation claims a repeat the memory never proved.
+        self.assertFalse(episodes.citation_valid(
+            self.workspace, {"unit": "unit-2", "evidence": "e", "repair": "r"},
+            "fp-gone"))
+        # A unit the ledger no longer holds cannot close anything.
+        self.assertFalse(episodes.citation_valid(
+            self.workspace, {"unit": "unit-gone", "evidence": None, "repair": None},
+            "fp-1"))
+        # Without a signature only the weaker half is answered.
+        self.assertTrue(episodes.citation_valid(self.workspace, {"unit": "unit-1"}))
+        self.assertFalse(episodes.citation_valid(self.workspace, {"unit": "nope"}))
+        # A malformed or absent payload is not a citation, so it claims nothing.
+        self.assertFalse(episodes.citation_valid(self.workspace, None, "fp-1"))
+        self.assertFalse(episodes.citation_valid(self.workspace, {}, "fp-1"))
+        self.assertFalse(episodes.citation_valid(self.workspace, {"evidence": "e"}))
+
+    def test_the_citation_the_tool_actually_writes_can_be_checked(self):
+        # End to end with the shape `workflow-write.mjs` produces: the cited
+        # episode belongs to one signature and the finding carries another.
+        self._close(unit="unit-1", fingerprint="fp-a", path="src/a.py",
+                   excerpt="token = 1")
+        citation = {"unit": "unit-1", "evidence": "v.jsonl#unit-1",
+                    "repair": "borrar la cache"}
+        self.assertTrue(episodes.citation_valid(self.workspace, citation, "fp-a"))
+        self.assertFalse(episodes.citation_valid(self.workspace, citation, "fp-b"))
+
     def test_the_ledger_is_append_only_and_readable_line_by_line(self):
         self._close(unit="unit-1", fingerprint="fp-1")
         self._close(unit="unit-2", fingerprint="fp-1")
@@ -146,6 +184,33 @@ class EpisodesTest(unittest.TestCase):
         self.assertEqual(len(kept), episodes.MAX_PER_SIGNATURE)
         self.assertEqual(kept[-1]["unit"],
                          f"unit-{episodes.MAX_PER_SIGNATURE + 2}")
+
+    def test_lost_index_rebuilds_from_verified_repairs(self):
+        self._close(unit="u1", fingerprint="fp-1")
+        episodes.index_path(self.workspace).unlink()
+        self.assertEqual([e['unit'] for e in episodes.recall(
+            self.workspace, fingerprint="fp-1")], ['u1'])
+        self._close(unit="u2", fingerprint="fp-2")
+        self.assertEqual(set(episodes.read_index(self.workspace)['signatures']),
+                         {'fp-1', 'fp-2'})
+        self.assertEqual(episodes.stats(self.workspace)['episodes'], 2)
+
+    def test_stale_index_cannot_invent_or_erase_repairs(self):
+        self._close(unit="u1", fingerprint="fp-1")
+        path = episodes.index_path(self.workspace)
+        path.write_text(json.dumps({'version': 1, 'signatures': {
+            'ghost': [{'unit': 'ghost', 'verdict': 'PASS', 'evidence': 'x',
+                       'repair': None}]}}), encoding='utf-8')
+        self.assertEqual(episodes.recall(self.workspace, fingerprint='ghost'), [])
+        self.assertEqual(episodes.recall(self.workspace, fingerprint='fp-1')[0]['unit'], 'u1')
+
+    def test_stats_count_ledger_not_only_pruned_index(self):
+        for index in range(episodes.MAX_PER_SIGNATURE + 2):
+            self._close(unit=f'u{index}', fingerprint='fp-loop')
+        self.assertEqual(episodes.stats(self.workspace)['episodes'],
+                         episodes.MAX_PER_SIGNATURE + 2)
+        self.assertEqual(len(episodes.recall(self.workspace, fingerprint='fp-loop')),
+                         episodes.MAX_PER_SIGNATURE)
 
     def test_an_empty_or_malformed_field_is_refused(self):
         with self.assertRaises(ValueError):

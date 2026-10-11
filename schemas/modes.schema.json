@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:dsh-flow:modes:1",
   "title": "Mode contract",
-  "description": "Contract for a generated mode (e.g., <Project>-auditor). Located in generated/modes/<name>/. Exactly two final modes per project.",
+  "description": "Contract for a generated mode (e.g., <Project>-auditor). Located in generated/modes/<name>/. Auditor and continuous-repair are required; implementer is optional.",
   "x-owner": "creator",
   "type": "object",
   "required": [
@@ -51,7 +51,8 @@
       "type": "string",
       "enum": [
         "auditor",
-        "continuous-repair"
+        "continuous-repair",
+        "implementer"
       ],
       "description": "Final operational role exposed by the preset."
     },
@@ -140,6 +141,11 @@
               }
             }
           }
+        },
+        {
+          "if": {"properties": {"role": {"const": "implementer"}}, "required": ["role"]},
+          "then": {"required": ["implementation_candidate"],
+                   "properties": {"implementation_candidate": {"type": "object"}}}
         }
       ],
       "properties": {
@@ -149,7 +155,8 @@
         "role": {
           "enum": [
             "auditor",
-            "continuous-repair"
+            "continuous-repair",
+            "implementer"
           ]
         },
         "state_root": {
@@ -250,6 +257,24 @@
             "denial_policy": {
               "const": "RETAINED-no-retry-on-denial-or-schema-error"
             }
+          }
+        },
+        "implementation_candidate": {
+          "type": "object",
+          "required": ["request_kind", "identity", "provision", "candidate_location",
+                       "candidate_write", "canonical_invariant", "resume", "acceptance",
+                       "no_implicit_authority"],
+          "additionalProperties": false,
+          "properties": {
+            "request_kind": {"const": "user-change-not-audited-finding"},
+            "identity": {"const": "sha256(implement-lf-full-base-lf-exact-request)"},
+            "provision": {"const": "Host-provision_implementation-only"},
+            "candidate_location": {"const": "workspace/implement/candidates/repair-<digest16>-own-git"},
+            "candidate_write": {"const": "exact-Host-receipt-path-only"},
+            "canonical_invariant": {"const": "clean-base-before-and-after-each-phase"},
+            "resume": {"const": "same-request-and-base-receipt-or-RETAINED"},
+            "acceptance": {"const": "product-own-entrypoint-plus-requested-behavior-case"},
+            "no_implicit_authority": {"const": ["commit", "merge", "push", "publish", "delegation"]}
           }
         },
         "repair_candidate": {

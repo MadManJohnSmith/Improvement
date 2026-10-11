@@ -1,7 +1,7 @@
 # Plan de implementación y progreso
 
-**Estado:** C0–C7, P1–P11 y las unidades de endurecimiento de los pilotos conservan verificación con evidencia recuperable; el trabajo abierto está en «Deuda declarada» y en las puertas G0–G6 del [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md).
-**Actualización:** 2026-09-27
+**Estado:** C0–C7, P1–P11 y las unidades de endurecimiento de los pilotos conservan verificación con evidencia recuperable; el trabajo abierto está en «Deuda declarada», en las puertas G0–G6 del [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md) y en la deuda X1–X3 que abrió el pase sobre DSH real del 2026-10-10.
+**Actualización:** 2026-10-10
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
 Este archivo es el único índice de progreso. Conserva tres niveles:
@@ -139,6 +139,37 @@ El resultado final por proyecto sigue siendo:
 <Proyecto>-continuous-repair
 + skills específicas justificadas
 ```
+
+## Pase integral sobre DSH real (2026-10-10)
+
+No es una fila de la matriz anterior: es el resultado de ejecutar el flujo sobre una
+instalación real de `@deepseek-ai/dsh` `0.2.0-rc.2` con un producto **ficticio** y
+un `DSH_HOME` de campaña aislado fuera del canónico. El detalle por bloque, con
+comando y artefacto, está en [docs/status.md](docs/status.md).
+
+| Comprobación | Estado |
+|---|---|
+| Canal real de inferencia (`dsh --profile headless --json`) | HECHO — `PING-OK`, `completed`, `totalTokens = 6552` |
+| Auditor real sobre hallazgo real | HECHO — persistió `evidence/audit-finding.md` con excerpt y salida de test |
+| Reparador real con candidata verificada | HECHO — commit `ab5c0c6`, diff `+1 -3`, tests PASS, producto intacto |
+| Implementador real con cambio pedido | HECHO en un solo caso — commit `95aa9b2`, 6/6 tests nuevos |
+| Workflow FAIL → reparación → PASS | HECHO — `r-5d7d11…` RETAINED por gate, `r-7761c0…` COMPLETED |
+| Skills cargadas e invocadas en sesión real | HECHO — 3/2/1 por rol; turno trivial → 0 |
+| Abstención real sin autorización | HECHO — `Decision: I abstain`, producto intacto |
+| Validador Host sobre paquete real | HECHO — 10/10 capas PASS |
+| Corpus gate antifraude | HECHO — rechaza candidato inventado (0.488 < 1.000) |
+| Confinamiento del canónico | HECHO — escritura denegada; escalada rechazada sin canal |
+| **Creator end-to-end** | **PENDIENTE** — el turno real no persistió `generated/generation-manifest.json`; run `RETAINED` |
+| **Corpus gate con modo real** | **BLOQUEADO** — sin `dsh web` no hay RPC `session/create` ni endpoint `evaluator`; el gate se abstuvo fail-closed |
+| **Worktree hermano del producto** | **BLOQUEADO** — `git worktree add` falla por el sandbox `workspace-write`; la candidata se hizo clon dentro del workspace |
+
+**Deuda que abre este pase:**
+
+| ID | Unidad | Criterio de cierre |
+|---|---|---|
+| X1 | Candidata de reparación sin `worktree` del producto | Provisiona la candidata como repositorio sombra creado por el Host bajo el workspace, con `.git` propio, verificado contra DSH real y sin escribir en el `.git` del producto. Hoy solo `kind=implement` lo hace. |
+| X2 | `dsh web` servible, o Creator sin él | El perfil web del home de campaña arranca de verdad (con `node_modules` presentes) y el Creator persiste el paquete, o el camino Creator se demuestra por una vía que no dependa del servidor web. Sin uno de los dos, C2 no se revalida. |
+| X3 | Corpus gate contra un modo real | El gate corre sus 55 casos sobre un modo real de una sesión DSH real; hoy se abstiene nombrándolo. |
 
 ## Reglas de actualización
 

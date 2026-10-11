@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -63,12 +64,158 @@ def startup_check(layout):
             f"printf '{SUCCESS_SENTINEL}\\n'")
 
 
-def _repair_target(layout):
+# El mismo shadow repo sirve para cerrar hallazgos y para implementar un cambio
+# pedido: lo que se garantiza —base declarada, identidad por digest, diff
+# limpio, reanudación exacta— no depende de para qué se abrió. Lo único que
+# cambia es el nombre del workspace y el de la rama, y por eso son dos valores
+# de un conjunto cerrado y no dos implementaciones.
+CANDIDATE_KINDS = ("repair", "implement")
+
+
+def _candidate_kind(kind):
+    if kind not in CANDIDATE_KINDS:
+        raise ValueError(f"tipo de candidata desconocido: {kind!r}")
+    return kind
+
+
+def implementation_identity(base_revision, request):
+    """A user change is not an audit finding; bind its exact request and base."""
+    if (not isinstance(base_revision, str) or
+            not re.fullmatch(r"[0-9a-f]{40,64}", base_revision) or
+            not isinstance(request, str) or not request.strip() or
+            len(request.encode("utf-8")) > 8192):
+        raise ValueError("base o petición de implementación inválida")
+    digest = hashlib.sha256(("implement\n" + base_revision + "\n" + request).encode()).hexdigest()
+    return digest
+
+
+def _git_read(root, *args):
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+                            text=True, check=False)
+    if result.returncode:
+        raise ValueError(f"Git no confirmó {args[0]} en candidata")
+    return result.stdout.strip()
+
+
+def provision_implementation(product, workspace, request, *, declared_base):
+    """Host-owned shadow provisioning; never a product worktree or implicit commit.
+
+    Reuse requires the same base and exact request, a separate .git and an
+    unmodified product. An existing dirty candidate is returned untouched.
+    """
+    import shadow_candidate
+    from onboard import checked
+    product, workspace = checked(product), checked(workspace)
+    if (not product.is_dir() or not workspace.is_dir() or
+            product == workspace or product in workspace.parents or
+            workspace in product.parents or product.parent != workspace.parent):
+        raise ValueError("raíces de producto/workspace inválidas")
+    base = _git_read(product, "rev-parse", "HEAD")
+    digest = implementation_identity(base, request)
+    if _git_read(product, "status", "--porcelain=v1"):
+        raise ValueError("producto canónico sucio: RETAINED")
+    ancestor = subprocess.run(["git", "-C", str(product), "merge-base",
+                              "--is-ancestor", declared_base, base],
+                             capture_output=True, check=False)
+    if (not re.fullmatch(r"[0-9a-f]{40,64}", declared_base) or
+            ancestor.returncode):
+        raise ValueError("base declarada no es ancestro: RETAINED")
+    # Separate namespace: a repair for the same base must never be reused for
+    # a user-requested change. The shadow shares no Git metadata with product.
+    shadow_workspace = workspace / "implement"
+    if shadow_workspace.is_symlink() or (shadow_workspace.exists() and
+                                         not shadow_workspace.is_dir()):
+        raise ValueError("raíz de implementación peligrosa")
+    target = shadow_workspace / "candidates" / f"repair-{digest[:16]}"
+    marker = workspace / f"implement-{digest[:16]}.json"
+    if target.parent.is_symlink():
+        raise ValueError("raíz de candidatas peligrosa")
+    if target.exists() or target.is_symlink():
+        if target.is_symlink() or not target.is_dir():
+            raise ValueError("colisión de candidata implement: RETAINED")
+        git_dir = Path(_git_read(target, "rev-parse", "--absolute-git-dir")).resolve()
+        if git_dir != (target / ".git").resolve() or not (target / ".git").is_dir():
+            raise ValueError("candidata no tiene repositorio propio")
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("identidad de candidata ausente")
+        try:
+            recorded = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise ValueError("identidad de candidata ilegible") from error
+        if recorded != {"base_revision": base, "request_sha256": digest}:
+            raise ValueError("candidata de otra petición/base: RETAINED")
+        shadow_base = _git_read(target, "rev-parse", "--verify", "shadow-base")
+        if (_git_read(target, "rev-parse", "HEAD") != shadow_base or
+                _git_read(target, "symbolic-ref", "--short", "HEAD") != "candidate"):
+            raise ValueError("HEAD de candidata derivó: RETAINED")
+        if (target / ".gitmodules").exists() or (target / ".gitmodules").is_symlink():
+            raise ValueError("candidata contiene submódulo no autorizado")
+        return {"path": str(target), "base_revision": base,
+                "request_sha256": digest, "reused": True}
+    # A fresh shadow is private to workspace; source never receives git writes.
+    if marker.exists() or marker.is_symlink():
+        raise ValueError("recibo de candidata sin repositorio: RETAINED")
+    target, _ = shadow_candidate.provision(product, shadow_workspace, digest[:16],
+                                           base_ref=declared_base)
+    # A crash after creation but before this receipt is intentionally retained
+    # on retry, not silently reused as if identity had been confirmed.
+    with marker.open("x", encoding="utf-8") as stream:
+        json.dump({"base_revision": base, "request_sha256": digest}, stream,
+                  sort_keys=True)
+        stream.write("\n")
+    return {"path": str(target), "base_revision": base,
+            "request_sha256": digest, "reused": False}
+
+
+def verify_implementation(product, workspace, request, receipt, *, acceptance_command):
+    """Host checks identity and requested behavior on the shadow, never applies it.
+
+    This case is one behavioral acceptance check. It is not a claim that every
+    product entrypoint has run; callers must keep that result separately.
+    """
+    from onboard import checked
+    product, workspace = checked(product), checked(workspace)
+    if (not isinstance(receipt, dict) or not isinstance(acceptance_command, list)
+            or not acceptance_command or not all(isinstance(part, str) and part
+                                                   for part in acceptance_command)):
+        raise ValueError("recibo o comando de aceptación inválido")
+    base = _git_read(product, "rev-parse", "HEAD")
+    digest = implementation_identity(base, request)
+    expected = workspace / "implement" / "candidates" / f"repair-{digest[:16]}"
+    if (receipt.get("path") != str(expected) or receipt.get("base_revision") != base or
+            receipt.get("request_sha256") != digest or expected.is_symlink() or
+            _git_read(product, "status", "--porcelain=v1")):
+        raise ValueError("candidata/producto derivó: RETAINED")
+    # Reusing the provisioning boundary revalidates the independent .git and
+    # immutable receipt, including when this is a resumed turn.
+    provision_implementation(product, workspace, request, declared_base=base)
+    if not _git_read(expected, "status", "--porcelain=v1"):
+        return {"verdict": "BLOCKED", "reason": "no-change", "request_sha256": digest}
+    result = subprocess.run(acceptance_command, cwd=expected, capture_output=True,
+                            text=True, timeout=120, check=False)
+    if _git_read(product, "status", "--porcelain=v1") or _git_read(product, "rev-parse", "HEAD") != base:
+        raise ValueError("producto canónico cambió durante aceptación: RETAINED")
+    measured = subprocess.run(["/usr/bin/python3", "-B", "-c",
+                               _CANDIDATE_DIFF_SCRIPT, str(expected), "-"],
+                              capture_output=True, text=True, check=False)
+    if measured.returncode or not measured.stdout.startswith(
+            "__IMPROVEMENT_CANDIDATE_DIFF__ "):
+        raise ValueError("diff de candidata no medible: RETAINED")
+    diff_digest = measured.stdout.split()[1]
+    return {"verdict": "PASS" if result.returncode == 0 else "FAIL",
+            "scope": "requested-behavior-case-only-not-full-acceptance",
+            "exit_code": result.returncode, "request_sha256": digest,
+            "candidate_diff_digest": diff_digest,
+            "command": acceptance_command}
+
+
+def _repair_target(layout, kind="repair"):
+    _candidate_kind(kind)
     product = shlex.quote("./" + layout["product_root"])
-    candidate_prefix = shlex.quote(layout["product_root"] + "-repair-")
+    candidate_prefix = shlex.quote(layout["product_root"] + "-" + kind + "-")
     return (
         f"product={product}; candidate_name={candidate_prefix}\"$digest16\"; "
-        "branch=\"dsh/repair-$digest16\"; expected=\"$PWD/$candidate_name\"; "
+        f"branch=\"dsh/{kind}-$digest16\"; expected=\"$PWD/$candidate_name\"; "
         "candidate=\"$expected\"; test -d \"$product\" -a ! -L \"$product\"; "
         "test \"$(git -C \"$product\" rev-parse HEAD)\" = \"$full_base\"; "
         "test -z \"$(git -C \"$product\" status --porcelain=v1)\"; "
@@ -78,7 +225,8 @@ def _repair_target(layout):
         "branch_count=$(printf '%s\\n' \"$worktrees\" | grep -Fxc -- \"branch refs/heads/$branch\" || :); ")
 
 
-def repair_provision_command(layout):
+def repair_provision_command(layout, kind="repair"):
+    _candidate_kind(kind)
     """Return the exact target-scoped clean create/reuse command.
 
     The command takes exactly three substitutions, `digest16`, `full_base` and
@@ -90,10 +238,11 @@ def repair_provision_command(layout):
     the persona is what produced a re-anchor that could claim a proof it never
     ran.
     """
+    _candidate_kind(kind)
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
         "declared_base='<declared-base>'; "
-        + _repair_target(layout) +
+        + _repair_target(layout, kind) +
         "case \"$declared_base\" in "
         "*[!0-9a-f]*|'') exit 1;; esac; "
         "git -C \"$product\" merge-base --is-ancestor \"$declared_base\" \"$full_base\"; "
@@ -149,10 +298,11 @@ def _candidate_diff_invocation(expected):
             "\"))' \"$candidate\" " + expected)
 
 
-def repair_candidate_diff_command(layout):
+def repair_candidate_diff_command(layout, kind="repair"):
     """Capture the dirty candidate digest and complete safe changed-path list."""
+    _candidate_kind(kind)
     return ("set -eu; digest16='<digest16>'; full_base='<full-base>'; " +
-            _repair_target(layout) +
+            _repair_target(layout, kind) +
             "test -d \"$candidate\" -a ! -L \"$candidate\"; "
             "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
             "test \"$(git -C \"$candidate\" rev-parse HEAD)\" = \"$full_base\"; " +
@@ -191,7 +341,8 @@ def _candidate_record_json(marker, dirty):
             + args + " 'PROVISIONED'")
 
 
-def repair_recording_command(layout):
+def repair_recording_command(layout, kind="repair"):
+    _candidate_kind(kind)
     """Return the exact command that records candidate evidence into mode state.
 
     The command prints the exact JSON object to persist verbatim as
@@ -204,9 +355,10 @@ def repair_recording_command(layout):
     base), so persistence requires no hand-assembly: any field the mode adds,
     removes, or rewrites is a deviation from the contract, not a fix.
     """
+    _candidate_kind(kind)
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
-        "finding_ids_digest='<finding-ids-digest>'; " + _repair_target(layout) +
+        "finding_ids_digest='<finding-ids-digest>'; " + _repair_target(layout, kind) +
         "test -d \"$candidate\" -a ! -L \"$candidate\"; "
         "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
         "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
@@ -228,7 +380,7 @@ sys.stdout.write(hashlib.sha256((full_base+"\n"+"\n".join(ids)).encode()).hexdig
 '''
 
 
-def repair_reconcile_command(layout):
+def repair_reconcile_command(layout, kind="repair"):
     """Return the exact command that re-captures a stale recorded diff.
 
     Ownership is already proven by the record itself: path, branch, base and
@@ -239,13 +391,14 @@ def repair_reconcile_command(layout):
     digest16 from the base revision plus the actual finding IDs, so a record
     that disagrees about path, branch, base or findings cannot be reconciled.
     """
+    _candidate_kind(kind)
     encoded = base64.b64encode(_RECONCILE_IDENTITY_SCRIPT.encode()).decode()
     return (
         "set -eu; full_base='<full-base>'; "
         "finding_ids_digest=$(python3 -c 'import base64;exec(base64.b64decode(\"" +
         encoded + "\"))' \"$full_base\" '<finding-ids-lf-separated>'); "
         "digest16=$(printf '%s' \"$finding_ids_digest\" | cut -c1-16); " +
-        _repair_target(layout) +
+        _repair_target(layout, kind) +
         "test -d \"$candidate\" -a ! -L \"$candidate\"; "
         "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
         "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
@@ -256,11 +409,12 @@ def repair_reconcile_command(layout):
         _candidate_record_json("__IMPROVEMENT_CANDIDATE_RECONCILE__", True))
 
 
-def repair_resume_command(layout):
+def repair_resume_command(layout, kind="repair"):
     """Return the exact command for an already authorized dirty target."""
+    _candidate_kind(kind)
     return (
         "set -eu; digest16='<digest16>'; full_base='<full-base>'; "
-        "expected_diff_digest='<candidate-diff-digest>'; " + _repair_target(layout) +
+        "expected_diff_digest='<candidate-diff-digest>'; " + _repair_target(layout, kind) +
         "test -d \"$candidate\" -a ! -L \"$candidate\"; "
         "test \"$path_count\" = 1 -a \"$branch_count\" = 1; "
         "test \"$(realpath -- \"$candidate\")\" = \"$expected\"; "
@@ -326,7 +480,9 @@ def audit_count_command(layout):
 
 
 def persona_prefix(preset_id, role=None):
-    role = role or ("auditor" if preset_id.endswith("-auditor") else "continuous-repair")
+    role = role or ("auditor" if preset_id.endswith("-auditor") else
+                    "implementer" if preset_id.endswith("-implementer") else
+                    "continuous-repair")
     bootstrap = (f"First-party Improvement preset contract: your first action MUST call the skill "
                  f"tool with exact skill {preset_id!r}. Do not analyze, use another tool, or answer "
                  "before that call succeeds. If loading fails, stop and report RETAINED. Never send "
@@ -394,6 +550,22 @@ def persona_prefix(preset_id, role=None):
             "the command fails, it means the state does not say what the response would claim: fix "
             "the persistence and re-run it, or report RETAINED. Never report a count the command "
             "did not print.")
+    if role == "implementer":
+        return bootstrap + (
+            "This is a user-requested behavior change, not an audited finding. "
+            "The Host must provision and bind a kind=implement shadow candidate to "
+            "the exact request and clean product base before any edit. If that Host "
+            "receipt is absent, report RETAINED; do not create an ad-hoc worktree. "
+            "Use bash code-changing calls only with workdir equal to the Host "
+            "candidate path. Never write the canonical product, commit, merge, push "
+            "or publish. Verify the new behavior with the product's own test and "
+            "lint entrypoints from the Host capability plan, plus an explicit "
+            "acceptance case for the requested behavior. Report the exact candidate "
+            "diff digest, commands, results and unmet criteria; do not call a "
+            "missing or failed check PASS. On resume recheck receipt, base, product "
+            "cleanliness and candidate identity before continuing. "
+            "No plugin delegation, subagent or workflow is authorized by this persona; "
+            "Host orchestration is a separate capability. ")
     if role == "continuous-repair":
         return bootstrap + (
             "Verify the candidate with the product's own entrypoint listed in the capability "
@@ -605,6 +777,19 @@ def expected_lifecycle(role, layout):
             "count_command": audit_count_command(layout),
             "handoff_coverage": "audit-handoff-names-every-open-finding-at-its-base-revision",
             "next_prompt": AUDIT_NEXT_PROMPT,
+        }
+    elif role == "implementer":
+        common["tool_policy"]["bash"] = "code-changes-require-workdir-exact-candidate"
+        common["implementation_candidate"] = {
+            "request_kind": "user-change-not-audited-finding",
+            "identity": "sha256(implement-lf-full-base-lf-exact-request)",
+            "provision": "Host-provision_implementation-only",
+            "candidate_location": "workspace/implement/candidates/repair-<digest16>-own-git",
+            "candidate_write": "exact-Host-receipt-path-only",
+            "canonical_invariant": "clean-base-before-and-after-each-phase",
+            "resume": "same-request-and-base-receipt-or-RETAINED",
+            "acceptance": "product-own-entrypoint-plus-requested-behavior-case",
+            "no_implicit_authority": ["commit", "merge", "push", "publish", "delegation"],
         }
     elif role == "continuous-repair":
         common["tool_policy"]["bash"] = "code-changes-require-workdir-exact-candidate"
