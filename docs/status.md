@@ -89,7 +89,9 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 La cuenta que se publica («NNN pruebas en verde») no es el total, y decirlo es
 justo lo que la hace publicable. La cifra vigente se **mide**, no se recuerda:
 `python3 -B -m unittest discover -s tests` cerró el 2026-10-11 con
-`Ran 1088 tests … OK (skipped=11)`. **Once regresiones se saltan** en una máquina
+`Ran 1088 tests … OK (skipped=11)`. Las regresiones añadas ese mismo día
+(las que fijan la publicación del helper) dejaron la suite en 1091: la cifra
+publicada se mide al cerrar cada unidad, esta línea documenta esa corrida. **Once regresiones se saltan** en una máquina
 sin los componentes externos, y todas nombran el componente que falta:
 
 | componente ausente | qué se pierde |
@@ -246,6 +248,16 @@ El 2026-10-10 se ejecutó un ensayo con instalación real de `@deepseek-ai/dsh` 
    (`tests/test_mode_lifecycle.py:97-146`:
    `test_external_bwrap_read_only_product_writable_shadow_repair_session` y
    `test_host_repair_rejects_legacy_worktree_symlink_and_receipt_collision`).
+   **Los comandos del ciclo ya no llevan el helper incrustado.** Empaquetar las utilidades
+   (`candidate-diff.py`, `work-items-guard.py`, `finding-ids-digest.py`) como blob
+   base64/base85 dentro del comando obligaba al modo a transcribir ~900 caracteres de alta
+   entropía en cada llamada `bash`: un turno real de 200.000 tokens perdió el cierre del ciclo
+   porque un solo `+` enviado en lugar de `>` en el payload provocó
+   `zlib.error: incorrect data check` —con la reparación ya hecha y correcta—. Ahora el Host
+   publica los tres archivos en `workspace/.dsh-managed/shared/`, el comando verifica su
+   SHA-256 antes de ejecutarlos y el recibo de activación publica los tres digests bajo `published_helpers`; la
+   publicación cubre todas las ramas, incluida la idempotente
+   (`scripts/transaction.py:_publish_helper`, `scripts/mode_lifecycle.py:_helper_invocation`).
    **Queda pendiente el ciclo íntegro bajo preset real**, porque lo demostrado hoy con sesión
    DSH real es la provisión del Host y la obediencia del modo en el canal headless
    (`x1-live`: `PROVISIONED → DIRTY`, diff verificado, tests 3/3, reanudación exacta), más el

@@ -1,5 +1,29 @@
 # Cambios
 
+## Los comandos del ciclo ya no dependen de que el modo transcriba un blob — 2026-10-11
+Cambio de framework, medido sobre el fallo real que detuvo el cierre del ciclo X1.
+- **El defecto.** `repair_recording_command`, `repair_resume_command` y
+  `repair_reconcile_command` llevaban sus utilidades incrustadas como payload
+  base64/base85, así que cada llamada `bash` obligaba al modo a reescribir a mano
+  ~900 caracteres de alta entropía. En el turno de 200.000 tokens, un `+` enviado
+  donde iba `>` dentro del payload convirtió el comando en
+  `zlib.error: incorrect data check`: el ciclo se detuvo **después** de que la
+  reparación estuviera hecha y correcta, y el modo se abstuvo sin entender la
+  causa. Verificado byte a byte: el prompt llegaba íntegro al modelo y la
+  corrupción aparecía solo en el `tool/result`.
+- **El arreglo.** El Host publica ahora tres archivos reales en
+  `<workspace>/.dsh-managed/shared/` (`candidate-diff.py`, `work-items-guard.py`,
+  `finding-ids-digest.py`). Los comandos los invocan por ruta, rechazan symlinks y
+  verifican el SHA-256 declarado antes de ejecutarlos, así que un helper manipulado
+  aborta antes de medir nada. La publicación ocurre en todas las ramas de la
+  activación, incluida la idempotente, y el recibo de activación registra los
+  digests publicados.
+- **Regresiones.** Los comandos no pueden volver a contener un blob codificado
+  (`tests/test_mode_lifecycle.py`: los cuatro constructores quedan libres de
+  `b64decode`/`b85decode` y apuntan al archivo publicado), y el digest del helper se
+  calcula del script canónico, no de un valor escrito a mano.
+- **Suite: 1091 OK (11 omitidas)**
+
 ## X1 con techo 200.000: el modo edita y verifica; falta el cierre DIRTY — 2026-10-11
 Ensayo real bajo preset web, presupuesto por turno subido de 120.000 a 200.000 en la fixture
 externa `x1-preset-real` (repo canónico intacto, sin commit ni push). Resultado: **el tramo que

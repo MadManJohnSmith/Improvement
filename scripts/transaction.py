@@ -19,6 +19,7 @@ from pathlib import Path
 
 from composition_contract import ANTI_ESCALATION_PLUGIN, validate_operational_composition
 from layout_contract import layout_from_paths, validate_mode_layout
+import mode_lifecycle
 from mode_lifecycle import initialize_state
 from campaign_plan import write_campaign
 from host_validator import skill_frontmatter_issue
@@ -137,6 +138,47 @@ class Transaction:
         self.backups.mkdir(mode=0o700, exist_ok=True)
         self.staging.mkdir(mode=0o700, exist_ok=True)
         _safe_tree(self.install_root)
+
+    # Helpers the mode commands invoke by path. Each entry is the module
+    # constant that declares the canonical bytes and the digest the command
+    # pins before running it; adding one here is the only place to touch.
+    _HELPERS = (("HELPER_NAME", "_CANDIDATE_DIFF_SCRIPT", "_CANDIDATE_DIFF_SHA256"),
+                ("RESUME_GUARD_NAME", "_RESUME_RECORD_SCRIPT", "_RESUME_GUARD_SHA256"),
+                ("FINDING_IDS_NAME", "_RECONCILE_IDENTITY_SCRIPT", "_FINDING_IDS_SHA256"))
+
+    def _publish_helper(self, shared=None):
+        """Write the helpers the mode commands invoke, refusing a tampered path.
+
+        The commands used to carry these scripts inline as encoded blobs, so
+        every turn made the agent retype ~900 high-entropy characters; one
+        mis-transcribed byte aborted a real repair cycle *after* the mode had
+        already produced the fix. Publishing the files removes that single
+        point of failure, and each command still pins its helper's SHA-256
+        before running it, so a tampered copy cannot widen what the mode sees.
+        """
+        root = Path(shared) if shared is not None else self.install_root
+        target_root = root / "shared"
+        if target_root.is_symlink():
+            raise TransactionError("directorio gestionado de helpers es symlink")
+        target_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        published = {}
+        for name_attr, body_attr, digest_attr in self._HELPERS:
+            name = getattr(mode_lifecycle, name_attr)
+            body = getattr(mode_lifecycle, body_attr).encode("utf-8")
+            declared = getattr(mode_lifecycle, digest_attr)
+            measured = hashlib.sha256(body).hexdigest()
+            if measured != declared:
+                raise TransactionError(f"digest del helper {name} no coincide")
+            target = target_root / name
+            if target.is_symlink():
+                raise TransactionError(f"helper gestionado es symlink: {name}")
+            temporary = target_root / ("." + name + "." + secrets.token_hex(8))
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(body)
+            os.replace(temporary, target)
+            published[name] = measured
+        return published
 
     def _active_generation_id(self):
         if not self.active_pointer.is_file() or self.active_pointer.is_symlink():
@@ -721,6 +763,7 @@ class Transaction:
         modes = self._mode_presets(generated)
 
         self._ensure_roots()
+        published_digest = self._publish_helper()
         target = self.generations / generation_id
         if target.exists():
             # A prior interrupted publication is not active merely because its
@@ -828,6 +871,10 @@ class Transaction:
             "mode_state_preflight": mode_state_preflight,
             "capability_plan": capability_plan,
             "campaign_plan": campaign_receipt,
+            "published_helpers": {
+                "root": str(self.install_root / "shared"),
+                "sha256": published_digest,
+            },
         }
 
     def rollback(self, generation_id):

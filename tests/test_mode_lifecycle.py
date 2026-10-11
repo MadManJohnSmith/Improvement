@@ -34,6 +34,18 @@ PRODUCT = "My Product"
 SUPPORT_FILE_MAX_BYTES = 25600
 
 
+def _publish_helper(workspace):
+    """Publish the diff helper the commands invoke, exactly as the Host does."""
+    from pathlib import Path
+    shared = Path(workspace) / ".dsh-managed" / "shared"
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / mode_lifecycle.HELPER_NAME).write_text(
+        mode_lifecycle._CANDIDATE_DIFF_SCRIPT, encoding="utf-8")
+    (shared / mode_lifecycle.RESUME_GUARD_NAME).write_text(
+        mode_lifecycle._RESUME_RECORD_SCRIPT, encoding="utf-8")
+    (shared / mode_lifecycle.FINDING_IDS_NAME).write_text(
+        mode_lifecycle._RECONCILE_IDENTITY_SCRIPT, encoding="utf-8")
+
 def _placeholders(command):
     """Every unsubstituted token the person would have to replace in a command."""
     return set(re.findall(r"<[a-z][a-z0-9-]*>", command))
@@ -438,6 +450,7 @@ class ModeLifecycleTests(unittest.TestCase):
         layout = {"session_root": session.name, "product_root": product.name,
                   "workspace_root": workspace.name,
                   "state_root": f"{workspace.name}/mode-state"}
+        _publish_helper(workspace)
         return session, product, layout, base
 
     def _candidate_name(self, digest):
@@ -2155,6 +2168,42 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertEqual(legacy.read_bytes(), original)
             self.assertFalse((state / "project.json").exists())
 
+
+    def test_commands_never_carry_the_helper_as_an_encoded_blob(self):
+        """The agent must not have to retype the helper to run a command.
+
+        A real 200k turn lost the whole cycle to this: the recording command
+        shipped the diff helper inline as a base85 blob, the agent
+        re-transcribed it with one wrong character, and `zlib.decompress`
+        raised `incorrect data check` -- after the repair itself was already
+        done and correct. The commands now name the published file instead.
+        """
+        layout = {"product_root": "product", "session_root": "s",
+                  "state_root": "w/mode-state", "workspace_root": "w"}
+        commands = [mode_lifecycle.repair_recording_command(layout),
+                    mode_lifecycle.repair_resume_command(layout),
+                    mode_lifecycle.repair_candidate_diff_command(layout),
+                    mode_lifecycle.repair_reconcile_command(layout)]
+        for command in commands:
+            self.assertNotIn("base64.b85decode", command)
+            self.assertNotIn("base64.b64decode", command)
+            self.assertIn("$workspace/.dsh-managed/shared/" +
+                          mode_lifecycle.HELPER_NAME, command)
+
+    def test_the_helper_invocation_pins_the_published_digest(self):
+        """A helper that is not the one the Host published must not run."""
+        layout = {"product_root": "product", "session_root": "s",
+                  "state_root": "w/mode-state", "workspace_root": "w"}
+        invocation = mode_lifecycle._helper_invocation("-")
+        self.assertIn(mode_lifecycle._CANDIDATE_DIFF_SHA256, invocation)
+        self.assertNotIn("<digest", invocation)
+
+    def test_the_published_helper_is_byte_identical_to_the_declared_digest(self):
+        """The file the Host writes must hash to the digest the command pins."""
+        import hashlib as _hashlib
+        published = _hashlib.sha256(
+            mode_lifecycle._CANDIDATE_DIFF_SCRIPT.encode("utf-8")).hexdigest()
+        self.assertEqual(published, mode_lifecycle._CANDIDATE_DIFF_SHA256)
 
 if __name__ == "__main__":
     unittest.main()

@@ -373,11 +373,37 @@ print("__IMPROVEMENT_CANDIDATE_DIFF__ "+actual+" "+json.dumps([os.fsdecode(p) fo
 '''
 
 
-def _candidate_diff_invocation(expected):
-    encoded = base64.b85encode(zlib.compress(_CANDIDATE_DIFF_SCRIPT.encode(), 9)).decode()
-    return ("python3 -c 'import base64,zlib;exec(zlib.decompress(base64.b85decode(\"" +
-            encoded + "\")))' \"$candidate\" " + expected)
 
+
+# The helper ships as a real file in every generated mode directory, and the
+# commands below invoke that path instead of inlining the script: a command
+# that carries its own helper as an encoded blob makes the agent retype ~900
+# high-entropy characters by hand, and one mis-transcribed byte aborts the
+# whole cycle (measured on a real 200k turn: a single '+' sent instead of '>'
+# inside the payload turned a valid recording command into
+# `zlib.error: incorrect data check`). A path plus a declared digest cannot be
+# mis-copied the same way, and the digest keeps the file honest.
+_CANDIDATE_DIFF_SHA256 = hashlib.sha256(
+    _CANDIDATE_DIFF_SCRIPT.encode("utf-8")).hexdigest()
+
+# File the Host publishes under ``<workspace>/.dsh-managed/shared`` and the mode
+# commands invoke by that path, so the agent never retypes the helper.
+HELPER_NAME = "candidate-diff.py"
+
+def _helper_invocation(expected):
+    """Invoke the published helper, refusing anything but the exact bytes.
+
+    The helper lives beside the layout this command just validated, so the mode
+    reads it instead of transcribing it. The command pins the helper's SHA-256
+    and refuses a symlink, so a tampered copy aborts before computing any
+    diff. ``expected`` stays the argument that pins the measured digest when
+    the caller requires one.
+    """
+    return ('helper="$workspace/.dsh-managed/shared/' + HELPER_NAME + '"; '
+            'test -f "$helper" -a ! -L "$helper"; '
+            'test "$(sha256sum "$helper" | cut -d" " -f1)" = '
+            f'"{_CANDIDATE_DIFF_SHA256}"; '
+            '/usr/bin/python3 -B "$helper" "$candidate" ' + expected)
 
 def repair_candidate_diff_command(layout, kind="repair"):
     """Capture the dirty candidate digest and complete safe changed-path list."""
@@ -385,13 +411,13 @@ def repair_candidate_diff_command(layout, kind="repair"):
     return ("set -eu; digest16='<digest16>'; full_base='<full-base>'; " +
             _repair_target(layout, kind) +
         "test \"$(cg rev-parse HEAD)\" = \"$receipt_head\"; " +
-            _candidate_diff_invocation("-"))
+            _helper_invocation("-"))
 
 
 def _candidate_diff_capture_shell():
     """Capture the diff line and split it into guarded digest and JSON paths."""
     return (
-        "diff_line=\"$(" + _candidate_diff_invocation("-") + ")\"; "
+        "diff_line=\"$(" + _helper_invocation("-") + ")\"; "
         "case \"$diff_line\" in \"__IMPROVEMENT_CANDIDATE_DIFF__ \"*) ;; *) exit 1;; esac; "
         "diff_digest=\"${diff_line#__IMPROVEMENT_CANDIDATE_DIFF__ }\"; "
         "diff_paths=\"${diff_digest#* }\"; "
@@ -411,12 +437,22 @@ if not isinstance(r["candidate_diff_digest"],str) or not re.fullmatch("[0-9a-f]{
 if not isinstance(r["changed_paths"],list) or not r["changed_paths"] or not all(isinstance(x,str) and x for x in r["changed_paths"]): raise SystemExit(1)
 if mode=="resume" and (r["candidate_diff_digest"]!=expected or r["changed_paths"]!=json.loads(paths)): raise SystemExit(1)
 '''
-_RESUME_GUARD_PACKED = base64.b85encode(zlib.compress(_RESUME_RECORD_SCRIPT.encode(), 9)).decode()
 
+
+# The resume guard also ships as a published file: this one ran inside the
+# resume command, so the same mis-transcribed byte that killed the recording
+# command could kill the resume instead.
+_RESUME_GUARD_SHA256 = hashlib.sha256(
+    _RESUME_RECORD_SCRIPT.encode("utf-8")).hexdigest()
+RESUME_GUARD_NAME = "work-items-guard.py"
 
 def _resume_record_guard(mode, expected="-", paths="'[]'"):
-    return ("python3 -c 'import base64,zlib;exec(zlib.decompress(base64.b85decode(\"" +
-            _RESUME_GUARD_PACKED + "\")))' \"$workspace/mode-state/work-items.json\" "
+    return ('guard="$workspace/.dsh-managed/shared/' + RESUME_GUARD_NAME + '"; '
+            'test -f "$guard" -a ! -L "$guard"; '
+            'test "$(sha256sum "$guard" | cut -d" " -f1)" = '
+            f'"{_RESUME_GUARD_SHA256}"; '
+            '/usr/bin/python3 -B "$guard" '
+            '"$workspace/mode-state/work-items.json" '
             '"$full_base" "$receipt_digest" "$candidate_name" "$receipt_head" ' +
             mode + " " + expected + " " + paths)
 
@@ -471,6 +507,13 @@ sys.stdout.write(hashlib.sha256((full_base+"\n"+"\n".join(ids)).encode()).hexdig
 '''
 
 
+# The finding-ids identity helper is published the same way: it recomputes the
+# finding digest from the base revision, and a wrong byte there would silently
+# change which findings a reconcile claims to be about.
+_FINDING_IDS_SHA256 = hashlib.sha256(
+    _RECONCILE_IDENTITY_SCRIPT.encode("utf-8")).hexdigest()
+FINDING_IDS_NAME = "finding-ids-digest.py"
+
 def repair_reconcile_command(layout, kind="repair"):
     """Return the exact command that re-captures a stale recorded diff.
 
@@ -483,11 +526,12 @@ def repair_reconcile_command(layout, kind="repair"):
     that disagrees about path, branch, base or findings cannot be reconciled.
     """
     _candidate_kind(kind)
-    encoded = base64.b64encode(_RECONCILE_IDENTITY_SCRIPT.encode()).decode()
     return (
-        "set -eu; full_base='<full-base>'; "
-        "finding_ids_digest=$(python3 -c 'import base64;exec(base64.b64decode(\"" +
-        encoded + "\"))' \"$full_base\" '<finding-ids-lf-separated>'); "
+        "set -eu; full_base='<full-base>'; " +
+        f"workspace={shlex.quote('./' + layout['workspace_root'])}; "
+        "finding_ids_digest=$(python3 -B \"$workspace/.dsh-managed/shared/" +
+        FINDING_IDS_NAME + "\" \"$full_base\" "
+        "'<finding-ids-lf-separated>'); "
         "digest16=$(printf '%s' \"$finding_ids_digest\" | cut -c1-16); " +
         _repair_target(layout, kind) +
         "test \"$finding_ids_digest\" = \"$receipt_digest\"; "
