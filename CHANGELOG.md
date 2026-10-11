@@ -27,6 +27,18 @@ presentando el gate como operativo. Se corrigió sin reescribir el historial pre
 - **`docs/progreso-agentico.md`:** E3 deja de presentarse como corrida del operador, X2
   nombra la carencia real y P11 separa mecanismo de ejecución.
 
+## La retirada automática se apaga también para worktrees legacy — 2026-10-11
+
+La auditoría adversaria de `scripts/state_reconcile.py` encontró que el mismo
+defecto que inutiliza la retirada de sombra existe en la rama legacy: `git status
+--porcelain=v1 --untracked-files=all` no inventa el contenido ignorado ni la
+metadata privada de `.git/`, así que `git worktree remove` + `git branch -D`
+podían borrar trabajo del operador. La retirada automática se deshabilita también
+ahí: `--retire` verifica identidad e integración y **ABSTAINED** antes de borrar
+cualquiera de los dos tipos de candidata. La decisión pasa al operador con el
+motivo. No hay ningún caso en el que `state_reconcile.retire` borre ya un worktree
+o una sombra. Documentación corregida donde todavía prometía esa retirada.
+
 ## Documentación acotada a la evidencia externa posterior — 2026-10-11
 
 Solo cambios de documentación y pruebas que leen documentación. Ni scripts, ni

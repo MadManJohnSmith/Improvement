@@ -115,7 +115,9 @@ no hay inventario exclusivo de todo su contenido (incluido `.git/`) que pruebe q
 desechable. Conservar la candidata y su evidencia; su eventual retirada exige que el
 operador liste y revise manualmente el contenido y el espacio (por ejemplo con `find`
 y `du -sh`) y decida fuera de `--retire`. Para worktrees legacy registrados fuera de
-`<workspace>/candidates/`, `--retire` mantiene la retirada verificada anterior.
+`<workspace>/candidates/`, `--retire` comprueba identidad e integración y también se
+abstiene antes del borrado: sus archivos ignorados y metadata Git no son inventariados
+por un `git status` limpio. Retirarlos es igualmente una decisión manual.
 
 El tamaño no es un detalle: cada candidata es una copia completa del producto, y varias se
 acumulan hasta llenar el disco. **En los pilotos anteriores el producto sí usaba worktree**,

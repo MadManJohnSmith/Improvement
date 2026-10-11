@@ -629,7 +629,7 @@ def _shadow_retire(product, workspace, candidate):
 
 
 def retire(product, workspace):
-    """Retire a legacy worktree; abstain from deleting a Host shadow."""
+    """Check recorded integration; never automatically delete a candidate."""
     product, workspace = Path(product), Path(workspace)
     state = workspace / "mode-state"
     candidate = _work_items(state).get("candidate")
@@ -678,6 +678,7 @@ def retire(product, workspace):
         _abstain("producto canónico sucio")
     if _git(path, "status", "--porcelain=v1", "--untracked-files=all").stdout.strip():
         raise ReconcileError("el worktree tiene cambios sin integrar; no se retira nada")
-    _git(product, "worktree", "remove", str(path))
-    _git(product, "branch", "-D", branch)
-    return {"retired": True, "already": False, "worktree": str(path), "branch": branch}
+    raise ReconcileError(
+        "ABSTAINED: el worktree legacy y su metadata Git pueden contener "
+        "archivos ignorados o privados que git status no inventaría; conservar "
+        "worktree y rama para revisión y retirada manual del operador")

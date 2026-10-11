@@ -159,28 +159,32 @@ class StateReconcileTests(unittest.TestCase):
         self.assertEqual(state_reconcile.reconcile(
             self.product, self.workspace)["candidate"]["head_in_canonical"], True)
 
-    def test_retire_removes_only_provably_integrated_work(self):
+    def test_retire_refuses_legacy_worktree_even_after_integration(self):
         branch = "dsh/repair-0123456789abcdef"
         name = "Product-repair-0123456789abcdef"
-        _git(self.product, "worktree", "add", "-q", "-b", branch,
-             str(self.session / name))
-        (self.session / name / "a.txt").write_text("fixed\n")
-        _git(self.session / name, "commit", "-q", "-a", "-m", "fix")
+        worktree = self.session / name
+        _git(self.product, "worktree", "add", "-q", "-b", branch, str(worktree))
+        (worktree / "a.txt").write_text("fixed\n")
+        _git(worktree, "commit", "-q", "-a", "-m", "fix")
         _git(self.product, "merge", "-q", "--ff-only", branch)
-        # The operator records INTEGRATED naming the revision now in main.
         self._write_state(dict(self._integrated_candidate(),
                                head=self._rev(), base_revision=self._rev()))
 
-        result = state_reconcile.retire(self.product, self.workspace)
-        self.assertTrue(result["retired"])
-        self.assertFalse(result["already"])
-        self.assertFalse((self.session / name).exists())
-        self.assertNotIn(
+        # Git status cannot inventory ignored content; a clean worktree is
+        # therefore not a deletion authorization for the operator's files.
+        _git(worktree, "config", "core.excludesFile", str(self.session / "ignore-patterns"))
+        (self.session / "ignore-patterns").write_text("operator-notes\n")
+        private = worktree / "operator-notes"
+        private.write_text("material ajeno\n")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(worktree.exists())
+        self.assertEqual(private.read_text(), "material ajeno\n")
+        self.assertIn(
             branch,
             subprocess.run(["git", "-C", str(self.product), "branch", "--list"],
                            capture_output=True, text=True, check=True).stdout)
-        # Idempotent: a second run says so instead of failing on what it did.
-        self.assertTrue(state_reconcile.retire(self.product, self.workspace)["already"])
+        self.assertTrue(_git(self.product, "worktree", "list", "--porcelain").stdout)
 
     def test_retire_refuses_an_unintegrated_or_dirty_candidate(self):
         branch = "dsh/repair-0123456789abcdef"
