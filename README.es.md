@@ -322,8 +322,17 @@ del 2026-10-10 —un turno headless real con el prompt íntegro (29 llamadas de 
 734.064 tokens, cwd correcto) no persistió `generated/generation-manifest.json` y el run
 acabó `RETAINED`. Un ensayo X3 posterior sí generó 19 artefactos y llegó a `ACTIVE`, pero
 **antes** de corregir la contabilidad del presupuesto Creator por run: no acredita el
-gate vigente. El ensayo **X3 post-budget** acabó `RETAINED` con 912.727 `totalTokens`
-frente a un presupuesto de 1,25 M tokens, detenido por el guard predictivo, no `ACTIVE`.
+gate vigente. Los ensayos **X3 post-budget** acabaron `RETAINED`, ninguno en `ACTIVE`.
+El primero se detuvo con 1.127.176 `totalTokens` frente al techo de 1,25 M: el guard
+predictivo dejó deliberadamente 122.824 tokens de margen. El segundo lo cruzó:
+1.270.969 `totalTokens` facturables frente a 1,25 M, de los que 1.009.664 eran lecturas
+de caché. DSH factura un paso de modelo de forma indivisible, así que un observador del
+journal no puede pararlo exactamente en el techo: el último paso fue el que lo pasó.
+La caché fue el 79 % de la factura del segundo ensayo, por lo que se suman los
+`totalTokens` y no `inputTokens + outputTokens`: esa suma habría dado 261.305 y habría
+infravalorado el coste real casi cinco veces. En ambos ensayos el modelo seguía leyendo
+schemas, sin manifest ni `turn/end`. Una reproducción independiente del journal durable
+comprimido calculó los mismos números que la contabilidad en vivo.
 El **corpus gate** no puntuó un modo real —el pase del 2026-10-10
 se abstuvo sin sesión DSH utilizable y el ensayo posterior de SC-123, caso de una
 skill despachado a un modo auditor con layout incompatible, dio `NOT_COVERED`. El
@@ -335,10 +344,13 @@ del adaptador Host compatible que verifique layout y skill efectiva antes de
 candidatas se hicieron clones dentro del workspace. El contrato respondió a esa
 medida: la candidata es ahora un **repositorio sombra que provisiona el Host bajo
 el workspace**, con `.git` propio y un recibo que el modo solo verifica —probado en
-código y fixture, a la espera de una corrida Creator íntegra. La sesión web posterior
-(`x1-preset-real`) sí resolvió el preset real, cargó su skill y ejecutó los centinelas,
-pero se detuvo por presupuesto en 241.912 `totalTokens` **antes de editar nada**: sin
-diff de reparación, sin checks y sin prueba del ciclo completo. El procedimiento
+código y fixture, a la espera de una corrida Creator íntegra. La campaña web posterior
+(`x1-preset-real`) sí resolvió el preset real, cargó su skill y ejecutó los centinelas.
+Sus tres turnos facturaron 243.165 `totalTokens`; los dos últimos se detuvieron **antes
+de editar nada** por el presupuesto por turno: 99.022 medidos / 128.213 proyectados, y
+97.973 / 127.227 frente a 120.000 de techo. Solo skill, layout y provisión de sombra
+costaron 48.694 tokens en el último. No hay diff de reparación, checks ni prueba del
+ciclo completo. El procedimiento
 completo para preparar ese tipo de sesión
 real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 

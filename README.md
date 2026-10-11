@@ -321,8 +321,18 @@ finish in the 2026-10-10 pass — a real headless turn with the whole prompt (29
 734,064 tokens, correct cwd) did not persist `generated/generation-manifest.json` and the run
 ended `RETAINED`. A later X3 trial did generate 19 artifacts and reached `ACTIVE`, but
 **before** the Creator per-run budget-accounting correction; it is not evidence for the
-current budget gate. The **post-budget X3** trial ended `RETAINED` at 912,727 `totalTokens`
-against a 1.25M-token budget, stopped by the predictive guard, not `ACTIVE`. The
+current budget gate. The **X3 post-budget** trials ended `RETAINED`, neither of them `ACTIVE`. The
+first stopped at 1,127,176 `totalTokens` against a 1.25M-token budget on the
+predictive guard, with 122,824 of headroom deliberately left unspent. A second
+run crossed the ceiling outright: 1,270,969 billable `totalTokens` over 1.25M,
+of which 1,009,664 were cache reads. DSH bills a model step atomically, so a
+journal observer cannot preempt at the exact ceiling — the last indivisible
+step is what carried it over. Cache was 79% of both bills, which is why the
+accounting sums `totalTokens` rather than `inputTokens + outputTokens`: that
+sum would have reported 261,305 and understated the real cost fivefold. In both
+runs the model was still reading schemas with no manifest and no `turn/end`.
+Each figure was re-derived independently from the compressed durable journal
+and matched the live fold exactly. The
 **corpus gate** did not score a real mode — the 2026-10-10 pass
 abstained without a usable DSH session, and the later SC-123 skill case, dispatched
 to an auditor mode with the wrong layout, returned `NOT_COVERED`. The copied campaign
@@ -334,9 +344,12 @@ Separately, `git worktree add` was denied by the session sandbox
 were in-workspace clones. The contract answered that measurement: the candidate is now
 a **shadow repository the Host provisions under the workspace**, with its own `.git` and
 a receipt the mode only verifies — proven in code and fixture, still waiting for a full
-Creator run. The later `x1-preset-real` web session did resolve the real preset, load its
-skill and run the sentinels, but it stopped on budget at 241,912 `totalTokens` **before
-editing anything**: no repair diff, no checks, no full-cycle proof. The
+Creator run. The later `x1-preset-real` web campaign did resolve the real preset, load its
+skill and run the sentinels. Across three turns it billed 243,165 `totalTokens`;
+the last two were stopped **before editing anything** by the per-turn budget:
+99,022 measured / 128,213 projected, then 97,973 / 127,227 against a 120,000
+token ceiling. Skill, layout and provisioning alone cost 48,694 tokens in the
+last turn. No repair diff, no checks, no full-cycle proof. The
 full procedure for preparing that kind of real session is a permanent skill:
 `skills/dsh-maintenance-session/SKILL.md`.
 

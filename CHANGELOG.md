@@ -39,6 +39,30 @@ cualquiera de los dos tipos de candidata. La decisión pasa al operador con el
 motivo. No hay ningún caso en el que `state_reconcile.retire` borre ya un worktree
 o una sombra. Documentación corregida donde todavía prometía esa retirada.
 
+## Resultados medidos de X1 y X3 — 2026-10-11
+
+Solo documentación, con las cifras que los dos ensayos externos midieron contra DSH
+`0.2.0-rc.2` real. Ninguna afirmación nueva: las que había se reemplazan por números.
+
+- **X3 Creator post-budget: `RETAINED` dos veces, nunca `ACTIVE`.** La contabilidad
+  corregida sigue negando la aceptación. Primer ensayo: 1.127.176 `totalTokens`
+  facturables contra 1,25 M, detenido por el guard predictivo con 122.824 de margen
+  deliberadamente sin gastar. Segundo: 1.270.969 `totalTokens`, 20.969 por encima del
+  techo, de los que 1.009.664 eran lecturas de caché (79 % de la factura). DSH cobra un
+  paso de modelo indivisible, así que nadie puede parar exactamente en el techo: el
+  último paso fue el que lo cruzó. En ambos el modelo seguía leyendo schemas, sin
+  `generation-manifest.json` ni `turn/end`. Cada cifra se recalculó descomprimiendo el
+  journal durable completo y coincidió con la contabilidad en vivo. Lo que **sigue**
+  sin probarse: un `ACTIVE` bajo la contabilidad vigente, y cualquier lectura sobre otro
+  presupuesto, proveedor o prompt más pequeño.
+- **X1 reparación con preset real: sin ciclo íntegro.** Tres turnos, 243.165
+  `totalTokens` acumulados; los dos últimos se cortaron antes de editar (99.022 medidos
+  con 128.213 proyectados, y 97.973 con 127.227, contra 120.000 por turno). Solo skill,
+  layout y provisión de la sombra costaron 48.694 tokens. La medida que importa para el
+  gate de corpus: ~98k tokens de arranque de preset no caben 55 veces.
+- Cifras anteriores reemplazadas en `README.md`, `README.es.md` y `docs/status.md`: ya
+  no aparece el 912.727 de un solo ensayo ni el 241.912 de un solo turno.
+
 ## Documentación acotada a la evidencia externa posterior — 2026-10-11
 
 Solo cambios de documentación y pruebas que leen documentación. Ni scripts, ni
