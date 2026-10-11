@@ -293,7 +293,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **1085 tests green** (11 skipped without external runtime).
+Framework suite: **1086 tests green** (11 skipped without external runtime).
 
 ### The most recent one: the modes driven by a real DSH session (2026-10-10)
 

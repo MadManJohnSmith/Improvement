@@ -195,33 +195,39 @@ class ResumedUsage(Base):
         self.assertFalse(created)
         self.assertEqual(reloaded["usage_tokens"], 400)
 
+    def _run_doc(self):
+        return json.loads((self.run_dir / "run.json").read_text())
+
     def test_resume_recomputes_totals_from_segments(self):
+        run_doc = self._run_doc()
         state = self.fresh_state()
         state["usage_by_seq"] = {"7": {"inputTokens": 11, "outputTokens": 4,
                                        "cacheReadTokens": 0,
                                        "totalTokens": 15}}
         state["usage_tokens"] = 0
-        reconciled = cc._reconcile_resumed_usage(state)
+        reconciled = cc._reconcile_resumed_usage(state, run_doc)
         self.assertEqual(reconciled["usage_tokens"], 15)
         self.assertEqual(reconciled["usage_steps"], 1)
         self.assertEqual(reconciled["usage_cache_read_tokens"], 0)
 
     def test_resume_rejects_alias_keys_of_the_same_step(self):
+        run_doc = self._run_doc()
         state = self.fresh_state()
         state["usage_by_seq"] = {
             "1": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
             "01": {"inputTokens": 2, "outputTokens": 2, "totalTokens": 4}}
         with self.assertRaises(cc.CreatorUsageAmbiguous):
-            cc._reconcile_resumed_usage(state)
+            cc._reconcile_resumed_usage(state, run_doc)
 
     def test_resume_rejects_non_durable_keys(self):
+        run_doc = self._run_doc()
         state = self.fresh_state()
         for key in (-1, True, "x", " 1", "1 "):
             with self.assertRaises(cc.CreatorUsageAmbiguous):
                 cc._reconcile_resumed_usage(
                     {**state, "usage_by_seq": {
                         key: {"inputTokens": 1, "outputTokens": 1,
-                              "totalTokens": 2}}})
+                              "totalTokens": 2}}}, run_doc)
 
 
 class BillableDefinition(Base):
@@ -356,6 +362,32 @@ class FinalTurnOverflow(Base):
         self.assertEqual(result["result"], "GENERATED")
         run = json.loads((self.run_dir / "run.json").read_text())
         self.assertEqual(run["status"], "GENERATED")
+
+    def test_a_resume_whose_limit_disagrees_with_the_run_refuses(self):
+        """A limit raised on disk must not silently relax a frozen budget.
+
+        The state freezes the limit the run was created under. If `run.json`
+        later declares a different one, whichever value wins is a guess about
+        what the operator meant, and guessing upward lets a resumed run spend
+        past the ceiling the operator actually set.
+        """
+        self.make_package()
+        self.fresh_state(max_tokens=500000)
+        state = json.loads((self.run_dir / cc.CREATOR_SESSION_FILE).read_text())
+        run = json.loads((self.run_dir / "run.json").read_text())
+        run["budget"]["max_tokens"] = 50
+        cc._update_json(self.run_dir / "run.json", run)
+        # The direct call refuses; through run_creator the same refusal is
+        # surfaced as a retention with the reason, never as a spent turn.
+        with self.assertRaises(cc.CreatorUsageAmbiguous):
+            cc._reconcile_resumed_usage(state, run)
+        result = cc.run_creator(
+            self.run_dir, client=self._client([], cancelled=[False]),
+            poll_seconds=0, cancel_grace_seconds=1,
+            now_fn=lambda: 1000.0, sleep_fn=lambda _seconds: None)
+        self.assertEqual(result["result"], "RETAINED")
+        self.assertIn("no coincide", result["reason"])
+        self.assertFalse((self.run_dir / "finish.json").is_file())
 
     def test_a_terminal_package_resumed_over_budget_is_not_accepted(self):
         """The path that never enters the loop is gated too.

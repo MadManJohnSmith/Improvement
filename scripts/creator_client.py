@@ -1901,21 +1901,29 @@ def _load_or_create_session_state(run_dir, prep, run_doc, *, now_fn=time.time):
             raise ValueError("creator-session.json no corresponde al prompt persistido")
         if state.get("generation_id") != prep["generation_id"]:
             raise ValueError("creator-session.json no corresponde a este run")
-        return _reconcile_resumed_usage(state), False
+        return _reconcile_resumed_usage(state, run_doc), False
     state = _new_session_state(run_dir, prep, run_doc, now_fn=now_fn)
     _write_json(path, state)
     return state, True
 
 
-def _reconcile_resumed_usage(state):
+def _reconcile_resumed_usage(state, run_doc):
     """Re-derive the resumed token account from its own persisted segments.
 
     The folded totals are recomputed from ``usage_by_seq`` rather than trusted,
-    so a truncated or hand-edited state cannot under-report spend. A limit that
-    disagrees with the run currently on disk fails closed instead of silently
-    relaxing the budget.
+    so a truncated or hand-edited state cannot under-report spend. The frozen
+    limit has to agree with the run currently on disk: a state persisted under
+    a higher limit would otherwise let a resumed run spend past the limit the
+    operator set, and one persisted under a lower limit would retain a run the
+    current budget already covers. Either disagreement is an ambiguous budget
+    and fails closed instead of silently choosing one.
     """
     max_tokens = int(state.get("max_tokens", 500000))
+    budget = run_doc.get("budget") or {}
+    if not budget or int(budget.get("max_tokens", 0)) != max_tokens:
+        raise CreatorUsageAmbiguous(
+            "el límite de tokens persistido no coincide con el run actual: "
+            f"{max_tokens} != {budget.get('max_tokens')}")
     usage_by_seq = state.get("usage_by_seq")
     if usage_by_seq is None:
         usage_by_seq = {}

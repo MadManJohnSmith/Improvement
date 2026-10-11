@@ -1021,7 +1021,7 @@ class CreatorTests(Base):
                                        "totalTokens": 15}}
         state["usage_tokens"] = 0  # deliberately wrong
         cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, state)
-        resumed = cc._reconcile_resumed_usage(state)
+        resumed = cc._reconcile_resumed_usage(state, run_doc)
         self.assertEqual(resumed["usage_tokens"], 15)
         # A segment that contradicts itself, or an alias of the same step,
         # cannot be reconciled at all and refuses the run.
@@ -1032,7 +1032,7 @@ class CreatorTests(Base):
                      "1": {"inputTokens": 2, "outputTokens": 2,
                            "totalTokens": 4}}):
             with self.assertRaises(cc.CreatorUsageAmbiguous):
-                cc._reconcile_resumed_usage({**state, "usage_by_seq": bad})
+                cc._reconcile_resumed_usage({**state, "usage_by_seq": bad}, run_doc)
 
     def test_resumed_state_reconciles_usage_from_segments(self):
         prep = cc.CreatorSession(self.run_dir).prepare()
@@ -1041,7 +1041,7 @@ class CreatorTests(Base):
             self.run_dir, prep, run_doc, now_fn=lambda: 100.0)
         state["usage_by_seq"] = {"7": {"inputTokens": 11, "outputTokens": 4}}
         cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, state)
-        state = cc._reconcile_resumed_usage(state)
+        state = cc._reconcile_resumed_usage(state, run_doc)
         self.assertEqual(state["usage_tokens"], 15)
         self.assertEqual(state["usage_input_tokens"], 11)
         self.assertEqual(state["usage_output_tokens"], 4)
