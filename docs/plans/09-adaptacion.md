@@ -1,66 +1,68 @@
-# Plan 09 — protocolo de adaptación y aprendizaje
+# Plan 09 — adaptation and learning protocol
 
-**Etapa:** transversal; obligatorio antes de modificar cualquier plan por evidencia nueva.
-**Objetivo:** permitir que los planes se adapten sin convertirse en un backlog paralelo ni degradar los gates.
+**English** | [Español](09-adaptacion.es.md)
 
-## Clasificación del cambio
+**Stage:** cross-cutting; mandatory before changing any plan in response to new evidence.
+**Goal:** allow plans to adapt without becoming a parallel backlog or weakening the gates.
 
-| Tipo | Ejemplo | Acción |
+## Change classification
+
+| Type | Example | Action |
 |---|---|---|
-| Hecho ambiental | versión DSH, capacidad observada | registrar fuente y ajustar precondición; no rediseñar |
-| Defecto mecánico | schema inválido, race, hash incorrecto | corregir responsable + regresión mínima |
-| Decisión material | nuevo root, proveedor, datos, publicación | detener y solicitar titular |
-| Drift de proyecto | nueva arquitectura o comandos | nuevo discovery/contract; invalidar aceptación afectada |
-| Mejora opcional | ergonomía, contexto, métrica | `P2`, nunca gate compensable |
-| Cambio de contrato | estados, permisos, criterios | actualizar arquitectura antes de código |
+| Environmental fact | DSH version, observed capability | record the source and adjust the precondition; do not redesign |
+| Mechanical defect | invalid schema, race, incorrect hash | fix the responsible component + minimal regression |
+| Material decision | new root, provider, data, publication | stop and ask the owner |
+| Project drift | new architecture or commands | new discovery/contract; invalidate affected acceptance |
+| Optional improvement | ergonomics, context, metric | `P2`, never a compensable gate |
+| Contract change | states, permissions, criteria | update the architecture before code |
 
-## Ciclo de adaptación
+## Adaptation cycle
 
-1. Detectar la discrepancia.
-2. Conservar evidencia externa y base exacta.
-3. Clasificar el cambio.
-4. Revisar si invalida candidatos/aceptaciones.
-5. Proponer el cambio mínimo.
-6. Registrar decisión y alternativas.
-7. Actualizar arquitectura si el contrato cambia.
-8. Actualizar plan, scripts y regresión.
-9. Ejecutar positivos y negativos.
-10. Actualizar estado y changelog.
+1. Detect the discrepancy.
+2. Preserve external evidence and the exact base.
+3. Classify the change.
+4. Check whether it invalidates candidates/acceptances.
+5. Propose the smallest change.
+6. Record the decision and alternatives.
+7. Update the architecture if the contract changes.
+8. Update the plan, scripts and regression.
+9. Run positive and negative cases.
+10. Update status and changelog.
 
-## Prohibiciones
+## Prohibitions
 
-- no editar instrucciones del framework desde una misión de producto;
-- no ampliar permisos para superar un fallo;
-- no convertir frecuencia en calidad;
-- no convertir una recomendación del modelo en autorización;
-- no mover un retained a accepted por ausencia de evidencia;
-- no reusar aceptación con hash/base distintos;
-- no borrar un backup o un estado incierto para aparentar limpieza;
-- no añadir una skill porque un hallazgo aislado lo sugiere sin procedimiento recurrente.
+- do not edit framework instructions from a product mission;
+- do not expand permissions to overcome a failure;
+- do not treat frequency as quality;
+- do not treat a model recommendation as authorization;
+- do not move a retained item to accepted for lack of evidence;
+- do not reuse acceptance with a different hash/base;
+- do not delete a backup or uncertain state to appear clean;
+- do not add a skill because an isolated finding suggests it without a recurring procedure.
 
-## Creator y drift
+## Creator and drift
 
-Una regeneración crea `creator-runs/<generation-id>` nuevo. La generación anterior sigue activa hasta que:
+Regeneration creates a new `creator-runs/<generation-id>`. The previous generation remains active until:
 
-- el nuevo discovery identifica cambios materiales;
-- los contratos se recalculan;
-- scenarios/holdouts se actualizan;
-- Host valida y acepta;
-- backup está verificado;
-- swap y post-promotion smoke pasan.
+- the new discovery identifies material changes;
+- contracts are recalculated;
+- scenarios/holdouts are updated;
+- Host validates and accepts;
+- the backup is verified;
+- swap and post-promotion smoke tests pass.
 
-La ausencia de cambios semánticos produce `NO_OP`, no reescritura.
+The absence of semantic changes produces `NO_OP`, not a rewrite.
 
-## Cierre adaptable
+## Adaptable closure
 
-La selección de skills se reconsidera solo si cambia contrato/base o aparece una evidencia nueva. No se sustituye una base por una extensión por conveniencia.
+Skill selection is reconsidered only if the contract/base changes or new evidence appears. An extension must not replace a base merely for convenience (Spanish contract wording: “No se sustituye una base por una extensión por conveniencia”).
 
-El plan se considera vigente solo si:
+The plan is considered current only if:
 
-- sus referencias existen;
-- sus gates coinciden con arquitectura;
-- sus comandos no apuntan a rutas personales;
-- sus negativos siguen cubriendo los riesgos;
-- el estado del índice coincide con la evidencia.
+- its references exist;
+- its gates match the architecture;
+- its commands do not point to personal paths;
+- its negative cases still cover the risks;
+- the index status matches the evidence.
 
-Si alguna condición falla, el plan queda `RETAINED` hasta revisión.
+If any condition fails, the plan remains `RETAINED` pending review.

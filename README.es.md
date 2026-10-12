@@ -2,7 +2,7 @@
 
 [English](README.md) | **Español**
 
-[![Licencia: Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue)](LICENSE) [![Estado: beta](https://img.shields.io/badge/estado-beta-orange)](docs/plans/10-lanzamiento-publico.md) [![pruebas](https://img.shields.io/github/actions/workflow/status/MadManJohnSmith/Improvement/ci.yml?label=pruebas)](https://github.com/MadManJohnSmith/Improvement/actions/workflows/ci.yml) [![versión](https://img.shields.io/github/v/release/MadManJohnSmith/Improvement?include_prereleases&sort=semver&label=versi%C3%B3n)](https://github.com/MadManJohnSmith/Improvement/releases)
+[![Licencia: Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue)](LICENSE) [![Estado: beta](https://img.shields.io/badge/estado-beta-orange)](docs/plans/10-lanzamiento-publico.es.md) [![pruebas](https://img.shields.io/github/actions/workflow/status/MadManJohnSmith/Improvement/ci.yml?label=pruebas)](https://github.com/MadManJohnSmith/Improvement/actions/workflows/ci.yml) [![versión](https://img.shields.io/github/v/release/MadManJohnSmith/Improvement?include_prereleases&sort=semver&label=versi%C3%B3n)](https://github.com/MadManJohnSmith/Improvement/releases)
 
 **Un auditor y un reparador que viven junto a tu repositorio: encuentran los defectos
 reales, los arreglan verificándolo con tus propias pruebas y dejan el commit y el push en
@@ -44,7 +44,7 @@ configuraste existe.
 
 ### Requisitos
 
-Linux, `git` y Python 3, y [DSH](docs/setup-dsh.md) ya configurado con al menos un
+Linux, `git` y Python 3, y [DSH](docs/setup-dsh.es.md) ya configurado con al menos un
 proveedor/modelo tuyo. Nada más.
 
 Clona el framework **junto a tu proyecto, nunca dentro**, y ejecuta un comando:
@@ -108,7 +108,7 @@ caso. Un ensayo real anterior con SC-123 dio `NOT_COVERED` al despachar el caso 
 skill a un modo auditor con layout incompatible, no un score aprobado. Solo observaciones
 ligadas a corpus y candidata por un evaluador verificado podrían entrar en
 `bound-skill-gate`; hasta entonces no hay mejora operacional de la biblioteca demostrada.
-Véase [el procedimiento del gate](docs/usage.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
+Véase [el procedimiento del gate](docs/usage.es.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
 
 ## Cómo se usa
 
@@ -127,14 +127,14 @@ Cada auditoría deja un handoff con el siguiente prompt listo para copiar. La ca
 vigente es un repositorio sombra provisionado por el Host, con `.git` propio, no una rama
 de tu proyecto: no comparte ancestry para fusionarla. Revisa y valida el diff/patch
 completo contra la verificación registrada antes de aplicarlo en tu proyecto; commit y
-publicación solo por tu decisión. [Procedimiento del operador](docs/usage.md#integración-y-recuperación-de-espacio-operador).
+publicación solo por tu decisión. [Procedimiento del operador](docs/usage.es.md#integración-y-recuperación-de-espacio-operador).
 
-![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
+![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.es.png)
 
 *Ciclo operativo conceptual. El cierre del aprendizaje aún no es operativo: las
 observaciones de las campañas no puntúan automáticamente el corpus de 25 skills. Es un
 diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscuro en la
-[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html).*
 
 ## Los términos que verás
 
@@ -207,7 +207,7 @@ la unidad que lo cerró y el arreglo que funcionó. `bootstrap.py state` cuenta 
 Las veintiséis declaradas son el hueco real de la beta: el plan resuelve su comando igual, y
 si falta una herramienta el resultado es `BLOCKED` nombrándola — jamás un `PASS`
 inventado. Ejercitarlas con repositorios reales es exactamente para lo que existe la
-beta. La tabla completa, una fila por stack, está en el [estado comprobado](docs/status.md).
+beta. La tabla completa, una fila por stack, está en el [estado comprobado](docs/status.es.md).
 
 ## Casos reales
 
@@ -294,7 +294,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1096 pruebas en verde** (11 omitidas sin runtime externo).
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1098 pruebas en verde** (11 omitidas sin runtime externo).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 
@@ -360,11 +360,12 @@ real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
 ## Qué obtienes en tu repo
 
-![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.png)
+![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.es.png)
 
 *La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, los dos
-modos, la memoria acotada y la frontera de integración. También
-explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
+modos, la memoria acotada y la frontera de integración. El diagrama distingue los helpers
+publicados por el Host y verificados por SHA-256 (implementados) del canal System 1 advisory
+(diseñado, no implementado). También explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html).*
 
 ```
 tu-proyecto/
@@ -420,10 +421,10 @@ validada mecánicamente; y el ciclo auditoría → reparación → pase, el hall
 persistido, la reparación verificada en una candidata externa y la abstención sin
 autoridad, todo conducido por una **sesión DSH real** el 2026-10-10.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
-estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md), y lo que
+estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md), y lo que
 esa pasada no pudo probar —Creator end-to-end, el corpus de 25 skills contra un modo real,
 una corrida Creator íntegra con la sombra provisionada por el Host— queda dicho como tal en el
-[estado comprobado](docs/status.md), siempre como historia con su fecha.
+[estado comprobado](docs/status.es.md), siempre como historia con su fecha.
 
 Si la sesión se cae a mitad de turno — y en una developer preview pasa — el trabajo no se
 pierde: una candidata interrumpida se reanuda verificando la identidad exacta registrada
@@ -442,15 +443,15 @@ produce.
 
 ## Documentación
 
-- [Uso operativo](docs/usage.md) — el ciclo completo, integración y recuperación de espacio
-- [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html), como HTML explorables
-- [Preparación de DSH](docs/setup-dsh.md)
-- [Estado comprobado](docs/status.md)
-- [Progreso de hitos, una página](docs/progreso-agentico.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
+- [Uso operativo](docs/usage.es.md) — el ciclo completo, integración y recuperación de espacio
+- [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html), como HTML explorables
+- [Preparación de DSH](docs/setup-dsh.es.md)
+- [Estado comprobado](docs/status.es.md)
+- [Progreso de hitos, una página](docs/progreso-agentico.es.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
-- [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
+- [Planes de implementación](docs/plans/README.es.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
-- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.md) (publicada el 2026-09-30)
+- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.es.md) (publicada el 2026-09-30)
 
 ## Licencia
 

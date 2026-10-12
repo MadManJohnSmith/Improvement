@@ -1,5 +1,7 @@
 # Third-Party Software Notices and Information
 
+**English** | [Español](THIRD_PARTY_NOTICES.es.md)
+
 This project adapts architectural patterns, procedural steps, and progressive disclosure
 conventions from the following third-party open-source software:
 

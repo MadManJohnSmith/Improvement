@@ -1,70 +1,71 @@
-# v0.1.0-beta — notas de publicación
+# 11 · v0.1.0-beta release notes
 
-> **Publicada el 2026-09-30** con el tag `v0.1.0-beta`, por autorización del titular. G0
-> —la licencia— está cerrada: Apache-2.0, con `LICENSE` en la raíz.
+**English** | [Español](11-notas-beta-v0.1.0.es.md)
 
-## Qué es
+> **Published 2026-09-30** with the `v0.1.0-beta` tag, under the owner's authorization. G0 — the
+> license — is closed: Apache-2.0, with `LICENSE` at the root.
 
-Un framework que instala en tu repositorio dos modos generados específicamente para tu
-proyecto —un auditor y un reparador continuo— con memoria acotada en disco, verificación
-contra los comandos reales de tu proyecto y una frontera de integración que no puede
-saltarse. Un comando instala; dos prompts sencillos operan.
+## What it is
 
-## Qué se ha probado
+A framework that installs two modes generated specifically for your repository in it — an
+auditor and a continuous repairer — with bounded on-disk memory, verification against the real
+commands of your project and an integration boundary that cannot be jumped. One command
+installs; two simple prompts operate.
 
-Cuatro campañas completas sobre repositorios reales, con el producto intacto hasta que el
-operador hizo commit, fast-forward y push.
+## What has been proven
 
-| Campaña | Stack | Hallazgos | Verificaciones | Estado |
+Four complete campaigns over real repositories, with the product intact until the operator made
+the commit, the fast-forward and the push.
+
+| Campaign | Stack | Findings | Verifications | Status |
 |---|---|---|---|---|
-| Syncify | Rust / Tauri / Vue | 77 (114 registros) | 67 (61 PASS, 6 BLOCKED) | CI verde en 3 jobs, 15 commits |
-| RehabWeb | Django / Vue | 45, 6 CRITICAL | 4 | 108 pruebas Django reales en verde |
-| LoboApp | Flutter / Android | 14 (9 + 5 en reauditoría) | 14 PASS con `flutter test` | 166 pruebas Flutter y `flutter analyze` sin incidencias |
-| Improvement (self-test) | Python / unittest | 8 (7 + 1 en reauditoría) | 14 PASS con la suite del propio proyecto | 632 pruebas en verde |
+| Syncify | Rust / Tauri / Vue | 77 (114 records) | 67 (61 PASS, 6 BLOCKED) | green CI in 3 jobs, 15 commits |
+| RehabWeb | Django / Vue | 45, 6 CRITICAL | 4 | 108 real Django tests green |
+| LoboApp | Flutter / Android | 14 (9 + 5 in the re-audit) | 14 PASS with `flutter test` | 166 Flutter tests and `flutter analyze` with no incidents |
+| Improvement (self-test) | Python / unittest | 8 (7 + 1 in the re-audit) | 14 PASS with the project's own suite | 632 tests green |
 
-## Lo que hay que saber antes de usarlo
+## What you should know before using it
 
-- **Los modos no hacen commit ni push.** Integrar es tuyo, siempre. Es la frontera de
-  seguridad, no una limitación.
-- **La evidencia es el entrypoint de tu proyecto o nada.** El Host resuelve al instalar qué
-  comando de test y de análisis usa cada tecnología de tu repo, y ese comando es el único
-  resultado registrable. Un mock o un arnés escrito a mano sirven para investigar, no para
-  verificar. Si falta una herramienta, el registro es `BLOCKED` nombrando qué falta: nunca
-  un `PASS` inventado.
-- **Una capacidad fuera del `PATH` por defecto se materializa en el workspace.** Si tu SDK se
-  reescribe a sí mismo en cada ejecución, el plan pide una copia local con enlaces duros
-  (0 bytes de disco) y apunta ahí.
-- **Licencia Apache-2.0.** Un repositorio accesible sin licencia abierta no concede derechos; esta ya está.
+- **The modes do not commit or push.** Integrating is yours, always. It is the safety boundary,
+  not a limitation.
+- **The evidence is your project's entrypoint or nothing.** The Host resolves at install time
+  which test and analysis command each technology of your repository uses, and that command is
+  the only recordable result. A mock or a hand-written harness serves to investigate, not to
+  verify. If a tool is missing, the record is `BLOCKED` naming what is missing: never an
+  invented `PASS`.
+- **A capability outside the default `PATH` is materialized in the workspace.** If your SDK
+  rewrites itself on every run, the plan asks for a hard-linked local copy (0 bytes of disk)
+  and points there.
+- **Apache-2.0 license.** A repository that is public without an open license grants no
+  rights; this one has it.
 
-## Límites conocidos
+## Known limits
 
-- `mode-state` lleva un lease por fichero, así que dos sesiones ya no se pisan al
-  reemplazar el mismo fichero. Lo que **no** existe es atomicidad por lotes: reemplazar
-  los cinco ficheros sigue siendo cinco escrituras, y el framework lo declara en vez de
-  fingir.
-- La frontera de solo lectura del auditor es contractual y la impone la herramienta de
-  escritura, no un sandbox de kernel.
-- Multiarchivo monorepos: se detecta una tecnología por subdirectorio; un mismo árbol con
-  dos manifiestos de ecosistema distinto no se cubre.
-- En este entorno DSH se cae cada varios minutos. Los turnos se relanzan y el trabajo se
-  recupera, pero una campaña larga cuesta más tiempo del que el framework asume.
+- `mode-state` carries a lease per file, so two sessions no longer step on each other when
+  replacing the same file. What does **not** exist is batch atomicity: replacing five files is
+  still five writes, and the framework declares it instead of pretending.
+- The auditor's read-only boundary is contractual and enforced by the write tool, not by a
+  kernel sandbox.
+- Monorepo multi-stack: one technology per subdirectory is detected; a single tree with two
+  different ecosystem manifests is not covered.
+- In this environment DSH falls every few minutes. The turns are relaunched and the work
+  recovered, but a long campaign costs more time than the framework assumes.
 
-## Qué buscar en la beta
+## What to look for in the beta
 
-Los tres fallos que solo aparecieron con stacks reales, y que ninguna prueba sintética
-habría visto:
+The three failures that only appeared with real stacks, and that no synthetic test would have
+seen:
 
-1. El plan emitía un comando de verificación que su propia shell no podía ejecutar.
-2. El sandbox dejaba el SDK montado en solo lectura y la herramienta se reescribía en cada
-   invocación.
-3. Un resultado de verificación no identificaba el árbol que verificó, de modo que un `PASS`
-   podía describir una revisión anterior al arreglo.
+1. The plan emitted a verification command its own shell could not execute.
+2. The sandbox left the SDK mounted read-only and the tool rewrote itself on every invocation.
+3. A verification result did not identify the tree it verified, so a `PASS` could describe a
+   revision prior to the fix.
 
-Si tu proyecto usa una tecnología que no aparece en la lista de stacks, el plan lo dirá con
-un `falta <capacidad>` en lugar de fingir. Eso también es información útil: dilo.
+If your project uses a technology that does not appear in the stack list, the plan will say so
+with a `missing <capability>` instead of pretending. That is useful information too: say it.
 
-## Cómo reportar
+## How to report
 
-Tu `mode-state` es el informe. Comparte `findings.jsonl`, `handoffs.jsonl` y
-`verification-results.jsonl` —sin código de tu producto— más los turnos que acabaron
-`RETAINED` y por qué. Es exactamente el formato que el framework ya produce.
+Your `mode-state` is the report. Share `findings.jsonl`, `handoffs.jsonl` and
+`verification-results.jsonl` — without your product's code — plus the turns that ended
+`RETAINED` and why. It is exactly the format the framework already produces.

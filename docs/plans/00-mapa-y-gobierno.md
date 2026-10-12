@@ -1,23 +1,25 @@
-# Plan 00 — mapa general y gobierno de implementación
+# Plan 00 — overall map and implementation governance
 
-**Etapa:** transversal a C0–C7.
-**Estado inicial:** PENDIENTE.
-**Objetivo:** ejecutar la arquitectura 3.0 gradualmente sin mezclar diseño normativo, mecanismos existentes, ensayos, productos ni decisiones del titular.
+**English** | [Español](00-mapa-y-gobierno.es.md)
 
-## Capas
+**Stage:** cross-cutting across C0–C7.
+**Initial status:** PENDIENTE (pending).
+**Objective:** implement architecture 3.0 gradually without conflating the normative design, existing mechanisms, trials, products or the owner's decisions.
 
-| Capa | Artefactos | Responsable | Regla |
+## Layers
+
+| Layer | Artifacts | Responsible party | Rule |
 |---|---|---|---|
-| Norma | `ARQUITECTURA_FLUJO_AGENTES.md` | titular/mantenedor | Un diseño vigente, no diario |
-| Índice | `PLAN_IMPLEMENTACION.md` | mantenedor | Único backlog/estado |
-| Planes | `docs/plans/*.md` | mantenedor | Procedimientos adaptables, no estados |
-| Código | `scripts/`, `skills/`, `tests/` | mantenimiento autorizado | Regresiones permanentes |
-| Runs | `creator-runs/`, recibos, logs | workspace externo | Nunca en repo canónico |
-| Producto | repos y ramas de usuario | titular/producto | No modificar salvo autorización explícita |
+| Norm | `ARQUITECTURA_FLUJO_AGENTES.md` | owner/maintainer | One current design, not a diary |
+| Index | `PLAN_IMPLEMENTACION.md` | maintainer | Single backlog/status index |
+| Plans | `docs/plans/*.md` | maintainer | Adaptable procedures, not status records |
+| Code | `scripts/`, `skills/`, `tests/` | authorized maintenance | Permanent regressions |
+| Runs | `creator-runs/`, receipts, logs | external workspace | Never in the canonical repository |
+| Product | user repositories and branches | owner/product | Do not modify without explicit authorization |
 
-## Convenciones de cada etapa
+## Conventions for each stage
 
-Cada etapa crea un run externo con:
+Each stage creates an external run with:
 
 ```text
 <external-run>/
@@ -33,38 +35,38 @@ Cada etapa crea un run externo con:
 └── finish.json
 ```
 
-`started.json` se escribe antes de inspeccionar. `checkpoint.json` se actualiza en cada gate. Un bloqueo conserva `RETAINED` o `BLOCKED` y una siguiente acción exacta.
+`started.json` is written before inspection. `checkpoint.json` is updated at every gate. A blockage preserves `RETAINED` or `BLOCKED` and an exact next action.
 
-## Presupuesto y autoridad
+## Budget and authority
 
-Antes de cada etapa se fijan:
+Before each stage, set:
 
-- requests/tokens/tiempo máximos;
-- máximo de intentos por unidad;
-- raíces legibles y escribibles;
-- datos permitidos;
-- modelos/proveedores ya configurados;
-- si se permite red;
-- si se permite cambiar producto o solo una rama/candidato;
-- si se permite publicar.
+- maximum requests/tokens/time;
+- maximum attempts per unit;
+- readable and writable roots;
+- permitted data;
+- already-configured models/providers;
+- whether network access is permitted;
+- whether the product may be changed or only a branch/candidate;
+- whether publication is permitted.
 
-No se deducen permisos de `AUTHORIZED` escrito por un agente, de un manifest o de un prompt.
+Permissions are not inferred from `AUTHORIZED` written by an agent, a manifest or a prompt.
 
-## Gates transversales
+## Cross-cutting gates
 
-1. **Inmutabilidad de base:** snapshot/hashes antes del cambio.
-2. **Aislamiento:** workspace externo, sin secretos, sin efectos globales.
-3. **Contrato:** schemas y ownership definidos antes de generación.
-4. **Evidencia:** cada positivo y negativo tiene fuente y alcance.
-5. **Fail-closed:** desconocido o capability ausente retiene.
-6. **Idempotencia:** repetir no duplica ni borra trabajo ajeno.
-7. **Revisión:** el actor que genera no es el único que acepta.
-8. **Rollback:** todo cambio de estado reversible conserva backup.
-9. **Actualización:** una fila del índice, una entrada de changelog, un commit revisado.
+1. **Base immutability:** snapshot/hashes before a change.
+2. **Isolation:** external workspace, no secrets, no global effects.
+3. **Contract:** schemas and ownership defined before generation.
+4. **Evidence:** every positive and negative case has a source and scope.
+5. **Fail closed:** unknowns or missing capabilities retain the run.
+6. **Idempotence:** repetition neither duplicates nor deletes others' work.
+7. **Review:** the generating actor is not the only accepting actor.
+8. **Rollback:** every reversible state change retains a backup.
+9. **Update:** one index row, one changelog entry, one reviewed commit.
 
-## Adaptación autorizada
+## Authorized adaptation
 
-Al iniciar, completar externamente:
+At startup, complete this externally:
 
 ```yaml
 plan_revision: <commit o digest>
@@ -76,14 +78,14 @@ new_risks: []
 open_decisions: []
 ```
 
-Una adaptación material de contrato requiere primero cambiar arquitectura 3.0 y después este plan.
+A material contract adaptation requires changing architecture 3.0 first, then this plan.
 
-## Orden recomendado
+## Recommended order
 
 ```text
 C0 → C1 → C2 → C3 → C4 → C5 → C6 → C7
-         ├──────── C4 puede diseñarse en paralelo después de C0
-         └──────── C3 debe validar paquetes reales antes de C4/C5
+         ├──────── C4 may be designed in parallel after C0
+         └──────── C3 must validate real packages before C4/C5
 ```
 
-No iniciar C6 con imagen preconfigurada: debe probarse desde clon y DSH con proveedor configurado.
+C4 may be designed in parallel after C0; C3 must validate real packages before C4/C5. Do not start C6 with a preconfigured image: it must be tested from a clone and DSH with a configured provider.

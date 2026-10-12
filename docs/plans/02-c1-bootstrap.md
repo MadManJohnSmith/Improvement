@@ -1,36 +1,38 @@
-# Plan 02 — C1: bootstrap determinista
+# Plan 02 — C1: deterministic bootstrap
 
-**Salida:** `scripts/bootstrap.py install` prepara un `creator-run` sin tocar producto/configuración global.
-**Precondiciones:** C0 aprobado; DSH y Creator instalados; proveedor/modelo ya configurado por el usuario.
+**English** | [Español](02-c1-bootstrap.es.md)
 
-## Pasos
+**Output:** `scripts/bootstrap.py install` prepares a `creator-run` without touching the product or global configuration.
+**Preconditions:** C0 approved; DSH and Creator installed; provider/model already configured by the user.
 
-1. Validar proyecto/framework/workspace, roots y solapamientos.
-2. Comprobar DSH, Creator, canal local y capability mínima sin abrir credenciales.
-3. Crear generation-id, `started.json`, presupuesto y snapshot.
-4. Inventariar Git, manifests, instrucciones, áreas y exclusiones sin ejecutar producto.
-5. Preparar skills generales con ownership, idempotencia y conflictos.
-6. Crear `inputs/` y `discovery/` iniciales.
-7. Preparar el paquete de llamada Creator y el prompt versionado.
-8. Hacer checkpoint y retornar una referencia compacta.
-9. Implementar `update`, `uninstall` y `purge-data` solo después de install mínimo, con ownership estricto.
+## Steps
 
-## Negativos
+1. Validate the project/framework/workspace, roots and overlaps.
+2. Check DSH, Creator, the local channel and minimum capability without opening credentials.
+3. Create the generation-id, `started.json`, budget and snapshot.
+4. Inventory Git, manifests, instructions, areas and exclusions without executing the product.
+5. Prepare general skills with ownership, idempotence and conflict handling.
+6. Create initial `inputs/` and `discovery/`.
+7. Prepare the Creator invocation package and the versioned prompt.
+8. Checkpoint and return a compact reference.
+9. Implement `update`, `uninstall` and `purge-data` only after the minimal install, with strict ownership.
 
-- proveedor ausente;
-- Creator ausente;
-- workspace dentro del producto/framework;
-- root symlink/solapada;
-- configuración global no disponible;
-- skill ajena/conflicto;
-- generación existente;
-- secreto detectado en inputs;
-- interrupción antes de completar snapshot.
+## Negative cases
+
+- missing provider;
+- missing Creator;
+- workspace inside the product/framework;
+- symlinked/overlapping root;
+- unavailable global configuration;
+- foreign/conflicting skill;
+- existing generation;
+- secret detected in inputs;
+- interruption before completing the snapshot.
 
 ## Gates
 
-Clone limpio + proveedor configurado → un comando crea run completo; repetición es no-op; producto y configuración global sin cambios; errores dejan checkpoint RETAINED.
+Clean clone + configured provider → one command creates a complete run; repetition is a no-op; product and global configuration remain unchanged; errors leave a RETAINED checkpoint.
 
-## Adaptación autorizada
+## Authorized adaptation
 
-La convención de workspace, cliente local DSH, nombres de skills generales y política de datos pueden ajustarse tras un ensayo clean-room, conservando el contrato y registrando el motivo.
+The workspace convention, local DSH client, general skill names and data policy may be adjusted after a clean-room trial, preserving the contract and recording the reason.

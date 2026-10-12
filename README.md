@@ -105,7 +105,7 @@ layout and effective target skill. A prior real attempt on SC-123 returned `NOT_
 after dispatching a skill case to an auditor mode with the wrong layout, not a passing
 corpus score. Only observations bound to this corpus and candidate by a verified
 evaluator could be submitted to `bound-skill-gate`; until then no operational library
-improvement has been demonstrated. See [the gate procedure](docs/usage.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
+improvement has been demonstrated. See [the gate procedure](docs/usage.md#compiling-the-corpus-and-tying-the-gate-to-what-was-measured).
 
 ## How to use it
 
@@ -124,7 +124,7 @@ Every audit leaves a handoff with the next prompt ready to copy. The current rep
 candidate is a Host-provisioned shadow repository with its own `.git`, not a branch of
 your project: there is no shared ancestry to merge. Review and validate the complete
 diff/patch against the recorded verification before applying it in your project; commit
-and publish only by your decision. [Operator procedure](docs/usage.md#integración-y-recuperación-de-espacio-operador).
+and publish only by your decision. [Operator procedure](docs/usage.md#integration-and-space-recovery-operator).
 
 ![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
 
@@ -293,7 +293,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **1096 tests green** (11 skipped without external runtime).
+Framework suite: **1098 tests green** (11 skipped without external runtime).
 
 ### The most recent one: the modes driven by a real DSH session (2026-10-10)
 
@@ -364,7 +364,9 @@ full procedure for preparing that kind of real session is a permanent skill:
 ![What Improvement installs on your machine](docs/diagrams/arquitectura-instalacion.png)
 
 *The provenance-tracked library feeding generation, the anti-escalation guard, the two
-generated modes, the bounded memory, and the integration boundary. Also
+generated modes, the bounded memory, and the integration boundary. The diagram now also
+separates the Host-published SHA-256-verified helpers (implemented) from the System 1
+advisory channel (designed, not implemented). Also
 explorable: [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
 
 ```

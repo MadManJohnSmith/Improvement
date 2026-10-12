@@ -1,109 +1,115 @@
-# Diseño: canal System 1 (modelo de decisión) como propuesta advisory
+# Design: System 1 decision-model channel as an advisory proposal
 
-**Estado:** diseño aprobado para implementación por fases. Ninguna fase está
-implementada todavía salvo la Fase 0, que ya está en el árbol.
+**Status:** design approved for phased implementation. No phase is implemented yet except Phase 0,
+which is already in the tree.
 
-**Qué es y qué no es.** Un *modelo de decisión* (System 1) no es un LLM barato ni
-un modo rápido del que ya usamos: es otra arquitectura. No genera texto. Recibe
-un `state` (texto o JSON), una lista de opciones permitidas y una rúbrica, y
-devuelve una distribución de probabilidad sobre esas opciones. El caso que
-motoriza la categoría es **Jev** de TypeSafe AI (anuncio 2026-09-16,
-https://typesafe.ai/blog/introducing-system-one-models-and-jev), entrenado con
-*RL for Calibrated Decisions*. El patrón arquitectónico de referencia es
-Talker-Reasoner (arXiv 2410.08328): el System 1 **propone** y el System 2
-**endorsa o veta**.
+**English** | [Español](system-one-decision-channel.es.md)
 
-## La regla que gobierna todo el diseño
+**What it is and is not.** A *decision model* (System 1) is not a cheap LLM or a fast mode of the
+model we already use: it is a different architecture. It generates no text. It takes a `state`
+(text or JSON), a list of allowed options and a rubric, and returns a probability distribution
+across those options. The example that launched the category is **Jev** from TypeSafe AI
+(announced 2026-09-16, https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+trained with *RL for Calibrated Decisions*. The architectural reference is Talker-Reasoner
+(arXiv 2410.08328): System 1 **proposes** and System 2 **endorses or vetoes**.
 
-> Un System 1 en este framework **amplía cobertura y nunca otorga autoridad**.
+## The rule governing the whole design
 
-Esto no es una preferencia: es la misma regla que ya gobierna `skill_router`
-(`authorizes_execution: false` siempre, `scripts/skill_router.py:192`) y el
-módulo de razonamiento (el nivel nunca da veredicto ni capacidad). Un modelo de
-decisión produce una **propuesta con digest de rúbrica**; el Host la verifica,
-registra y puede revocar. Si la propuesta no se puede verificar, se descarta.
+> A System 1 in this framework **expands coverage and never grants authority**.
 
-## Evidencia que motiva el canal (medida, no del vendor)
+This is not a preference: it is the same rule that already governs `skill_router`
+(`authorizes_execution: false` always, `scripts/skill_router.py:192`) and the reasoning level
+(which never grants a verdict or a capability). A decision model produces a **proposal with a
+rubric digest**; the Host verifies it, records it and may revoke it. If the proposal cannot be
+verified, it is discarded.
 
-| Fuente | Resultado |
+## Evidence motivating the channel (measured, not vendor claims)
+
+| Source | Result |
 |---|---|
-| Vals AI (independiente, https://www.vals.ai/blogs/independent-evaluation-of-jev) | Verificación de claims **0.975**, empatando con GPT-6 Astra a **1/498 del coste** ($0.02 vs $12 por 1.000 casos); latencia 194× menor en lotes de 32. **Calibración ECE 0.011**, la mejor de 12 sistemas. |
-| arXiv 2610.11978 (13 benchmarks, 19 LLMs) | Gana en conocimiento (MMLU-Redux, ARC-Challenge) pero en **matemática queda 17.7 puntos bajo la mediana** y por debajo de los 19 modelos comparados. |
-| Vals AI, LegalBench | **Último de 12** (0.730) y su calibración en esa tarea es **0.108**, la peor del conjunto. |
-| Vendor, https://docs.typesafe.ai/model-jaggedness/jev-1.13 | «Si le das un objetivo difícil, comprimirá la ambigüedad en una elección, aunque sea errónea»; «no puede razonar sobre cadenas largas»; contexto 16k; «no debe usarse para decisiones que requieran supervisión humana». |
+| Vals AI (independent, https://www.vals.ai/blogs/independent-evaluation-of-jev) | Claim verification **0.975**, tying GPT-6 Astra at **1/498 the cost** ($0.02 vs $12 per 1,000 cases); 194× lower latency in batches of 32. **ECE calibration 0.011**, best of 12 systems. |
+| arXiv 2610.11978 (13 benchmarks, 19 LLMs) | Wins on knowledge (MMLU-Redux, ARC-Challenge) but **17.7 points below the median in math** and below all 19 compared models. |
+| Vals AI, LegalBench | **Last of 12** (0.730) and calibration **0.108**, worst of the set. |
+| Vendor, https://docs.typesafe.ai/model-jaggedness/jev-1.13 | "If you give it a hard target it will compress the ambiguity into a choice, even if the choice is wrong"; "cannot reason over long chains of steps"; 16k context; "should not be used for decisions requiring human oversight". |
 
-**La conclusión que decide el diseño:** la calibración medida en una tarea
-**no se traslada** a otra (0.011 en claims, 0.108 en legal). El modo de fallo
-peligroso no es el error visible sino **el acierto con confianza alta**. Por eso
-el canal se diseña para que un fallo del System 1 sea **barato y detectable**,
-nunca silencioso.
+**The conclusion that decides the design:** calibration measured on one task **does not
+transfer** to another (0.011 for claims, 0.108 for legal). The dangerous failure mode is not a
+visible error but a **high-confidence wrong choice**. That is why the channel is designed so a
+System 1 failure is **cheap and detectable**, never silent.
 
-## Fases
+## Phases
 
-**Fase 0 — desbloqueo del transporte (implementada, commit `4352a55`).**
-`DshLocalClient` envuelve `session/selectModel` y `session/projections`
-(`scripts/creator_client.py`). Sin esto ni el System 2 aplicaba nivel por paso,
-así que un System 1 estaría integrado a un cliente que no puede seleccionar
-sesión. El nivel se valida antes del wire y una respuesta cuyo `applied` no
-coincide lanza en vez de dejar creer que se aplicó.
+**Phase 0 — transport unblock (implemented, commit `4352a55`).**
+`DshLocalClient` wraps `session/selectModel` and `session/projections`
+(`scripts/creator_client.py`). Without this, even System 2 could not apply a per-step reasoning
+level, so System 1 would have been integrated into a client unable to select a session. The
+level is validated before the wire and a response whose `applied` does not match raises rather
+than pretending it was applied.
 
-**Fase 1 — rúbrica versionada (prerequisito, sin ella no hay canal).**
-El resultado depende de la rúbrica, luego la rúbrica es un **insumo versionado
-con digest**, no un string en el código. Se valida como cualquier otro artefacto
-del framework. Sin digest de rúbrica, una propuesta no es auditable: no se puede
-demostrar qué criterio la produjo.
+**Phase 1 — versioned rubric (prerequisite; no channel without it).**
+The result depends on the rubric, so the rubric is a **versioned input with a digest**, not a
+string hidden in code. It is validated like any other framework artifact. Without a rubric
+digest, a proposal is not auditable: there is no proof of the criterion that produced it.
 
-**Fase 2 — el canal advisory (piloto: deduplicación de hallazgos).**
-`episodes.signature` (`scripts/episodes.py:51`) identifica un defecto por
-`(path, excerpt)` o por fingerprint. La clave exacta deja fuera los duplicados
-descritos con otras palabras. El canal añade: dado un hallazgo nuevo y los
-existentes, un `choice` sobre «¿mismo defecto?» con umbral de confianza.
-Debajo del umbral → **abstención nombrada**, no adivinanza. El digest de
-evidencia ya existente fuerza la revisión humana del auditor, así que un
-duplicado mal clasificado se ve.
+**Phase 2 — the advisory channel (pilot: finding deduplication).**
+`episodes.signature` (`scripts/episodes.py:51`) identifies a defect by `(path, excerpt)` or a
+fingerprint. The exact key misses duplicates described in different words. The channel adds:
+given a new finding and existing ones, a `choice` over "same defect?" with a confidence
+threshold. Below it: a **named abstention**, not a guess. The existing evidence digest forces
+human auditor review, so a misclassified duplicate is visible.
 
-**Fase 3 — hechos candidatos para el router.**
-`skill_router` aborta con `ambiguous_observations` cuando dos observaciones del
-mismo hecho discrepan (`scripts/skill_router.py:118-121`). El canal puede
-proponer hechos desde texto libre; el Host **sigue exigiendo** el
-`evidence_sha256` de cada uno. Acota cobertura; no sustituye la validación.
+**Phase 3 — candidate facts for the router.**
+`skill_router` aborts with `ambiguous_observations` when two observations of the same fact
+disagree (`scripts/skill_router.py:118-121`). The channel may propose facts from free text; the
+Host **still requires** each fact's `evidence_sha256`. This bounds coverage, not replaces
+validation.
 
-**Fase 4 — clasificación de fallos del ciclo (diagnóstico).**
-Caso real de esta sesión: un turno murió con `zlib.error: incorrect data check`
-de causa no evidente. Un `choice` sobre «¿error de decodificación, de identidad
-o de layout?» acelera el diagnóstico. Solo etiqueta el fallo: no lo corrige ni
-lo evalúa.
+**Phase 4 — cycle failure classification (diagnostic).**
+Real case from this session: a turn died with `zlib.error: incorrect data check` of unclear
+cause. A `choice` among "decode error, identity error or layout error?" speeds up diagnosis.
+It only labels the failure: it neither repairs nor evaluates it.
 
-## Dónde NO entra, y por qué
+## Test and compilation orchestration: proposal, not execution
 
-Veredictos, aceptación, verificación de diff, reconciliación y adopción de
-candidata. Ahí la «ambigüedad comprimida en una elección errónea» es un fallo
-silencioso, no un error visible. Son exactamente los puntos donde el framework
-falla-cerrado a propósito hoy.
+A System 1 decision model cannot execute `npm test`, `cargo check`, a build, a compiler, or any
+other tool: it returns a choice or probability, not a process result. Its useful role would be
+**ordering** an already authorized set of checks, for example "fast unit tests first, then the
+required full suite" or "run the TypeScript compiler before browser checks", based on a bounded
+state (`changed_paths`, stack/capability plan, historical runtimes). The Host supplies the allowed
+options, enforces the capability plan and executes commands; the actual exit code, coverage,
+stdout/stderr and candidate digest remain the evidence. A low-confidence or out-of-distribution
+choice abstains and follows the deterministic plan. It must never suppress a mandatory check,
+turn a failed compilation into `PASS`, invent a tool entrypoint, or treat the model's confidence
+as evidence that a command ran. Whether this improves mean latency/cost without reducing defect
+recall is **unmeasured**; compare on real project changes and count all escalations.
 
-## Patrón de cascada que se traslada literal
+This is a candidate research seam, **not a new mode** and not an implementation commitment.
 
-Medido por Vals AI: reenviar el 1 % de casos a un modelo frontera cuesta 27
-centavos por mil. La traducción es: **umbral declarado como política, reenvío
-como ejecución**. El System 1 clasifica; por debajo del umbral escala al modelo
-caro o al operador. El umbral es un dato del plan, no una constante escondida.
+## Where it must NOT enter, and why
 
-## Verificación obligatoria antes de afirmar nada
+Verdicts, acceptance, diff verification, reconciliation and candidate adoption. There,
+"ambiguity compressed into a wrong choice" is a silent failure, not a visible error. Those are
+exactly the points where the framework deliberately fails closed today.
 
-1. Medir precisión y calibración **sobre nuestra distribución**, no benchmarks
-   públicos. Si la calibración no se mantiene, la respuesta es no.
-2. Ninguna prueba puede afirmar que el modelo decidió: solo que propuso y con
-   qué digest de rúbrica.
-3. El piloto (Fase 2) se ejecuta con cliente/servidor falso inyectado, como el
-   resto del árbol; la corrida real contra Jev es un paso aparte y se documenta
-   como no ejercitado hasta que ocurra.
+## Cascading pattern that translates directly
 
-## Ideas que el canal abre (no comprometidas)
+Measured by Vals AI: forwarding 1% of cases to a frontier model costs 27 cents per thousand.
+The translation is: **declared threshold as policy, forwarding as execution**. System 1
+classifies; below threshold it escalates to the expensive model or the operator. The threshold
+is plan data, not a hidden constant.
 
-- **Reenvío con presupuesto**: cuántos casos se reenvían es una política de
-  coste medible, no un juicio.
-- **Dos tamaños (`min`/`pro`) por etapa de campaña**, igual que hoy se declara
-  esfuerzo por etapa.
-- **Detección de bucles**: si el mismo defecto vuelve tras N enfoques, el canal
-  ya no clasifica: el ledger lo marca (`MAX_PER_SIGNATURE = 3`,
-  `scripts/episodes.py`).
+## Verification required before claiming anything
+
+1. Measure precision and calibration **on our own distribution**, not public benchmarks. If
+   calibration does not hold, the answer is no.
+2. No test may claim that the model decided: only that it proposed, and with which rubric digest.
+3. The pilot (Phase 2) runs with an injected fake client/server, like the rest of the tree; the
+   real run against Jev is a separate step and remains unexercised until it happens.
+
+## Ideas the channel opens (not committed)
+
+- **Budgeted forwarding:** how many cases get forwarded is a measurable cost policy, not a
+  judgment.
+- **Two sizes (`min`/`pro`) by campaign stage**, like reasoning effort by stage today.
+- **Loop detection:** if the same defect returns after N approaches, the channel stops
+  classifying: the ledger marks it (`MAX_PER_SIGNATURE = 3`, `scripts/episodes.py`).

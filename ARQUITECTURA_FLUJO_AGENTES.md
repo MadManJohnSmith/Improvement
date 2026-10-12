@@ -1,327 +1,309 @@
-# Arquitectura del flujo de trabajo con agentes
+# Agent workflow architecture · [Español](ARQUITECTURA_FLUJO_AGENTES.es.md)
 
-**Versión:** 3.0
-**Actualización:** 2026-10-10
-**Estado:** arquitectura normativa implementada; lifecycle operativo de los modos `IMPLEMENTED_NOT_VERIFIED`/`EN CURSO` hasta prueba DSH real. El MVP anterior y C0–C7 conservan su evidencia según `docs/status.md`; este documento define diseño y límites, no convierte regresiones estáticas en prueba viva.
+**Versión:** 3.0 (Spanish compatibility label; see [Español](ARQUITECTURA_FLUJO_AGENTES.es.md))
+**Version:** 3.0
+**Update:** 2026-10-10
+**Status:** normative architecture implemented; operational lifecycle of the modes at `IMPLEMENTED_NOT_VERIFIED`/`EN CURSO` until a real DSH test. The previous MVP and C0–C7 keep their evidence per `docs/status.md`; this document defines design and limits, it does not turn static regressions into live proof.
 
-**Vigencia de esta versión (2026-10-10):** un pase integral midió el flujo sobre una instalación real de DSH con producto ficticio. El canal real de inferencia, el auditor, el reparador, el implementador y el workflow FAIL → reparación → PASS se ejecutaron; el **Creator end-to-end no se probó** y `dsh web` no sirvió en ese entorno. Queda como cambio de diseño que la candidata de reparación es un **repositorio sombra creado por el Host** bajo el workspace, y no un `worktree` hermano del producto, porque `git worktree add` escribe en el `.git` del producto y una sesión `workspace-write` lo tiene a solo lectura. El detalle por hito está en `docs/progreso-agentico.md`.
-**Responsable de alcance y autorización:** usuario/titular.
-**Propósito:** definir el flujo final distribuible en el que un usuario configura DSH una vez, clona el framework y ejecuta un bootstrap único que coordina Creator, validación Host, backups, aceptación automática, activación y rollback de modos y skills específicos del proyecto.
-**Jerarquía:** subordinada a `AGENTS.md`; `PLAN_IMPLEMENTACION.md` registra el progreso comprobado y `docs/status.md` separa hechos de destino.
-**Antecedentes:** la arquitectura v2.4 y los planes de cierre permanecen en Git; los presets operativos de Syncify/RehabWeb son fixtures de referencia, no defaults distribuibles. Se adaptan patrones del repositorio público `jsmastery-pro/skills` en el commit observado `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (MIT, 2026-08-07).
-**Cómo se mantiene:** los hitos C/D/E/F/G/M/P/U tienen su estado derivado y su evidencia en `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` sigue siendo el índice de progreso y `docs/status.md` el estado comprobado vigente. `skills/dsh-maintenance-session/SKILL.md` recoge el procedimiento verificado para preparar una sesión DSH real como usuario final.
-
----
-
-## 1. Corrección fundamental del diseño
-
-El framework no debe distribuir presets finales universales de Auditoría y Reparación continua. Los presets externos usados durante el desarrollo demostraron routing, skills, subagentes, QA, reauditoría y el plugin `workflow-write`, pero son **rigs de referencia**, no la experiencia final del usuario.
-
-El producto distribuible será:
-
-```text
-método + biblioteca base inmutable + catálogo de patrones especializados
-+ plantillas normativas + schemas + validadores + controles Host
-+ bootstrap + prompts de Creator + fixtures saneados
-```
-
-La selección de skills de Creator sigue un orden obligatorio:
-
-```text
-1. skill base inmutable
-2. skill especializada del catálogo
-3. composición de varias skills
-4. override declarativo permitido
-5. extensión específica generada por Creator
-6. RETAINED si ninguna opción puede aceptarse
-```
-
-Creator **no genera libremente desde cero como primera opción**. Una extensión nueva exige demostrar que las capas anteriores no aplican, declarar un contrato propio y pasar aceptación específica. Una skill de producción transferida a otro proyecto no se considera válida automáticamente: debe pasar aceptación en el nuevo proyecto.
-
-La biblioteca base y el catálogo se materializan a partir de un registro de fuentes versionado (`schemas/source-registry.schema.json`, instancia en `library/source-registry.json`). El documento de biblioteca materializado vive en `library/library.json` y el contenido de cada skill base en `library/base/<skill>/` con sus escenarios; las entradas base reutilizan únicamente fuentes registradas. Cada fuente externa evaluada — repositorio de skills, índice, runtime, estándar o guía — queda registrada con URL canónica, revisión fijada, fecha de observación, licencia y estado (`REFERENCE`/`CANDIDATE`/`ACTIVE`/`REJECTED`). Una fuente sin revisión fijada o con licencia no resuelta no puede ser `CANDIDATE` ni `ACTIVE`; la política de adquisición prohíbe auto-instalación (npx/marketplace/descargas) durante bootstrap o accept, y el material externo se inspecciona en staging fuera del árbol canónico. Ninguna fuente es autoridad por sí misma: la incorporación siempre pasa por conversión contractual, validación Host y aceptación en el proyecto destino. Las entradas seleccionables exigen, además de procedencia con fuente, criterios de activación observables, invariantes y escenarios; un patrón sin activación observable o sin escenario probado no es seleccionable y la regeneración debe caer en la capa inferior o en `RETAINED`.
-
-El resultado de la incorporación será:
-
-```text
-<Proyecto>-auditor
-<Proyecto>-continuous-repair
-<Proyecto>-implementer (generaciones nuevas; las anteriores con dos roles siguen válidas)
-+ skills específicas justificadas por el proyecto
-```
-
-La especialización sucede una vez durante la incorporación o regeneración. En el uso normal el usuario elige Auditoría, Reparación continua o Implementación para una petición de cambio distinta de un hallazgo auditado, y escribe objetivos breves; no vuelve a Creator por cada turno. La distribución anterior con solo Auditoría/Reparación conserva validez y no adquiere Implementación por inferencia.
-
-### 1.1 Qué se conserva de la arquitectura vigente
-
-- Auditoría y Reparación continua como roles obligatorios y compatibles con generaciones previas; Implementador como tercer rol de generaciones nuevas;
-- incorporación compartida;
-- Host como dueño de autoridad, persistencia, presupuesto, locks y transiciones;
-- Auditor sin escritura de producto;
-- candidato externo o rama autorizada para Reparación;
-- un escritor por entorno;
-- QA independiente y reauditoría semántica posterior;
-- evidencia ligada a base/candidato/hash;
-- máximo dos intentos de corrección por unidad;
-- publicación remota deshabilitada salvo autorización;
-- estados fail-closed (`RETAINED`, `UNVERIFIED`);
-- separación producto/framework/workspace;
-- skills no equivalen a enforcement;
-- Creator propone, pero no concede autoridad ni se autoaprueba.
-
-### 1.2 Qué se corrige
-
-- Los modos no son presets genéricos preparados por el mantenedor; son composiciones generadas por proyecto.
-- Creator no produce únicamente `preset.yml` y `agent.cordis.yml`; produce un paquete generacional completo.
-- El usuario no debe copiar el prompt a Creator ni ejecutar manualmente `bootstrap accept` en el caso normal.
-- El bootstrap debe autenticarse contra DSH local y enviar automáticamente la petición a Creator.
-- Creator ejecuta `bootstrap.py accept`; el Host valida y decide la aceptación mecánica.
-- Las skills específicas pueden generarse o mejorarse, pero siempre con backup íntegro antes de sustitución.
-- La instalación/actualización es transaccional como conjunto de modos y skills, no archivo por archivo.
-- La aceptación funcional pequeña se ejecuta automáticamente mediante sesiones DSH; el usuario no diseña el escenario.
-- Los patrones de progressive disclosure y presupuestos de hot paths se incorporan a las skills generadas.
+**Applicability of this version (2026-10-10):** a comprehensive pass measured the flow over a real DSH installation with a fictional product. The real inference channel, the auditor, the repairer, the implementer and the workflow FAIL → repair → PASS were executed; the **Creator end-to-end was not tested** and `dsh web` did not run in that environment. The outstanding design change is that the repair candidate is a **shadow repository created by the Host** under the workspace, and not a `worktree` sibling of the product, because `git worktree add` writes to the `.git` of the product and a `workspace-write` session has it read-only. The per-milestone detail is in `docs/progreso-agentico.md`.
+**Scope and authorization owner:** user/holder.
+**Purpose:** define the final distributable flow in which a user configures DSH once, clones the framework and runs a single bootstrap that coordinates Creator, Host validation, backups, automatic acceptance, activation and rollback of the project-specific modes and skills.
+**Hierarchy:** subordinate to `AGENTS.md`; `PLAN_IMPLEMENTACION.md` records the verified progress and `docs/status.md` separates facts from intent.
+**Background:** the v2.4 architecture and the closure plans remain in Git; the operational Syncify/RehabWeb presets are reference fixtures, not distributable defaults. Patterns from the public repository `jsmastery-pro/skills` are adapted at the observed commit `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (MIT, 2026-08-07).
+**How ​​it is maintained:** milestones C/D/E/F/G/M/P/U have their derived status and evidence in `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` is still the progress index and `docs/status.md` is the current checked state. `skills/dsh-maintenance-session/SKILL.md` includes the verified procedure to prepare a real DSH session as an end user.
 
 ---
 
-## 2. Experiencia objetivo del usuario
+## 1. Fundamental design correction
 
-### 2.1 Prerrequisitos
+The framework should not distribute universal Audit and Continuous Repair final presets. External presets used during development demonstrated routing, skills, sub-agents, QA, re-auditing, and the `workflow-write` plugin, but they are **reference rigs**, not the final user experience.
 
-El usuario debe configurar una sola vez:
-
-1. DSH instalado en una versión compatible.
-2. Al menos un proveedor/modelo utilizable dentro de DSH.
-3. Credenciales gestionadas por DSH, no por el framework.
-4. Creator disponible en la instancia.
-5. Permisos nativos mínimos para leer proyecto/framework y escribir el workspace externo.
-
-El bootstrap no lee ni copia la API key del proveedor. Reutiliza el Host DSH y obtiene únicamente el token/cookie local de consola necesario para la API local. Ese secreto se mantiene en memoria y nunca entra en prompts, argv, entorno del agente ni artefactos.
-
-Si falta proveedor, Creator o capacidad:
-
+The distributable product will be:
 ```text
-RETAINED: <capacidad ausente>
-Siguiente acción: <una única decisión o preparación del titular>
+method + immutable base library + catalog of specialized patterns
++ normative templates + schemas + validators + Host controls
++ bootstrap + Creator prompts + sanitized fixtures
 ```
+The selection of Creator skills follows a mandatory order:
+```text
+1. immutable base skill
+2. specialized catalog skill
+3. composition of several skills
+4. permitted declarative override
+5. specific extension generated by Creator
+6. RETAINED if no option can be accepted
+```
+Creator **does not generate freely from scratch as a first option**. A new extension requires proving that the previous layers do not apply, declaring your own contract and passing specific acceptance. A production skill transferred to another project is not automatically considered valid: it must pass acceptance in the new project.
 
-### 2.2 Un único comando normal
+The base library and catalog are materialized from a versioned source record (`schemas/source-registry.schema.json`, instance in `library/source-registry.json`). The materialized library document lives in `library/library.json` and the content of each base skill in `library/base/<skill>/` with its scenarios; base entries reuse only registered sources. Each external source evaluated — skills repository, index, runtime, standard or guide — is registered with canonical URL, fixed revision, observation date, license and status (`REFERENCE`/`CANDIDATE`/`ACTIVE`/`REJECTED`). A font with no revision pinned or unresolved license cannot be `CANDIDATE` or `ACTIVE`; the acquisition policy prohibits auto-installation (npx/marketplace/downloads) during bootstrap or accept, and external material is inspected in staging outside the canonical tree. No source is an authority by itself: incorporation always goes through contractual conversion, Host validation and acceptance in the target project. Selectable inputs require, in addition to source provenance, observable activation criteria, invariants and scenarios; a pattern with no observable activation or no tested scenario is not selectable and the regeneration must fall in the lower layer or in `RETAINED`.
 
+The result of the incorporation will be:
+```text
+<Project>-auditor
+<Project>-continuous-repair
+<Project>-implementer (new generations; earlier two-role generations remain valid)
++ project-justified specific skills
+```
+Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Deployment for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
+
+### 1.1 What is preserved from the current architecture
+
+- Continuous Audit and Repair as mandatory roles and compatible with previous generations; Implementer as the third role of new generations;
+- shared incorporation;
+- Host as owner of authority, persistence, budget, locks and transitions;
+- Auditor without product writing;
+- external candidate or authorized branch for Repair;
+- one writer per environment;
+- Independent QA and subsequent semantic re-audit;
+- evidence linked to base/candidate/hash;
+- maximum two correction attempts per unit;
+- remote publishing disabled unless authorized;
+- fail-closed states (`RETAINED`, `UNVERIFIED`);
+- product/framework/workspace separation;
+- skills are not equivalent to enforcement;
+- Creator proposes, but does not grant authority or self-approve.
+
+### 1.2 What is corrected
+
+- Modes are not generic presets prepared by the maintainer; They are compositions generated by project.
+- Creator does not produce only `preset.yml` and `agent.cordis.yml`; produces a complete generational package.
+- The user should not copy the prompt to Creator or manually execute `bootstrap accept` in the normal case.
+- The bootstrap should authenticate against local DSH and automatically send the request to Creator.
+- Creator executes `bootstrap.py accept`; the Host validates and decides the mechanical acceptance.
+- Specific skills can be generated or improved, but always with a full backup before replacement.
+- The installation/update is transactional as a set of modes and skills, not file by file.
+- Small functional acceptance is executed automatically by DSH sessions; the user does not design the scenario.
+- The progressive disclosure patterns and hot path budgets are incorporated into the generated skills.
+
+---
+
+## 2. Target user experience
+
+### 2.1 Prerequisites
+
+The user must configure only once:
+
+1. DSH installed in a supported version.
+2. At least one provider/model usable within DSH.
+3. Credentials managed by DSH, not by the framework.
+4. Creator available on the instance.
+5. Minimum native permissions to read the project/framework and write the external workspace.
+
+Bootstrap does not read or copy the provider's API key. It reuses the DSH Host and obtains only the local console token/cookie needed for the local API. That secret stays in memory and never enters prompts, argv, the agent environment or artifacts.
+
+If provider, Creator or capability is missing:
+```text
+RETAINED: <missing capability>
+Next action: <one owner decision or preparation>
+```
+### 2.2 A single normal command
 ```bash
 python3 -B scripts/bootstrap.py install \
-  --project /ruta/proyecto
+  --project /path/to/project
 ```
-
-Opcional avanzado:
-
+Optional advanced:
 ```bash
-  --workspace /ruta/workspace
+  --workspace /path/to/workspace
 ```
-
-El comando realiza:
-
+The command performs:
 ```text
-descubrimiento inicial
-→ workspace externo
-→ skills generales
+initial discovery
+→ external workspace
+→ general skills
 → creator-run
-→ petición automática a Creator por DSH local
-→ generación específica
-→ Creator invoca accept
-→ Host valida, respalda e instala en staging
-→ aceptación funcional automática
-→ activación o rollback
-→ cierre compacto
+→ automatic request to Creator over local DSH
+→ project-specific generation
+→ Creator invokes accept
+→ Host validates, backs up and installs in staging
+→ automatic functional acceptance
+→ activation or rollback
+→ concise closure
 ```
+The user does not copy prompts, paths, JSON, IDs, receipts, plugins or models, and does not run `accept` manually in the normal case.
 
-El usuario no copia prompts, rutas, JSON, IDs, receipts, plugins o modelos; tampoco ejecuta `accept` manualmente en el caso normal.
+### 2.3 Further use
 
-### 2.3 Uso posterior
+Complete audit:
 
-Auditoría completa:
+> Completely audit this project; do not modify or publish.
 
-> Audita completamente este proyecto; no modifiques ni publiques.
+Directed audit:
 
-Auditoría dirigida:
+> Audit the payment flow.
 
-> Audita el flujo de pagos.
+> Audit this component.
 
-> Audita este componente.
+Complete repair:
 
-Reparación completa:
+> Repair the audit findings; do not publish.
 
-> Repara los hallazgos de la auditoría; no publiques.
+Targeted repair:
 
-Reparación dirigida:
+> Fix this finding.
 
-> Repara este hallazgo.
+> Fix only the payment flow.
 
-> Repara solo el flujo de pagos.
+The user does not provide paths or create worktrees. When a preset is selected, its persona is explicitly identified as a first-party Improvement contract, requires as the first action loading the skill whose name is exactly the preset name through `tool-skill` and forbids analyzing or responding before success; Host and transaction validate the exact prefix. The persona and the `tool_policy` of both modes completely forbid the escalation channel: they never send `sandbox_permissions` or `justification`, with any value—including `workspace-write` and `danger-full-access`—and a denial or schema error leaves `RETAINED` with no retry, alternative value, or approval. Each source preset also incorporates the first-party row `./anti-escalation.mjs`; Host/transaction require your exact presence. When publishing, the installation copies the plugin to the bundle and materializes that row with the absolute path of the copied file, because the current preset register receives `config.plugins` embedded in `cordis.patch.yml` and resolves the relative names from that patch, not from the source array; `agentPresets/read` verifies the effective composition and that absolute identity. The guard intercepts those arguments in bash/pwsh before dispatch, while bash without escalation continues; The global overlay preserves the sanitized model-facing of schemas as an additional defense. Right after, the first bash call fails to set another workdir: it either skips `workdir` or uses `.` and executes without altering the single centrally generated `first_bash_command` (`set -eu; pwd; test ... -a -d ... -a -d ...; printf '__IMPROVEMENT_LAYOUT_OK__\n'`). A single `test` jointly validates the basename of the cwd and both roots, and only then does `printf` issue the `success_sentinel` declared by the lifecycle. The mode continues only if the result contains that exact sentinel; its absence or an unavailable result remains `RETAINED` without further action. It does not require exit code 0 marker because DSH omits it for successful bash results and only adds `[exit code: N]` for errors. The expected basename of the actual common parent (`product.parent == workspace.parent`) is derived on build and included as a relative identity, never as an absolute path to the maintainer. The mode does not separate or rewrite the command, does not continue after a failed check, and does not infer, promote, search, or change cwd to validate the layout; Any subsequent relative path starts from the observed and unaltered cwd and any drift from `pwd` remains `RETAINED`. Lifecycle and person respectively set `startup_workdir: session-cwd-only` and `workdir_override: forbidden-before-layout`, and Host/transaction rejects any divergence. For Auditor, that invariance also covers **all** bash calls of the turn using `bash_workdir: session-cwd-only-all-calls`: each call omits `workdir` or uses exactly `.`, and a command planned for another directory must be rewritten before invoking it with options from the command itself (`git -C <product>`, `npm --prefix <product>/ui`, `cargo --manifest-path <product>/Cargo.toml` or equivalent), never with `cd` or subdirectory workdir. An accidental override or drift holds immediately, without retry or further action. Repair preserves the explicit exception for commands that change code with exactly candidate workdir. Auditor reads `mode-state`, preserves the existing candidate—including `INTEGRATED`, a state that only Host or Operator can log—and persists with `workflow_write` strict schema/caps memory. Before initializing that active state, Host preflights unexpected entries and expected incompatible files; preserves each complete original byte by byte in a single generation managed by digest under `.dsh-managed/mode-state-legacy/`, with source path, reason, digest, inventory and receipt, before replacing or removing originals. Only projects already valid records or unambiguous adaptations to the strict state (`findings.id` → `finding_id`); The rest is left out of the asset, and equivalent legacy descriptors are normalized without losing the original. The preflight doesn't just archive: its output—included in the install dict—reports which files it replaced and names the discarded records (items and `work-items.json` candidates included), so that no loss is discoverable only by cross-reference. Everything requires a regular file, a strong name, without symlink/hardlink and caps of 8 MiB per file/32 MiB total; a failure restores the bytes and retry reuses the verified file. The retained evidence does not enter the active context of the modes, but remains available externally through receipt. Active state includes `overflows.jsonl` (overflow receipt): Before any replacement that discards records due to file limit or deduplication, the mode adds a receipt with `overflow_id`, affected file, cause, and up to 32 identifiers of what was discarded, so that runtime compaction (Syncify case: 50/50 handoffs) never loses traceless records. Candidate verification is done against the actual stack of the product, regardless of its technology: the Host resolves by installing a capability plan (`scripts/stack.py`, written in `<workspace>/.dsh-managed/capability-plan.json`) that detects stacks by lockfile or manifest—including subdirectories of monorepos—and, for projects without manifest, accepts the explicit declaration of the holder in `improvement-verification.json`; The plan names the product's own entrypoint (its test command and, when it exists, its lint) with its execution directory, marks what capabilities the runtime has and, for each absent one, the exact provisioning step, always outside the product except for routes that the product itself ignores. The verification evidence is that entrypoint or `BLOCKED` naming the missing capacity; a harness, mock or handwritten copy of the code is research material and is never recorded as a result (`real_stack_verification.evidence: product-own-entrypoint-only`, `stubs: investigation-material-never-verification-evidence`). The resolver does not execute installations or grant capacity: it only names what is missing, and the plan is linked to digest and fails closed in the event of any alteration. In the mechanical mission loop, the Host leaves durable memory at the close of each turn: a `turn` event in `metrics/` (only observed metrics) and, in all retention, the decision ratified in `decisions/` with cause and authorization of the command; both stores are append-only, verified by digest, and fail closed — a failed write leaves the drive in flight for reconciliation instead of faking a clean shutdown. Continuous Repair takes the simple prompt as authorization to edit a candidate already created by the Host, never to commit or to provision it in bash. `provision_repair(product, workspace, finding_ids, declared_base=…)` derives SHA-256 from the effective canonical base and sorted unique selected IDs, tests cleanliness and ancestry, and creates/reuses a shadow repository under `<workspace>/candidates/repair-<digest16>`, with its own `.git` and branch `candidate`. The Host `<workspace>/repair-<digest16>.receipt` receipt links canonical base, findings digest and HEAD of the `shadow-base` tag; without it or in the event of a collision, symlink or worktree legacy, the migration is `RETAINED`, not adoption. `repair_provision_command` is now a read gate from session cwd: it checks receipt, path, private `.git`, shadow HEAD and clean canonical without creating anything or asking for escalation. This prevents `git -C`'s cwd semantic change from resolving a relative target under the product. **Measured limit (2026-10-10):** An actual DSH session with `sandboxMode: workspace-write` returned, for `git -C <producto> worktree add -b <rama> <sibling>`, `fatal: cannot lock ref … Read-only file system` plus `[sandbox: file access denied under workspace-write mode]`; the attempt to escalate received `sandbox escalation to "danger-full-access" requires approval, but no approval channel is available`. Since the mode's anti-escalation contract prohibits such retry at any value, the path is closed by design. In that test, the candidate was exceptionally created as `git clone --no-hardlinks` within the workspace. X1 replaced the worktree provision with shadow Host, without adopting those clones as registered candidates: their migration requires an explicit decision and fails closed. Applies deterministic checks to clean canonical basis, ancestry, Host receipt and `.git` private shadow. The product worktree list only serves to reject the legacy target; any foreign worktree is preserved. Reuse does not delete changes in progress and requires the same receipt/base/digest, HEAD of the `shadow-base` tag, and exact path. Before provisioning, Repair reads the strict `candidate` of `work-items.json`; A dirty candidate can only be resumed under `resume_policy: exact-recorded-only` when that record exactly matches the path, branch, base and digest of findings with the deterministic target, retains `DIRTY` or `RETAINED` state pending verification and contains the digest and the list of paths of the captured diff. A separate central command rechecks registered identity, HEAD still at `shadow-base` (the shadow HEAD is not the canonical SHA), canonical clean and unaltered, diff not empty with the same digest, complete list of paths confined to the candidate, regular files without symlinks and absence of submodules; It does not require cleaning of the candidate nor does it change its bytes. If the record, status, evidence or any check is missing or inconsistent, the collision target becomes `RETAINED`; You never adopt an arbitrary dirty worktree or improvise another route. If the resume fails only because the recorded `candidate_diff_digest` became obsolete while the record already matched exactly in path, branch, base and findings digest, it is not a collision and does not require an operator: `stale_record_policy: reconcile-then-resume` runs a central reconciliation command that recalculates the findings digest and its `digest16` from the base revision plus the actual IDs, checks the target identity, the Host receipt and the private `.git`, HEAD of `shadow-base`, clean and unaltered canonical, non-empty diff, confined paths without symlinks and without submodules, and re-measures the current diff of that same already tested candidate. The command never trusts the identity declared by the caller, so a record that disagrees in path, branch, base, or findings is still hard `RETAINED`. The basis recorded in findings, handoffs and items is audit provenance, not a lock: if it differs from the canonical HEAD, Repair tests the relationship with `git -C <product> merge-base --is-ancestor <declared-base> HEAD` and demands clean canonical product, and only then re-anchors (`stale_base_policy: re-anchor-when-declared-base-is-ancestor-of-clean-head`) taking the current canonical HEAD as the effective basis, deriving the identity from it, declaring both bases in the final report and keeping the declared basis of the findings intact; any other relationship (divergent, rewritten or forced history, dirty product, unknown base) is `RETAINED` hard. Without this route, integrating a candidate would block any subsequent repair cycle on the same findings. Before any code change, Repair claims the candidate: runs the log core command and persists in `work-items.json.candidate`, verbatim and field by field, the exact JSON object it prints after the `__IMPROVEMENT_CANDIDATE_RECORD__` marker — shadow relative path, head in `shadow-base` bound by receipt Host to the canonical base and state `PROVISIONED`, without adding, removing, renaming, reordering or altering fields (`record_before_first_edit: true`, `record_statuses: [PROVISIONED, DIRTY]`). If that object cannot be persisted verbatim, no code changes and `RETAINED` remains; after the first change repeat the same command and persist the newly issued object in the same verbatim form (state `DIRTY` with `candidate_diff_digest` and `changed_paths` already included). The command emits a valid object by construction, so no mode needs to assemble the record by hand — the historical candidate source with extra fields or absolute paths that preflight discarded. Thus, a registered `PROVISIONED` candidate that already appears dirty is an interrupted turn and is recovered with the registration command, never creating another one or discarding its diff (`interrupted_turn_recovery`); a dirty target without registration remains never adopted (`unrecorded_dirty_target: RETAINED-never-adopted`). Subsequent attempts that change or test code use as workdir exactly `<workspace>/candidates/repair-<digest16>` relative to the session cwd, never `.`. Modify only by bash and leave dirty tree or patch; `candidate_commit` can be null. A commit requires another explicit prompt from the user. Capture and recheck canonical HEAD/status and candidate diff after each phase; any drift remains `RETAINED` without further action. It never uses write/edit for repair, nor does it merge, push or publish.
 
-El usuario no aporta paths ni crea worktrees. Al seleccionar un preset, su persona se identifica explícitamente como contrato first-party de Improvement, obliga como primera acción a cargar mediante `tool-skill` el skill de nombre exactamente igual al preset y prohíbe analizar o responder antes del éxito; Host y transacción validan el prefijo exacto. Persona y `tool_policy` de ambos modos prohíben completamente el canal de escalada: jamás envían `sandbox_permissions` ni `justification`, con ningún valor —incluidos `workspace-write` y `danger-full-access`— y una denegación o error de schema queda `RETAINED` sin reintento, valor alternativo ni aprobación. Cada preset fuente incorpora además la fila first-party `./anti-escalation.mjs`; Host/transacción exigen su presencia exacta. Al publicar, la instalación copia el plugin al bundle y materializa esa fila con la ruta absoluta del archivo copiado, porque el registro de presets vigente recibe `config.plugins` embebido en `cordis.patch.yml` y resuelve los nombres relativos desde ese patch, no desde el array fuente; `agentPresets/read` verifica la composición efectiva y esa identidad absoluta. El guard intercepta esos argumentos en bash/pwsh antes del dispatch/aprobación, mientras bash sin escalada continúa; el overlay global conserva el saneado model-facing de schemas como defensa adicional. Justo después, la primera llamada bash no puede fijar otro workdir: omite `workdir` o usa `.` y ejecuta sin alterarlo el único `first_bash_command` generado centralmente (`set -eu; pwd; test ... -a -d ... -a -d ...; printf '__IMPROVEMENT_LAYOUT_OK__\n'`). Un único `test` valida en conjunto el basename del cwd y ambos roots, y solo después `printf` emite el `success_sentinel` declarado por el lifecycle. El modo continúa únicamente si el resultado contiene ese sentinel exacto; su ausencia o un resultado no disponible queda `RETAINED` sin más acción. No exige marcador de exit code 0 porque DSH lo omite en resultados bash exitosos y solo añade `[exit code: N]` para errores. El basename esperado del padre común real (`product.parent == workspace.parent`) se deriva al generar y se incluye como identidad relativa, nunca como ruta absoluta del mantenedor. El modo no separa ni reescribe el comando, no continúa tras un check fallido y no infiere, asciende, busca ni cambia cwd para validar el layout; toda ruta relativa posterior parte del cwd observado e inalterado y cualquier drift de `pwd` queda `RETAINED`. Lifecycle y persona fijan respectivamente `startup_workdir: session-cwd-only` y `workdir_override: forbidden-before-layout`, y Host/transacción rechazan cualquier divergencia. Para Auditor esa invariancia cubre además **todas** las llamadas bash del turno mediante `bash_workdir: session-cwd-only-all-calls`: cada llamada omite `workdir` o usa exactamente `.`, y un comando planeado para otro directorio debe reescribirse antes de invocarlo con opciones del propio comando (`git -C <product>`, `npm --prefix <product>/ui`, `cargo --manifest-path <product>/Cargo.toml` o equivalente), nunca con `cd` ni workdir de subdirectorio. Un override accidental o drift retiene inmediatamente, sin reintento ni acción posterior. Repair conserva la excepción explícita para comandos que cambian código con workdir exactamente candidato. Auditor lee `mode-state`, conserva la candidata existente —incluido `INTEGRATED`, estado que solo Host u operador pueden registrar— y persiste con `workflow_write` memoria de schema/caps estrictos. Antes de inicializar ese estado activo, Host preflighta entradas inesperadas y archivos esperados incompatibles; conserva cada original completo byte a byte en una única generación gestionada por digest bajo `.dsh-managed/mode-state-legacy/`, con source path, motivo, digest, inventario y recibo, antes de sustituir o retirar originales. Solo proyecta al estado estricto registros ya válidos o adaptaciones inequívocas (`findings.id` → `finding_id`); lo demás queda fuera del activo, y descriptores legacy equivalentes se normalizan sin perder el original. El preflight no solo archiva: su resultado —incluido en el dict de instalación— informa qué archivos reemplazó y nombra los registros descartados (ítems y candidata de `work-items.json` incluidos), de modo que ninguna pérdida sea descubrible solo por cross-referencia. Todo exige archivo regular, nombre seguro, sin symlink/hardlink y caps de 8 MiB por archivo/32 MiB totales; un fallo restaura los bytes y el reintento reutiliza el archivo verificado. La evidencia retenida no entra al contexto activo de los modos, pero permanece disponible externamente mediante el recibo. El estado activo incluye `overflows.jsonl` (recibo de desbordamiento): antes de cualquier reemplazo que descarte registros por límite de archivo o deduplicación, el modo añade un recibo con `overflow_id`, archivo afectado, causa y hasta 32 identificadores de lo descartado, de modo que la compactación de runtime (caso Syncify: 50/50 handoffs) nunca pierde registros sin traza. La verificación del candidato se hace contra el stack real del producto, sin importar su tecnología: el Host resuelve al instalar un plan de capacidades (`scripts/stack.py`, escrito en `<workspace>/.dsh-managed/capability-plan.json`) que detecta los stacks por lockfile o manifiesto —incluidos subdirectorios de monorepos— y, para proyectos sin manifiesto, acepta la declaración explícita del titular en `improvement-verification.json`; el plan nombra el entrypoint propio del producto (su comando de pruebas y, cuando existe, su lint) con su directorio de ejecución, marca qué capacidades tiene el runtime y, para cada una ausente, el paso exacto de provisión, siempre fuera del producto salvo rutas que el propio producto ignore. La evidencia de verificación es ese entrypoint o `BLOCKED` nombrando la capacidad faltante; un arnés, mock o copia del código escrita a mano es material de investigación y jamás se registra como resultado (`real_stack_verification.evidence: product-own-entrypoint-only`, `stubs: investigation-material-never-verification-evidence`). El resolutor no ejecuta instalaciones ni concede capacidad: solo nombra lo que falta, y el plan va ligado a digest y falla cerrado ante cualquier alteración. En el bucle mecánico de misión, el Host deja memoria durable al cierre de cada turno: un evento `turn` en `metrics/` (solo métricas observadas) y, en toda retención, la decisión ratificada en `decisions/` con causa y autorización del mandato; ambos almacenes son append-only, verificados por digest y fallan cerrados — una escritura fallida deja la unidad en vuelo para reconciliación en lugar de fingir un cierre limpio. Continuous Repair toma el prompt simple como autorización para editar una candidata ya creada por el Host, nunca para commit ni para provisionarla en bash. `provision_repair(product, workspace, finding_ids, declared_base=…)` deriva SHA-256 de la base canónica efectiva y los IDs seleccionados únicos ordenados, prueba limpieza y ascendencia, y crea/reutiliza un repositorio sombra bajo `<workspace>/candidates/repair-<digest16>`, con `.git` propio y branch `candidate`. El recibo Host `<workspace>/repair-<digest16>.receipt` liga base canónica, digest de hallazgos y HEAD del tag `shadow-base`; sin él o ante colisión, symlink o worktree legacy, la migración es `RETAINED`, no adopción. `repair_provision_command` es ahora un gate de lectura desde cwd de sesión: comprueba recibo, ruta, `.git` privado, HEAD sombra y canónico limpio sin crear nada ni pedir escalada. Esto evita que el cambio semántico de cwd de `git -C` resuelva un destino relativo bajo el producto. **Límite medido (2026-10-10):** una sesión DSH real con `sandboxMode: workspace-write` devolvió, para `git -C <producto> worktree add -b <rama> <sibling>`, `fatal: cannot lock ref … Read-only file system` más `[sandbox: file access denied under workspace-write mode]`; el intento de escalar recibió `sandbox escalation to "danger-full-access" requires approval, but no approval channel is available`. Como el contrato anti-escalada del modo prohíbe ese reintento con cualquier valor, la vía queda cerrada por diseño. En aquel ensayo la candidata se creó excepcionalmente como `git clone --no-hardlinks` dentro del workspace. X1 sustituyó la provisión worktree por sombra Host, sin adoptar esos clones como candidatas registradas: su migración exige una decisión explícita y falla cerrado. Aplica checks deterministas a base canónica limpia, ascendencia, recibo Host y `.git` privado de la sombra. La lista de worktrees del producto solo sirve para rechazar el target legacy; cualquier worktree ajeno se preserva. La reutilización no borra cambios en curso y exige el mismo recibo/base/digest, HEAD del tag `shadow-base` y ruta exacta. Antes de provisionar, Repair lee el `candidate` estricto de `work-items.json`; una candidata sucia solo puede reanudarse bajo `resume_policy: exact-recorded-only` cuando ese registro coincide exactamente en path, branch, base y digest de hallazgos con el target determinista, conserva estado `DIRTY` o `RETAINED` pendiente de verificación y contiene el digest y la lista de paths del diff capturados. Un comando central separado recomprueba identidad registrada, HEAD aún en `shadow-base` (el HEAD de la sombra no es el SHA canónico), canónico limpio e inalterado, diff no vacío con el mismo digest, lista completa de paths confinados a la candidata, archivos regulares sin symlinks y ausencia de submódulos; no exige limpieza de la candidata ni cambia sus bytes. Si falta o discrepa el registro, el estado, la evidencia o cualquier check, la colisión target queda `RETAINED`; nunca se adopta un worktree sucio arbitrario ni se improvisa otra ruta. Si la reanudación falla solo porque el `candidate_diff_digest` registrado quedó obsoleto mientras el registro ya coincidía exactamente en path, branch, base y digest de hallazgos, no es una colisión ni requiere operador: `stale_record_policy: reconcile-then-resume` ejecuta un comando central de reconciliación que recalcula el digest de hallazgos y su `digest16` desde la revisión base más los IDs reales, comprueba la identidad target, el recibo Host y `.git` privado, HEAD de `shadow-base`, canónico limpio e inalterado, diff no vacío, paths confinados sin symlinks y sin submódulos, y vuelve a medir el diff actual de esa misma candidata ya probada. El comando nunca confía en la identidad declarada por el llamador, de modo que un registro que discrepa en path, branch, base o hallazgos sigue siendo `RETAINED` duro. La base registrada en hallazgos, handoffs e ítems es procedencia de auditoría, no un candado: si difiere del HEAD canónico, Repair prueba la relación con `git -C <product> merge-base --is-ancestor <declared-base> HEAD` y exige producto canónico limpio, y solo entonces reancla (`stale_base_policy: re-anchor-when-declared-base-is-ancestor-of-clean-head`) tomando el HEAD canónico actual como base efectiva, derivando de ella la identidad, declarando ambas bases en el informe final y conservando intacta la base declarada de los hallazgos; cualquier otra relación (historia divergente, reescrita o forzada, producto sucio, base desconocida) es `RETAINED` duro. Sin esta ruta, integrar una candidata dejaría bloqueado todo ciclo de reparación posterior sobre los mismos hallazgos. Antes de cualquier cambio de código, Repair reclama la candidata: ejecuta el comando central de registro y persiste en `work-items.json.candidate`, verbatim y campo a campo, el objeto JSON exacto que imprime tras el marcador `__IMPROVEMENT_CANDIDATE_RECORD__` — ruta relativa de la sombra, head en `shadow-base` ligado por recibo Host a la base canónica y estado `PROVISIONED`, sin añadir, quitar, renombrar, reordenar ni alterar campos (`record_before_first_edit: true`, `record_statuses: [PROVISIONED, DIRTY]`). Si ese objeto no se puede persistir verbatim, no cambia código y queda `RETAINED`; tras el primer cambio repite el mismo comando y persiste el objeto recién emitido de la misma forma verbatim (estado `DIRTY` con `candidate_diff_digest` y `changed_paths` ya incluidos). El comando emite un objeto válido por construcción, de modo que ningún modo necesita ensamblar el registro a mano — la fuente histórica de candidatas con campos extra o rutas absolutas que el preflight descartaba. Así una candidata registrada `PROVISIONED` que ya aparezca sucia es un turno interrumpido y se recupera con el comando de registro, nunca creando otra ni descartando su diff (`interrupted_turn_recovery`); un target sucio sin registro sigue sin adoptarse nunca (`unrecorded_dirty_target: RETAINED-never-adopted`). Las bash posteriores que cambian o prueban código usan como workdir exactamente `<workspace>/candidates/repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica solo por bash y deja árbol sucio o patch; `candidate_commit` puede ser null. Un commit requiere otro prompt explícito del usuario. Captura y recomprueba HEAD/status canónicos y el diff candidato tras cada fase; cualquier drift queda `RETAINED` sin más acción. Nunca usa write/edit para reparación, ni mergea, push o publica.
+The state write carries a lease per file: it is taken before `writeText`, released after and expires after 30 s, so that a dead session does not lock the state and a live one denies replacement of the same file by naming the owner. Preflight ignores `<stateRoot>/.leases` with note, because otherwise install would fail if a session was mid-write. This does **not** convert the batch of five files into a transaction—the file backend does not offer one—and batch non-atomicity is still declared in `write_method`. What it closes is the narrow failure that statement allowed: two sessions replacing the same file, the second discarding a write it never saw.
 
-La escritura de estado lleva un lease por fichero: se toma antes de `writeText`, se libera después y caduca a los 30 s, de modo que una sesión muerta no bloquea el estado y una viva deniega el reemplazo del mismo fichero nombrando al titular. El preflight ignora `<stateRoot>/.leases` con nota, porque de otro modo instalar fallaría si una sesión estaba a mitad de escritura. Esto **no** convierte el lote de cinco ficheros en una transacción —el backend de ficheros no ofrece ninguna— y la no atomicidad por lotes sigue declarada en `write_method`. Lo que cierra es el fallo estrecho que esa declaración permitía: dos sesiones reemplazando el mismo fichero, la segunda descartando una escritura que nunca vio.
+A finding tells why the defect exists and what would prevent it from returning: `cause` and `prevention`, each 1 to 256 bytes, and the `evidence.fingerprint` that the tool calculates on the cited code —`path` plus `excerpt`— and never on the wording. That last decision is what prevents silent duplication: the deduplication key is `(finding_id, base_revision)`, so a re-audit that describes the same line with different words produces a second record and the queue grows; with fingerprint, "same defect, other words" is the same defect and can be counted. The three fields are optional in the schema—requiring them would archive the evidence of the four campaigns, which is not requalified—and the limit of 4,096 B per record is checked **before** writing, not in the preflight of the next installation, where the refusal arrives late to be able to correct it.
 
-Un hallazgo dice por qué existe el defecto y qué impediría que volviera: `cause` y `prevention`, cada una de 1 a 256 bytes, y el `evidence.fingerprint` que la herramienta calcula sobre el código citado —`path` más `excerpt`— y nunca sobre la redacción. Esa última decisión es la que evita el duplicado silencioso: la clave de deduplicación es `(finding_id, base_revision)`, así que una reauditoría que describe la misma línea con otras palabras produce un segundo registro y la cola crece; con fingerprint, «mismo defecto, otras palabras» es el mismo defecto y se puede contar. Los tres campos son opcionales en el schema —exigirlos archivaría la evidencia de las cuatro campañas, que no se recalifica— y el tope de 4.096 B por registro se comprueba **antes** de escribir, no en el preflight de la siguiente instalación, donde el refusal llega tarde para poder corregirlo.
+The scope of an audit is stated, because reading the statement before observing is anchoring and not diligence. `audit_handoff.audit_scope` sets two procedures: a request that names the entire project as `complete` and forces you to form your own observations **before** reading `findings.jsonl` or `handoffs.jsonl` —the state informs, not anchors, and the persisted diagnosis is contrasted with what has already been seen—; a request that names a flow, feature, or component is `incremental` and part of the persisted diagnostic to verify it. The scope travels in the final response and in the `handoff_id` (`audit-complete-<base8>-<n>` or `audit-<base8>-<n>`), and `bootstrap.py state` counts both, because a discipline that cannot be counted reverts to a prompt phrase.
 
-El alcance de una auditoría se declara, porque leer el estado antes de observar es anclaje y no diligencia. `audit_handoff.audit_scope` fija dos procedimientos: una petición que nombra el proyecto entero es `complete` y obliga a formar observaciones propias **antes** de leer `findings.jsonl` o `handoffs.jsonl` —el estado informa, no ancla, y el diagnóstico persistido se contrasta con lo ya visto—; una petición que nombra un flujo, una característica o un componente es `incremental` y parte del diagnóstico persistido para verificarlo. El alcance viaja en la respuesta final y en el `handoff_id` (`audit-complete-<base8>-<n>` o `audit-<base8>-<n>`), y `bootstrap.py state` cuenta ambos, porque una disciplina que no se puede contar vuelve a ser una frase del prompt.
+Evidence that does not fit in a log has its place, not the state hole: candidate patches, tool logs and long command output are written with `workflow_write` in `real_stack_verification.artifacts.root`, a brother of `mode-state` within the same workspace, with its own limits (8 MiB per file, 256 MiB total, 200 files, name `^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$`) checked before writing, and receipt in `overflows.jsonl` when something is discarded. The verification results never live there: they remain in `mode-state` because they are records that preflight and Host validate. The reason is specific: a 4,0 MB patch and a 5,8 MB log were found in the root state, archived as `unexpected-evidence` — legitimate work treated as an intrusive file because it has nowhere to live. Expanding the writable root without limits would have been the easy and wrong answer: outside of `mode-state` and `evidence`, `workflow_write` continues to negate.
 
-La evidencia que no cabe en un registro tiene su sitio, no el hueco del estado: parches de candidata, logs de herramientas y salida larga de comandos se escriben con `workflow_write` en `real_stack_verification.artifacts.root`, un hermano de `mode-state` dentro del mismo workspace, con topes propios (8 MiB por fichero, 256 MiB totales, 200 ficheros, nombre `^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$`) comprobados antes de escribir, y recibo en `overflows.jsonl` cuando algo se descarte. Los resultados de verificación nunca viven ahí: siguen en `mode-state` porque son registros que preflight y Host validan. El motivo es concreto: un parche de 4,0 MB y un log de 5,8 MB se encontraron en la raíz del estado archivados como `unexpected-evidence` — trabajo legítimo tratado como fichero intruso por no tener dónde vivir. Ampliar la raíz escribible sin topes habría sido la respuesta facile y la equivocada: fuera de `mode-state` y de `evidence`, `workflow_write` sigue negando.
+The evidence of a finding is verifiable, not prose. The `findings.jsonl` registry supports an optional `evidence` with `path` (product file, relative to its root) and `excerpt` (a literal code fragment, with its own indentation), and **not** `line` or `located`: those two are calculated by `workflow_write` by locating the fragment in the product before the write-intent, with the `product` which declares the capacity plan signed by digest. A fragment that does not appear, or appears more than once, **rejects writing**: An anchor that the tool cannot place is an anchor that points to an unrelated line while appearing to be located, and guessing would change one erroneous location for another. A finding without possible location—an architecture, an absent capacity—is persisted without `evidence`, which is honest and visible. The field is optional in the schema on purpose: requiring it in preflight would archive the historical evidence of the four campaigns, which is not migrated or requalified, so an old unanchored record is still valid and only a malformed one is discarded with a receipt. `bootstrap.py state` reports the `anchors: {anchored, unanchored}` cast, which is the honest measure of how much queue can be verified without reading the product. The technique is taken from `alibaba/open-code-review` (`internal/diff/resolver.go`), registered in `library/source-registry.json` as `CANDIDATE` with pin `a758d9c`; the same record leaves `microsoft/skillopt` (`fa4ca18`) as the source of the RSI design—gate that only accepts strict holdout improvement, buffer of rejected edits with before/after score, protected regions that never introduce new rules—without adopting its engine, because it requires `pip install skillopt` and a chain of models that the distribution policy does not allow.
 
-La evidencia de un hallazgo es verificable, no prosa. El registro de `findings.jsonl` admite un `evidence` opcional con `path` (fichero del producto, relativo a su raíz) y `excerpt` (un fragmento literal del código, con su propia indentación), y **no** `line` ni `located`: esos dos los calcula `workflow_write` localizando el fragmento en el producto antes del write-intent, con el `product` que declara el plan de capacidades firmado por digest. Un fragmento que no aparece, o que aparece más de una vez, **rechaza la escritura**: un ancla que la herramienta no puede colocar es un ancla que apunta a una línea sin relación mientras aparenta estar localizada, y adivinar cambiaría una ubicación errónea por otra. Un hallazgo sin localización posible —una arquitectura, una capacidad ausente— se persiste sin `evidence`, que es honesto y visible. El campo es opcional en el schema a propósito: exigirlo en el preflight archivaría la evidencia histórica de las cuatro campañas, que no se migra ni se recalifica, así que un registro antiguo sin ancla sigue siendo válido y solo uno mal formado se descarta con recibo. `bootstrap.py state` reporta el reparto `anchors: {anchored, unanchored}`, que es la medida honesta de cuánta cola puede verificarse sin leer el producto. La técnica está tomada de `alibaba/open-code-review` (`internal/diff/resolver.go`), registrada en `library/source-registry.json` como `CANDIDATE` con el pin `a758d9c`; el mismo registro deja `microsoft/skillopt` (`fa4ca18`) como fuente del diseño de RSI —gate que solo acepta mejora estricta del holdout, buffer de ediciones rechazadas con score antes/después, regiones protegidas que nunca introducen reglas nuevas— sin adoptar su motor, porque exige `pip install skillopt` y una cadena de modelos que la política de distribución no permite.
+The memory of what is already closed is consulted in the same writing as the anchor, not due to trust in the mode: `workflow_write` calculates the `fingerprint` of the fragment, looks for it in `mode-state/episodes-index.json` and, if the signature is there, stamps `evidence.prior_episode` with the unit that closed it and the fix that worked. A mode that writes `prior_episode` is rejected—the only statement about memory that the mode cannot make is that its defect is now fixed. A missing index is empty memory and no reason to reject: a workspace that never closed a drive has nothing to remember. A present, unreadable index is rejected, because the alternative is to guess "new," which is exactly the response that produces the duplicates that memory exists to avoid. A repeat is not new work: it is a prevention that failed where the fix worked, and so `bootstrap.py state` counts the `OPEN`s with `prior_episode` in `repeats`.
 
-La memoria de lo ya cerrado se consulta en la misma escritura que la ancla, no por confianza en el modo: `workflow_write` calcula el `fingerprint` del fragmento, lo busca en `mode-state/episodes-index.json` y, si la firma está ahí, estampa `evidence.prior_episode` con la unidad que lo cerró y el arreglo que funcionó. Un modo que escriba `prior_episode` se rechaza —la única afirmación sobre la memoria que el modo no puede hacer es la de que su defecto ya está arreglado—. Un índice ausente es memoria vacía y no motivo para rechazar: un workspace que nunca cerró una unidad no tiene nada que recordar. Un índice presente e ilegible se rechaza, porque la alternativa es adivinar «nuevo», que es exactamente la respuesta que produce los duplicados que la memoria existe para evitar. Una repetición no es trabajo nuevo: es una prevención que falló donde el arreglo funcionó, y por eso `bootstrap.py state` cuenta los `OPEN` con `prior_episode` en `repeats`.
-
-El recuento de una auditoría es un hecho verificable, no una afirmación del modo. Auditor persiste en el orden declarado (`persist_order`: `findings.jsonl`, luego `handoffs.jsonl`, luego `work-items.json`) y su handoff nombra exactamente los hallazgos que `findings.jsonl` deja `OPEN` en esa misma `base_revision`: `workflow_write` rechaza, antes de escribir, un handoff que omita uno, nombre uno no persistido o añada campos, de modo que ningún hallazgo queda fuera de la cola sin que nada lo contradiga. El `count_command` generado centralmente recalcula ese conjunto abierto desde el fichero, verifica la cobertura exacta del handoff e imprime `__IMPROVEMENT_AUDIT_COUNT__`; `persisted_count` que se reporta es ese número impreso, nunca uno recordado, y un turno que no persistió nada no tiene número que reportar. Un plan de capacidades puede nombrar más de un entrypoint por stack, así que un hallazgo se verifica con varios comandos: se escribe un registro por entrypoint ejecutado con su propio resultado y el enum permanece cerrado en PASS/FAIL/BLOCKED. El veredicto por hallazgo es derivado, no escrito —peor resultado gana, FAIL sobre BLOCKED sobre PASS— de modo que un stack con capacidades no se ablanda declarando un estado mixto; dos registros que dicen PASS y FAIL sobre el mismo árbol se rechazan como contradicción, y `PARTIAL`/`REPAIRED` nunca se persisten. El estado gestionado se reconcilia además con el repositorio real (`scripts/state_reconcile.py`, `bootstrap.py state`): el informe nombra la cabeza integrada que una reescritura de historia ya no dejó en la rama canónica, los hallazgos que el ledger sigue llamando `OPEN` aunque su work item sea `VERIFIED`, y los hallazgos `OPEN` que ningún handoff tomó nunca —tres discrepancias que hasta ahora se corregían a mano. El re-apuntado de la cabeza solo acepta una revisión que git prueba ancestro del HEAD canónico con producto limpio, y deja recibo en `overflows.jsonl`; la retirada de una candidata `INTEGRATED` solo borra worktree y rama cuando su cabeza está en la rama canónica, el worktree registrado es el suyo, coincide con la registrada y está limpio, y es idempotente. Ninguna de estas operaciones reescribe el ledger ni cambia la frontera de integración: siguen siendo del operador.
-Host gestiona activación de los modos del framework, pero la promoción/integración del candidato de producto permanece user-authorized.
+An audit account is a verifiable fact, not a statement of manner. Auditor persists in the declared order (`persist_order`: `findings.jsonl`, then `handoffs.jsonl`, then `work-items.json`) and its handoff names exactly the finds that `findings.jsonl` leaves `OPEN` in that same `base_revision`: `workflow_write` rejects, before writing, a handoff that omits one, names a non-persisted one or adds fields, so that no finding is left out of the queue without anything contradicting it. The centrally generated `count_command` recalculates that open set from the file, checks the exact coverage of the handoff, and prints `__IMPROVEMENT_AUDIT_COUNT__`; `persisted_count` that is reported is that printed number, never a remembered one, and a shift that did not persist at all has no number to report. A capability plan can name more than one entrypoint per stack, so a finding is verified with several commands: one record per executed entrypoint is written with its own result and the enum remains closed in PASS/FAIL/BLOCKED. The finding verdict is derived, not written—worst result wins, FAIL over BLOCKED over PASS—so a stack with capabilities is not softened by declaring a mixed state; two records saying PASS and FAIL on the same tree are rejected as a contradiction, and `PARTIAL`/`REPAIRED` are never persisted. The managed state is also reconciled with the actual repository (`scripts/state_reconcile.py`, `bootstrap.py state`): the report names the integrated head that a history rewrite no longer left in the canonical branch, the findings that the ledger continues to call `OPEN` even though its work item is `VERIFIED`, and the `OPEN` findings that no handoff ever took — three discrepancies that until now were corrected hand. Head re-pointing only accepts a revision that git tests ancestor of the canonical HEAD with clean product, and leaves receipt at `overflows.jsonl`; Removing a `INTEGRATED` candidate only deletes worktree and branch when its head is in the canonical branch, the registered worktree is yours, matches the registered one and is clean, and is idempotent. None of these operations rewrite the ledger or change the integration boundary: they remain the operator's.
+Host manages activation of the framework modes, but the promotion/integration of the product candidate remains user-authorized.
 
 ---
 
-## 3. Responsabilidades y fronteras de confianza
+## 3. Responsibilities and trust boundaries
 
-| Actor/componente | Puede | No puede |
+| Actor/component | May | May not |
 |---|---|---|
-| Usuario | Configurar DSH/proveedor; iniciar install/update/uninstall; conceder permisos materiales; definir rama/publicación | Transportar recibos rutinariamente; diseñar la aceptación técnica |
-| Bootstrap | Descubrir; preparar workspace; llamar DSH/Creator; validar; respaldar; staging; instalar; activar/rollback | Inventar autorización; leer credenciales de proveedor; modificar producto |
-| Creator | Analizar proyecto; generar paquete candidato; crear skills específicas; invocar `bootstrap accept`; corregir errores mecánicos dentro de límites | Instalar directamente; modificar validadores; rebajar controles; declararse ACCEPTED |
-| Host | Validar schema/capabilities/hashes; presupuesto; backup; instalación transaccional; aceptación; activación/rollback | Delegar autoridad al modelo; aceptar manifiestos declarativos como permiso |
-| Auditor generado | Leer alcance; inventariar; persistir cola/evidencia/handoff acotados antes del cierre | Modificar producto; publicar; ampliar roots; responder sin handoff durable |
-| Reparación generada | Autoprovisionar candidato sibling desde un prompt simple; reparar/probar/commitear allí; persistir verificación | Escribir checkout canónico; pedir path derivable; merge/push/publicar; integrar sin mandato |
-| QA | Revisar candidato exacto; ejecutar criterios; aceptar/rechazar | Ser el mismo autor presentado con otra etiqueta |
-| Auditor posterior | Reauditar semánticamente candidato aceptado | Sustituirse por la QA previa |
+| User | Configure DSH/provider; start install/update/uninstall; grant material permissions; define branch/release | Routinely transport receipts; design technical acceptance |
+| Bootstrap | Discover; prepare workspace; call DSH/Creator; validate; back up; stage; install; activate/rollback | Invent authorization; read provider credentials; modify product |
+| Creator | Analyze project; generate candidate package; create specific skills; invoke `bootstrap accept`; correct mechanical errors within limits | Install directly; modify validators; lower controls; declare itself `ACCEPTED` |
+| Host | Validate schema/capabilities/hashes; budget; backup; transactional installation; acceptance; activation/rollback | Delegate authority to the model; accept declarative manifestos as permission |
+| Auditor generated | Read scope; inventory; persist bounded queue/evidence/handoff before closing | Modify product; publish; expand roots; respond without a durable handoff |
+| Repair generated | Auto-provision a sibling candidate from a simple prompt; repair/test/commit there; persist verification | Write canonical checkout; request derivable path; merge/push/publish; integrate without mandate |
+| QA | Review the exact candidate; run the criteria; accept/reject | Be the same author under a different label |
+| Follow-up auditor | Semantically re-audit the accepted candidate | Be replaced by prior QA |
 
-La frontera principal es:
-
+The main boundary is:
 ```text
-Creator genera y solicita aceptación
-Host valida, instala y decide estado mecánico
+Creator generates and requests acceptance
+Host validates, installs and decides mechanical state
 ```
-
 ---
 
-## 4. Contenido distribuible del repositorio
+## 4. Distributable content of the repository
 
-### 4.1 Skills generales del framework
+### 4.1 General framework skills
 
-- incorporación/onboarding;
-- aceptación acotada;
-- gestión de evidencia;
-- validación segura;
-- creación controlada de skills;
-- entrega proporcional y recuperación;
-- utilidades generales que no codifiquen un proyecto.
+- onboarding/incorporation;
+- bounded acceptance;
+- evidence management;
+- secure validation;
+- controlled skill creation;
+- proportional delivery and recovery;
+- general utilities that do not encode a project.
 
-Las skills operativas actuales de Auditor/Reparación pueden servir como fuentes normativas y fixtures, pero no se instalan como modos finales universales.
+The current operational Auditor/Repair skills can serve as normative sources and fixtures, but they are not installed as universal final modes.
 
-### 4.2 Plantillas de composición
+### 4.2 Composition templates
 
-- contrato obligatorio de `<Proyecto>-auditor`;
-- contrato obligatorio de `<Proyecto>-continuous-repair`;
-- campos variables que Creator debe completar;
-- restricciones inmutables;
-- contratos de plugins, herramientas, routing y modelos;
-- escenarios de aceptación mínimos.
+- mandatory `<Project>-auditor` contract;
+- mandatory `<Project>-continuous-repair` contract;
+- variable fields Creator must fill in;
+- immutable constraints;
+- contracts for plugins, tools, routing and models;
+- minimum acceptance scenarios.
 
-### 4.3 Schemas y validadores
+### 4.3 Schemas and validators
 
-- perfil/manifiesto de proyecto;
+- project profile/manifest;
 - `generation-manifest.json`;
-- modos generados;
+- generated modes;
 - capabilities;
-- roots/exclusiones;
-- comandos autorizables;
-- modelos y proveedores permitidos;
-- presupuesto/timeout/intentos;
-- identidad de roles;
-- skills generadas;
-- grafo de progressive disclosure;
+- roots/exclusions;
+- authorizable commands;
+- allowed models and providers;
+- budget/timeout/attempts;
+- role identity;
+- generated skills;
+- progressive disclosure graph;
 - backup/install/rollback receipts.
 
-### 4.4 Bootstrap y desinstalador
+### 4.4 Bootstrap and uninstaller
 
-Comandos objetivo:
-
+Target commands:
 ```bash
 bootstrap.py install
-bootstrap.py accept          # lo invoca Creator en operación normal
+bootstrap.py accept          # invoked by Creator during normal operation
 bootstrap.py verify-acceptance
 bootstrap.py update
 bootstrap.py uninstall
-bootstrap.py purge-data      # destructivo, separado y con confirmación
+bootstrap.py purge-data      # destructive, separate, and confirmed
 ```
+### 4.5 Versioned prompts for Creator
 
-### 4.5 Prompts versionados para Creator
+- initial incorporation;
+- regeneration due to material change;
+- framework/DSH update;
+- fixing a `RETAINED` generation;
+- creation/improvement of specific skills.
 
-- incorporación inicial;
-- regeneración por cambio material;
-- actualización de framework/DSH;
-- corrección de generación `RETAINED`;
-- creación/mejora de skills específicas.
+### 4.6 Examples/fixtures
 
-### 4.6 Ejemplos/fixtures
+- sanitized Syncify and RehabWeb;
+- no local paths, credentials, sessions, candidates or private data;
+- explicitly marked as fixtures;
+- they are never installed as defaults;
+- golden manifests for generator/validator testing.
 
-- Syncify y RehabWeb saneados;
-- sin rutas locales, credenciales, sesiones, candidatos ni datos privados;
-- marcados explícitamente como fixtures;
-- nunca se instalan como defaults;
-- golden manifests para pruebas del generador/validador.
+### 4.7 Specific skill templates
 
-### 4.7 Plantillas de skills específicas
-
-- frontmatter permitido;
-- router de entrada;
+- permitted frontmatter;
+- entry router;
 - `modes/`, `internal/`, `references/`, `templates/`;
-- criterios de activación;
-- capacidades requeridas/prohibidas;
-- pruebas mínimas;
-- reglas para scripts/helpers;
-- límites de contexto y hot paths;
-- procedencia/licencias.
+- activation criteria;
+- required/prohibited capabilities;
+- minimum tests;
+- rules for scripts/helpers;
+- context limits and hot paths;
+- provenance/licenses.
 
-### 4.8 Controles Host
+### 4.8 Host controls
 
 - onboarding/manifest;
-- budget y métricas;
-- memoria de decisiones;
-- memoria episódica de defectos ya cerrados (`mode-state/episodes.jsonl` más
-  `episodes-index.json`, que solo el Host escribe y solo sobre un arreglo verificado);
-- publisher y missions verify;
+- budget and metrics;
+- decision memory;
+- episodic memory of already closed defects (`mode-state/episodes.jsonl` plus
+  `episodes-index.json`, written only by the Host and only over a verified array);
+- publisher and missions verify;
 - controller;
-- launcher/canal de inferencia;
-- plugin `workflow-write`;
-- validador de generación;
-- instalador transaccional;
-- ejecutor de workflows (`scripts/workflow.py`);
-- selección de skills (`scripts/skill_router.py`): solo selecciona, no carga ni
-  ejecuta; `authorizes_execution` es siempre falso y toda abstención nombra su
-  causa (`no_active_generation`, `unsafe_contract`, `unapproved_routing`,
+- launcher/inference channel;
+- `workflow-write` plugin;
+- generation validator;
+- transactional installer;
+- workflow executor (`scripts/workflow.py`);
+- skill selection (`scripts/skill_router.py`): it only selects, it neither loads nor
+  executes; `authorizes_execution` is always false and every abstention names its
+  cause (`no_active_generation`, `unsafe_contract`, `unapproved_routing`,
   `context_budget_exceeded`);
-- memoria de campaña (`scripts/workflow_evidence.py`): la evidencia se agrupa por
-  `workspace/product/base` y una base distinta descarta el grupo entero —no es
-  evidencia parcial, es evidencia de otro árbol—; la publicación a memoria
-  episódica ocurre solo tras `RUN_COMPLETED`, así que un run `RETAINED` no deja
-  rastro para la campaña siguiente;
-- nivel de razonamiento (`scripts/workflow_reasoning.py`): vocabulario cerrado
-  (`xhigh`/`high`/`medium`/`low`/`minimal`) y `apply_effort` abstiene cuando la
-  sesión no tiene proveedor/modelo fijados o cuando el nivel devuelto no es el
-  pedido; nunca cambia proveedor ni modelo, solo el esfuerzo. El cliente envuelve
-  `session/selectModel` y lee `session/projections.modelSelection` —ambos leídos
-  del árbol DSH instalado—, que era el bloqueante que impedía ejercer el nivel.
+- campaign memory (`scripts/workflow_evidence.py`): evidence is grouped by
+  `workspace/product/base` and a different base discards the whole group — it is not
+  partial evidence, it is evidence of another tree —; publication to episodic memory
+  happens only after `RUN_COMPLETED`, so a `RETAINED` run leaves no trace for the
+  next campaign;
+- reasoning level (`scripts/workflow_reasoning.py`): closed vocabulary
+  (`xhigh`/`high`/`medium`/`low`/`minimal`) and `apply_effort` abstains when the
+  session has no provider/model set or when the level returned is not the one
+  requested; it never changes provider or model, only the effort. The client wraps
+  `session/selectModel` and reads `session/projections.modelSelection` — both read
+  from the installed DSH tree — which was the blocker that kept the level from being exercised.
 
-### 4.9 Ejecutor de workflows en el Host
+### 4.9 Workflow executor on the Host
 
-Un workflow se declara en tres capas, y su ejecución es mecánica del Host, nunca un prompt:
+A workflow is declared in three layers, and its execution is mechanical by the Host, never a prompt:
 
-1. **Skill-doctrina.** El método de un proyecto —qué gates, en qué orden, qué se pregunta a DSH— vive en una skill de doctrina, nunca en el libre albedrío del modelo. *(Su aterrizaje en `library/` es la unidad U5, aún no ejecutada.)*
-2. **Ejecutor Host (`scripts/workflow.py`).** Un plan JSON se valida fail-closed —ids únicos, dependencias previas y acíclicas por construcción, tipos `gate`/`join`/`fase`/`ask`— y se ejecuta en un run dir externo al workspace y a todo `mode-state` (`<workspace>-workflow/<run_id>/`, 0700): el preflight de `mode-state` archiva y borra ficheros ajenos, así que un journal ahí dentro sería basura archivada. Cada evento queda en un journal append-only con digest encadenado y punto de control atómico; nada se trunca —lo excedido produce `RUN_RETAINED`— y `verify` re-verifica la cadena por replay, fallando cerrado ante alteración. La reanudación salta solo pasos con observación verificada por digest; el paso `ask` abre sesión DSH nueva por intento con el preset verificado del proyecto y reanuda ([corr-3]) reenviando el mismo `request_id` a la misma sesión viva, nunca a una nueva.
-3. **Entrada bootstrap.** `bootstrap.py workflow run|verify` adquiere el cliente DSH solo por la vía no-launch —jamás lanza `dsh web`— y convierte cada salida en comando-decisión: `RUN_COMPLETED` exit 0; `RUN_RETAINED` con causa y `ABSTENCIÓN` —nada hecho, nada escrito, sin run dir— exit 1.
+1. **Doctrine skill.** A project's method — what gates, in what order, what is asked of DSH — lives in a doctrine skill, never in the free will of the model. *(Its landing in `library/` is unit U5, not yet executed.)*
+2. **Host executor (`scripts/workflow.py`).** A JSON plan is validated fail-closed — unique ids, previous and acyclic dependencies by construction, types `gate`/`join`/`phase`/`ask` — and executed in a run dir external to the workspace and to every `mode-state` (`<workspace>-workflow/<run_id>/`, 0700): the `mode-state` preflight archives and deletes other people's files, so a journal in there would be archived garbage. Each event remains in an append-only journal with chained digest and atomic checkpoint; nothing is truncated—what is exceeded produces `RUN_RETAINED`—and `verify` re-verifies the chain by replay, failing closed upon alteration. Resumption skips only steps with digest-verified observation; the `ask` step opens a new DSH session by retrying the verified project preset and resumes ([corr-3]) forwarding the same `request_id` to the same live session, never to a new one.
+3. **Bootstrap input.** `bootstrap.py workflow run|verify` acquires the DSH client only via no-launch — it never launches `dsh web` — and converts each exit into a decision-command: `RUN_COMPLETED` exit 0; `RUN_RETAINED` with cause and `ABSTENCIÓN` —nothing done, nothing written, no run dir— exit 1.
 
-La campaña por defecto (U6, aún sin aceptación operativa) se genera determinísticamente en `.dsh-managed/campaign/` tras publicar los presets: `preflight → auditar → verificar-pre → reparar-1 → verificar-post → reparar-2 → verificar-final → cerrar` (`rondas_max=2`), con resultado estructurado en `evidence/campana/` y veredicto derivado del ledger del producto en `evidence/veredicto.json`. Los asks seleccionan preset por paso con fallback al del plan; `if_veredicto` salta con `ASK_SKIPPED` salvo coincidencia, y `result_contract.evidence_name` confina la evidencia. El gate-wrapper devuelve 0 PASS / 1 FAIL / 2 BLOCKED: BLOCKED es valor, no evento propio, y el Host no escribe el ledger. El plan sigue en esquema v1; no existen `bootstrap campaign`, `gate.cwd` ni integración cerrada con `acceptance.py`. Límite actual: un gate FAIL no queda `STEP_COMPLETED` y el ask condicional que depende de él retiene en vez de reparar; no se declara un ciclo completo verificado.
+The default campaign (U6, still without operational acceptance) is generated deterministically in `.dsh-managed/campaign/` after publishing the presets: `preflight → audit → verify-pre → repair-1 → verify-post → repair-2 → verify-final → close` (`rondas_max=2`), with the structured result in `evidence/campana/` and the verdict derived from the product ledger in `evidence/veredicto.json`. Asks select the preset per step with fallback to the plan's preset; `if_veredicto` is skipped with `ASK_SKIPPED` unless it matches, and `result_contract.evidence_name` confines the evidence. The gate wrapper returns 0 PASS / 1 FAIL / 2 BLOCKED: BLOCKED is a value, not an event of its own, and the Host does not write the ledger. The plan remains in outline v1; there is no `bootstrap campaign`, no `gate.cwd` and no closed integration with `acceptance.py`. Current limit: a FAIL gate is not `STEP_COMPLETED` and the conditional ask that depends on it stays RETAINED instead of repairing; no verified complete cycle is declared.
 
 ---
 
-## 5. Layout de una generación
+## 5. Layout of a generation
 
-Cada incorporación/regeneración crea un ID opaco y un directorio exclusivo:
-
+Each onboarding/regeneration creates an opaque ID and a unique directory:
 ```text
 workspace/
 └── creator-runs/
@@ -345,12 +327,12 @@ workspace/
         │   ├── project-manifest.json
         │   ├── capabilities.json
         │   ├── modes/
-        │   │   ├── <Proyecto>-auditor/
-        │   │   └── <Proyecto>-continuous-repair/
+        │   │   ├── <Project>-auditor/
+        │   │   └── <Project>-continuous-repair/
         │   ├── skills/
-        │   │   ├── <Proyecto>-auditor/
-        │   │   ├── <Proyecto>-continuous-repair/
-        │   │   └── <skills-específicas>/
+        │   │   ├── <Project>-auditor/
+        │   │   ├── <Project>-continuous-repair/
+        │   │   └── <project-specific-skills>/
         │   ├── templates/
         │   ├── adapters/
         │   ├── acceptance-plan.json
@@ -374,29 +356,27 @@ workspace/
         ├── report.md
         └── finish.json
 ```
+Rules:
 
-Reglas:
-
-- directorio nuevo, nunca sobrescrito;
-- Creator escribe solo dentro de su generación;
-- `generated/` queda inmutable durante `accept`;
-- Host revalida todos los hashes justo antes de instalar;
-- logs extensos por referencia;
-- secretos nunca se escriben.
+- a new directory, never overwritten;
+- Creator writes only within its generation;
+- `generated/` remains unchanged during `accept`;
+- Host revalidates all hashes just before installing;
+- long logs by reference;
+- secrets are never written.
 
 ---
 
-## 6. Contrato de `generation-manifest.json`
+## 6. `generation-manifest.json` contract
 
-Campos mínimos:
-
+Minimum fields:
 ```json
 {
   "schema_version": 1,
   "generation_id": "opaque-id",
   "status": "GENERATED",
   "project": {
-    "name": "MiProyecto",
+    "name": "MyProject",
     "root_identity": "sha256",
     "base_revision": "git-or-content-id"
   },
@@ -410,7 +390,7 @@ Campos mínimos:
   },
   "artifacts": [
     {
-      "path": "skills/MiProyecto-auditor/SKILL.md",
+      "path": "skills/MyProject-auditor/SKILL.md",
       "type": "skill-entrypoint",
       "sha256": "digest"
     }
@@ -427,98 +407,96 @@ Campos mínimos:
   "license_provenance": []
 }
 ```
+Creator can only issue `GENERATED`. `ACCEPTED`, `RETAINED`, `ACTIVE` and `ROLLED_BACK` are issued by the Host.
 
-Creator solo puede emitir `GENERATED`. `ACCEPTED`, `RETAINED`, `ACTIVE` y `ROLLED_BACK` los emite el Host.
-
-El manifest cubre todos los archivos. Archivo no manifestado, hash incorrecto, symlink, path traversal o tipo especial causan rechazo antes de cualquier backup/instalación.
-
----
-
-## 7. Flujo detallado del bootstrap
-
-### B0 — preflight local
-
-- validar argumentos/rutas;
-- comprobar que proyecto/framework/workspace no se solapan;
-- comprobar DSH y Creator;
-- obtener versión/capabilities/routing efectivos;
-- comprobar proveedor/modelo utilizable sin abrir credenciales;
-- verificar canal local de autenticación DSH;
-- fijar presupuesto, timeout y datos permitidos;
-- crear `started.json` y reservar presupuesto.
-
-### B1 — descubrimiento mecánico
-
-- Git/identidad/revisión;
-- instrucciones y manifiestos;
-- lenguajes/toolchains;
-- roots/exclusiones preliminares;
-- tests/builds detectables, no ejecutados;
-- configuración/skills/modes existentes;
-- conflicts y precedencia del loader;
-- perfil mínimo.
-
-### B2 — skills generales
-
-- copiar/enlazar skills generales al workspace con manifest gestionado;
-- idénticas: idempotentes;
-- conflicto ajeno: `RETAINED`;
-- no instalar modos finales;
-- verificar carga nativa de las skills generales necesarias para Creator.
-
-### B3 — paquete y llamada a Creator
-
-- crear `generation-request.json` y prompt versionado (con el snapshot de biblioteca materializado embebido);
-- adquirir la sesión DSH local: cliente inyectado, o instancia existente autenticada vía cookie HMAC del home de DSH verificada con un RPC barato, o lanzamiento explícito;
-- derivar cookie/token local en memoria; nunca persistir secretos;
-- crear la única sesión Creator ligada al workspace del run (`workspace/create` idempotente + `session/create` con `workspaceId`): queda agrupada en la UI de DSH y su frontera `workspace-write` es el workspace entero, que contiene el run;
-- enviar prompt automáticamente; sin sesión autenticada el run queda en estado intermedio recuperable, nunca silencioso;
-- supervisar el turno hasta su quiescencia terminal, con presupuesto y timeout;
-- exigir `generation-manifest.json` y `finish.json`;
-- Creator ejecuta `bootstrap.py accept` al terminar.
-
-El lanzamiento (`--launch-dsh`) es dueño del ciclo de vida: detecta y detiene instancias DSH previas (clasificador de cmdline que reconoce registry y binarios npx), resuelve la propiedad del puerto vía `ss` sin matar procesos ajenos, arranca `dsh web` no interactivo (`npx -y`, stdin nulo, salida capturada con tokens redactados) aplicando el overlay `cordis-patch.yml` que carga el plugin del framework: corrige la denegación upstream de escrituras con `sandbox_permissions` igual al modo vigente en `workflow_write`, retira los campos de escalada de los schemas de tools y guarda la escalada de bash. La puerta de proveedor resuelve el primer proveedor utilizable del settings de DSH (estructura y nombres de variable, jamás valores de llaves): una llave ausente es un aviso registrado, no un bloqueo, porque el entorno no es la única fuente de llaves de DSH; `DSH_PROVIDER_STRICT=1` restaura la parada dura. El prompt versionado prohíbe todo uso de `sandbox_permissions`/`justification` y releva esa prohibición a cualquier sesión delegada — el runtime rechaza automáticamente las aprobaciones en sesiones delegadas y estas no ven el prompt del Creator.
-
-### B4 — `accept` invocado por Creator
-
-El comando recibe workspace + generated o generation-id. No recibe autoridad desde el manifest.
-
-Creator puede corregir errores mecánicos dentro del límite de intentos, pero no puede:
-
-- modificar `bootstrap.py`/validadores;
-- instalar directamente;
-- cambiar capabilities/routing;
-- escribir en destinos activos;
-- marcarse aceptado.
-
-### B5 — validación Host
-
-1. Schema/versiones.
-2. Identidad proyecto/base/framework.
-3. Manifest exhaustivo, hashes y archivos regulares.
-4. Rutas contenidas en `generated/`.
-5. Plugins/tools/modelos dentro de allowlist efectiva.
-6. Routing idéntico al snapshot permitido.
-7. Roots mínimos; Auditor sin escritura de producto.
-8. Reparación solo en candidato/rama.
-9. Roles/sesiones observables.
-10. Presupuesto, timeout, dos intentos.
-11. Skills/frontmatter/referencias/grafo/hot paths.
-12. Portabilidad y ausencia de rutas del mantenedor.
-13. Scripts/helpers: imports, red, subprocess, writes, instalación.
-14. Colisiones/precedencia y ownership.
-15. Licencias/procedencia.
-
-Todo rechazo ocurre antes de tocar destinos activos. Cada composición de modo debe incluir persona, bash, filesystem, búsqueda filesystem, proveedor de skills, loader y guard first-party anti-escalada (`dsh-persona`, `dsh-tool-bash`, `dsh-tool-fs`, `dsh-tool-fs-search`, `dsh-skill-filesystem`, `dsh-tool-skill`, `./anti-escalation.mjs`); persona exige el prefijo bootstrap exacto del preset y `dsh-tool-fs-search` exige `config.sampleOverCapGlobResults: false`. Falta o divergencia retiene el paquete, igual que cualquier fila de subagente/delegación, workflow, web/red o plugin-manager. Todo `SKILL.md` exige frontmatter mínimo con `name` idéntico al directorio y `description` no vacía.
-
-La aceptación previa es determinista (`READY_FOR_INSTALL`): no crea sesiones evaluator/reviewer ni afirma evaluación dinámica. La instalación transforma los dos o tres modos (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) en un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`, copia todas las skills generadas con sus recursos y los `SKILL.md` de modo a `bundle/skills/<name>`, y configura cada `dsh-skill-filesystem` con `includeDefaultRoots: false` y el directorio absoluto de skills del bundle. Colisiones, symlinks y entradas no regulares bloquean la transacción. Después instala mediante `pluginManager/installBundle` y solo considera el conjunto activo cuando la aplicación devuelve `applied`, `agentPresets/list` confirma todos los IDs esperados sin diagnóstico `broken` y `agentPresets/read` demuestra para cada ID las filas operativas y la raíz de skills exactas del bundle candidato. Al actualizar el nombre estable, `restart-required` conserva la generación y el puntero previos y devuelve una parada recuperable; tras relanzar DSH, repetir `bootstrap install` prueba la composición candidata ya cargada y completa la activación sin redespachar Creator ni reinstalar. La ruta legacy `$DSH_HOME/.agent-presets` no se usa: el runtime vigente ya no la lee.
+The manifest covers all files. Unmanifested file, incorrect hash, symlink, path traversal or special type cause rejection before any backup/installation.
 
 ---
 
-## 8. Progressive disclosure y estructura de skills
+## 7. Detailed bootstrap flow
 
-Se adopta de `jsmastery-pro/skills` el patrón, no su flujo ni sus nueve skills:
+### B0 — local preflight
 
+- validate arguments/paths;
+- check that project/framework/workspace do not overlap;
+- check DSH and Creator;
+- get effective version/capabilities/routing;
+- check usable provider/model without opening credentials;
+- verify local DSH authentication channel;
+- set budget, timeout and allowed data;
+- create `started.json` and reserve budget.
+
+### B1 — mechanical discovery
+
+- Git/identity/revision;
+- instructions and manifests;
+- languages/toolchains;
+- roots/preliminary exclusions;
+- tests/builds detectable, not executed;
+- existing configuration/skills/modes;
+- conflicts and loader precedence;
+- minimum profile.
+
+### B2 — general skills
+
+- copy/link general skills to the workspace with managed manifest;
+- identical: idempotent;
+- foreign conflict: `RETAINED`;
+- do not install final modes;
+- verify native loading of the general skills needed by Creator.
+
+### B3 — package and call to Creator
+
+- create `generation-request.json` and versioned prompt (with the embedded materialized library snapshot);
+- acquire the local DSH session: injected client, or existing instance authenticated via DSH home HMAC cookie verified with a cheap RPC, or explicit launch;
+- derive local cookie/token in memory; never persist secrets;
+- create the only Creator session linked to the run workspace (idempotent `workspace/create` + `session/create` with `workspaceId`): it is grouped in the DSH UI and its border `workspace-write` is the entire workspace, which contains the run;
+- send the prompt automatically; without an authenticated session the run stays in a recoverable intermediate state, never silent;
+- supervise the turn until its terminal quiescence, with budget and timeout;
+- require `generation-manifest.json` and `finish.json`;
+- Creator executes `bootstrap.py accept` upon completion.
+
+Launch (`--launch-dsh`) owns the lifecycle: detects and stops previous DSH instances (cmdline classifier that recognizes registry and npx binaries), resolves port ownership via `ss` without killing foreign processes, starts non-interactive `dsh web` (`npx -y`, null stdin, output captured with redacted tokens) by applying the `cordis-patch.yml` overlay that loads the framework plugin: fix upstream denial of writes with `sandbox_permissions` equal to the current mode in `workflow_write`, remove escalation fields from tools schemas and save bash escalation. The provider gate resolves the first usable provider of the DSH settings (structure and variable names, never key values): a missing key is a logged warning, not a lock, because the environment is not the only source of DSH keys; `DSH_PROVIDER_STRICT=1` restores the hard stop. The versioned prompt prohibits all use of `sandbox_permissions`/`justification` and relieves that prohibition to any delegated session — the runtime automatically rejects approvals in delegated sessions and they do not see the Creator prompt.
+
+### B4 — `accept` invoked by Creator
+
+The command receives workspace + generated or generation-id. It does not receive authority from the manifest.
+
+Creator can fix mechanical errors within the attempts limit, but cannot:
+
+- modify `bootstrap.py`/validators;
+- install directly;
+- change capabilities/routing;
+- write to active destinations;
+- mark accepted.
+
+### B5 — Host validation
+
+1. Schema/versions.
+2. Project/base/framework identity.
+3. Comprehensive manifest, hashes and regular files.
+4. Routes contained in `generated/`.
+5. Plugins/tools/models within effective allowlist.
+6. Routing identical to the permitted snapshot.
+7. Minimal roots; Auditor without product writes.
+8. Repair only on candidate/branch.
+9. Observable roles/sessions.
+10. Budget, timeout, two attempts.
+11. Skills/frontmatter/references/graph/hot paths.
+12. Portability and absence of maintainer routes.
+13. Scripts/helpers: imports, network, subprocess, writes, installation.
+14. Collisions/precedence and ownership.
+15. Licenses/origin.
+
+All rejection occurs before touching active destinations. Each mode composition must include person, bash, filesystem, search filesystem, skills provider, loader, and guard first-party anti-climb (`dsh-persona`, `dsh-tool-bash`, `dsh-tool-fs`, `dsh-tool-fs-search`, `dsh-skill-filesystem`, `dsh-tool-skill`, `./anti-escalation.mjs`); person requires the exact bootstrap prefix of the preset and `dsh-tool-fs-search` requires `config.sampleOverCapGlobResults: false`. Missing or diverging holds the package, as does any subagent/delegation, workflow, web/network, or plugin-manager row. All `SKILL.md` requires minimal frontmatter with `name` identical to the directory and `description` not empty.
+
+Pre-acceptance is deterministic (`READY_FOR_INSTALL`): it does not create evaluator/reviewer sessions or assert dynamic evaluation. The installation transforms the two or three modes (`mode.json`, `preset.yml`, `agent.cordis.yml`, `SKILL.md`) into a bundle of `@deepseek-ai/dsh-agent-preset` statements, copies all the skills generated with their resources and the `SKILL.md` modes to `bundle/skills/<name>`, and configures each `dsh-skill-filesystem` with `includeDefaultRoots: false` and the absolute skills directory of the bundle. Collisions, symlinks and non-regular inputs block the transaction. It then installs using `pluginManager/installBundle` and only considers the active bundle when the application returns `applied`, `agentPresets/list` confirms all expected IDs without `broken` diagnostics, and `agentPresets/read` shows for each ID the exact operational rows and skills root of the candidate bundle. When updating the stable name, `restart-required` preserves the previous generation and pointer and returns a recoverable stop; after relaunching DSH, repeating `bootstrap install` tests the already loaded candidate composition and completes activation without redispatching Creator or reinstalling. The legacy path `$DSH_HOME/.agent-presets` is not used: the current runtime no longer reads it.
+
+---
+
+## 8. Progressive disclosure and skill structure
+
+The pattern is adopted from `jsmastery-pro/skills`, not its flow or its nine skills:
 ```text
 <Project>-auditor/
 ├── SKILL.md
@@ -537,394 +515,378 @@ Se adopta de `jsmastery-pro/skills` el patrón, no su flujo ni sus nueve skills:
 ├── templates/
 └── adapters/
 ```
+`SKILL.md` is a small router. It loads only the relevant branch. The manifest declares the graph and hot paths. The Host validates:
 
-`SKILL.md` es un router pequeño. Carga únicamente la rama pertinente. El manifest declara el grafo y hot paths. El Host valida:
+- existing references;
+- zero orphan files except declared `asset`;
+- no loading cycles;
+- budget per file;
+- aggregate budget per hot path;
+- duplicate contracts identical or generated from canonical source;
+- optional and non-authoritative adapters.
 
-- referencias existentes;
-- cero archivos huérfanos salvo declarados `asset`;
-- no ciclos de carga;
-- presupuesto por archivo;
-- presupuesto agregado por hot path;
-- contratos duplicados idénticos o generados desde fuente canónica;
-- adapters opcionales y no autoritativos.
+Proposed initial values (configurable): 32 KiB entrypoint, 24 KiB support, 90% warning. They must be measured and adjusted; they are not a guarantee of quality.
 
-Valores iniciales propuestos (configurables): 32 KiB entrypoint, 24 KiB soporte, warning 90%. Deben medirse y ajustarse; no son garantía de calidad.
-
-No se adopta:
+Not adopted:
 
 - `/scope→/audit→/architect→...`;
 - `npx skills@latest`;
-- obligación universal de `agents/openai.yaml`;
-- reglas editoriales ajenas sin relación funcional;
-- herramientas/nombres de proveedor como contrato universal;
-- score único basado en tokens.
+- universal requirement for `agents/openai.yaml`;
+- external editorial rules with no functional relation;
+- tool/provider names as a universal contract;
+- a single score based on tokens.
 
 ---
 
-## 9. Creación y mejora de skills específicas
+## 9. Creation and improvement of specific skills
 
-Creator solo crea/mejora una skill si el perfil no basta y existe necesidad recurrente observada.
+Creator creates/improves a skill only if the profile is insufficient and a recurring need has been observed.
 
-Cada propuesta declara:
+Each proposal declares:
 
-- motivo y evidencia;
-- dominio/unidades donde aplica;
-- entradas/salidas;
-- capabilities mínimas;
-- herramientas prohibidas;
-- archivos y hot paths;
-- prueba de carga;
-- prueba de conducta;
-- procedencia/licencia;
-- relación con skill previa si es reemplazo.
+- reason and evidence;
+- domain/units where applicable;
+- inputs/outputs;
+- minimum capabilities;
+- prohibited tools;
+- files and hot paths;
+- load test;
+- behavior test;
+- provenance/license;
+- relationship to the previous skill if it is a replacement.
 
-### 9.1 Backup obligatorio
+### 9.1 Mandatory backup
 
-Antes de sustituir una skill gestionada:
-
+Before replacing a managed skill:
 ```text
-detectar cambio
-→ backup completo externo
-→ hashes del backup
+detect change
+→ full external backup
+→ backup hashes
 → backup-verification.json
-→ staging del conjunto nuevo
-→ smoke + aceptación
-→ activar o rollback
+→ stage the new set
+→ smoke test + acceptance
+→ activate or roll back
 ```
+Rules:
 
-Reglas:
+- identical: do not write or back up;
+- new: exclusive creation;
+- managed and modified: mandatory backup before touching the destination;
+- foreign/unmanaged: `RETAINED` conflict;
+- backup failure: do not install;
+- post failure: restore backup and verify;
+- unverifiable rollback: `RECOVERY_REQUIRED`;
+- never delete backup during the same installation step;
+- separate retention/cleaning policy.
 
-- idéntica: no escribir ni backup innecesario;
-- nueva: creación exclusiva;
-- gestionada y modificada: backup obligatorio antes de tocar destino;
-- ajena/no gestionada: conflicto `RETAINED`;
-- fallo de backup: no instalar;
-- fallo posterior: restaurar backup y verificar;
-- rollback no verificable: `RECOVERY_REQUIRED`;
-- nunca borrar backup durante el mismo paso de instalación;
-- política de retención/limpieza separada.
-
-El backup cubre la carpeta completa y archivos auxiliares, no solo `SKILL.md`.
-
----
-
-## 10. Instalación transaccional
-
-**Extensión de tres roles (sin prueba DSH real hasta 2026-10-10; ese día se ejecutó un turno real sobre un producto ficticio):** Implementador recibe una petición de cambio del titular distinta de un hallazgo auditado; no inventa `finding_id`. Host provisiona `kind=implement` como repo sombra con `.git` propio bajo el workspace, liga solicitud exacta y base limpia por SHA-256, y en reanudación exige el mismo recibo/base sin borrar trabajo sucio. El candidato es la única raíz de escritura de código; el producto canónico queda fuera, sin commit/merge/push/publicación implícitos. La aceptación final del comportamiento nuevo requiere una prueba explícita sobre la candidata además de los entrypoints propios del producto; el helper local ejecuta el caso explícito recibido y mide el diff, pero todavía no liga ni exige por sí mismo todos los entrypoints del plan de capacidades. FAIL/BLOCKED no se promocionan a PASS. **En el turno real del ensayo**, el implementador dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido: mecanismo ejercido de verdad, pero en un solo caso y con la candidata creada como clon dentro del workspace, porque el worktree hermano estaba bloqueado por el sandbox de sesión. Sigue sin probarse la aplicación del cambio a un producto real ni el confinamiento mecánico de bash.
-
-Creator declara `routing` opcional por skill con acciones, modos, hechos observados, techo y presupuesto. El Host valida el contrato, entrypoint instalable, manifest y `effective_routing_digest` calculado del roster ordenado; la transacción instala la skill completa en el bundle del workspace y selecciona solo sobre la generación ACTIVE y su recibo intacto. `skill_router.select` es informativo (`authorizes_execution: false`), devuelve nombres exactos o abstención nombrada. El agente no necesita conocer nombres de antemano, pero la invocación/carga de una skill sigue siendo un paso del runtime que debe confirmarse en sesión DSH real. El modo exige primero su skill homónima exacta; no se atribuye carga de habilidades adicionales a un prompt.
-
-Un workflow de usuario usa la entrada Host `bootstrap workflow run` y su journal externo; nunca una fila plugin de modo. La prohibición por substring de `delegat`/`subagent`/`workflow` sigue intacta. No se habilita delegación en este incremento: exigiría una capacidad Host separada con alcance y presupuesto, no un rename de plugin.
-
-La unidad de activación es el conjunto de dos roles legacy o tres roles nuevos + skills específicas + adapters + manifest. No se activan componentes por separado. El run conserva paths autoritativos y cada contrato declara layout/lifecycle exactos por rol; schema público, Host y transacción comparten el validador fail-closed. La inicialización preflightea completamente root/entradas regulares, symlinks, hardlinks, JSON/JSONL, schemas, tipos, campos y caps antes de escribir; compacta/deduplica y migra legacy acotado solo tras validar todo. Cada reemplazo de archivo usa rename local, pero el conjunto multiarchivo no es atómico ni ofrece CAS/lease. `workflow_write` tampoco confina mecánicamente bash al candidato: la defensa actual es contrato exacto, invariantes pre/post de HEAD/status canónicos y diff candidato. Por tanto concurrencia e aislamiento fuerte siguen sin resolver y el lifecycle permanece `IMPLEMENTED_NOT_VERIFIED` hasta herramienta Host dedicada o protocolo seguro más prueba DSH real.
-
-Secuencia:
-
-1. Validación completa en staging inmutable.
-2. Plan de cambios y collisions.
-3. Backup y verificación.
-4. Construcción de árbol candidato hermano.
-5. Descubrimiento/carga contra el árbol candidato.
-6. Smoke mecánico.
-7. Aceptación funcional.
-8. Swap atómico del puntero/directorio gestionado.
-9. Revalidación desde sesión nueva.
-10. Manifest activo + install receipt.
-11. Si falla: rollback conjunto y verificación.
-
-Nunca debe quedar Auditor nuevo con Reparación anterior o skills mezcladas.
+The backup covers the entire folder and auxiliary files, not just `SKILL.md`.
 
 ---
 
-## 11. Aceptación automática generada, no diseñada por el usuario
+## 10. Transactional installation
 
-Creator produce `acceptance-plan.json`, pero el framework impone criterios mínimos congelados. `accept` valida que existan y ejecuta automáticamente vía DSH local:
+**Three-role extension (no real DSH test until 2026-10-10; that day a real turn was executed over a fictional product):** the Implementer receives a change request from the holder other than an audited finding; it does not invent a `finding_id`. The Host provisions `kind=implement` as a shadow repo with its own `.git` under the workspace, binds the exact request and the clean base by SHA-256, and on resumption demands the same receipt/base without deleting dirty work. The candidate is the only code-writing root; the canonical product is left out, with no implicit commit/merge/push/publication. Final acceptance of the new behavior requires an explicit test over the candidate in addition to the project's own entrypoints; the local helper runs the explicit case it receives and measures the diff, but it does not yet bind or enforce, by itself, all the entrypoints of the capability plan. FAIL/BLOCKED are not promoted to PASS. **In the real turn of the trial**, the implementer left an external candidate with commit `95aa9b2`, 6/6 new tests correct and the product without the requested field: the mechanism was truly exercised, but in a single case and with the candidate created as a clone inside the workspace, because the sibling worktree was blocked by the session sandbox. Applying the change to a real product and the mechanical confinement of bash remain unproven. workspace, because the sister worktree was blocked by the session sandbox. The application of the change to a real product and the mechanical confinement of bash remain untested.
 
-1. Descubrimiento de ambos modos.
-2. Carga exacta de skills y origen esperado.
-3. Lectura dirigida de unidad fixture.
-4. Evidencia fuera del producto.
-5. Auditor bloqueado para modificar producto.
-6. Reparación en candidato controlado.
-7. Rojo→verde real.
-8. QA por sesión/actor observable.
-9. Reauditoría semántica posterior.
-10. Presupuesto/checkpoint/reapertura.
-11. Instalación/rollback/desinstalación controlada.
-12. Ausencia de cambios en producto/routing/config global.
+Creator declares `routing` optional per skill with actions, modes, observed facts, ceiling and budget. The Host validates the contract, installable entrypoint, manifest and `effective_routing_digest` calculated from the ordered roster; The transaction installs the complete skill in the workspace bundle and only selects over the ACTIVE generation with its receipt intact. `skill_router.select` is informational (`authorizes_execution: false`), returns exact names or named abstention. The agent does not need to know names beforehand, but invoking/loading a skill is still a runtime step that must be confirmed in the actual DSH session. The mode requires its exact namesake skill first; no additional skill load is attributed to a prompt.
 
-Creator invoca `accept`, pero el Host ejecuta/verifica el plan. Creator no escribe los resultados. Si falta aprobación nativa que solo puede dar el titular, el bootstrap pausa con una instrucción compacta, preserva checkpoint y reanuda tras la decisión; no elude la UI.
+A user workflow uses the Host entry `bootstrap workflow run` and its external journal, never a row-plugin mode. The substring ban of `delegat`/`subagent`/`workflow` remains intact. No delegation is enabled in this increment: it would require a separate Host capability with scope and budget, not a plugin rename.
 
-Estados:
+The activation unit is the set of two legacy roles or three new roles + specific skills + adapters + manifest. No separate components are activated. The run preserves authoritative paths and each contract declares exact layout/lifecycle per role; public schema, host and transaction share the fail-closed validator. Initialization completely preflights root/regular inputs, symlinks, hardlinks, JSON/JSONL, schemas, types, fields, and caps before writing; compacts/deduplicates and migrates bounded legacy only after validating everything. Each file replacement uses local rename, but the multifile set is not atomic nor does it offer CAS/lease. `workflow_write` also does not mechanically confine bash to the candidate: the current defense is exact contract, canonical HEAD/status pre/post invariants, and candidate diff. Therefore concurrency and strong isolation remain unresolved and the lifecycle remains `IMPLEMENTED_NOT_VERIFIED` until dedicated host tool or secure protocol plus actual DSH test.
 
+Sequence:
+
+1. Complete validation in immutable staging.
+2. Change and collision plan.
+3. Backup and verification.
+4. Construction of sibling candidate tree.
+5. Discovery/loading against the candidate tree.
+6. Mechanical smoke.
+7. Functional acceptance.
+8. Atomic swap of the managed pointer/directory.
+9. Revalidation from new session.
+10. Manifest active + install receipt.
+11. If it fails: joint rollback and verification.
+
+There should never be a new Auditor with previous Repair or mixed skills.
+
+---
+
+## 11. Generated automatic acceptance, not designed by the user
+
+Creator produces `acceptance-plan.json`, but the framework imposes frozen minimum criteria. `accept` validates that they exist and automatically executes via local DSH:
+
+1. Discovery of both modes.
+2. Exact skill load and expected origin.
+3. Directed reading of fixture unit.
+4. Evidence outside the product.
+5. Auditor blocked from modifying product.
+6. Repair in controlled candidate.
+7. Red→green.
+8. QA per session/observable actor.
+9. Subsequent semantic re-audit.
+10. Budget/checkpoint/reopening.
+11. Controlled installation/rollback/uninstallation.
+12. Absence of changes in product/routing/global config.
+
+Creator invokes `accept`, but Host executes/verifies the plan. Creator does not write the results. If a native approval that only the owner can give is missing, the bootstrap pauses with a compact instruction, preserves the checkpoint and resumes after the decision; it doesn't bypass the UI.
+
+States:
 ```text
 GENERATED → VALIDATING → BACKED_UP → STAGED
 → ACCEPTING → ACTIVE
                   └→ RETAINED → ROLLED_BACK
                                  └→ RECOVERY_REQUIRED (si rollback no verificable)
 ```
-
 ---
 
-## 12. Actualización/regeneración
-
+## 12. Update/regeneration
 ```bash
-python3 -B scripts/bootstrap.py update --project /ruta/proyecto
+python3 -B scripts/bootstrap.py update --project /path/to/project
 ```
+Triggers:
 
-Disparadores:
+- material change in repository architecture/language;
+- new data/hardware boundaries;
+- framework/DSH update;
+- obsolete mode/skill;
+- rejected generation.
 
-- cambio material de arquitectura/lenguaje/repos;
-- nuevas fronteras de datos/hardware;
-- actualización de framework/DSH;
-- modo/skill obsoleto;
-- generación rechazada.
-
-La generación activa permanece en servicio mientras se crea/valida la nueva. Solo se conmuta tras aceptación. Las decisiones materiales conservan historial y reemplazos mediante `decisions.py`.
+The active generation stays in service while the new one is created/validated. It is only switched after acceptance. Material decisions preserve history and replacements through `decisions.py`.
 
 ---
 
-## 13. Desinstalación y datos
-
+## 13. Uninstall and data
 ```bash
-bootstrap.py uninstall --project /ruta/proyecto
+bootstrap.py uninstall --project /path/to/project
 ```
+Only remove:
 
-Retira únicamente:
+- managed modes;
+- managed skills/links;
+- managed plugin bindings;
+- the active manifest and installation;
+- own references.
 
-- modos gestionados;
-- skills/enlaces gestionados;
-- plugin bindings gestionados;
-- manifest activo e instalación;
-- referencias propias.
-
-Conserva producto, configuración ajena, recibos, candidatos, informes, archivos y backups.
-
+It preserves the product, foreign configuration, receipts, candidates, reports, files and backups.
 ```bash
-bootstrap.py purge-data --project /ruta/proyecto
+bootstrap.py purge-data --project /path/to/project
 ```
-
-Es destructivo, requiere confirmación explícita, muestra rutas exactas y nunca sigue enlaces.
-
----
-
-## 14. Seguridad y supply chain
-
-- No usar `npx ...@latest` ni ejecutar instaladores remotos durante `accept`.
-- Versiones/orígenes/digests fijados.
-- Adquisición host-side separada de ejecución no confiable.
-- Rechazar symlinks, hardlinks inesperados, dispositivos y sockets.
-- Protección TOCTOU: hashes justo antes del swap, fuente inmutable, revalidación.
-- Scripts generados no se ejecutan por existir; requieren allowlist y revisión.
-- `allowed-tools`/frontmatter no concede herramientas; Host aplica capabilities.
-- Snapshot routing antes/después; nuevos providers/modelos/aliases se rechazan.
-- Proyecto privado: fragmentos enviados a inferencia se rigen por permiso de datos.
-- Inputs/outputs del modelo son datos no confiables.
-- Límites de archivos, manifest, requests, tokens, tiempo e intentos.
+It is destructive, requires explicit confirmation, shows exact paths, and never follows links.
 
 ---
 
-## 15. Licencias y procedencia
+## 14. Security and supply chain
 
-El repositorio `jsmastery-pro/skills` observado es MIT. Si se copia/adapta código o texto sustancial:
-
-- conservar aviso MIT en `THIRD_PARTY_NOTICES.md`;
-- indicar archivos derivados;
-- cabecera de procedencia cuando aplique;
-- registrar commit fuente en `license_provenance`.
-
-Si solo se adoptan ideas/patrones, documentar inspiración y mantener implementación propia. Antes de publicación pública debe decidirse la licencia del framework y comprobar compatibilidad.
+- Do not use `npx ...@latest` or run remote installers during `accept`.
+- Fixed versions/origins/digests.
+- Separate host-side acquisition of untrusted execution.
+- Reject symlinks, unexpected hard links, devices and sockets.
+- TOCTOU protection: hashes just before swap, immutable source, revalidation.
+- Generated scripts are not executed merely for existing; they require allowlist and review.
+- `allowed-tools`/frontmatter does not grant tools; Host applies capabilities.
+- Snapshot routing before/after; new providers/models/aliases are rejected.
+- Private project: fragments sent to inference are governed by data permission.
+- Inputs/outputs of the model are unreliable data.
+- Limits on files, manifest, requests, tokens, time and attempts.
 
 ---
 
-## 16. Plan de implementación de la candidata
+## 15. Licenses and provenance
 
-Desglose que se implementó por etapas C0–C7; el estado por etapa vive en `PLAN_IMPLEMENTACION.md` y `docs/status.md`. Los procedimientos detallados de cada etapa se conservan en `docs/plans/`.
+The observed `jsmastery-pro/skills` repository is MIT. If substantial code or text is copied/adapted:
 
-### C0 — contratos y fixtures
+- keep MIT notice in `THIRD_PARTY_NOTICES.md`;
+- indicate derived files;
+- header of origin when applicable;
+- register source commit in `license_provenance`.
 
-- schema generation/project/capabilities/modes/skills;
-- fixture mínimo válido/inválido;
-- Syncify/RehabWeb saneados;
+If only ideas/patterns are adopted, document the inspiration and keep your own implementation. Before public release, the framework license must be decided and compatibility checked.
+
+---
+
+## 16. Implementation plan of the candidate
+
+Breakdown that was implemented by stages C0–C7; the per-stage state lives in `PLAN_IMPLEMENTACION.md` and `docs/status.md`. Detailed procedures for each stage are preserved in `docs/plans/`.
+
+### C0 — contracts and fixtures
+
+- schemas for generation/project/capabilities/modes/skills;
+- minimum valid/invalid fixture;
+- sanitized Syncify/RehabWeb;
 - golden manifest;
-- tests de paths/hashes/capabilities/licencia.
+- tests of paths/hashes/capabilities/license.
 
-**Gate:** validar un paquete fixture completo sin tocar DSH ni destinos activos.
+**Gate:** validate a complete fixture package without touching DSH or active destinations.
 
 ### C1 — `bootstrap install`
 
-- preflight DSH/proveedor/Creator;
+- DSH preflight/provider/Creator;
 - workspace/generation-id;
-- skills generales;
-- perfil/discovery mecánico;
-- paquete/prompt Creator;
-- checkpoint/reanudación.
+- general skills;
+- mechanical profile/discovery;
+- package/prompt Creator;
+- checkpoint/resumption.
 
-**Gate:** desde clone limpio, preparar una generación sin modificar producto/config global.
+**Gate:** from a clean clone, prepare a generation without modifying the product/global config.
 
-### C2 — automatización DSH Creator
+### C2 — DSH Creator automation
 
-- cliente local autenticado;
-- sesión Creator;
-- prompt automático;
-- streaming/timeout/presupuesto;
-- manifest/finish obligatorio;
-- cero secretos persistidos.
+- authenticated local client;
+- session Creator;
+- automatic prompt;
+- streaming/timeout/budget;
+- mandatory manifest/finish;
+- zero persisted secrets.
 
-**Gate:** Creator fixture genera paquete válido desde un comando.
+**Gate:** the fixture Creator generates a valid package from one command.
 
-### C3 — validador generado
+### C3 — generated validator
 
-Adaptar patrones de `check-portability.mjs`:
+Adapt patterns from `check-portability.mjs`:
 
-- frontmatter/nombres/descripciones;
-- tamaños/hot paths;
-- referencias/grafo;
-- portabilidad;
+- frontmatter/names/descriptions;
+- sizes/hot paths;
+- references/graph;
+- portability;
 - contracts;
 - capabilities/routing;
-- scripts/seguridad;
-- manifest exhaustivo;
-- procedencia/licencia.
+- scripts/security;
+- exhaustive manifest;
+- provenance/license.
 
-**Gate:** corpus positivo/negativo, fail-closed sin escrituras.
+**Gate:** positive/negative corpus, fail-closed with no writes.
 
-### C4 — backups y transacción
+### C4 — backups and transaction
 
 - ownership manifest;
-- backup completo/verificado;
-- staging del conjunto;
+- full/verified backup;
+- staging of the set;
 - swap/rollback;
-- fallos inyectados en cada transición;
-- uninstall conservador.
+- faults injected at each transition;
+- conservative uninstall.
 
-**Gate:** crash/errores no dejan conjunto mixto; estado anterior restaurable.
+**Gate:** crash/errors do not leave a mixed set; previous state restorable.
 
-### C5 — aceptación DSH automática
+### C5 — automatic DSH acceptance
 
 - acceptance plan schema;
-- dos modos específicos fixture;
-- carga/lectura/escritura externa;
+- two specific fixture modes;
+- external load/read/write;
 - repair/QA/reaudit;
 - plugin/capabilities/routing;
-- reanudación;
+- resumption;
 - rollback.
 
-**Gate:** `install` de un comando produce modos ACTIVE o RETAINED con rollback íntegro.
+**Gate:** `install` of a command produces ACTIVE or RETAINED modes with full rollback.
 
-### C6 — piloto clean-room
+### C6 — clean-room pilot
 
-Proyectos nuevos no usados durante implementación:
+New projects not used during implementation:
 
-- uno Python/backend;
-- uno JS/Rust/UI o equivalente multiparte;
-- usuario sin contexto privado;
-- proveedor DSH ya configurado;
-- contar intervenciones y troubleshooting;
-- update y uninstall completos.
+- one Python/backend;
+- one JS/Rust/UI or multipart equivalent;
+- user without private context;
+- DSH provider already configured;
+- count interventions and troubleshooting;
+- complete update and uninstall.
 
-**Gate:** usuario ejecuta un comando, recibe modos específicos útiles y opera con mensajes cortos.
+**Gate:** the user runs one command, receives useful project-specific modes and operates with short messages.
 
-### C7 — promoción
+### C7 — promotion
 
-- reconciliar resultados;
-- actualizar docs finales y CI;
-- tag de piloto;
-- licencia y `THIRD_PARTY_NOTICES` si aplica.
+- reconcile results;
+- update final docs and CI;
+- pilot tag;
+- license and `THIRD_PARTY_NOTICES` if applicable.
 
 ---
 
-## 17. Matriz de aceptación de la arquitectura 3.0
+## 17. Architecture 3.0 acceptance matrix
 
-| Gate | Evidencia necesaria |
+| Gate | Evidence needed |
 |---|---|
-| Un comando | clone + provider preconfigurado + `bootstrap install` |
-| Creator automático | sesión/turno observado sin prompt manual |
-| Específico del proyecto | modos/nombres/skills/criterios derivados del proyecto |
-| No autoaprobación | Creator solo GENERATED; Host emite estados |
-| Backup | cada reemplazo tiene backup completo verificado previo |
-| Transacción | conjunto viejo o nuevo, nunca mezcla |
-| Progressive disclosure | grafo/hot paths válidos y presupuestados |
-| Seguridad | capabilities/routing/roots fail-closed |
-| Aceptación | read/evidence/repair/QA/reaudit/reopen reales |
-| Rollback | fallo inyectado restaura estado anterior |
-| Idempotencia | reinstall/update/uninstall repetibles |
-| Portabilidad | cero rutas/identidades del mantenedor |
-| Datos | permisos/proveedor/sensibilidad registrados |
-| UX | usuario no copia prompts, JSON, recibos ni diseña pruebas |
+| A command | clone + preconfigured provider + `bootstrap install` |
+| Automatic Creator | observed session/turn with no manual prompt |
+| Project-specific | modes/names/skills/criteria derived from the project |
+| No self-approval | Creator only `GENERATED`; the Host issues the states |
+| Backup | every replacement has a previously verified full backup |
+| Transaction | set old or new, never mix |
+| Progressive disclosure | valid graph/hot paths, within budget |
+| Security | capabilities/routing/roots fail-closed |
+| Acceptance | real read/evidence/repair/QA/reaudit/reopen |
+| Rollback | injected fault restores previous state |
+| Idempotence | reinstall/update/uninstall are repeatable |
+| Portability | zero maintainer paths/identities |
+| Data | permissions/provider/sensitivity recorded |
+| UX | the user does not copy prompts, JSON or receipts, and does not design tests |
 
 ---
 
-## 18. Implementación gradual desde el MVP comprobado
+## 18. Gradual implementation from the proven MVP
 
-C0–C7 están completados y verificados; este documento fue actualizado con los contratos finales validados tras cada cambio de diseño (el despacho y ciclo de vida DSH de §7-B3, la biblioteca materializada de §1, la transacción con veredicto Host de §10). Reglas vigentes:
+C0–C7 are completed and verified; this document was updated with the final contracts validated after each design change (the DSH dispatch and lifecycle of §7-B3, the materialized library of §1, the transaction with Host verdict of §10). Current rules:
 
-- Este archivo es la referencia normativa única; `docs/creator-preset-spec.md` define el contrato generacional 3.0 (paquete completo, no un preset de dos archivos).
-- `usage.md` describe el uso operativo vigente: el flujo automático de bootstrap y las herramientas de mantenimiento del MVP.
-- Los planes y skills del MVP anterior fueron eliminados del árbol; permanecen en Git y no se reconstruyen como instrucciones actuales.
-- Los fixtures permanecen sanitizados en el corpus de regresión; nunca se instalan como defaults.
-- El hardening posterior a C7 se guía por evidencia real de pilotos: cada hallazgo se convierte en cambio de diseño aquí, cambio de flujo y regresión.
-
----
-
-## 19. Preguntas que la implementación debía resolver antes del piloto
-
-Estas preguntas se respondieron durante C0–C7 y el hardening de piloto; las respuestas vigentes son los contratos implementados (§7-B3 para el ciclo DSH, §10 para la transacción, `docs/creator-preset-spec.md` para el paquete) y se citan por unidad en `CHANGELOG.md`. Se conservan como registro de qué se validó antes de exponer el flujo a usuarios.
-
-1. ¿Creator puede invocar `accept` y recibir errores estructurados sin necesitar shell libre?
-2. ¿La API local DSH permite todo el ciclo sin token manual y sin filtrar secretos?
-3. ¿Cuál es la unidad de swap más portable para modos+skills (directorio, manifest/puntero o user preset root)?
-4. ¿Cómo se representa un fork QA recuperable cuando el runtime no expone session ID?
-5. ¿Los límites iniciales 32/24 KiB y hot paths predicen realmente el coste en DSH?
-6. ¿Qué adapters requiere DSH y cuáles son opcionales para otros hosts?
-7. ¿Qué campos de proyecto deben ser decisiones humanas, no inferidas?
-8. ¿Qué aprobación nativa mínima puede quedar en un flujo de «un comando»?
-9. ¿Cómo se distribuye el plugin `workflow-write` de forma portable sin rutas absolutas?
-10. ¿Qué licencia tendrá el framework antes del piloto público?
+- This file is the sole normative reference; `docs/creator-preset-spec.md` defines the 3.0 generation contract (full package, not a two-file preset).
+- `docs/usage.md` describes current operational usage: the automatic bootstrap flow and the MVP maintenance tools.
+- Plans and skills from the previous MVP were removed from the tree; they remain in Git and are not rebuilt as current instructions.
+- The fixtures stay sanitized in the regression corpus; they are never installed as defaults.
+- Post-C7 hardening is guided by real pilot evidence: every finding becomes a design change here, a flow change and a regression.
 
 ---
 
-## 20. Resultado esperado de la arquitectura
+## 19. Questions the implementation had to resolve before the pilot
 
+These questions were answered during C0–C7 and pilot hardening; the current responses are the implemented contracts (§7-B3 for the DSH cycle, §10 for the transaction, `docs/creator-preset-spec.md` for the package) and are quoted per unit in `CHANGELOG.md`. They are kept as a record of what was validated before the flow was exposed to users.
+
+1. Can Creator call `accept` and receive structured errors without needing a free shell?
+2. Does the local DSH API allow the entire cycle without manual token and without leaking secrets?
+3. What is the most portable swap unit for modes+skills (directory, manifest/pointer or user preset root)?
+4. How is a recoverable QA fork represented when the runtime does not expose session ID?
+5. Do the initial limits 32/24 KiB and hot paths really predict the cost in DSH?
+6. What adapters does DSH require and which are optional for other hosts?
+7. Which project fields should be human decisions, not inferred?
+8. What minimum native approval can remain in a “one command” flow?
+9. How is the `workflow-write` plugin distributed in a portable way without absolute paths?
+10. What license will the framework have before the public pilot?
+
+---
+
+## 20. Expected outcome of the architecture
 ```text
-usuario configura DSH/proveedor una vez
-→ clona framework
-→ ejecuta bootstrap install
-→ bootstrap prepara workspace y llama Creator
-→ Creator analiza proyecto y genera candidato específico
-→ Creator invoca accept
-→ Host valida schema/capabilities/routing/skills
-→ backup obligatorio de lo reemplazado
-→ instalación transaccional en staging
-→ aceptación automática DSH (repair+QA+reaudit)
-→ ACTIVE o rollback/RETAINED
-→ usuario opera con mensajes cortos
+user configures DSH/provider once
+→ clones framework
+→ runs bootstrap install
+→ bootstrap prepares workspace and calls Creator
+→ Creator analyzes project and generates a specific candidate
+→ Creator invokes accept
+→ Host validates schema/capabilities/routing/skills
+→ mandatory backup of replaced items
+→ transactional installation in staging
+→ automatic DSH acceptance (repair+QA+reaudit)
+→ ACTIVE or rollback/RETAINED
+→ user operates with short messages
 ```
-
-Este es el flujo que C0–C7 implementó y validó, y que el hardening de piloto mantiene sobre evidencia real de sesiones DSH.
+This is the flow that C0–C7 implemented and validated, and that the pilot hardening maintains on real evidence of DSH sessions.
 
 ---
 
-## 21. Sistema interno de construcción de Creator inspirado en `jsmastery-pro/skills`
+## 21. Creator's internal build system inspired by `jsmastery-pro/skills`
 
-La evaluación profunda del repositorio externo corrige una lectura insuficiente: su valor no se limita a carpetas, progressive disclosure y validación de portabilidad. Las nueve skills forman una cadena de producción de artefactos y gates que puede adaptarse como **sistema interno de construcción de Creator**.
+The deep evaluation of the external repository corrects insufficient reading: its value is not limited to folders, progressive disclosure and portability validation. The nine skills form a production chain of artifacts and gates that can be adapted as **Creator's internal construction system**.
 
-No se instalarán como modos finales ni se expondrán al usuario. Se transformarán en capacidades privadas de la sesión Creator:
-
+They will not be installed as final modes nor exposed to the user. They become private capabilities of the Creator session:
 ```text
-scope      → particionar capacidades y decidir qué debe existir
-audit      → descubrir la realidad del proyecto
-architect  → convertir evidencia en contratos de modos/skills
-test       → derivar escenarios públicos y familias de holdouts
-develop    → generar el candidato desde contratos completos
-check      → verificar conducta y revisar independientemente
-debug      → reparar una generación RETAINED sin tocar controles
-document   → producir contexto durable y contratos trazables
-sync       → detectar drift y proponer regeneración conservadora
+scope      → partition capabilities and decide what must exist
+audit      → discover the project reality
+architect  → turn evidence into mode/skill contracts
+test       → derive public scenarios and holdout families
+develop    → generate the candidate from complete contracts
+check      → verify behavior and review independently
+debug      → repair a RETAINED generation without touching controls
+document   → produce durable context and traceable contracts
+sync       → detect drift and propose conservative regeneration
 ```
-
-Capacidades internas propuestas:
-
+Proposed internal capabilities:
 ```text
 creator-project-discovery
 creator-project-documenter
@@ -936,76 +898,70 @@ creator-skill-generator
 creator-generation-repair
 creator-drift-analyzer
 ```
+These capabilities make up a single Creator run. The user does not invoke them or see them as presets.
 
-Estas capacidades componen una sola ejecución Creator. El usuario no las invoca ni las ve como presets.
+### 21.1 Origin and reuse limits
 
-### 21.1 Procedencia y límites de reutilización
-
-Fuente observada:
-
+Observed source:
 ```text
 https://github.com/jsmastery-pro/skills
 commit 43b69e44c9ca905fe3a3418ccdf4102255e20d40
-licencia MIT
+MIT license
 ```
-
-Se adoptan mecanismos y se reimplementan de forma neutral. Si se copia o traduce texto/código sustancial, se añade `THIRD_PARTY_NOTICES.md`, aviso MIT, archivos derivados y commit fuente. No se importan supuestos Claude/web/Node como contratos universales.
+Mechanisms are adopted and reimplemented in a neutral way. If substantial text/code is copied or translated, `THIRD_PARTY_NOTICES.md`, MIT notice, derived files and source commit are added. Claude/web/Node assumptions are not imported as universal contracts.
 
 ---
 
-## 22. `scope` como particionador de capacidades
+## 22. `scope` as a capacity partitioner
 
-`scope` se adapta para responder qué debe generar Creator, no qué features debe construir el producto.
+`scope` is adapted to answer what Creator should generate, not what features the product should build.
 
-### 22.1 Mecanismos adoptados
+### 22.1 Adopted mechanisms
 
-- clasificación greenfield/brownfield/monorepo;
-- separación entre inventario, unidad coherente, decisión y tarea;
-- **invent test**: si una capacidad obligaría a inventar una decisión, se bloquea hasta diseño/decisión;
-- mapa compacto con detalle por referencia;
-- deduplicación y replanificación incremental;
-- orden/dependencias;
-- enfoques de corte:
-  - Tracer Bullet como camino completo inicial;
-  - Skateboard como conjunto mínimo utilizable;
-  - Journey como experiencia Auditor→Repair completa;
-  - Facade solo `PREVIEW_ONLY`, nunca activable.
+- greenfield/brownfield/monorepo classification;
+- separation between inventory, coherent unit, decision and task;
+- **invent test**: if a capability would require inventing a decision, it is blocked until design/decision;
+- compact map with detail by reference;
+- deduplication and incremental replanning;
+- order/dependencies;
+- cutting approaches:
+  - Tracer Bullet as the initial complete path;
+  - Skateboard as a minimum usable set;
+  - Journey as a complete Auditor→Repair experience;
+  - Facade is only `PREVIEW_ONLY`, never activatable.
 
-### 22.2 Salida
-
+### 22.2 Output
 ```text
 design/capability-plan.json
 design/generation-strategy.json
 design/rejected-candidates.json
 ```
+`capability-plan.json` contains the two mandatory modes, the shared/specific skills, the dependencies, the generation order, the risk level and the blocking decisions.
 
-`capability-plan.json` contiene dos modos obligatorios, skills compartidas/específicas, dependencias, orden de generación, nivel de riesgo y decisiones bloqueantes.
-
-No se adoptan literalmente features, go-to-market, SEO ni tiers Prototype/Alpha/Beta/GA. Se sustituyen por impacto, profundidad, QA, evidencia, datos, escritura y publicación.
+No features, go-to-market, SEO or Prototype/Alpha/Beta/GA tiers are literally adopted. They are replaced by impact, depth, QA, evidence, data, writing and publishing.
 
 ---
 
-## 23. `audit` como motor de discovery de Creator
+## 23. `audit` as Creator discovery engine
 
-Se adaptan casi directamente `audit/modes/whole-repo.md`, `area.md`, `gapfill.md` y su disciplina de preflight/scouts compactos.
+They fit `audit/modes/whole-repo.md`, `area.md`, `gapfill.md` and their compact preflight/scout discipline almost directly.
 
-### 23.1 Principios
+### 23.1 Principles
 
-- primer barrido independiente antes de reconciliar documentación;
-- separar global de área/workspace;
-- no sobrescribir conocimiento humano;
-- distinguir:
+- first independent sweep before reconciling documentation;
+- separate global area/workspace;
+- do not overwrite human knowledge;
+- distinguish:
   - `OBSERVED`;
   - `DECLARED`;
   - `INFERRED`;
   - `PROPOSED`;
   - `UNVERIFIED`;
-- taxonomía `GAPS`, `PROPOSED_ADDITIONS`, `CONTRADICTIONS`, `UNKNOWNS`, `EXCLUSIONS`;
-- subagentes read-only por área, devolución estructurada y compacta;
-- rutas/símbolos como localizadores, no prueba semántica.
+- taxonomy `GAPS`, `PROPOSED_ADDITIONS`, `CONTRADICTIONS`, `UNKNOWNS`, `EXCLUSIONS`;
+- read-only subagents per area, structured and compact return;
+- paths/symbols as locators, not semantic proof.
 
-### 23.2 Salidas
-
+### 23.2 Outputs
 ```text
 discovery/project-classification.json
 discovery/repository-map.json
@@ -1024,88 +980,82 @@ discovery/exclusions.json
 discovery/evidence-index.json
 discovery/areas/<area>.json
 ```
-
-Cada claim conserva fuente, hash, ubicación, estado, confianza y limitaciones.
+Every claim preserves source, hash, location, state, confidence and limitations.
 
 ### 23.3 Tool/skill discovery
 
-`audit/modes/tool-skills.md` se usa solo como patrón para inventariar:
+`audit/modes/tool-skills.md` is used only as a pattern for inventory:
 
-- skills instaladas;
-- procedimientos cubiertos;
-- procedimientos recurrentes faltantes;
-- candidatos a skill específica;
-- candidatos rechazados;
-- sugerencias externas opcionales.
+- installed skills;
+- procedures covered;
+- missing recurring procedures;
+- candidates for specific skill;
+- rejected candidates;
+- optional external suggestions.
 
-Quedan prohibidos en bootstrap base: `npx skills find/add`, instalación automática, búsqueda web/MCP y conexión de servicios. Cualquier adquisición externa necesita misión y autorización separadas.
+The following are prohibited in the base bootstrap: `npx skills find/add`, automatic installation, web/MCP search and service connection. Any external acquisition needs a separate mission and authorization.
 
-Los presets Clean/DDD/Functional/SOLID solo sirven como clasificadores si el proyecto los evidencia; nunca como opciones impuestas.
+The Clean/DDD/Functional/SOLID presets serve only as classifiers if the project evidences them; never as imposed options.
 
 ---
 
-## 24. `architect` como diseñador de contratos
+## 24. `architect` as a contract designer
 
-Se adaptan `internal/design-conversation.md`, `spec-template.md` y los modos architecture/feature/enhancement/cross-cutting.
+`internal/design-conversation.md`, `spec-template.md` and the architecture/feature/enhancement/cross-cutting modes are adapted.
 
-### 24.1 Ledger de decisiones
+### 24.1 Decision Ledger
 
-Toda dimensión se clasifica:
-
+Every dimension is classified:
 ```text
-INFER      — fuente observada suficiente
-ASK        — decisión exclusiva del titular
-RECOMMEND  — Creator recomienda, titular/contrato decide
-NOT_APPLICABLE — con motivo
-UNRESOLVED — bloquea la generación afectada
+INFER      — sufficient observed source
+ASK        — owner-only decision
+RECOMMEND  — Creator recommends, owner/contract decides
+NOT_APPLICABLE — with reason
+UNRESOLVED — blocks the affected generation
 ```
-
-Salida:
-
+Output:
 ```text
 discovery/question-ledger.json
 design/decision-ledger.json
 ```
+### 24.2 Contract by mode/skill
 
-### 24.2 Contrato por modo/skill
+Each capacity defines:
 
-Cada capacidad define:
-
-- fuente de reutilización: biblioteca base, catálogo especializado, composición, override o extensión;
-- motivo explícito para no usar capas anteriores cuando se genera una extensión;
-- propósito y triggers positivos/negativos;
-- inputs y fuentes;
+- source of reuse: base library, specialized catalog, composition, override or extension;
+- explicit reason not to use previous layers when generating an extension;
+- purpose and positive/negative triggers;
+- inputs and sources;
 - reads/writes;
-- capabilities mínimas/prohibidas;
-- invariantes y anti-goals;
-- estados/transiciones;
+- minimum/prohibited capabilities;
+- invariants and anti-goals;
+- states/transitions;
 - handoffs;
-- fallos/concurrencia/retries/timeouts;
-- migración/rollback;
-- criterios `SR-N`;
-- escenarios y stop conditions;
-- evidencia;
-- procedencia/licencia.
+- failures/concurrency/retries/timeouts;
+- migration/rollback;
+- `SR-N` criteria;
+- scenarios and stop conditions;
+- evidence;
+- provenance/license.
 
 ### 24.3 Value sourcing
 
-Toda decisión/valor operativo debe nombrar fuente válida. Si falta raíz, comando, criterio, base, autorización o actor QA: `RETAINED`/`UNVERIFIED`, nunca inferencia silenciosa.
+Every operational decision/value must name a valid source. If the root, command, criterion, base, authorization or QA actor is missing: `RETAINED`/`UNVERIFIED`, never silent inference.
 
-### 24.4 Modos architect adaptados
+### 24.4 Adapted architect modes
 
-- architecture: fronteras bootstrap/Creator/Host/modos;
-- feature: contrato de skill específica;
-- enhancement: regeneración, migración y rollback de skill existente;
-- cross-cutting: evidencia, errores, permisos, naming y contratos transversales.
+- architecture: bootstrap/Creator/Host/mode boundaries;
+- feature: specific skill contract;
+- enhancement: regeneration, migration and rollback of existing skill;
+- cross-cutting: evidence, errors, permissions, naming and transversal contracts.
 
-El Host, no Creator, ratifica decisiones y estados.
+The Host, not the Creator, ratifies decisions and states.
 
 ---
 
-## 25. `document` como productor de contexto durable
+## 25. `document` as a durable context producer
 
-No se adopta como generador de changelogs. Se usa para normalizar evidencia en:
-
+It is not adopted as a changelog generator. It is used to normalize evidence in:
 ```text
 project-manifest.json
 instructions-index.json
@@ -1114,43 +1064,41 @@ contracts/<skill-id>.contract.json
 unknowns.json
 conflicts.json
 ```
+Rules adopted:
 
-Reglas adoptadas:
+- real facts/diff/code prevail over narration;
+- do not invent results/causes/evidence;
+- traceable assertion;
+- idempotent repetition;
+- do not leak secrets;
+- respect existing canonical formats;
+- the unknown stays unknown.
 
-- hechos reales/diff/código prevalecen sobre narración;
-- no inventar resultados/causas/pruebas;
-- afirmación trazable;
-- repetición idempotente;
-- no filtrar secretos;
-- respetar formatos canónicos existentes;
-- desconocido permanece desconocido.
+`project-manifest` sets identity/base/inventory/hashes/capabilities/authority. `instructions-index` indexes path, scope, precedence, sections, hashes, facts, constraints, unknowns and conflicts; it does not copy all the content to the hot path.
 
-`project-manifest` fija identidad/base/inventario/hashes/capabilities/autoridad. `instructions-index` indexa ruta, scope, precedencia, secciones, hashes, facts, constraints, unknowns y conflicts; no copia todo el contenido al hot path.
-
-Templates externos inspiran forma, no prosa final. Se crean templates propios para contracts, references, acceptance y drift.
+External templates inspire form, not final prose. Own templates are created for contracts, references, acceptance and drift.
 
 ---
 
-## 26. `test` como autor de escenarios y holdouts
+## 26. `test` as author of scenarios and holdouts
 
-Se adapta la trazabilidad `AC-N` a requisitos `SR-N`.
+`AC-N` traceability is adapted to `SR-N` requirements.
 
-Creator genera escenarios públicos antes del candidato:
+Creator generates public scenarios before the candidate:
 
-- positivos;
-- negativos;
-- límites;
+- positive;
+- negatives;
+- boundaries;
 - tool/capability denial;
 - missing capability;
 - prompt injection;
-- ciclos;
-- handoff inválido;
-- base/candidato obsoleto;
-- idempotencia;
+- cycles;
+- invalid handoff;
+- obsolete base/candidate;
+- idempotence;
 - scope/write violations.
 
-Salida:
-
+Output:
 ```text
 tests/public/scenarios.jsonl
 tests/public/coverage-matrix.json
@@ -1158,46 +1106,42 @@ tests/holdout-spec.json
 tests/immutable-digests.json
 harness-profile.json
 ```
+Creator only designs holdout families. The independent Host/evaluator materializes concrete cases and hides the oracles from the generator/repairer. A case seen by Creator is a public fixture, not a holdout.
 
-Creator solo diseña familias de holdout. El Host/evaluador independiente materializa casos concretos y oculta oráculos al generador/reparador. Un caso visto por Creator es fixture público, no holdout.
+Tests/rubrics/thresholds/allowlists are mounted read-only. The repairer cannot edit them nor lower expectations/severity/coverage.
 
-Los tests/rúbricas/thresholds/allowlists se montan read-only. El reparador no puede editarlos ni rebajar expectations/severity/coverage.
-
-`NOT_COVERED` es estado explícito; no se fuerza automatización de criterios no observables.
+`NOT_COVERED` is explicit state; automation of unobservable criteria is not forced.
 
 ---
 
-## 27. `develop` como generador contractual
+## 27. `develop` as a contractual generator
 
-Se adapta el input/spec coverage gate:
+The input/spec coverage gate is adapted:
 
-Antes de escribir, para cada salida/decisión de la skill el contrato debe nombrar su fuente. Si falta: volver a discovery, pedir decisión o retener.
+Before writing, for each skill output/decision the contract must name its source. If missing: return to discovery, ask for decision or retain.
 
 ### 27.1 Ownership
 
-Creator escribe solo en staging. No puede:
+Creator writes only in staging. It cannot:
 
-- promover;
-- modificar aceptación/holdouts/Host/backups;
-- escribir skills activas;
-- cambiar routing/capabilities;
-- marcar `ACCEPTED`.
+- promote;
+- modify acceptance/holdouts/Host/backups;
+- write active skills;
+- change routing/capabilities;
+- mark itself `ACCEPTED`.
 
-### 27.2 Orden de generación
-
+### 27.2 Generation order
 ```text
-contratos/protocolos/estados compartidos
-→ routers y modos
-→ skills específicas
+contracts/protocols/shared states
+→ routers and modes
+→ specific skills
 → references/templates
 → adapters
 → manifest/hashes
 ```
+Active versions are preserved until promotion. Resume by hashes/state; do not regenerate accepted artifacts; do not delete previous version during build.
 
-Se preservan versiones activas hasta promoción. Reanudación por hashes/estado; no regenerar artefactos aceptados; no eliminar versión anterior durante el build.
-
-### 27.3 Salida staged
-
+### 27.3 Staged output
 ```text
 generated/modes/
 generated/skills/
@@ -1207,84 +1151,76 @@ generated/templates/
 generated/adapters/
 generated/generation-manifest.json
 ```
-
-Self-check = `preflight`, nunca aceptación.
+Self-check is a `preflight`, never acceptance.
 
 ---
 
-## 28. `check` como verificación y revisión independiente
+## 28. `check` as independent verification and review
 
-Se separa:
-
+It separates:
 ```text
-verify — ejecutar/observar con evidence ledger
-review — inspección independiente read-only
+verify — run/observe with an evidence ledger
+review — independent read-only inspection
 ```
-
 ### 28.1 Verify
 
-Sin evidencia no hay PASS. Cada `SR-N` enlaza scenario/input/expected/evidence/verdict. Estados: PASS, FAIL, BLOCKED, NOT_COVERED, UNVERIFIED, IMPLEMENTED_NOT_APPLIED.
+Without evidence there is no PASS. Each `SR-N` binds scenario/input/expected/evidence/verdict. States: PASS, FAIL, BLOCKED, NOT_COVERED, UNVERIFIED, IMPLEMENTED_NOT_APPLIED.
 
-El evaluador no modifica contrato ni expectativas. Resultados append-only.
+The evaluator does not modify the contract or expectations. Results append-only.
 
 ### 28.2 Review
 
-Revisor distinto, read-only, prompt/corpus separados, sin self-assessment de Creator, sin outputs de holdout. Idealmente modelo/proveedor distinto cuando está autorizado. Si no hay aislamiento real: `DEGRADED_REVIEW`, no “independiente”.
+Different reviewer, read-only, separate prompt/corpus, no Creator self-assessment, no holdout outputs. Ideally a different model/provider when authorized. Without real isolation: `DEGRADED_REVIEW`, not “independent”.
 
-Rúbrica adaptada:
+Adapted rubric:
 
-- fidelidad contrato;
+- fidelity contract;
 - trigger/routing;
-- confinamiento;
-- terminación;
+- lockdown;
+- termination;
 - handoff;
 - prompt injection;
 - capability missing;
-- aislamiento;
-- evidencia;
-- portabilidad;
-- escritura;
-- anti-autoaprobación.
+- insulation;
+- evidence;
+- portability;
+- writing;
+- anti-self-approval.
 
-El Host calcula veredicto; el revisor no acepta/promueve.
+Host calculates verdict; reviewer does not accept/promote.
 
 ---
 
-## 29. `debug` como reparador de una generación RETAINED
+## 29. `debug` as a repairer of a RETAINED generation
 
-Ciclo adoptado:
-
+Adopted cycle:
 ```text
-síntoma → reproducción → localización → hipótesis falsable
-→ experimento mínimo → fix mínimo → revalidación → siblings
+symptom → reproduction → localization → falsifiable hypothesis
+→ minimal experiment → minimal fix → revalidation → siblings
 ```
+Input: immutable `retention-bundle` with candidate digest, IDs of failing scenarios, observations, violated policies, evidence refs, permitted edit paths, immutable controls, attempt and budget.
 
-Input: `retention-bundle` inmutable con candidate digest, failing scenario IDs, observations, violated policies, evidence refs, allowed edit paths, immutable controls, attempt y budget.
+The repairer modifies only the staged candidate/scratch instrumentation. It does not modify tests/holdouts/rubric/thresholds/capabilities/allowlists/Host/acceptance. Maximum attempts, files and diff; repetition without progress is retained. An exposed holdout is no longer secret and Host generates another one.
 
-El reparador solo modifica candidato staged/instrumentación scratch. No modifica tests/holdouts/rúbrica/thresholds/capabilities/allowlists/Host/acceptance. Máximo de intentos, archivos y diff; repetición sin progreso retiene. Holdout expuesto deja de ser secreto y Host genera otro.
-
-Transición prohibida:
-
+Prohibited transition:
 ```text
 REPAIRING → ACCEPTED
 ```
-
-Debe volver siempre a evaluación Host.
+It must always return to Host evaluation.
 
 ---
 
-## 30. `sync` como detector de drift/regeneración conservadora
+## 30. `sync` as conservative drift/regeneration detector
 
-Compara:
+Compare:
 
-1. base del proyecto usada;
-2. contrato normalizado;
-3. generación aceptada;
-4. skill/modo instalado actual;
-5. proyecto actual.
+1. project base used;
+2. standardized contract;
+3. accepted generation;
+4. current installed skill/mode;
+5. current project.
 
-Estados:
-
+States:
 ```text
 CURRENT
 SOURCE_DRIFT
@@ -1296,34 +1232,30 @@ AMBIGUOUS_SCOPE
 STALE_REFERENCE
 UNVERIFIED
 ```
+Default: do nothing. Only changes in durable procedure, command, restriction, interface or contract justify regeneration.
 
-Default: no hacer nada. Solo cambios en procedimiento durable, comando, restricción, interfaz o contrato justifican regeneración.
+Rules:
 
-Reglas:
+- sources declared by skill;
+- new candidate, never active overwrite;
+- local edit blocks automatic replacement;
+- no heuristic merge of instructions;
+- stricter removals;
+- conflicts as artifacts;
+- second execution same base = no-op;
+- a base change invalidates acceptance unless irrelevance is demonstrated.
 
-- fuentes declaradas por skill;
-- candidato nuevo, nunca overwrite activo;
-- local edit bloquea reemplazo automático;
-- sin merge heurístico de instrucciones;
-- removals más estrictos;
-- conflictos como artefactos;
-- segunda ejecución misma base = no-op;
-- cambio de base invalida aceptación salvo irrelevancia demostrada.
-
-Salida:
-
+Output:
 ```text
 drift/source-drift.json
 drift/installed-drift.json
 drift/update-plan.json
 ```
-
-`sync` propone; `accept` evalúa; instalación autorizada reemplaza.
+`sync` proposes; `accept` evaluates; authorized installation replaces.
 
 ---
 
-## 31. Pipeline Creator definitivo ampliado
-
+## 31. Final expanded Creator pipeline
 ```text
 Host bootstrap/snapshot/authority
 → creator-project-discovery (audit)
@@ -1332,27 +1264,25 @@ Host bootstrap/snapshot/authority
 → creator-capability-partitioner (scope)
 → creator-capability-designer (architect)
 → creator-scenario-author (test)
-→ Host materializa/sella holdouts
+→ Host materializes and seals holdouts
 → creator-skill-generator (develop)
 → Creator preflight/self-review
-→ Creator invoca bootstrap accept
+→ Creator invokes bootstrap accept
 → Host static/schema/graph/portability checks
 → Host check verify (public + holdouts)
-→ Host check review (independiente)
-→ ACCEPTED o RETAINED
-→ creator-generation-repair (debug) si RETAINED
-→ backup verificado
-→ promoción transaccional
+→ Host check review (independent)
+→ ACCEPTED or RETAINED
+→ creator-generation-repair (debug) if RETAINED
+→ verified backup
+→ transactional promotion
 → post-promotion smoke
-→ creator-drift-analyzer (sync) en updates
+→ creator-drift-analyzer (sync) on updates
 ```
-
-Creator genera y solicita aceptación; Host decide/promueve.
+Creator generates and requests acceptance; Host decides/promotes.
 
 ---
 
-## 32. `creator-runs` ampliado
-
+## 32. `creator-runs` expanded
 ```text
 creator-runs/<generation-id>/
 ├── run.json
@@ -1435,15 +1365,13 @@ creator-runs/<generation-id>/
 ├── report.md
 └── finish.json
 ```
-
 ---
 
-## 33. Handoffs y prevención de ciclos
+## 33. Handoffs and cycle prevention
 
-Cada handoff contiene type, schemaVersion, runId, candidateDigest, sourceActor, targetActor, reason, evidenceRefs, allowedNextActions, attempt y parentEventId.
+Each handoff contains type, schemaVersion, runId, candidateDigest, sourceActor, targetActor, reason, evidenceRefs, allowedNextActions, attempt, and parentEventId.
 
-Tipos:
-
+Types:
 ```text
 creator.generation.complete
 bootstrap.accept.request
@@ -1453,72 +1381,71 @@ repair.complete
 repair.blocked
 host.rejected
 ```
+Controls:
 
-Controles:
-
-- máquina de estados Host;
-- transiciones allowlisted;
-- actor no se invoca a sí mismo;
-- accept una vez por digest;
-- reparación exige digest nuevo;
-- límites de intentos/tiempo/tokens/diff;
-- findings repetidos sin progreso → retained;
+- Host state machine;
+- transitions allowlisted;
+- an actor never invokes itself;
+- accept once per digest;
+- repair requires new digest;
+- attempts/time/tokens/diff limits;
+- repeated findings without progress → retained;
 - idempotency key;
-- terminal no reabre sin run nuevo;
-- repair nunca acepta;
-- pruebas de no ciclo y privilegios.
+- terminal does not reopen without new run;
+- repair never accepts;
+- non-cycle and privilege tests.
 
 ---
 
-## 34. Contexto, hot paths y métricas
+## 34. Context, hot paths and metrics
 
-Principios adoptados de conventions/check-portability/analyze-token-usage:
+Principles adopted from conventions/check-portability/analyze-token-usage:
 
-- cada línea cargada debe cambiar conducta;
-- contenido largo/raro fuera de entrypoint;
-- referencia lazy con trigger explícito;
-- instrucciones comunes, seguridad y acceptance inline;
-- grafo de carga validado;
-- presupuestos por archivo y hot path;
-- warnings 90%; presupuestos ratchet, no subir automáticamente;
-- medir fresh input, cache write/read y output por hilo/subagente;
-- optimizar primero output/input fresco, no cache barata;
-- retornos de scouts compactos, no dumps.
+- each loaded line must change behavior;
+- long/weird content outside entrypoint;
+- lazy reference with explicit trigger;
+- common instructions, security and inline acceptance;
+- validated load graph;
+- budgets per file and hot path;
+- 90% warnings; ratchet budgets, never raised automatically;
+- measure fresh input, cache write/read and output per thread/subagent;
+- optimize fresh output/input first, not cheap cache;
+- compact scout returns, not dumps.
 
-`context-budget-report.json` registra always-loaded, hot paths, bytes/tokens, observed runs y recomendaciones. Métricas no equivalen a calidad.
-
----
-
-## 35. Controles Host anti-autoaprobación
-
-1. Identidades separadas Creator/evaluator/reviewer/repairer/Host.
-2. Staging aislado; Creator no escribe activo.
-3. Contratos/tests sellados por hash.
-4. Holdouts ocultos y frescos tras exposición.
-5. Evaluadores read-only con salida append-only.
-6. Veredicto mecánico Host.
-7. Self-assessment solo informativo.
-8. Reparador sin acceso de escritura a controles.
-9. Comparar escenarios/expectativas/severity/permissions antes/después.
-10. Presupuesto de ciclos/diff/findings.
-11. Backup previo y promoción transaccional.
-12. Acceptance ligada a digest exacto.
-13. Capability missing → BLOCKED/DEGRADED, no PASS.
-14. Registro append-only.
-15. Pruebas no-cycle/self-invocation.
-16. Pruebas de privilegios/paths/tools.
-17. Prompt-injection fixtures del proyecto.
-18. Post-promotion smoke en ubicación real.
-19. No instalación/adquisición externa durante evaluación.
-20. Creator no puede modificar validator/Host/routing.
+`context-budget-report.json` records always-loaded, hot paths, bytes/tokens, observed runs and recommendations. Metrics do not equal quality.
 
 ---
 
-## 36. Qué se adopta, adapta y rechaza del repositorio externo
+## 35. Anti-self-approval Host Controls
 
-### Adoptar casi directamente
+1. Separate identities Creator/evaluator/reviewer/repairer/Host.
+2. Isolated staging; Creator never writes to the active set.
+3. Contracts and tests sealed by hash.
+4. Hidden and fresh holdouts after exposure.
+5. Read-only evaluators with append-only output.
+6. Mechanical verdict by the Host.
+7. Self-assessment is informational only.
+8. Repairer without write access to the controls.
+9. Compare scenarios/expectations/severity/permissions before and after.
+10. Cycles/diff/findings budget.
+11. Prior backup and transactional promotion.
+12. Acceptance linked to exact digest.
+13. Capability missing → BLOCKED/DEGRADED, not PASS.
+14. Append-only registration.
+15. No-cycle/self-invocation tests.
+16. Testing privileges/paths/tools.
+17. Prompt-injection fixtures of the project.
+18. Post-promotion smoke in real location.
+19. No external installation/acquisition during evaluation.
+20. Creator cannot modify validator/Host/routing.
 
-- scope invent test;
+---
+
+## 36. What is adopted, adapted and rejected from the external repository
+
+### Adopt almost directly
+
+- scope invention test;
 - audit whole-repo/area scan;
 - gaps/proposed/contradictions;
 - INFER/ASK/RECOMMEND;
@@ -1526,135 +1453,128 @@ Principios adoptados de conventions/check-portability/analyze-token-usage:
 - state models;
 - producer/consumer tracing;
 - migration/rollback;
-- requisito→escenario→evidencia;
-- independent read-only critique;
-- progressive disclosure de un modo;
+- requirement→scenario→evidence;
+- independent read-only criticism;
+- progressive disclosure of a mode;
 - durable artifacts;
 - spec/input coverage gate;
 - artifact ownership;
 - no evidence/no PASS;
 - NOT_COVERED;
-- root-cause loop con una hipótesis;
-- idempotencia y update quirúrgico;
-- hot-path budgets y métricas fresh/cache/output.
+- root-cause loop with a hypothesis;
+- idempotence and surgical update;
+- hot-path budgets and fresh/cache/output metrics.
 
-### Adaptar
+### Adapted
 
 - feature specs → skill/mode contracts;
 - AC-N → SR-N;
 - verify.md → scenario manifest;
 - test-preferences → harness profile;
 - Git diff → candidate manifest;
-- workflow tiers → riesgo/gates;
+- workflow tiers → risk/gates;
 - AGENTS context → project-manifest/instructions-index;
-- other model → reviewer realmente aislado;
+- other model → really isolated reviewer;
 - sync edits → drift plan/candidate regeneration;
 - Assumed → RETAINED_NEEDS_RATIFICATION;
-- adapters OpenAI → renderers desde modelo neutral.
+- OpenAI adapters → renderers from neutral model.
 
-### Rechazar
+### Reject
 
-- las nueve skills como modos finales;
-- slash workflow literal;
+- the nine skills as final modes;
+- literal slash workflow;
 - npx skills/MCP auto-install;
-- CLAUDE.md/AskUserQuestion/modelos Claude;
-- web/UI dimensions universales;
-- presets Clean/DDD/SOLID sin evidencia;
-- Git obligatorio/push desde Creator;
-- self-check como aceptación;
-- evaluator que modifica criterios;
-- repair que modifica tests/holdouts;
-- auto-promoción/done por generador;
-- adapters como lógica canónica;
-- score único de tokens;
-- reglas editoriales sin función;
-- copiar material MIT sin atribución.
+- CLAUDE.md/AskUserQuestion/Claude models;
+- universal web/UI dimensions;
+- Clean/DDD/SOLID presets without evidence;
+- Mandatory Git/push from Creator;
+- self-check as acceptance;
+- evaluator who modifies criteria;
+- repair that modifies tests/holdouts;
+- self-promotion/donate by generator;
+- adapters as canonical logic;
+- unique token score;
+- editorial rules without function;
+- copy MIT material without attribution.
 
 ---
 
-## 37. Riesgos adicionales de generar skills desde auditorías
+## 37. Additional risks of generating skills from audits
 
-- autojustificación: separar OBSERVED/INFERRED/DECIDED/PROPOSED;
-- anclaje en docs: barrido independiente primero;
-- cobertura falsa: inventario/partición Host;
-- rutas frágiles: perfil para datos variables;
-- skills genéricas renombradas: prueba de especialización;
-- bugs como convenciones: frecuencia no es validez;
-- mismo modelo autor/revisor: no alegar independencia;
-- permisos por texto: solo capabilities Host;
-- supply-chain: sin búsquedas/instalación automática;
-- optimizar para validador: anti-placeholders + negativos;
-- regeneración borra edits humanos: diff/ownership/backup;
-- drift falso: default no-op, solo cambio durable;
-- acceptance base obsoleta: ligar project/candidate digest;
-- calidad ≠ autorización/instalación;
-- no determinismo: misma base con output distinto → CONTRACT_DRIFT.
-
----
-
-## 38. Modificación de las fases C0–C7
-
-Las fases de §16 se amplían obligatoriamente:
-
-- C0: schemas también para discovery/design/tests/handoffs/drift.
-- C1: bootstrap instala capacidades internas Creator y genera run.
-- C2: Creator ejecuta pipeline §31, no un único prompt monolítico.
-- C3: validador incluye contracts, graph, hot paths, anti-autoaprobación y procedencia.
-- C4: backup/transacción preserva edición local y estado generacional completo.
-- C5: acceptance separa public fixtures, holdouts Host y review independiente; debug RETAINED.
-- C6: pilotos prueban generación inicial, RETAINED+repair, update por drift, local skill edit, rollback y uninstall.
-- C7: promoción reemplaza arquitectura/creator spec y añade THIRD_PARTY_NOTICES si aplica.
-
-Ninguna fase puede declararse completa solo por schema o archivos generados; debe demostrar conducta y fronteras Host.
+- self-justification: separate OBSERVED/INFERRED/DECIDED/PROPOSED;
+- anchor in docs: independent sweep first;
+- false coverage: inventory/partition Host;
+- fragile routes: profile for variable data;
+- renamed generic skills: specialization test;
+- mistakes such as conventions: frequency is not valid;
+- same author/reviewer model: do not claim independence;
+- text permissions: Host capabilities only;
+- supply-chain: no search/automatic installation;
+- optimize for validator: anti-placeholders + negatives;
+- regeneration deletes human edits: diff/ownership/backup;
+- false drift: default no-op, durable change only;
+- obsolete base acceptance: bind project/candidate digest;
+- quality ≠ authorization/installation;
+- non-determinism: same base with different output → CONTRACT_DRIFT.
 
 ---
 
-## 39. Resultado de arquitectura candidata revisada
+## 38. Modification of phases C0–C7
 
-La candidata completa deberá expresar:
+The phases of §16 are compulsorily expanded:
 
+- C0: schemas also for discovery/design/tests/handoffs/drift.
+- C1: bootstrap installs internal Creator capabilities and generates run.
+- C2: Creator executes §31 pipeline, not a single monolithic prompt.
+- C3: validator includes contracts, graph, hot paths, anti-self-approval and provenance.
+- C4: backup/transaction preserves local edition and complete generational state.
+- C5: acceptance separates public fixtures, Host holdouts and independent review; debug RETAINED.
+- C6: pilots test initial generation, RETAINED+repair, drift update, local skill edit, rollback and uninstall.
+- C7: promotion replaces architecture/creator spec and adds THIRD_PARTY_NOTICES if applicable.
+
+No phase may be declared complete by schema or generated files alone; host behavior and boundaries must be demonstrated.
+
+---
+
+## 39. Revised candidate architecture result
+
+The complete candidate must express:
 ```text
 usuario configura DSH/proveedor
-→ bootstrap crea run/snapshot/authority
-→ audit descubre realidad
-→ document normaliza contexto/contratos
-→ scope particiona capacidades
-→ architect diseña modos/skills
-→ test deriva escenarios; Host sella holdouts
-→ develop genera candidato staged
-→ Creator preflight e invoca accept
+→ bootstrap creates run/snapshot/authority
+→ audit discovers reality
+→ document normalizes context/contracts
+→ scope partitions capabilities
+→ architect designs modes/skills
+→ test derives scenarios; the Host seals the holdouts
+→ develop generates the candidate in staging
+→ Creator preflights and invokes accept
 → Host check verify + review
-→ ACCEPTED o RETAINED
-→ debug repara RETAINED dentro de límites
-→ backup y promoción transaccional
-→ sync detecta drift y prepara regeneración futura
-→ usuario opera modos específicos con mensajes cortos
+→ ACCEPTED or RETAINED
+→ debug repairs RETAINED within limits
+→ backup and transactional promotion
+→ sync detects drift and prepares future regeneration
+→ user operates project-specific modes with short messages
 ```
+This system uses the real depth of the nine skills as Creator's internal machinery without turning them into generic presets, without giving them Host authority, and without adopting their Claude/web/Git dependencies.
 
-Este sistema usa la profundidad real de las nueve skills como maquinaria interna de Creator sin convertirlas en presets genéricos, sin entregarles autoridad Host y sin adoptar sus dependencias de Claude/web/Git.
+## 40. Canal System 1 (decision model) as an advisory proposal
 
-## 40. Canal System 1 (modelo de decisión) como propuesta advisory
+A **decision model** is not a cheap LLM or a quick way of what is already used:
+It is another architecture. It generates no text. It receives a `state`, a list of allowed options and a rubric, and returns a probability distribution over those options. The reference pattern is Talker-Reasoner (arXiv 2410.08328): System 1 **proposes** and System 2 **endorses or vetoes**.
 
-Un **modelo de decisión** no es un LLM barato ni un modo rápido del que ya se usa:
-es otra arquitectura. No genera texto. Recibe un `state`, una lista de opciones
-permitidas y una rúbrica, y devuelve una distribución de probabilidad sobre esas
-opciones. El patrón de referencia es Talker-Reasoner (arXiv 2410.08328): el
-System 1 **propone** y el System 2 **endorsa o veta**.
+Complete design and phases in `docs/plans/system-one-decision-channel.md`. The rule
+that governs it is the same that already governs `skill_router` and the level of
+reasoning: **extends coverage and never grants authority**. The proposal travels
+with the digest of his signature; the Host verifies it, registers it and can revoke it.
 
-Diseño completo y fases en `docs/plans/system-one-decision-channel.md`. La regla
-que lo gobierna es la misma que ya gobierna `skill_router` y el nivel de
-razonamiento: **amplía cobertura y nunca otorga autoridad**. La propuesta viaja
-con el digest de su rúbrica; el Host la verifica, la registra y puede revocarla.
+**Prerequisite already met:** `DshLocalClient` wraps `session/selectModel` and
+reads `session/projections.modelSelection`, both read from the installed DSH tree.
+That was the blocker that kept even the reasoning level from being exercised: without it a System 1 would be integrated into a client that cannot select a session.
 
-**Prerequisito ya cumplido:** `DshLocalClient` envuelve `session/selectModel` y
-lee `session/projections.modelSelection`, ambos leídos del árbol DSH instalado.
-Ese era el bloqueante que impedía ejercer siquiera el nivel de razonamiento por
-paso, y sin él un System 1 estaría integrado a un cliente que no puede
-seleccionar sesión.
-
-**Riesgo que condiciona el diseño:** la calibración medida en una tarea no se
-traslada a otra (0.011 ECE en verificación de claims, 0.108 en legal, en la
-evaluación independiente de Vals AI). El modo de fallo peligroso es el acierto
-con confianza alta, no el error visible. De ahí que el canal se diseñe para que
-un fallo sea barato y detectable: umbral declarado, abstención nombrada por
-debajo de él, y digest de rúbrica versionado como insumo.
+**Risk that determines the design:** the calibration measured in a task is not
+transferred to another (0.011 ECE in claims verification, 0.108 in legal, in the
+independent evaluation of Vals AI). The dangerous failure mode is success
+with high confidence, no visible error. Hence the channel is designed so that
+a failure is cheap and detectable: declared threshold, abstention named by
+below it, and versioned rubric digest as input.

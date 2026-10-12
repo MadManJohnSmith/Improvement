@@ -1,45 +1,47 @@
-# Plan 07 — C6: piloto clean-room
+# Plan 07 — C6: clean-room pilot
 
-**Salida:** validar experiencia de usuario final en proyectos no usados durante el desarrollo.
-**Precondiciones:** C0–C5 y DSH/proveedor configurado por el participante.
+**Outcome:** validate the end-user experience in projects not used during development.
+**Prerequisites:** C0–C5 and DSH/provider configured by the participant.
 
-## Pilotos
+**English** | [Español](07-c6-piloto.es.md)
 
-1. Proyecto Python/backend.
-2. Proyecto multiparte JS/Rust/UI o equivalente.
+## Pilots
 
-Ninguno comparte generación, perfil, candidatos, holdouts ni diagnósticos privados con implementación.
+1. Python/backend project.
+2. Multipart JS/Rust/UI project or equivalent.
 
-## Recorrido
+Neither shares a generation, profile, candidates, holdouts, or private diagnostics with the implementation.
 
-- clone del tag de piloto;
-- `bootstrap install` de un comando;
-- Creator automático;
-- aceptación automática;
-- modos específicos visibles;
-- auditoría completa y dirigida;
-- reparación dirigida y de cola;
-- QA/reauditoría;
-- update con cambio material/drift;
-- edición local de skill y resolución conservadora;
+## Walkthrough
+
+- clone the pilot tag;
+- one-command `bootstrap install`;
+- automatic Creator;
+- automatic acceptance;
+- visible project-specific modes;
+- full and targeted audit;
+- targeted and queue repair;
+- QA/re-audit;
+- update after material change/drift;
+- local skill edit and conservative resolution;
 - rollback/uninstall;
-- feedback sin secretos.
+- feedback without secrets.
 
-## Métricas
+## Metrics
 
-- comandos/mensajes visibles;
-- decisiones humanas;
+- visible commands/messages;
+- human decisions;
 - troubleshooting;
-- tiempo;
-- requests/tokens por rol;
-- fallos/retenciones;
-- cambios de contexto;
-- claridad percibida.
+- time;
+- requests/tokens by role;
+- failures/retentions;
+- context switches;
+- perceived clarity.
 
 ## Gate
 
-Usuario sin conocimiento interno obtiene modos útiles, no edita JSON/prompts/recibos, no transporta IDs y puede abandonar/retomar. Cualquier intervención extraordinaria se registra y evita declarar UX limpia si era necesaria.
+A user without insider knowledge gets useful modes, does not edit JSON/prompts/receipts, does not transport IDs, and can leave/resume. Any extraordinary intervention is recorded and prevents declaring a clean UX if it was necessary.
 
-## Adaptación
+## Adaptation
 
-No relajar controles por feedback de conveniencia. Clasificar cada comentario como bug, ambigüedad, capacidad ambiental, mejora opcional o cambio de alcance.
+Do not relax controls because of convenience feedback. Classify each comment as a bug, ambiguity, environmental capability, optional improvement, or scope change.

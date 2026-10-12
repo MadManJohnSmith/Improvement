@@ -1,124 +1,129 @@
-# 10 · Lanzamiento público beta
+# 10 · Public beta launch
 
-Estado: **HECHO**. Las siete puertas G0–G6 están cerradas; G6 se completó el 2026-09-30 con el
-tag `v0.1.0-beta` publicado bajo autorización del titular. Meta cumplida en su definición
-operativa: que cualquier persona con un repo y DSH configurado instale Improvement con un
-comando, opere sus dos modos con prompts simples y reporte resultados. Lo que sigue abierto
-—D2, D11 y F5— es endurecimiento de la evidencia y no bloquea esta meta.
-Este plan sucede a los planes C0–C7 y a la campaña de endurecimiento sobre pilotos reales
-(Syncify y RehabWeb, ambas cerradas y documentadas en `CHANGELOG.md`).
+**English** | [Español](10-lanzamiento-publico.es.md)
 
-## Dónde estamos
+Status: **DONE**. The seven gates G0–G6 are closed; G6 was completed on 2026-09-30 with the
+`v0.1.0-beta` tag published under the owner's authorization. The goal is met by its operational
+definition: anyone with a repository and DSH configured installs Improvement with one command,
+operates its two modes with simple prompts and reports results. What remains open — D2, D11 and
+F5 — is hardening of the evidence and does not block this goal.
+This plan succeeds the C0–C7 plans and the hardening campaign over real pilots (Syncify and
+RehabWeb, both closed and documented in `CHANGELOG.md`).
 
-- **Probado:** instalación de principio a fin sin intervención del operador sobre un
-  entorno limpio (clon nuevo + home DSH nuevo con solo credenciales, roster inicial de
-  los cuatro presets de fábrica), con `Creator: GENERATED` y `Host: ACTIVE`; auditoría
-  con un prompt simple que persistió hallazgos con evidencia; reparación con un prompt
-  de seis palabras que arregló dos CRITICAL de seguridad en candidata hermana.
-- **Sólido:** núcleo fail-closed validado por dos pilotos (producto intacto hasta que el
-  operador integra), startup con sentinel, anti-escalada mecánica, reserva de candidata
-  antes de editar, reconciliación sin operador, retirada de candidatas documentada.
-- **Deuda declarada:** registro de candidata no conforme escrito por un modo generado;
-  compactación de runtime sin recibo; `decisions.py` y `metrics.py` huérfanos; sin
-  CAS/lease multiarchivo. El informe completo del mantenedor vive fuera del árbol
-  canónico (`.zcode/workflow-drafts/informe-improvement-memoria.md`).
+Status vocabulary note: the Spanish status tokens of this plan (`HECHO`, `RETAINED`, `EN CURSO`)
+are contract literals that the regression suite in `tests/` checks verbatim, and both the header
+line and the gate table keep them. The canonical Spanish header line is: Estado: **HECHO**.
 
-## Puertas de lanzamiento
+## Where we are
 
-| # | Puerta | Contenido | Estado |
+- **Proven:** end-to-end installation without operator intervention on a clean environment
+  (new clone + new DSH home with credentials only, the initial roster of the four
+  factory presets), with `Creator: GENERATED` and `Host: ACTIVE`; an audit with a simple prompt
+  that persisted findings with evidence; a repair with a six-word prompt that fixed two
+  security CRITICAL findings in a sister candidate.
+- **Solid:** fail-closed core validated by two pilots (product intact until the operator
+  integrates), startup with sentinel, mechanical anti-escalation, candidate reserved before
+  editing, reconciliation without the operator, documented candidate withdrawal.
+- **Declared debt:** non-conformant candidate record written by a generated mode; runtime
+  compaction without receipt; orphaned `decisions.py` and `metrics.py`; no multi-file
+  CAS/lease. The maintainer's complete report lives outside the canonical tree
+  (`.zcode/workflow-drafts/informe-improvement-memoria.md`).
+
+## Launch gates
+
+| # | Gate | Content | Status |
 |---|---|---|---|
-| G0 | Licencia | Elegir y añadir `LICENSE` (recomendación: MIT o Apache-2.0; decisión del titular) y reflejarla en el README. Sin esto el repo no debe anunciarse como instalable. | HECHO 2026-09-30 (Apache-2.0) |
-| G1 | Contrato de candidata | El `recording_command` emite el objeto JSON exacto a persistir; la persona prohíbe añadir campos; el preflight informa de lo que descarta (no solo lo archiva). Regresión con el caso RehabWeb (campos extra + ruta absoluta). | HECHO 2026-09-29 |
-| G2 | decisions + metrics al ciclo | Llamar al ledger de métricas y al almacén de decisiones al cierre de turno en `host_controller.py` (el hook ya existe: transiciones y UNIT_DONE/UNIT_RETAINED). Regresión con la regresión existente de ambos módulos. | HECHO 2026-09-29 |
-| G3 | Compactación con recibo | El desbordamiento de runtime deja recibo (patrón del archivo legacy, `dropped_records` incluido) en lugar de perder registros sin traza. Caso Syncify: 50/50 handoffs. | HECHO 2026-09-29 |
-| G4 | E2E desde clon de GitHub | Repetir la instalación limpia clonando desde `https://github.com/MadManJohnSmith/Improvement.git` (no local) sobre un repo demo, verificando roster, skills y un ciclo auditor→reparador. | HECHO 2026-09-29 |
-| G5 | Documentación pública | README (hecho), quickstart no técnico en `docs/usage.md`, política de feedback: qué comparte un tester (su `mode-state` es la evidencia). | HECHO 2026-09-30 |
-| G6 | Etiqueta y notas | Tag `v0.1.0-beta`, release notes con las métricas reales del piloto y los límites conocidos. | HECHO 2026-09-30 (publicada con autorización del titular) |
-| G7 | Verificación contra el stack real | El Host resuelve un plan de capacidades al instalar (`scripts/stack.py`): entrypoint propio del producto por stack (cualquier tecnología, monorepos incluidos), estado real de cada capacidad y paso exacto de provisión fuera del producto. La evidencia de verificación es ese entrypoint o `BLOCKED` nombrando lo que falta; los stubs son material de investigación, nunca resultado. Regresión con el caso rehab (Django ausente) y con los stacks reales de Syncify, RehabWeb y LoboApp. | HECHO 2026-09-29 |
+| G0 | License | Choose and add `LICENSE` (recommendation: MIT or Apache-2.0; owner's decision) and reflect it in the README. Without this the repo must not be advertised as installable. | HECHO (DONE) 2026-09-30 (Apache-2.0) |
+| G1 | Candidate contract | `recording_command` emits the exact JSON object to persist; the human forbids adding fields; the preflight reports what it discards (not just what it archives). Regression with the RehabWeb case (extra fields + absolute path). | HECHO (DONE) 2026-09-29 |
+| G2 | decisions + metrics in the cycle | Call the metrics ledger and the decision store at turn close in `host_controller.py` (the hook already exists: transitions and UNIT_DONE/UNIT_RETAINED). Regression with the existing regression of both modules. | HECHO (DONE) 2026-09-29 |
+| G3 | Compaction with receipt | Runtime overflow leaves a receipt (legacy file pattern, `dropped_records` included) instead of losing records without trace. Syncify case: 50/50 handoffs. | HECHO (DONE) 2026-09-29 |
+| G4 | E2E from GitHub clone | Repeat the clean install cloning from `https://github.com/MadManJohnSmith/Improvement.git` (not local) over a demo repo, verifying roster, skills and an auditor→repairer cycle. | HECHO (DONE) 2026-09-29 |
+| G5 | Public documentation | README (done), non-technical quickstart in `docs/usage.md`, feedback policy: what a tester shares (their `mode-state` is the evidence). | HECHO (DONE) 2026-09-30 |
+| G6 | Tag and notes | Tag `v0.1.0-beta`, release notes with the real pilot metrics and the known limits. | HECHO (DONE) 2026-09-30 (published with the owner's authorization) |
+| G7 | Verification against the real stack | The Host resolves a capability plan at install time (`scripts/stack.py`): the product's own entrypoint per stack (any technology, monorepos included), the real state of each capability and the exact provisioning step outside the product. Verification evidence is that entrypoint or `BLOCKED` naming what is missing; stubs are research material, never a result. Regression with the rehab case (Django missing) and with the real stacks of Syncify, RehabWeb and LoboApp. | HECHO (DONE) 2026-09-29 |
 
-## Criterios de la beta
+## Beta criteria
 
-- Un tester necesita: Linux, `git`, DSH instalado con un proveedor configurado por él,
-  y su propio repositorio. El framework no obtiene credenciales.
-- Éxito mínimo de un tester: `install` termina `ACTIVE`, el auditor persiste hallazgos
-  con evidencia, un prompt de reparación produce una candidata con verificación, y el
-  operador integra con commit.
-- Feedback: el `mode-state` del tester ES el informe. Se pide compartir
-  `findings.jsonl`, `handoffs.jsonl` y `verification-results.jsonl` (sin código del
-  producto), más los turnos que acabaron en `RETAINED` y por qué.
+- A tester needs: Linux, `git`, DSH installed with a provider configured by them, and their own
+  repository. The framework obtains no credentials.
+- A tester's minimum success: `install` ends `ACTIVE`, the auditor persists findings with
+  evidence, a repair prompt produces a candidate with verification, and the operator integrates
+  with a commit.
+- Feedback: the tester's `mode-state` IS the report. Sharing `findings.jsonl`, `handoffs.jsonl`
+  and `verification-results.jsonl` (without product code) is requested, plus the turns that
+  ended `RETAINED` and why.
 
-## Riesgos declarados
+## Declared risks
 
-- DSH y el proveedor son prerrequisito del usuario; el framework no instala ni configura
-  proveedores, y sin sesión autenticada el run queda recuperable, no activo.
-- La actualización multiarchivo de `mode-state` no tiene CAS/lease: no se afirma
-  aislamiento ni atomicidad concurrente.
-- Los modos nunca hacen commit/push: el operador integra. Publicar esto como
-  característica (no como falta) es parte del mensaje público.
-- Dependencias de terceros ya atribuidas en `THIRD_PARTY_NOTICES.md`; cualquier skill
-  nueva que entre a `library/` exige su entrada de procedencia.
-- Proyectos móviles sin toolchain (caso LoboApp: Flutter sin SDK en la máquina): la
-  verificación del candidato queda `BLOCKED` por falta de capacidad, nunca PASS inventado.
-  Con el SDK materializado fuera del producto la misma verificación corre de verdad, y el
-  plan nombra el entrypoint por su ruta absoluta cuando el PATH por defecto no lo resuelve:
-  un nombre suelto que la shell del modo no puede invocar convertiría una suite real en un
-  `BLOCKED` que el runtime no se ha ganado (`scripts/stack.py::_runnable_entrypoint`).
-  Adaptador candidato para evidencia en dispositivo Android: `google/artemis` (Apache-2.0,
-  automatización de UI con capturas/logcat y servidor MCP). No se adopta como dependencia —
-  añade ADB/emulador/FFmpeg al entorno del usuario, solo cubre objetivos Android y no emite
-  diagnósticos de análisis estático; si un tester de proyecto móvil lo integra, exige entrada
-  de procedencia y queda como verificador externo, nunca como fuente de autoridad.
+- DSH and the provider are the user's prerequisite; the framework neither installs nor
+  configures providers, and without an authenticated session the run stays recoverable, not
+  active.
+- Multi-file `mode-state` updates have no CAS/lease: no isolation or concurrent atomicity is
+  claimed.
+- The modes never commit/push: the operator integrates. Publishing this as a feature (not as a
+  gap) is part of the public message.
+- Third-party dependencies are already attributed in `THIRD_PARTY_NOTICES.md`; any new skill
+  entering `library/` requires its provenance entry.
+- Mobile projects without a toolchain (LoboApp case: Flutter without the SDK on the machine):
+  the candidate's verification stays `BLOCKED` for missing capability, never an invented PASS.
+  With the SDK materialized outside the product, the same verification runs for real, and the
+  plan names the entrypoint by its absolute path when the default `PATH` does not resolve it:
+  a bare name the mode's own shell cannot invoke would turn a real suite into a `BLOCKED` the
+  runtime has not earned (`scripts/stack.py::_runnable_entrypoint`).
+  Candidate adapter for on-device Android evidence: `google/artemis` (Apache-2.0, UI automation
+  with screenshots/logcat and an MCP server). It is not adopted as a dependency — it adds
+  ADB/emulator/FFmpeg to the user's environment, covers only Android targets and does not emit
+  static-analysis diagnostics; if a mobile-project tester integrates it, it requires a
+  provenance entry and remains an external verifier, never a source of authority.
 
-## Línea base medible del piloto (para comparar durante la beta)
+## Measurable pilot baseline (to compare during the beta)
 
-| Métrica | Syncify | RehabWeb | LoboApp |
+| Metric | Syncify | RehabWeb | LoboApp |
 |---|---|---|---|
-| Comandos de instalación | 1 | 1 | 1 |
-| Hallazgos distintos persistidos | 77 (114 registros) | 45 | 9 + 5 en la reauditoría |
-| Severidad máxima | HIGH | 6 CRITICAL | 1 CRITICAL |
-| Trabajo verificado | 78 items VERIFIED | 2 CRITICAL reparados | 14 items VERIFIED |
-| Verificaciones persistidas | 67 (61 PASS / 6 BLOCKED) | 4 | 14 PASS (flutter test) |
-| Commits de los modos integrados | 15 | 1 | 4 |
-| Resultado | CI verde en 3 jobs | 220 líneas de arreglo en 3 ficheros | 14 hallazgos cerrados; 166 pruebas Flutter y `flutter analyze` sin incidencias |
+| Install commands | 1 | 1 | 1 |
+| Distinct findings persisted | 77 (114 records) | 45 | 9 + 5 in the re-audit |
+| Maximum severity | HIGH | 6 CRITICAL | 1 CRITICAL |
+| Verified work | 78 VERIFIED items | 2 CRITICAL repaired | 14 VERIFIED items |
+| Persisted verifications | 67 (61 PASS / 6 BLOCKED) | 4 | 14 PASS (flutter test) |
+| Commits from the modes, integrated | 15 | 1 | 4 |
+| Outcome | green CI in 3 jobs | 220 lines of fix in 3 files | 14 findings closed; 166 Flutter tests and `flutter analyze` with no incidents |
 
-LoboApp se instaló de cero desde el clon de GitHub del framework sobre un producto Flutter
-recién clonado, y es la campaña que cerró G7: la verificación se ejecutó con
-`flutter test` real desde la copia local del workspace, no con un arnés. Se llega al final:
-los 9 hallazgos de la primera auditoría se repararon e integraron en cuatro turnos, la
-reauditoría los confirmó como `RESOLVED` con evidencia y encontró 5 más —uno de ellos creado
-por el arreglo anterior, que dejó sin poder restaurar un respaldo heredado— y todos se
-cerraron. Total `bb01cba..4c0bb30`.
+LoboApp was installed from scratch from the framework's GitHub clone over a freshly cloned
+Flutter product, and it is the campaign that closed G7: verification ran with real `flutter test`
+from the workspace's local copy, not with a harness. It reached the end: the 9 findings of the
+first audit were repaired and integrated in four turns, the re-audit confirmed them as
+`RESOLVED` with evidence and found 5 more — one of them created by the previous fix, which left
+an inherited backup unrestorable — and all were closed. Range `bb01cba..4c0bb30`.
 
-Su coste en tiempo fue alto: DSH se cae cada varios minutos en este entorno y cada turno se
-relanza hasta que termina, con un Creator que hubo que reanudar tres veces. El marco aguantó
-todo: producto intacto hasta la integración, candidatas registradas y reconciliadas, base
-declarada re-anclada al HEAD con la ascendencia comprobada mecánicamente, y el operador
-integrando solo con commit, fast-forward y push.
+Its time cost was high: DSH falls every few minutes in this environment and each turn is
+relaunched until it finishes, with a Creator that had to be resumed three times. The framework
+held throughout: product intact until integration, candidates recorded and reconciled, the
+declared base re-anchored to HEAD with ancestry verified mechanically, and the operator
+integrating only with commit, fast-forward and push.
 
-Métrica del propio framework: 632 pruebas en verde **en el tag `v0.1.0-beta`** — desde entonces
-la suite está en 670 con el runtime `0.1.7-rc.2` instalado, cuyo recuento se actualiza aquí y
-no en las notas del tag, que describen lo que ese tag contenía; las unidades nacen
-de los pilotos; una pérdida silenciosa del preflight detectada y corregida con regresión.
+Metric for the framework itself: 632 tests green **in the `v0.1.0-beta` tag** — since then the
+suite is at 670 with runtime `0.1.7-rc.2` installed, whose count is updated here and not in the
+tag notes, which describe what that tag contained; the units were born from the pilots; a silent
+preflight loss detected and fixed with a regression.
 
-## El framework sobre sí mismo (self-test)
+## The framework over itself (self-test)
 
-El framework instalado de cero sobre un clon de sí mismo, con su entrypoint declarado
-(`python3 -B -m unittest discover -s tests`), no solo se auditó: se corrigió. El auditor
-persistió 7 hallazgos (2 HIGH, 5 MEDIUM) y el reparador atendió los dos primeros con un
-prompt de seis palabras, verificando con la suite real del proyecto (606 pruebas en el
-momento de aquella campaña; 632 al publicar la beta):
+The framework installed from scratch over a clone of itself, with its declared entrypoint
+(`python3 -B -m unittest discover -s tests`), did not only get audited: it was fixed. The auditor
+persisted 7 findings (2 HIGH, 5 MEDIUM) and the repairer attended the first two with a six-word
+prompt, verifying with the project's own real suite (606 tests at the time of that campaign; 632
+when the beta was published):
 
-- **IMP-AUD-001 (HIGH):** la compactación por límite descartaba registros sin recibo. G3
-  cubría el descarte por incompatibilidad de esquema, pero lo que excedía el tope se perdía
-  en silencio. Ahora el descarte por límite deja recibo y copia archivada.
-- **IMP-AUD-002 (HIGH):** la herramienta de escritura solo acotaba
-  `verification-results.jsonl`; el resto del estado gestionado quedaba libre. Una sesión
-  gestionada declara su raíz `<workspace>/mode-state` y todo destino fuera de ella se
-  deniega antes del write-intent.
+- **IMP-AUD-001 (HIGH):** compaction by threshold discarded records without a receipt. G3 covered
+  the drop by schema incompatibility, but what exceeded the ceiling was lost in silence. Now the
+  drop by limit leaves a receipt and an archived copy.
+- **IMP-AUD-002 (HIGH):** the write tool only bounded `verification-results.jsonl`; the rest of
+  the managed state was left free. A managed session declares its root `<workspace>/mode-state`
+  and every destination outside it is denied before the write-intent.
 
-Ambos están integrados con regresión (`99a9f0e`). El producto —el clon del framework—
-quedó intacto hasta la integración, con commit y fast-forward del operador.
+Both are integrated with a regression (`99a9f0e`). The product —the framework clone— was left
+intact until integration, with the operator's commit and fast-forward.
 
-G0 quedó cerrada el 2026-09-30: Apache-2.0 elegida por el titular, `LICENSE` en la raíz y
-referencia en el README. Queda solo G6 —el tag `v0.1.0-beta` y la publicación—, que requiere
-autorización de destino.
+G0 was closed on 2026-09-30: Apache-2.0 chosen by the owner, `LICENSE` at the root and the
+reference in the README. Only G6 remains —the tag `v0.1.0-beta` and the publication—, which
+requires authorization of the destination.

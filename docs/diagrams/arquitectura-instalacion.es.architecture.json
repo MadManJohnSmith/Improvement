@@ -1,0 +1,415 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Qué instala Improvement en tu máquina",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "escrituras",
+        "label": "Quién escribe qué",
+        "focus": [
+          "auditor",
+          "reparador",
+          "estado",
+          "candidata"
+        ],
+        "note": "El auditor escribe estado; el reparador escribe candidata y estado. El Host publica helpers verificados."
+      },
+      {
+        "id": "frontera",
+        "label": "Frontera de integración",
+        "focus": [
+          "operador",
+          "producto",
+          "candidata"
+        ],
+        "note": "El producto queda intacto: el operador revisa y aplica un diff, no fusiona un worktree."
+      },
+      {
+        "id": "plan",
+        "label": "Verificación real",
+        "focus": [
+          "plan",
+          "reparador",
+          "estado"
+        ],
+        "note": "El plan de capacidades nombra el entrypoint real y qué falta en la máquina."
+      },
+      {
+        "id": "skills",
+        "label": "Procedencia",
+        "focus": [
+          "biblioteca",
+          "host",
+          "auditor"
+        ],
+        "note": "Creator reutiliza contra el snapshot congelado; el guard viaja en el bundle."
+      },
+      {
+        "id": "decision",
+        "label": "Decisiones advisory",
+        "focus": [
+          "sistema1",
+          "host",
+          "helpers"
+        ],
+        "note": "System 1 es solo diseño; los helpers con digest ya están publicados por el Host."
+      }
+    ],
+    "output": "docs/diagrams/arquitectura-instalacion.es.html",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "Modo generado"
+        },
+        "database": {
+          "label": "Estado en disco"
+        },
+        "security": {
+          "label": "Autoridad (Host)"
+        },
+        "external": {
+          "label": "Operador y árboles de código"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "operador",
+      "type": "external",
+      "label": "Operador",
+      "sublabel": "prompts breves e integración",
+      "pos": [
+        40,
+        320
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "host",
+      "type": "security",
+      "label": "Improvement Host",
+      "sublabel": "valida · activa · retiene",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "estados mecánicos"
+    },
+    {
+      "id": "biblioteca",
+      "type": "database",
+      "label": "Biblioteca de skills",
+      "sublabel": "21 base + 4 patrones · 50 fuentes",
+      "pos": [
+        300,
+        40
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "procedencia registrada"
+    },
+    {
+      "id": "auditor",
+      "type": "backend",
+      "label": "<Proyecto>-auditor",
+      "sublabel": "examina y persiste hallazgos",
+      "pos": [
+        300,
+        170
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "reparador",
+      "type": "backend",
+      "label": "<Proyecto>-continuous-repair",
+      "sublabel": "edita sombra · verifica con entrypoint",
+      "pos": [
+        300,
+        420
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "producto",
+      "type": "external",
+      "label": "Tu producto",
+      "sublabel": "repo canónico",
+      "pos": [
+        640,
+        60
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "tag": "sin escritura de los modos"
+    },
+    {
+      "id": "estado",
+      "type": "database",
+      "label": "mode-state/",
+      "sublabel": "findings · handoffs · verificaciones · overflows",
+      "pos": [
+        640,
+        230
+      ],
+      "size": [
+        200,
+        84
+      ]
+    },
+    {
+      "id": "candidata",
+      "type": "external",
+      "label": "Candidata",
+      "sublabel": "repo sombra con .git propio",
+      "pos": [
+        640,
+        420
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "plan",
+      "type": "database",
+      "label": "capability-plan.json",
+      "sublabel": "entrypoints reales del producto",
+      "pos": [
+        890,
+        230
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "firmado por digest"
+    },
+    {
+      "id": "helpers",
+      "type": "database",
+      "label": "Helpers Host",
+      "sublabel": "3 archivos · SHA-256 fijado",
+      "pos": [
+        890,
+        355
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "ya implementado"
+    },
+    {
+      "id": "sistema1",
+      "type": "external",
+      "label": "System 1 (diseño)",
+      "sublabel": "NO IMPLEMENTADO · advisory",
+      "pos": [
+        890,
+        460
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "aún no operativo"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "<Proyecto>-workspace/",
+      "wraps": [
+        "estado",
+        "plan",
+        "helpers"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Frontera: commit y push solo del operador",
+      "wraps": [
+        "producto"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Guard anti-escalada first-party en bash",
+      "wraps": [
+        "auditor",
+        "reparador"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "bib-host",
+      "from": "biblioteca",
+      "to": "host",
+      "label": "snapshot con digest"
+    },
+    {
+      "id": "op-aud",
+      "from": "operador",
+      "to": "auditor",
+      "label": "prompt breve"
+    },
+    {
+      "id": "op-rep",
+      "from": "operador",
+      "to": "reparador",
+      "label": "prompt breve"
+    },
+    {
+      "id": "host-aud",
+      "from": "host",
+      "to": "auditor",
+      "label": "activa o RETAINED"
+    },
+    {
+      "id": "host-rep",
+      "from": "host",
+      "to": "reparador",
+      "label": "activa o RETAINED"
+    },
+    {
+      "id": "aud-prod",
+      "from": "auditor",
+      "to": "producto",
+      "label": "solo lectura",
+      "variant": "dashed"
+    },
+    {
+      "id": "aud-est",
+      "from": "auditor",
+      "to": "estado",
+      "label": "hallazgos",
+      "variant": "emphasis",
+      "labelDy": -28,
+      "labelDx": -42
+    },
+    {
+      "id": "est-rep",
+      "from": "estado",
+      "to": "reparador",
+      "label": "hallazgos OPEN"
+    },
+    {
+      "id": "rep-est",
+      "from": "reparador",
+      "to": "estado",
+      "label": "registra verificación"
+    },
+    {
+      "id": "rep-cand",
+      "from": "reparador",
+      "to": "candidata",
+      "label": "edita solo aquí",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plan-rep",
+      "from": "plan",
+      "to": "reparador",
+      "label": "entrypoint real"
+    },
+    {
+      "id": "op-prod",
+      "from": "operador",
+      "to": "producto",
+      "label": "revisa y aplica diff · commit/push",
+      "variant": "security"
+    },
+    {
+      "id": "host-helpers",
+      "from": "host",
+      "to": "helpers",
+      "label": "publica",
+      "labelDy": -20,
+      "labelDx": 32
+    },
+    {
+      "id": "helpers-rep",
+      "from": "helpers",
+      "to": "reparador",
+      "label": "invoca tras verificar SHA-256"
+    },
+    {
+      "id": "s1-host",
+      "from": "sistema1",
+      "to": "host",
+      "label": "propuesta futura · sin autoridad",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "La frontera",
+      "items": [
+        "Los modos nunca escriben tu producto",
+        "Candidata: repositorio sombra con .git propio",
+        "El commit y el push son del operador"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Memoria acotada",
+      "items": [
+        "Hallazgos anclados a un fragmento literal",
+        "Deduplicación por (hallazgo, revisión)",
+        "Topes por fichero: compacta con recibo"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Skills con procedencia",
+      "items": [
+        "21 base + 4 patrones desde 50 fuentes fijadas",
+        "Creator reutiliza contra el snapshot con digest",
+        "El guard anti-escalada viaja en el bundle"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Verificación real",
+      "items": [
+        "El plan nombra el entrypoint propio del producto",
+        "PASS exige evidencia del stack real",
+        "Falta una herramienta: BLOCKED, nunca PASS"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Modelos de decisión (diseño)",
+      "items": [
+        "System 1 propone; nunca autoriza",
+        "Rúbrica versionada y umbral aún pendientes",
+        "El Host valida o se abstiene"
+      ]
+    }
+  ]
+}

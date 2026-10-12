@@ -1,34 +1,36 @@
-# Plan 04 — C3: validador Host de generación
+# Plan 04 — C3: Host generation validator
 
-**Salida:** validador independiente de paquetes Creator, fail-closed y sin escrituras activas.
-**Precondiciones:** C0 schemas/corpus; C2 genera al menos un fixture.
+**English** | [Español](04-c3-validador-host.es.md)
 
-## Capas
+**Output:** independent, fail-closed validator of Creator packages, without active writes.
+**Preconditions:** C0 schemas/corpus; C2 generates at least one fixture.
+
+## Layers
 
 1. schema/version/unknown fields;
-2. manifest exhaustivo, hashes, file types, paths y symlinks;
-3. graph de referencias, ciclos y hot paths;
+2. exhaustive manifest, hashes, file types, paths and symlinks;
+3. reference graph, cycles and hot paths;
 4. contracts/requirements/source provenance;
-5. capabilities, roots, tools, models y routing;
-6. portability, scripts, subprocess, red y datos;
+5. capabilities, roots, tools, models and routing;
+6. portability, scripts, subprocesses, network and data;
 7. context budgets;
 8. collision/ownership/precedence;
-9. licencia/THIRD_PARTY_NOTICES;
-10. anti-autoapproval y lifecycle.
+9. license/THIRD_PARTY_NOTICES;
+10. anti-self-approval and lifecycle.
 
-## Pasos
+## Steps
 
-- reutilizar validadores actuales solo donde el contrato coincida;
-- crear CLI/API pura sin mutación;
-- producir reportes separados por capa;
-- crear corpus negativo por cada regla;
-- enlazar cada rejection a una ruta/campo/claim;
-- distinguir `RETAINED`, `REJECTED`, `BLOCKED`, `UNVERIFIED`.
+- reuse existing validators only where the contract matches;
+- create a pure CLI/API without mutation;
+- produce separate reports for each layer;
+- create a negative corpus for each rule;
+- link each rejection to a path/field/claim;
+- distinguish `RETAINED`, `REJECTED`, `BLOCKED`, `UNVERIFIED`.
 
 ## Gate
 
-Todo negativo falla cerrado antes de backup/install; positivo completo produce `READY_FOR_ACCEPTANCE`; reportes son reproducibles desde bytes/manifests.
+Every negative case fails closed before backup/install; the complete positive case produces `READY_FOR_ACCEPTANCE`; reports are reproducible from bytes/manifests.
 
-## Adaptación
+## Adaptation
 
-Los thresholds de bytes/hot path y allowlists se fijan después de medir C2, nunca se elevan para hacer pasar un candidato.
+Byte/hot-path thresholds and allowlists are set after measuring C2; they are never raised just to make a candidate pass.
