@@ -1,5 +1,34 @@
 # Cambios
 
+## Diseño del canal System 1 y liberación de su bloqueante — 2026-10-12
+Diseño nuevo, sin código de canal todavía. Lo implementado es el prerequisito.
+- **Bloqueante liberado.** `DshLocalClient` envuelve `session/selectModel` y lee
+  `session/projections.modelSelection`, ambos leídos del árbol DSH instalado.
+  Antos el ejecutor de workflows sabía aplicar un nivel de razonamiento por paso
+  pero **abstenía siempre** porque el cliente no tenía el RPC; ahora el wrapper
+  existe, valida el nivel antes del wire y exige que el `applied` devuelto
+  coincida con lo pedido. Cinco regresiones nuevas fijan ese contrato con
+  cliente falso; la prueba que fijaba la carencia se reescribe para decir lo
+  cierto —el wrapper existe, lo no ejercitado es una sesión real— y se conserva
+  la que exige que `send_prompt`/`create_creator_session` **no** admitan nivel.
+- **Diseño del canal** en `docs/plans/system-one-decision-channel.md`, con
+  sección en la arquitectura (§40) y estado en `docs/status.md`. Un modelo de
+  decisión no es un LLM barato: no genera texto, devuelve probabilidades sobre
+  opciones dadas. Regla gobernante: **amplía cobertura, nunca otorga
+  autoridad** —la misma que ya gobierna `skill_router` y el nivel de
+  razonamiento.
+- **Evidencia que condiciona el diseño:** independiente de Vals AI, Jev empata
+  con un modelo frontera en verificación de claims a 1/498 del coste y con la
+  mejor calibración del conjunto (ECE 0.011), pero en legal queda último de 12
+  con calibración 0.108. La calibración **no se traslada** entre tareas, así que
+  el modo de fallo real es el acierto con confianza alta. De ahí el umbral
+  declarado, la abstención nombrada y la rúbrica versionada con digest.
+- **Fases:** 0 transporte (hecha), 1 rúbrica versionada, 2 piloto de
+  deduplicación de hallazgos (`episodes.signature`), 3 hechos candidatos para el
+  router, 4 clasificación de fallos del ciclo. **Dónde no entra:** veredictos,
+  aceptación, verificación de diff, reconciliación y adopción de candidata.
+- **Suite: 1085 OK (11 omitidas).** Cifra publicada actualizada a 1096.
+
 ## Los comandos del ciclo ya no dependen de que el modo transcriba un blob — 2026-10-11
 Cambio de framework, medido sobre el fallo real que detuvo el cierre del ciclo X1.
 - **El defecto.** `repair_recording_command`, `repair_resume_command` y

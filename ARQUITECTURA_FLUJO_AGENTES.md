@@ -300,9 +300,11 @@ bootstrap.py purge-data      # destructivo, separado y con confirmación
   episódica ocurre solo tras `RUN_COMPLETED`, así que un run `RETAINED` no deja
   rastro para la campaña siguiente;
 - nivel de razonamiento (`scripts/workflow_reasoning.py`): vocabulario cerrado
-  (`xhigh`/`high`/`medium`/`low`/`minimal`) y `apply_effort` abstiene cuando el
-  cliente DSH no expone la selección de modelo de sesión; nunca cambia proveedor
-  ni modelo, solo el esfuerzo.
+  (`xhigh`/`high`/`medium`/`low`/`minimal`) y `apply_effort` abstiene cuando la
+  sesión no tiene proveedor/modelo fijados o cuando el nivel devuelto no es el
+  pedido; nunca cambia proveedor ni modelo, solo el esfuerzo. El cliente envuelve
+  `session/selectModel` y lee `session/projections.modelSelection` —ambos leídos
+  del árbol DSH instalado—, que era el bloqueante que impedía ejercer el nivel.
 
 ### 4.9 Ejecutor de workflows en el Host
 
@@ -1630,3 +1632,29 @@ usuario configura DSH/proveedor
 ```
 
 Este sistema usa la profundidad real de las nueve skills como maquinaria interna de Creator sin convertirlas en presets genéricos, sin entregarles autoridad Host y sin adoptar sus dependencias de Claude/web/Git.
+
+## 40. Canal System 1 (modelo de decisión) como propuesta advisory
+
+Un **modelo de decisión** no es un LLM barato ni un modo rápido del que ya se usa:
+es otra arquitectura. No genera texto. Recibe un `state`, una lista de opciones
+permitidas y una rúbrica, y devuelve una distribución de probabilidad sobre esas
+opciones. El patrón de referencia es Talker-Reasoner (arXiv 2410.08328): el
+System 1 **propone** y el System 2 **endorsa o veta**.
+
+Diseño completo y fases en `docs/plans/system-one-decision-channel.md`. La regla
+que lo gobierna es la misma que ya gobierna `skill_router` y el nivel de
+razonamiento: **amplía cobertura y nunca otorga autoridad**. La propuesta viaja
+con el digest de su rúbrica; el Host la verifica, la registra y puede revocarla.
+
+**Prerequisito ya cumplido:** `DshLocalClient` envuelve `session/selectModel` y
+lee `session/projections.modelSelection`, ambos leídos del árbol DSH instalado.
+Ese era el bloqueante que impedía ejercer siquiera el nivel de razonamiento por
+paso, y sin él un System 1 estaría integrado a un cliente que no puede
+seleccionar sesión.
+
+**Riesgo que condiciona el diseño:** la calibración medida en una tarea no se
+traslada a otra (0.011 ECE en verificación de claims, 0.108 en legal, en la
+evaluación independiente de Vals AI). El modo de fallo peligroso es el acierto
+con confianza alta, no el error visible. De ahí que el canal se diseñe para que
+un fallo sea barato y detectable: umbral declarado, abstención nombrada por
+debajo de él, y digest de rúbrica versionado como insumo.
