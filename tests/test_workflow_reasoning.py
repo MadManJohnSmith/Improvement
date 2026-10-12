@@ -564,29 +564,116 @@ class FakeReasoningClient:
                              'reasoning_effort': level}, 'applied': level}
 
 
-class RealRuntimeNotVerifiedTests(unittest.TestCase):
-    """Carencia nombrada: el RPC real de seleccion de modelo no se ejercio.
+class ClientSelectionWrapperTests(unittest.TestCase):
+    """El wrapper del cliente envuelve los RPC reales leidos en DSH 0.2.0-rc.2.
 
-    El contrato pide aplicar el nivel en la sesion DSH real. Eso exige
-    `ModelDirectory.select` -> `session/selectModel`, que este repo todavia no
-    tiene cliente para: `creator_client.DshLocalClient` no expone ningun
-    `select_session_model` ni lectura de `modelSelection`. Estas pruebas fijan
-    la carencia para que no se afirme en falso lo no ejecutado.
+    `session/selectModel` y `session/projections` existen en el arbol instalado
+    (`@deepseek-ai/dsh-api-session-controller/lib/typert.host.js`: esquema
+    `session/selectModel` en 828-834 con `sessionId`/`provider`/`model`/
+    `reasoningEffort` opcional, y `modelSelection.lastUsed`/`next` en 83-90).
+    Estas pruebas fijan que el wrapper habla exactamente ese contrato: nivel
+    validado antes de enviarlo, respuesta `applied` comprobada y lectura de la
+    seleccion activa sin inventar campos.
     """
 
-    def test_the_effective_client_does_not_expose_the_model_selection_rpc(self):
-        """El cliente efectivo del framework carece del RPC de seleccion."""
+    class _Client:
+        def __init__(self, applied=None, projection=None, error=None):
+            self.calls = []
+            self._applied = applied
+            self._projection = projection
+            self._error = error
+
+        def rpc(self, endpoint, args=None, timeout=30):
+            self.calls.append((endpoint, args))
+            if endpoint == 'session/selectModel':
+                if self._error:
+                    raise self._error
+                return self._applied
+            if endpoint == 'session/projections':
+                return {'value': {'modelSelection': self._projection}}
+            raise AssertionError('RPC inesperado: ' + endpoint)
+
+    def _client(self):
+        sys.path.insert(0, str(REPO_ROOT / 'scripts'))
+        import creator_client
+        return creator_client
+
+    def test_selecting_a_level_sends_the_exact_rpc_arguments(self):
+        module = self._client()
+        fake = self._Client(applied={'selected': {'provider': 'p', 'model': 'm',
+                                                 'reasoningEffort': 'low'},
+                                     'applied': 'low'})
+        client = module.DshLocalClient.__new__(module.DshLocalClient)
+        client.rpc = fake.rpc
+        applied = client.select_session_model('sess', provider='p', model='m',
+                                             level='low')
+        endpoint, args = fake.calls[0]
+        self.assertEqual(endpoint, 'session/selectModel')
+        self.assertEqual(args, {'request': {'sessionId': 'sess', 'provider': 'p',
+                                           'model': 'm', 'reasoningEffort': 'low'}})
+        self.assertEqual(applied, 'low')
+
+    def test_an_unknown_level_never_reaches_the_wire(self):
+        module = self._client()
+        fake = self._Client()
+        client = module.DshLocalClient.__new__(module.DshLocalClient)
+        client.rpc = fake.rpc
+        with self.assertRaises(workflow_reasoning.ReasoningError):
+            client.select_session_model('sess', provider='p', model='m',
+                                        level='ultra-turbo')
+        self.assertEqual(fake.calls, [])
+
+    def test_a_response_that_did_not_apply_the_level_is_reported_not_assumed(self):
+        module = self._client()
+        fake = self._Client(applied={'selected': {'provider': 'p', 'model': 'm',
+                                                 'reasoningEffort': 'high'},
+                                     'applied': None})
+        client = module.DshLocalClient.__new__(module.DshLocalClient)
+        client.rpc = fake.rpc
+        with self.assertRaises(ValueError):
+            client.select_session_model('sess', provider='p', model='m', level='low')
+
+    def test_the_active_selection_is_read_without_inventing_fields(self):
+        module = self._client()
+        fake = self._Client(projection={'lastUsed': {'provider': 'p', 'model': 'm',
+                                                    'reasoningEffort': 'low'},
+                                        'next': None})
+        client = module.DshLocalClient.__new__(module.DshLocalClient)
+        client.rpc = fake.rpc
+        selection = client.active_selection('sess')
+        endpoint, _args = fake.calls[0]
+        self.assertEqual(endpoint, 'session/projections')
+        self.assertEqual(selection, {'provider': 'p', 'model': 'm',
+                                     'reasoningEffort': 'low'})
+
+    def test_a_session_without_model_selection_reports_none(self):
+        module = self._client()
+        fake = self._Client(projection=None)
+        client = module.DshLocalClient.__new__(module.DshLocalClient)
+        client.rpc = fake.rpc
+        self.assertIsNone(client.active_selection('sess'))
+
+class RealRuntimeNotVerifiedTests(unittest.TestCase):
+    """Carencia nombrada: una sesion real con nivel aplicado no se ha ejercitado.
+
+    El wrapper del cliente ya envuelve `session/selectModel` y
+    `session/projections` leidos del arbol DSH instalado (contrato y pruebas en
+    `ClientSelectionWrapperTests`). Lo que SIGUE sin ejercicio es una sesion
+    `dsh web` real con el nivel aplicado: ninguna prueba de este repo habla con
+    un servidor vivo. Estas pruebas lo dicen para que no se afirme en falso lo
+    no ejecutado.
+    """
+
+    def test_the_wrapper_exists_but_was_never_exercised_against_a_live_session(self):
+        """El wrapper existe; lo no verificado es la sesion real."""
         sys.path.insert(0, str(REPO_ROOT / 'scripts'))
         import creator_client
         client = creator_client.DshLocalClient.__new__(creator_client.DshLocalClient)
-        # Leido en el arbol instalado de DSH: `session/selectModel` existe como
-        # metodo Remote (@Remote('selectModel') en
-        # @deepseek-ai/dsh-api-session-controller/lib/typert.host.js:1470),
-        # pero el wrapper del framework no lo envuelve.
-        self.assertFalse(callable(getattr(client, 'select_session_model', None)))
-        self.assertFalse(callable(getattr(client, 'active_selection', None)))
-        self.assertNotIn('select_session_model',
-                         {name for name in vars(creator_client.DshLocalClient)})
+        self.assertTrue(callable(getattr(client, 'select_session_model', None)))
+        self.assertTrue(callable(getattr(client, 'active_selection', None)))
+        # Sin URL autenticada no hay sesion: el modulo de razonamiento debe
+        # seguir absteniendose en vez de inventar un nivel aplicado.
+        self.assertFalse(hasattr(client, 'base_url'))
 
     def test_a_session_prompt_and_session_create_take_no_effort_argument(self):
         """session/prompt y session/create no admiten nivel: no hay atajo."""

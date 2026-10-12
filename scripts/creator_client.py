@@ -36,6 +36,7 @@ from mode_lifecycle import (repair_candidate_diff_command,
                             repair_recording_command, repair_resume_command,
                             startup_check)
 from onboard import checked
+import workflow_reasoning
 
 SCHEMA_VERSION = 1
 
@@ -802,6 +803,45 @@ class DshLocalClient:
     def list_agent_presets(self):
         """Return the authoritative DSH agent-preset roster."""
         return self.rpc("agentPresets/list", {})
+
+    def select_session_model(self, session_id, *, provider, model, level):
+        """Apply a reasoning level to a live session; return what DSH applied.
+
+        Mirrors `@Remote('selectModel')` in the installed DSH tree
+        (`@deepseek-ai/dsh-api-session-controller/lib/typert.host.js`): the
+        request carries `sessionId`/`provider`/`model` and an optional
+        `reasoningEffort`, and the result reports which effort was really
+        applied. The level is validated against the closed vocabulary before
+        it reaches the wire, so a typo never becomes a silent no-op, and a
+        result that did not apply the requested level raises instead of
+        letting the caller believe a level it never got.
+        """
+        level = workflow_reasoning.validate(level)
+        value = self.rpc("session/selectModel", {"request": {
+            "sessionId": session_id, "provider": provider, "model": model,
+            "reasoningEffort": level}})
+        value = value.get("value", value) if isinstance(value, dict) else value
+        if not isinstance(value, dict):
+            raise ValueError("DSH selectModel devolvió una forma inesperada")
+        applied = value.get("applied")
+        if applied != level:
+            raise ValueError(
+                f"DSH no aplicó el nivel pedido: pedido {level!r}, aplicado "
+                f"{applied!r}")
+        return applied
+
+    def active_selection(self, session_id):
+        """The session's current provider/model/effort, or ``None`` if unset."""
+        value = self.rpc("session/projections",
+                         {"sessionId": session_id, "keys": ["modelSelection"]})
+        value = value.get("value", value) if isinstance(value, dict) else value
+        selection = value.get("modelSelection") if isinstance(value, dict) else None
+        last_used = selection.get("lastUsed") if isinstance(selection, dict) else None
+        if not isinstance(last_used, dict):
+            return None
+        return {key: last_used[key] for key in ("provider", "model",
+                                                "reasoningEffort")
+                if key in last_used}
 
     def read_agent_preset(self, preset_id):
         """Return one active preset's authoritative declared composition."""
