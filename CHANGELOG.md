@@ -1,5 +1,20 @@
 # Cambios
 
+## El quinto ensayo Creator: la regla de economía no se obedeció — 2026-10-14
+Evidencia, no una corrección.
+- `gen-9d6b04ec81c3`, mismo producto ficticio y mismo presupuesto, con las composiciones ya
+  materializadas: **1.221.576 tokens facturables** y **sin manifest**. Frente al cuarto
+  ensayo (1.185.582 con manifest) es una regresión, y se registra como tal.
+- Recuenta del journal separando `read` de `bash`: `modes.schema.json` leído 10 veces con
+  `read` y 3 más con `bash`, `skills.schema.json` 4 veces, y **nueve ventanas de `sed`
+  sobre `host_validator.py`** —el componente que el prompt prohíbe leer— contra 20 llamadas
+  al árbol del framework (el cuarto hizo 7). Sin paquetes de sondeo esta vez, así que
+  obedeció una parte de la regla e ignoró la decisiva.
+- **Consecuencia para el diseño:** pedir por tercera vez lo mismo en prosa no es un plan. La
+  estructura que falta es que el Host sea la única fuente de lo que el Creator necesita, que
+  es la materialización que ya se aplicó a lifecycle y composición. Documentado como gate
+  abierto con la causa medida, sin afirmar que la redacción lo resuelve.
+
 ## Creator: la composición operativa también se materializa — 2026-10-14
 Segunda aplicación del mismo patrón, sobre el fallo concreto que dejó el cuarto ensayo.
 - **El defecto, medido en el paquete real.** El paquete de `gen-5d75bb55eaae` falló la
