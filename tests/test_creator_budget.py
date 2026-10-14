@@ -74,6 +74,19 @@ class Base(unittest.TestCase):
         return module.CreatorTests.make_package(self)
 
 
+class PromptEfficiency(Base):
+    def test_initial_prompt_prioritizes_package_and_bounds_discovery(self):
+        prompt = cc.CreatorSession(self.run_dir).prepare()
+        text = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn("## Secuencia de generación eficiente", text)
+        self.assertIn("generated/generation-manifest.json", text)
+        self.assertIn("No repitas lecturas", text)
+        self.assertIn("sin omitir contratos, escenarios, holdouts ni validación Host", text)
+        self.assertLess(text.index("## Secuencia de generación eficiente"),
+                        text.index("## Pipeline interno"))
+        self.assertEqual(prompt["prompt_digest"], cc._digest_bytes(text.encode()))
+
+
 class RealEventShapes(Base):
     """The fold must read the records DSH really emits, in feed order."""
 

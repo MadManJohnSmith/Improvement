@@ -192,8 +192,38 @@ def verify_implementation(product, workspace, request, receipt, *, acceptance_co
     provision_implementation(product, workspace, request, declared_base=base)
     if not _git_read(expected, "status", "--porcelain=v1"):
         return {"verdict": "BLOCKED", "reason": "no-change", "request_sha256": digest}
-    result = subprocess.run(acceptance_command, cwd=expected, capture_output=True,
-                            text=True, timeout=120, check=False)
+    import stack
+    try:
+        plan = stack.load(workspace)
+    except (ValueError, OSError, json.JSONDecodeError) as error:
+        return {"verdict": "BLOCKED", "reason": f"capability-plan: {error}",
+                "request_sha256": digest}
+    if plan.get("product") != str(product) or plan.get("workspace") != str(workspace):
+        return {"verdict": "BLOCKED", "reason": "capability-plan identity mismatch",
+                "request_sha256": digest}
+    matches = [entry for entry in plan.get("stacks", [])
+               if acceptance_command in (entry.get("verify_command"),
+                                         entry.get("lint_command"))]
+    if not matches:
+        return {"verdict": "BLOCKED", "reason": "undeclared verification entrypoint",
+                "request_sha256": digest}
+    entry = matches[0]
+    if not entry.get("verification_ready"):
+        return {"verdict": "BLOCKED", "reason": "verification capability unavailable",
+                "request_sha256": digest}
+    verify_cwd = entry.get("verify_cwd")
+    if (not isinstance(verify_cwd, str) or verify_cwd.startswith("/") or
+            any(part == ".." for part in Path(verify_cwd).parts) or
+            not (expected / verify_cwd).is_dir() or
+            not (expected / verify_cwd).resolve().is_relative_to(expected.resolve())):
+        return {"verdict": "BLOCKED", "reason": "invalid verification cwd",
+                "request_sha256": digest}
+    try:
+        result = subprocess.run(acceptance_command, cwd=expected / verify_cwd,
+                                capture_output=True, text=True, timeout=120, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {"verdict": "BLOCKED", "reason": f"verification execution: {error}",
+                "request_sha256": digest}
     if _git_read(product, "status", "--porcelain=v1") or _git_read(product, "rev-parse", "HEAD") != base:
         raise ValueError("producto canónico cambió durante aceptación: RETAINED")
     measured = subprocess.run(["/usr/bin/python3", "-B", "-c",

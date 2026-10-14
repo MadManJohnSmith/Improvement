@@ -14,11 +14,12 @@ lives in the head of whoever made it. Improvement turns that routine into a cycl
 memory: you talk to it in one-line prompts, the framework does the heavy lifting, and you
 decide what gets integrated.
 
-On install, it generates **two modes tailored to your project**. The **auditor** examines
-the code and records every finding with its evidence (`file:line`) and its severity. The
-**repairer** fixes things in an isolated shadow repository, verifies every fix against
-your project's real commands, and leaves your tree intact. Nothing reaches your branch
-without going through you.
+A new generation can include **three modes tailored to your project**; the
+implementer is optional, and existing two-role generations remain valid. The **auditor**
+examines the code and records every finding with its evidence (`file:line`) and severity.
+The **repairer** fixes findings in an isolated shadow repository. The **implementer**
+handles a separate change request in its own shadow candidate. Verification is gated by
+the project's declared commands; neither candidate reaches your branch without your decision.
 
 It is a framework proven in three full campaigns on real repositories: Syncify (a music
 app in Rust/Tauri/Vue), RehabWeb (a clinical app in Django/Vue), and LoboApp (a Flutter
@@ -37,7 +38,7 @@ browser (`npx @deepseek-ai/dsh web`); its
 [documentation](https://deepseek-harness.github.io/deepseek-harness/) tells the rest. It
 is in *developer preview* and iterates fast.
 
-Improvement installs into DSH the two modes generated for your project, as agent presets:
+Improvement installs the modes generated for your project into DSH as agent presets:
 it is the app where you talk to them. Your provider credentials live in DSH; Improvement
 never reads them or asks for them, it only checks that the provider you configured
 exists.
@@ -57,8 +58,9 @@ python3 -B scripts/bootstrap.py install \
   --launch-dsh
 ```
 
-That discovers your project, generates `<YourProject>-auditor` and
-`<YourProject>-continuous-repair` with their skills, validates the package in 10 layers,
+That discovers your project and requests generation of `<YourProject>-auditor` and
+`<YourProject>-continuous-repair`, with an optional `<YourProject>-implementer` and their skills;
+when Creator completes the package, the Host validates it in 10 layers,
 backs up, installs, and activates; if anything fails, it rolls back leaving a recoverable
 state. Your product is not touched during installation.
 
@@ -79,7 +81,7 @@ with different criteria. Improvement puts that into a structure that survives th
 
 ## Where the modes come from
 
-The two modes do not come out of an empty template: on every install they are composed
+The modes do not come out of an empty template: on generation they are composed
 from a **skills library** with recorded provenance. The base is 21 immutable skills —
 test-driven development, systematic debugging, security hardening, code review, writing
 plans…— reimplemented with MIT attribution. On top, 4 specialized catalog patterns that
@@ -137,8 +139,8 @@ every relationship can be traced, and the theme switches light/dark, in the
 
 | Term | What it is |
 |---|---|
-| DSH (DeepSeek Harness) | DeepSeek's open source agent runtime, where the two modes and your provider credentials live. |
-| Mode | Each of the two agents generated for your project: the auditor and the repairer. |
+| DSH (DeepSeek Harness) | DeepSeek's open source agent runtime, where the generated modes and your provider credentials live. |
+| Mode | A project-specific agent preset: auditor, continuous-repair, or (in new generations) implementer. |
 | Finding | A defect recorded with evidence (`file:line`), severity, cause, and prevention. |
 | Handoff | The record every audit leaves behind, with the next prompt ready to copy. |
 | Candidate | The isolated shadow repository in the workspace where the repairer changes code. |
@@ -293,7 +295,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **1098 tests green** (11 skipped without external runtime).
+Framework suite: **1106 tests green** (11 skipped without external runtime; measured 2026-10-14).
 
 ### The most recent one: the modes driven by a real DSH session (2026-10-10)
 
@@ -363,8 +365,9 @@ full procedure for preparing that kind of real session is a permanent skill:
 
 ![What Improvement installs on your machine](docs/diagrams/arquitectura-instalacion.png)
 
-*The provenance-tracked library feeding generation, the anti-escalation guard, the two
-generated modes, the bounded memory, and the integration boundary. The diagram now also
+*The provenance-tracked library feeding generation, the anti-escalation guard, the auditor
+and repairer, bounded memory, and the integration boundary (this view omits the third
+implementer role in new generations). The diagram now also
 separates the Host-published SHA-256-verified helpers (implemented) from the System 1
 advisory channel (designed, not implemented). Also
 explorable: [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*

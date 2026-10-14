@@ -47,6 +47,8 @@ skill catalogue is compatible. It is a named abstention, before any turn.
 """
 
 import json
+import hashlib
+import re
 import os as os_module
 import stat as stat_module
 import tempfile
@@ -104,6 +106,81 @@ class CompatibleEvaluator:
         raise RunnerUnavailable(
             "adaptador sin comprobación efectiva de layout y skill por caso")
 
+
+
+class HostCorpusEvaluator(CompatibleEvaluator):
+    """Read-only Host publication preflight; never claims runtime skill loading.
+
+    The ACTIVE bundle and its inventory receipt bind the skill files to the
+    published generation. The preset read binds its skill root to that bundle.
+    Operational mode layouts still require the original session root, not an
+    isolated case directory; in that situation this adapter refuses dispatch.
+    """
+
+    def __init__(self, workspace):
+        self.workspace = Path(workspace)
+
+    def prepare(self, client, corpus, mode, root):
+        import transaction
+
+        managed = self.workspace / ".dsh-managed"
+        active = managed / "ACTIVE"
+        receipt_path = managed / "published-presets.json"
+        if (not active.is_file() or active.is_symlink() or
+                not receipt_path.is_file() or receipt_path.is_symlink()):
+            raise RunnerUnavailable("publicación Host ACTIVE/receipt ausente")
+        try:
+            generation = active.read_text(encoding="utf-8").strip()
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", generation):
+                raise ValueError("identificador ACTIVE inválido")
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            bundle = managed / "bundles" / generation
+            skills = bundle / "skills"
+            transaction._safe_tree(bundle)
+            if (receipt.get("generation_id") != generation or
+                    receipt.get("bundle_path") != str(bundle) or
+                    skills.is_symlink() or not skills.is_dir() or
+                    receipt.get("sha256") != hashlib.sha256(json.dumps(
+                        transaction._inventory(bundle), sort_keys=True
+                    ).encode()).hexdigest()):
+                raise ValueError("recibo/inventario no coincide con ACTIVE")
+            document = client.read_agent_preset(mode)
+            document = document.get("value", document)
+            if document.get("agentPreset") != mode:
+                raise ValueError("agentPresets/read no confirmó modo")
+            content = document.get("content")
+            if not isinstance(content, str):
+                raise ValueError("composición ausente")
+            # The published transaction config uses an exact absolute custom
+            # root, never ambient/default roots or a self-reported skill list.
+            import composition_contract
+            with tempfile.TemporaryDirectory(prefix="gate-composition-") as temp:
+                path = Path(temp) / "composition.yml"
+                path.write_text(content, encoding="utf-8")
+                rows = composition_contract.parse_composition(path)
+            provider = [row for row in rows if row["name"] ==
+                        "@deepseek-ai/dsh-skill-filesystem"]
+            if len(provider) != 1:
+                raise ValueError("proveedor de skills no único")
+            lines = [line.strip() for line in provider[0]["lines"]]
+            if lines[2:] != ["config:", "includeDefaultRoots: false",
+                             "customSkillDirs:",
+                             f"- {json.dumps(str(skills), ensure_ascii=False)}"]:
+                raise ValueError("skill root publicado no coincide con ACTIVE")
+            for case in corpus["cases"]:
+                name = case["target_skill"]
+                if (not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or
+                        not (skills / name / "SKILL.md").is_file() or
+                        (skills / name).is_symlink() or
+                        (skills / name / "SKILL.md").is_symlink()):
+                    raise ValueError(f"skill no disponible en bundle ACTIVE: {name}")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError,
+                transaction.TransactionError) as error:
+            raise RunnerUnavailable(f"preflight Host de skills no verificable: {error}") from error
+        raise RunnerUnavailable(
+            "skills disponibles en bundle ACTIVE, pero carga efectiva no observable "
+            "antes de session/create; preset operacional exige cwd/layout fijo, "
+            "incompatible con directorio aislado por caso")
 
 
 def resolve_session(client=None):

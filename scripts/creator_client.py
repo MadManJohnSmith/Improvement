@@ -366,6 +366,25 @@ Resuelve cada necesidad en este orden estricto:
 
 {library_section}
 
+## Secuencia de generación eficiente
+
+El presupuesto cuenta `totalTokens`, incluyendo cache reads: no interpretes los
+cache hits como capacidad libre. Examina primero los archivos mínimos del
+producto y del run que fundamentan decisiones específicas (manifest, instrucciones,
+contratos y tests pertinentes); agrupa lecturas relacionadas y limita salidas de
+comandos extensos. No repitas lecturas de archivos ya vistos ni explores todo el
+framework o el árbol del proyecto cuando la evidencia específica baste. Si falta
+una fuente necesaria, léela: ahorrar contexto nunca autoriza inventar datos.
+
+Tras ese descubrimiento acotado, prepara el paquete completo bajo `generated/`;
+crea primero los contratos y artefactos específicos, y termina con
+`generated/generation-manifest.json` tras calcular sus hashes sobre los archivos
+reales. Evita rondas de planificación que no escriban o verifiquen artefactos.
+Comprueba localmente la conformidad antes de solicitar aceptación: optimiza el
+orden y el volumen de lectura, sin omitir contratos, escenarios, holdouts ni validación Host.
+Si el presupuesto restante no permite completar el paquete, retén el intento en
+vez de presentar una salida parcial como GENERADA.
+
 ## Pipeline interno
 
 Ejecuta las capacidades internas en orden:

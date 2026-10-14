@@ -108,13 +108,15 @@ duplicados, y cualquier YAML no reconocido invalida la composición. Cada `SKILL
 La transacción copia cada skill completa — incluidos recursos — y el `SKILL.md` de
 cada modo a `bundle/skills/<name>`. Rechaza colisiones, symlinks y entradas no
 regulares; configura cada proveedor de skills con `includeDefaultRoots: false` y un
-`customSkillDirs` absoluto al root del bundle. El recibo conserva los dos IDs de
-preset.
+`customSkillDirs` absoluto al root del bundle. El recibo conserva los IDs de los
+presets instalados (dos o tres, según esté presente el implementador opcional).
 
 ## Invariantes
 
 1. Creator solo emite `GENERATED` o un bloqueo propio; nunca `ACCEPTED`/`ACTIVE`.
-2. Exactamente dos modos finales, específicos del proyecto.
+2. Las generaciones requieren dos modos finales específicos del proyecto (auditor y
+   continuous-repair) y pueden incluir implementer como tercero; las generaciones con dos
+   roles siguen siendo válidas.
 3. Skills específicas solo con procedimiento recurrente, evidencia, fronteras y prueba.
 4. Perfil guarda datos variables; skills guardan procedimientos.
 5. Auditor sin escritura del producto.

@@ -41,14 +41,14 @@ The result of the incorporation will be:
 ```text
 <Project>-auditor
 <Project>-continuous-repair
-<Project>-implementer (new generations; earlier two-role generations remain valid)
+<Project>-implementer (optional third role; two-role generations remain valid)
 + project-justified specific skills
 ```
 Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Deployment for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
 
 ### 1.1 What is preserved from the current architecture
 
-- Continuous Audit and Repair as mandatory roles and compatible with previous generations; Implementer as the third role of new generations;
+- Continuous Audit and Repair as mandatory roles and compatible with previous generations; Implementer as an optional third role;
 - shared incorporation;
 - Host as owner of authority, persistence, budget, locks and transitions;
 - Auditor without product writing;
@@ -585,7 +585,7 @@ The backup covers the entire folder and auxiliary files, not just `SKILL.md`.
 
 ## 10. Transactional installation
 
-**Three-role extension (no real DSH test until 2026-10-10; that day a real turn was executed over a fictional product):** the Implementer receives a change request from the holder other than an audited finding; it does not invent a `finding_id`. The Host provisions `kind=implement` as a shadow repo with its own `.git` under the workspace, binds the exact request and the clean base by SHA-256, and on resumption demands the same receipt/base without deleting dirty work. The candidate is the only code-writing root; the canonical product is left out, with no implicit commit/merge/push/publication. Final acceptance of the new behavior requires an explicit test over the candidate in addition to the project's own entrypoints; the local helper runs the explicit case it receives and measures the diff, but it does not yet bind or enforce, by itself, all the entrypoints of the capability plan. FAIL/BLOCKED are not promoted to PASS. **In the real turn of the trial**, the implementer left an external candidate with commit `95aa9b2`, 6/6 new tests correct and the product without the requested field: the mechanism was truly exercised, but in a single case and with the candidate created as a clone inside the workspace, because the sibling worktree was blocked by the session sandbox. Applying the change to a real product and the mechanical confinement of bash remain unproven. workspace, because the sister worktree was blocked by the session sandbox. The application of the change to a real product and the mechanical confinement of bash remain untested.
+**Three-role extension (no real DSH test until 2026-10-10; that day a real turn was executed over a fictional product):** the Implementer receives a change request from the holder other than an audited finding; it does not invent a `finding_id`. The Host provisions `kind=implement` as a shadow repo with its own `.git` under the workspace, binds the exact request and the clean base by SHA-256, and on resumption demands the same receipt/base without deleting dirty work. The candidate is the only code-writing root; the canonical product is left out, with no implicit commit/merge/push/publication. Final acceptance of the new behavior requires an explicit test over the candidate in addition to the project's own entrypoints; the local helper runs one explicit case bound to a ready verification or lint entrypoint in the Host capability plan and measures the diff; it does not run every plan entrypoint or replace full-stack acceptance. FAIL/BLOCKED are not promoted to PASS. **In the real turn of the trial**, the implementer left an external candidate with commit `95aa9b2`, 6/6 new tests correct and the product without the requested field: the mechanism was truly exercised, but in a single case and with the candidate created as a clone inside the workspace, because the sibling worktree was blocked by the session sandbox. Applying the change to a real product and the mechanical confinement of bash remain unproven.
 
 Creator declares `routing` optional per skill with actions, modes, observed facts, ceiling and budget. The Host validates the contract, installable entrypoint, manifest and `effective_routing_digest` calculated from the ordered roster; The transaction installs the complete skill in the workspace bundle and only selects over the ACTIVE generation with its receipt intact. `skill_router.select` is informational (`authorizes_execution: false`), returns exact names or named abstention. The agent does not need to know names beforehand, but invoking/loading a skill is still a runtime step that must be confirmed in the actual DSH session. The mode requires its exact namesake skill first; no additional skill load is attributed to a prompt.
 

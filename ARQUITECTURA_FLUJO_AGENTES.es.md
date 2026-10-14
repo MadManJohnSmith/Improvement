@@ -45,7 +45,7 @@ El resultado de la incorporación será:
 ```text
 <Proyecto>-auditor
 <Proyecto>-continuous-repair
-<Proyecto>-implementer (generaciones nuevas; las anteriores con dos roles siguen válidas)
+<Proyecto>-implementer (tercer rol opcional; las generaciones con dos roles siguen válidas)
 + skills específicas justificadas por el proyecto
 ```
 
@@ -53,7 +53,7 @@ La especialización sucede una vez durante la incorporación o regeneración. En
 
 ### 1.1 Qué se conserva de la arquitectura vigente
 
-- Auditoría y Reparación continua como roles obligatorios y compatibles con generaciones previas; Implementador como tercer rol de generaciones nuevas;
+- Auditoría y Reparación continua como roles obligatorios y compatibles con generaciones previas; Implementador como tercer rol opcional;
 - incorporación compartida;
 - Host como dueño de autoridad, persistencia, presupuesto, locks y transiciones;
 - Auditor sin escritura de producto;
@@ -610,7 +610,7 @@ El backup cubre la carpeta completa y archivos auxiliares, no solo `SKILL.md`.
 
 ## 10. Instalación transaccional
 
-**Extensión de tres roles (sin prueba DSH real hasta 2026-10-10; ese día se ejecutó un turno real sobre un producto ficticio):** Implementador recibe una petición de cambio del titular distinta de un hallazgo auditado; no inventa `finding_id`. Host provisiona `kind=implement` como repo sombra con `.git` propio bajo el workspace, liga solicitud exacta y base limpia por SHA-256, y en reanudación exige el mismo recibo/base sin borrar trabajo sucio. El candidato es la única raíz de escritura de código; el producto canónico queda fuera, sin commit/merge/push/publicación implícitos. La aceptación final del comportamiento nuevo requiere una prueba explícita sobre la candidata además de los entrypoints propios del producto; el helper local ejecuta el caso explícito recibido y mide el diff, pero todavía no liga ni exige por sí mismo todos los entrypoints del plan de capacidades. FAIL/BLOCKED no se promocionan a PASS. **En el turno real del ensayo**, el implementador dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido: mecanismo ejercido de verdad, pero en un solo caso y con la candidata creada como clon dentro del workspace, porque el worktree hermano estaba bloqueado por el sandbox de sesión. Sigue sin probarse la aplicación del cambio a un producto real ni el confinamiento mecánico de bash.
+**Extensión de tres roles (sin prueba DSH real hasta 2026-10-10; ese día se ejecutó un turno real sobre un producto ficticio):** Implementador recibe una petición de cambio del titular distinta de un hallazgo auditado; no inventa `finding_id`. Host provisiona `kind=implement` como repo sombra con `.git` propio bajo el workspace, liga solicitud exacta y base limpia por SHA-256, y en reanudación exige el mismo recibo/base sin borrar trabajo sucio. El candidato es la única raíz de escritura de código; el producto canónico queda fuera, sin commit/merge/push/publicación implícitos. La aceptación final del comportamiento nuevo requiere una prueba explícita sobre la candidata además de los entrypoints propios del producto; el helper local ejecuta un caso explícito ligado a un entrypoint de verificación o lint disponible en el plan de capacidades del Host y mide el diff; no ejecuta todos los entrypoints del plan ni reemplaza la aceptación de toda la pila. FAIL/BLOCKED no se promocionan a PASS. **En el turno real del ensayo**, el implementador dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido: mecanismo ejercido de verdad, pero en un solo caso y con la candidata creada como clon dentro del workspace, porque el worktree hermano estaba bloqueado por el sandbox de sesión. Sigue sin probarse la aplicación del cambio a un producto real ni el confinamiento mecánico de bash.
 
 Creator declara `routing` opcional por skill con acciones, modos, hechos observados, techo y presupuesto. El Host valida el contrato, entrypoint instalable, manifest y `effective_routing_digest` calculado del roster ordenado; la transacción instala la skill completa en el bundle del workspace y selecciona solo sobre la generación ACTIVE y su recibo intacto. `skill_router.select` es informativo (`authorizes_execution: false`), devuelve nombres exactos o abstención nombrada. El agente no necesita conocer nombres de antemano, pero la invocación/carga de una skill sigue siendo un paso del runtime que debe confirmarse en sesión DSH real. El modo exige primero su skill homónima exacta; no se atribuye carga de habilidades adicionales a un prompt.
 

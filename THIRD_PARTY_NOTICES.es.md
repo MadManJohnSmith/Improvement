@@ -12,10 +12,10 @@ entrada, y la suite falla cuando no la tiene.
 
 ## obra/superpowers
 
-**Source:** https://github.com/obra/superpowers  
-**Commit:** `b36e0829c6d0140e93cfef2ca599b1b07d4a7797`  
-**License:** MIT License  
-**Copyright:** Copyright (c) 2025 Jesse Vincent  
+**Source:** https://github.com/obra/superpowers
+**Commit:** `b36e0829c6d0140e93cfef2ca599b1b07d4a7797`
+**License:** MIT License
+**Copyright:** Copyright (c) 2025 Jesse Vincent
 
 ### Contenido adaptado
 
@@ -54,10 +54,10 @@ SOFTWARE.
 
 ## addyosmani/agent-skills
 
-**Source:** https://github.com/addyosmani/agent-skills  
-**Commit:** `be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39`  
-**License:** MIT License  
-**Copyright:** Copyright (c) 2025 Addy Osmani  
+**Source:** https://github.com/addyosmani/agent-skills
+**Commit:** `be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39`
+**License:** MIT License
+**Copyright:** Copyright (c) 2025 Addy Osmani
 
 ### Contenido adaptado
 
@@ -95,9 +95,9 @@ SOFTWARE.
 
 ## jsmastery-pro/skills
 
-**Source:** https://github.com/jsmastery-pro/skills  
-**Commit:** `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (2026-08-07)  
-**License:** MIT License  
+**Source:** https://github.com/jsmastery-pro/skills
+**Commit:** `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (2026-08-07)
+**License:** MIT License
 
 ### Patrones adaptados
 

@@ -125,12 +125,14 @@ and a non-empty `description`.
 The transaction copies each complete skill — resources included — and each mode's
 `SKILL.md` to `bundle/skills/<name>`. It rejects collisions, symlinks and non-regular
 entries; it configures each skills provider with `includeDefaultRoots: false` and an
-absolute `customSkillDirs` to the bundle root. The receipt preserves both preset IDs.
+absolute `customSkillDirs` to the bundle root. The receipt preserves the installed
+preset IDs (two or three, depending on whether the optional implementer is present).
 
 ## Invariants
 
 1. Creator only emits `GENERATED` or a block of its own; never `ACCEPTED`/`ACTIVE`.
-2. Exactly two final modes, project-specific.
+2. Generations require two project-specific final modes (auditor and continuous-repair)
+   and may include implementer as a third; existing two-role generations remain valid.
 3. Project-specific skills only with recurring procedure, evidence, boundaries and test.
 4. The profile stores variable data; skills store procedures.
 5. Auditor without product writes.

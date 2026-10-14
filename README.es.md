@@ -14,11 +14,13 @@ la cabeza de quien lo hizo. Improvement convierte esa rutina en un ciclo con mem
 hablas con prompts de una línea, el framework hace el trabajo pesado y tú decides qué se
 integra.
 
-Al instalarlo, genera **dos modos hechos a la medida de tu proyecto**. El **auditor**
-examina el código y registra cada hallazgo con su evidencia (`archivo:línea`) y su
-severidad. El **reparador** corrige en un repositorio sombra aislado, verifica cada arreglo
-contra los comandos reales de tu proyecto y deja tu árbol intacto. Nada llega a tu rama sin
-pasar por ti.
+Una generación nueva puede incluir **tres modos hechos a la medida de tu proyecto**;
+el implementador es opcional y las generaciones anteriores con dos roles siguen siendo
+válidas. El **auditor** examina el código y registra cada hallazgo con su evidencia
+(`archivo:línea`) y severidad. El **reparador** corrige hallazgos en un repositorio sombra
+aislado. El **implementador** atiende una petición de cambio distinta en su propia
+candidata sombra. La verificación depende de los comandos declarados por el proyecto;
+ninguna candidata llega a tu rama sin tu decisión.
 
 Es un framework probado en tres campañas completas sobre repositorios reales: Syncify
 (una app de música en Rust/Tauri/Vue), RehabWeb (una app clínica en Django/Vue) y LoboApp
@@ -37,7 +39,7 @@ navegador (`npx @deepseek-ai/dsh web`); su
 [documentación](https://deepseek-harness.github.io/deepseek-harness/) cuenta el resto.
 Está en *developer preview* y itera rápido.
 
-Improvement instala en DSH los dos modos generados para tu proyecto, como presets de
+Improvement instala en DSH los modos generados para tu proyecto, como presets de
 agente: es la aplicación donde hablas con ellos. Tus credenciales de proveedor viven en
 DSH; Improvement nunca las lee ni las pide, solo comprueba que el proveedor que
 configuraste existe.
@@ -57,8 +59,9 @@ python3 -B scripts/bootstrap.py install \
   --launch-dsh
 ```
 
-Eso descubre tu proyecto, genera `<TuProyecto>-auditor` y `<TuProyecto>-continuous-repair`
-con sus skills, valida el paquete en 10 capas, hace backup, instala y activa; si algo
+Eso descubre tu proyecto y solicita generar `<TuProyecto>-auditor` y
+`<TuProyecto>-continuous-repair`, con `<TuProyecto>-implementer` opcional y sus skills; cuando Creator
+termina el paquete, el Host lo valida en 10 capas, hace backup, instala y activa; si algo
 falla, hace rollback dejando el estado recuperable. Tu producto no se toca durante la
 instalación.
 
@@ -80,7 +83,7 @@ estructura que sobrevive a los ciclos:
 
 ## De dónde salen los modos
 
-Los dos modos no salen de una plantilla vacía: se componen en cada instalación desde una
+Los modos no salen de una plantilla vacía: se componen en cada generación desde una
 **biblioteca de skills** con procedencia registrada. La base son 21 skills inmutables —
 desarrollo dirigido por tests, depuración sistemática, endurecimiento de seguridad,
 revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
@@ -134,14 +137,14 @@ publicación solo por tu decisión. [Procedimiento del operador](docs/usage.es.m
 *Ciclo operativo conceptual. El cierre del aprendizaje aún no es operativo: las
 observaciones de las campañas no puntúan automáticamente el corpus de 25 skills. Es un
 diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscuro en la
-[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html).*
+[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html) (controles de la interfaz compartida en inglés).*
 
 ## Los términos que verás
 
 | Término | Qué es |
 |---|---|
-| DSH (DeepSeek Harness) | El runtime de agentes open source de DeepSeek, donde viven los dos modos y tus credenciales de proveedor. |
-| Modo | Cada uno de los dos agentes generados para tu proyecto: el auditor y el reparador. |
+| DSH (DeepSeek Harness) | El runtime de agentes open source de DeepSeek, donde viven los modos generados y tus credenciales de proveedor. |
+| Modo | Un preset específico del proyecto: auditor, continuous-repair o (en generaciones nuevas) implementer. |
 | Hallazgo | Un defecto registrado con evidencia (`archivo:línea`), severidad, causa y prevención. |
 | Handoff | El registro que deja cada auditoría, con el siguiente prompt listo para copiar. |
 | Candidata | El repositorio sombra aislado en el workspace donde el reparador cambia código. |
@@ -294,7 +297,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1098 pruebas en verde** (11 omitidas sin runtime externo).
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1106 pruebas en verde** (11 omitidas sin runtime externo; medida el 2026-10-14).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 
@@ -362,10 +365,11 @@ real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
 ![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.es.png)
 
-*La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, los dos
-modos, la memoria acotada y la frontera de integración. El diagrama distingue los helpers
+*La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, el auditor
+y el reparador, la memoria acotada y la frontera de integración (esta vista no muestra el
+tercer rol implementer de las generaciones nuevas). El diagrama distingue los helpers
 publicados por el Host y verificados por SHA-256 (implementados) del canal System 1 advisory
-(diseñado, no implementado). También explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html).*
+(diseñado, no implementado). También explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html) (controles de la interfaz compartida en inglés).*
 
 ```
 tu-proyecto/

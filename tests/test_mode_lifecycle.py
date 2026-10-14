@@ -200,6 +200,12 @@ class ModeLifecycleTests(unittest.TestCase):
             (product / "value.py").write_text("def value(): return 1\n")
             (product / "test_value.py").write_text(
                 "from value import value\nassert value() == 2\n")
+            command = ["/usr/bin/python3", "-B", "test_value.py"]
+            (product / "improvement-verification.json").write_text(json.dumps({
+                "version": 1, "stacks": [{"root": "", "verify": command,
+                                         "capabilities": ["python3"]}]}))
+            import stack
+            stack.write(stack.plan(product, workspace=workspace), workspace)
             subprocess.run(["git", "-C", str(product), "add", "-A"], check=True)
             subprocess.run(["git", "-C", str(product), "-c", "user.name=Test",
                             "-c", "user.email=test@example.invalid", "commit",
@@ -230,6 +236,43 @@ class ModeLifecycleTests(unittest.TestCase):
                 acceptance_command=["/usr/bin/python3", "-B", "test_value.py"])
             self.assertEqual(passed["verdict"], "PASS")
             self.assertEqual(len(passed["candidate_diff_digest"]), 64)
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=["/usr/bin/python3", "-B", "-c", "pass"])["verdict"],
+                "BLOCKED")
+            plan_path = workspace / ".dsh-managed" / "capability-plan.json"
+            original_plan = plan_path.read_text()
+            plan_path.write_text(original_plan.replace("product-own-entrypoint-only", "altered"))
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=command)["verdict"], "BLOCKED")
+            plan_path.unlink()
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=command)["verdict"], "BLOCKED")
+            unavailable = json.loads(original_plan)
+            unavailable["stacks"][0]["verification_ready"] = False
+            unavailable["plan_sha256"] = hashlib.sha256(json.dumps(
+                {key: value for key, value in unavailable.items() if key != "plan_sha256"},
+                ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()
+            plan_path.write_text(json.dumps(unavailable))
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=command)["verdict"], "BLOCKED")
+            plan_path.write_text(original_plan)
+            missing = json.loads(original_plan)
+            missing_command = [str(root / "missing-interpreter"), "test_value.py"]
+            missing["stacks"][0]["verify_command"] = missing_command
+            missing["plan_sha256"] = hashlib.sha256(json.dumps(
+                {key: value for key, value in missing.items() if key != "plan_sha256"},
+                ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()
+            plan_path.write_text(json.dumps(missing))
+            self.assertEqual(mode_lifecycle.verify_implementation(
+                product, workspace, request, receipt,
+                acceptance_command=missing_command)["verdict"], "BLOCKED")
+            plan_path.write_text(original_plan)
             self.assertEqual((product / "value.py").read_text(),
                              "def value(): return 1\n")
             with self.assertRaisesRegex(ValueError, "candidata/producto derivó"):
