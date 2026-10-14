@@ -1242,15 +1242,7 @@ class CreatorTests(Base):
         self.assertIn('`kind: "mode"`', prompt)
         self.assertIn('`kind: "skill"`', prompt)
         self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
-        for plugin in (
-                "@deepseek-ai/dsh-persona", "@deepseek-ai/dsh-tool-bash",
-                "@deepseek-ai/dsh-tool-fs", "@deepseek-ai/dsh-tool-fs-search",
-                "@deepseek-ai/dsh-skill-filesystem", "@deepseek-ai/dsh-tool-skill"):
-            self.assertIn(plugin, prompt)
-        self.assertIn("`config.sampleOverCapGlobResults: false`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
-        self.assertIn("No incluyas filas de delegación, workflows,\nherramientas web/red ni plugin-manager", prompt)
-        self.assertIn("first-party `./anti-escalation.mjs`", prompt)
         self.assertIn("`escalation_channel: forbidden`", prompt)
         self.assertIn("json mode-lifecycle", prompt)
         self.assertIn("`startup_workdir: session-cwd-only`", prompt)
@@ -1328,6 +1320,40 @@ class CreatorTests(Base):
         with self.assertRaises(ValueError) as caught:
             cc.CreatorSession(self.run_dir).prepare()
         self.assertIn("alterado", str(caught.exception))
+
+    def test_mode_composition_is_materialized_and_validates(self):
+        """The operational composition is copied, not composed by the model.
+
+        The real trial `gen-5d75bb55eaae` wrote all three `agent.cordis.yml` as
+        `name:`/`plugins:` documents, which `parse_composition` rejects as
+        "expected top-level '- id:' row" — three modes and a whole generation
+        lost to a shape a prose description did not pin. The materialized
+        document is the seam, so the regression runs the real parser on it.
+        """
+        cc.CreatorSession(self.run_dir).prepare()
+        contracts = self.run_dir / "contracts"
+        from composition_contract import (parse_composition,
+                                          validate_operational_composition,
+                                          validate_persona_bootstrap)
+        from pathlib import Path as _Path
+        import tempfile
+        for role in cc.MATERIALIZED_ROLES:
+            preset_id = f"project-{role}"
+            materialized = contracts / f"{preset_id}.agent.cordis.yml"
+            self.assertTrue(materialized.is_file(), materialized)
+            with tempfile.TemporaryDirectory() as tmp:
+                path = _Path(tmp) / "agent.cordis.yml"
+                path.write_text(materialized.read_text(encoding="utf-8"))
+                rows = parse_composition(path)
+                validate_operational_composition(path)
+                validate_persona_bootstrap(path, preset_id, role)
+            names = [row["name"] for row in rows]
+            self.assertEqual(len(names), 7)
+            self.assertIn("@deepseek-ai/dsh-tool-fs-search", names)
+            self.assertIn("./anti-escalation.mjs", names)
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn("copia literal", prompt)
+        self.assertIn("filas\n`- id:` de nivel superior, no un documento `name:`/`plugins:`", prompt)
 
     def test_yaml_quoting_rule_lives_in_the_shared_output_section(self):
         """A plain ': ' is discarded by DSH's YAML parser.

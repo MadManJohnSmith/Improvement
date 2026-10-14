@@ -822,6 +822,46 @@ def persona_prefix(preset_id, role=None):
     raise ValueError(f"unsupported mode role: {role!r}")
 
 
+MODE_COMPOSITION_PLUGINS = (
+    # (id, name, config rows) — the shape composition_contract.parse_composition
+    # accepts: a top-level `- id:` row, `name` at indent 2, `config` nested below.
+    ("tool-bash", "@deepseek-ai/dsh-tool-bash", None),
+    ("tool-fs", "@deepseek-ai/dsh-tool-fs", None),
+    ("tool-fs-search", "@deepseek-ai/dsh-tool-fs-search",
+     ("sampleOverCapGlobResults: false",)),
+    ("skill-filesystem", "@deepseek-ai/dsh-skill-filesystem", None),
+    ("tool-skill", "@deepseek-ai/dsh-tool-skill", None),
+    ("anti-escalation", "./anti-escalation.mjs", None),
+)
+
+
+def mode_composition(preset_id, role=None):
+    """Return the exact operational composition for one mode preset.
+
+    Every row is fixed by the contract and the only varying value, the persona
+    prefix, is computed by the Host as well. Materializing this instead of
+    asking the model to write it removes the entire class of shape errors a
+    prose description produces: the real trial `gen-5d75bb55eaae` wrote all
+    three compositions as `name:`/`plugins:` documents, which
+    `parse_composition` rejects as "expected top-level '- id:' row" for every
+    mode, at the cost of three modes and a full generation.
+    """
+    lines = [
+        "- id: persona",
+        "  name: @deepseek-ai/dsh-persona",
+        "  config:",
+        "    prefix: " + json.dumps(persona_prefix(preset_id, role),
+                                   ensure_ascii=False),
+    ]
+    for plugin_id, name, config in MODE_COMPOSITION_PLUGINS:
+        lines.append(f"- id: {plugin_id}")
+        lines.append(f"  name: {name}")
+        for row in config or ():
+            lines.append("  config:")
+            lines.append(f"    {row}")
+    return "\n".join(lines) + "\n"
+
+
 def expected_lifecycle(role, layout):
     common = {
         "schema_version": SCHEMA_VERSION,

@@ -6,7 +6,7 @@
 
 This document records only the current status. The detail of previous iterations is in Git/`CHANGELOG.md`, not here.
 
-**Acceptance as of 2026-10-14:** the local suite passes 1115 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the prompt carries the reading behaviour measured in a real trial as an economy rule. Four post-budget runs are measured: the first two stopped before writing any manifest, the third spent 1,217,696 tokens with no manifest, and the fourth (prompt 1.1.0) spent 1,185,582 and produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape. All four ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured and the next defect identified.
+**Acceptance as of 2026-10-14:** the local suite passes 1116 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the prompt carries the reading behaviour measured in a real trial as an economy rule. Four post-budget runs are measured: the first two stopped before writing any manifest, the third spent 1,217,696 tokens with no manifest, and the fourth (prompt 1.1.0) spent 1,185,582 and produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape. All four ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured and the next defect identified.
 
 
 
@@ -92,7 +92,7 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1115 tests … OK (skipped=11)` in this
+closed on 2026-10-14 with `Ran 1116 tests … OK (skipped=11)` in this
 working tree on a machine without the external DSH module; with the module installed
 the same tree skips only 1. This local run is not DSH operational acceptance. Without the
 external components, additional regressions are skipped; each skip names its
@@ -351,6 +351,25 @@ intention:
 
 The prompt is currently at **26,193–27,708 bytes** (27508 measured in this trial), against
 the 50,054 of prompt 1.0.0.
+
+### The composition contract, the same defect one layer down
+
+The fourth trial's `agent.cordis.yml` failure was not an accident of one run: the model
+wrote a `name:`/`plugins:` document because that is what a prose description of "mount the
+operational rows" suggests. And the composition is as deterministic as the lifecycle was —
+seven fixed rows, with the persona prefix as the only varying value, and the Host computes
+that too. So it is materialized the same way: `mode_composition`
+(`scripts/mode_lifecycle.py`) emits the exact composition, written into
+`contracts/<preset-id>.agent.cordis.yml` before the prompt names it, and the prompt asks for a
+literal copy and states the shape the parser requires.
+
+Verified against the real package that failed, not against a fixture: replacing the three
+compositions with the materialized ones takes the validation from four failing layers
+(`schema`, `manifest`, `contracts`, `lifecycle`) to three, with **every** composition error
+gone — the six "expected top-level '- id:' row" reports in `contracts` and the one in
+`lifecycle`. What remains in that run is unrelated to compositions and is now the identified
+next work: `generation-manifest.license_provenance[0]` missing `file`, `generated/build.py`
+absent from the manifest, and the matching provenance error. The prompt is now 26,871 bytes.
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign

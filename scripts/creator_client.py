@@ -31,7 +31,8 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
-from mode_lifecycle import expected_lifecycle, startup_check
+from mode_lifecycle import (expected_lifecycle, mode_composition,
+                            startup_check)
 from onboard import checked
 import workflow_reasoning
 
@@ -48,7 +49,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -211,12 +212,24 @@ def _run_workspace(run_dir):
 MATERIALIZED_ROLES = ("auditor", "continuous-repair", "implementer")
 
 
-def _deterministic_contracts(run_dir, layout):
-    """Return the per-role contracts the Host already computes exactly."""
-    return {role: expected_lifecycle(role, layout) for role in MATERIALIZED_ROLES}
+def _deterministic_contracts(run_dir, layout, project_name):
+    """Return the per-role contracts the Host already computes exactly.
+
+    Two families, same reason: the Validator checks both byte for byte, so the
+    model copying a file is cheaper and safer than transcribing either. The
+    operational composition is the one the real trial `gen-5d75bb55eaae` got
+    wrong in all three modes: it wrote `name:`/`plugins:` documents where
+    `parse_composition` requires top-level `- id:` rows.
+    """
+    contracts = {role: expected_lifecycle(role, layout)
+                 for role in MATERIALIZED_ROLES}
+    for role in MATERIALIZED_ROLES:
+        preset_id = f"{project_name}-{role}"
+        contracts[preset_id] = mode_composition(preset_id, role)
+    return contracts
 
 
-def materialize_deterministic_contracts(run_dir, layout):
+def materialize_deterministic_contracts(run_dir, layout, project_name):
     """Write the exact mode contracts into ``contracts/`` of the run.
 
     The prompt then only names these files instead of asking the model to
@@ -228,10 +241,15 @@ def materialize_deterministic_contracts(run_dir, layout):
     target = run_dir / "contracts"
     target.mkdir(parents=True, exist_ok=True)
     written = {}
-    for role, contract in _deterministic_contracts(run_dir, layout).items():
-        path = target / f"{role}.mode-lifecycle.json"
-        payload = json.dumps(contract, ensure_ascii=False, indent=2,
-                             sort_keys=True) + "\n"
+    for name, contract in _deterministic_contracts(
+            run_dir, layout, project_name).items():
+        if isinstance(contract, str):
+            path = target / f"{name}.agent.cordis.yml"
+            payload = contract
+        else:
+            path = target / f"{name}.mode-lifecycle.json"
+            payload = json.dumps(contract, ensure_ascii=False, indent=2,
+                                 sort_keys=True) + "\n"
         if path.is_symlink():
             raise ValueError(f"Contrato determinista es enlace simbólico: {path}")
         if path.exists():
@@ -247,7 +265,7 @@ def materialize_deterministic_contracts(run_dir, layout):
                     "el Host lo recalcula y no acepta una versión distinta")
         else:
             path.write_text(payload, encoding="utf-8")
-        written[role] = path
+        written[name] = path
     return written
 
 
@@ -338,21 +356,18 @@ una generación nueva incluye implementer y prueba aceptación del comportamient
 Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
 `preset_id` igual al directorio y `role` (`auditor`, `continuous-repair` o
-`implementer`). Cada
-`agent.cordis.yml` monta exactamente las filas operativas necesarias: persona
-`@deepseek-ai/dsh-persona` con `config.prefix` igual al bootstrap exacto exigido
-por el Host para ese preset (primera acción: cargar vía tool-skill el skill cuyo
-nombre es exactamente el preset; no analizar ni responder antes del éxito; RETAINED
-si falla), bash `@deepseek-ai/dsh-tool-bash`, filesystem
-`@deepseek-ai/dsh-tool-fs`, búsqueda `@deepseek-ai/dsh-tool-fs-search` con
-`config.sampleOverCapGlobResults: false`, proveedor
-`@deepseek-ai/dsh-skill-filesystem`, loader `@deepseek-ai/dsh-tool-skill` y guard
-first-party `./anti-escalation.mjs`. No incluyas filas de delegación, workflows,
-herramientas web/red ni plugin-manager. El lifecycle estructurado y la persona de ambos
-modos fijan `escalation_channel: forbidden`: jamás envían `sandbox_permissions` ni
-`justification`, con ningún valor (incluidos `workspace-write` y `danger-full-access`),
-incluso como reintento tras denegación o error de schema; cualquiera de esos fallos deja
-`RETAINED` sin reintento. La guía de escalada del runtime no aplica.
+`implementer`). Cada `agent.cordis.yml` es **copia literal** de
+`contracts/<preset-id>.agent.cordis.yml`, que el Host ya materializó con las siete
+filas operativas exactas —persona con su `config.prefix`, bash, filesystem,
+búsqueda con `config.sampleOverCapGlobResults: false`, proveedor de skills,
+loader y guard `./anti-escalation.mjs`— y en la forma que exige el parser: filas
+`- id:` de nivel superior, no un documento `name:`/`plugins:`. No la reescribas,
+no la reformatees ni la resumas: el Host la compara con la suya. El lifecycle
+estructurado y la persona fijan `escalation_channel: forbidden`: jamás envían
+`sandbox_permissions` ni `justification`, con ningún valor (incluidos
+`workspace-write` y `danger-full-access`), incluso como reintento tras
+denegación o error de schema; cualquiera de esos fallos deja `RETAINED` sin
+reintento. La guía de escalada del runtime no aplica.
 Los tres presets usan exclusivamente la identidad sibling autoritativa, exacta y
 case-sensitive derivada al generar: cwd esperado por basename `{session_root}`, producto
 `{product_root}`, workspace `{workspace_root}` y estado relativo `{state_root}`. No
@@ -1087,7 +1102,8 @@ class CreatorSession:
         # from prose.
         request = _read_json(self.run_dir / "inputs" / "bootstrap-request.json")
         materialize_deterministic_contracts(
-            self.run_dir, layout_from_paths(request["project"], request["workspace"]))
+            self.run_dir, layout_from_paths(request["project"], request["workspace"]),
+            run_doc["project"]["name"])
 
         # Save prompt
         prompt_path = self.run_dir / "creator-prompt.md"

@@ -70,13 +70,17 @@ La especialización sucede una vez durante la incorporación o regeneración. En
 
 ### 1.3 Lo determinista no se rederiva
 El Host calcula algunos contratos de forma exacta a partir del layout: el bloque
-`mode_lifecycle` por rol y los comandos centrales de repair/implementación. Esos valores se
-**materializan en `contracts/` del run antes de que el prompt los nombre**, y Creator los
-copia; el validador compara la copia byte a byte. Pedir al modelo que transcriba un valor
-que el Host ya conoce es un coste sin autoridad detrás: gasta contexto en reproducir y
-convierte cada cambio de redacción en un riesgo de divergencia. Medido en el ensayo real
-`gen-5d75bb55eaae` (2026-10-14), esa sección ocupaba sola 25.114 de los 50.054 bytes del
-prompt, y el prompt bajó un 47,7 % al convertirse en una referencia a ficheros.
+`mode_lifecycle` por rol, los comandos centrales de repair/implementación y la composición
+operativa completa (`agent.cordis.yml`: siete filas fijas cuyo único valor variable —el
+prefijo de persona— también lo calcula el Host). Esos valores se **materializan en
+`contracts/` del run antes de que el prompt los nombre**, y Creator los copia; el validador
+compara la copia byte a byte. Pedir al modelo que transcriba un valor que el Host ya conoce
+es un coste sin autoridad detrás: gasta contexto en reproducir y convierte cada cambio de
+redacción en un riesgo de divergencia. Medido en el ensayo real `gen-5d75bb55eaae`
+(2026-10-14), la sección de lifecycle ocupaba sola 25.114 de los 50.054 bytes del prompt y
+el prompt bajó un 47,7 % al convertirse en una referencia a ficheros; ese mismo ensayo
+perdió tres modos por una forma de composición que la prosa dejaba abierta, y materializarla
+dejó fuera todos los errores de composición de ese paquete.
 
 ### 1.2 Qué se corrige
 

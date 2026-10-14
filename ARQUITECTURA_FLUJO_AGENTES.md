@@ -65,13 +65,16 @@ Specialization happens once during incorporation or regeneration. In normal use 
 
 ### 1.3 The deterministic part is not re-derived
 The Host computes some contracts exactly from the layout: the `mode_lifecycle` block per
-role and the central repair/implementation commands. Those values are **materialized into
-`contracts/` of the run before the prompt names them**, and Creator copies them; the
-Validator compares the copy byte for byte. Asking the model to transcribe a value the Host
-already knows is a cost with no authority behind it: it spends context on reproduction and
-turns every wording change into a divergence risk. Measured on the real trial
-`gen-5d75bb55eaae` (2026-10-14), that section alone was 25,114 of the 50,054 prompt bytes,
-and the prompt fell 47.7% when it became a file reference.
+role, the central repair/implementation commands and the whole operational composition
+(`agent.cordis.yml`, seven fixed rows whose only variable — the persona prefix — is computed
+by the Host too). Those values are **materialized into `contracts/` of the run before the
+prompt names them**, and Creator copies them; the Validator compares the copy byte for byte.
+Asking the model to transcribe a value the Host already knows is a cost with no authority
+behind it: it spends context on reproduction and turns every wording change into a
+divergence risk. Measured on the real trial `gen-5d75bb55eaae` (2026-10-14), the lifecycle
+section alone was 25,114 of the 50,054 prompt bytes, and the prompt fell 47.7% when it became
+a file reference; the same trial lost three modes to a composition shape the prose had left
+open, and materializing it cleared every composition error in that package.
 
 ### 1.2 What is corrected
 

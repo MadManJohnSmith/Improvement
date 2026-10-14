@@ -1,5 +1,28 @@
 # Cambios
 
+## Creator: la composición operativa también se materializa — 2026-10-14
+Segunda aplicación del mismo patrón, sobre el fallo concreto que dejó el cuarto ensayo.
+- **El defecto, medido en el paquete real.** El paquete de `gen-5d75bb55eaae` falló la
+  validación Host en cuatro capas, y seis de los errores eran de forma: los tres
+  `agent.cordis.yml` escritos como documentos `name:`/`plugins:` donde
+  `parse_composition` exige filas `- id:` de nivel superior. No es un descuido de una
+  corrida: la composición tiene siete filas fijas y un solo valor variable (el prefijo de
+  persona), y el Host ya calcula ese valor. Pedir esa forma en prosa la deja abierta.
+- **El cambio.** `mode_composition` (`scripts/mode_lifecycle.py`) emite la composición
+  exacta y el Host la materializa en `contracts/<preset-id>.agent.cordis.yml`; el prompt
+  pide copia literal y nombra la forma que exige el parser. El constructor produce
+  también el `config.prefix` de persona, así que las tres composiciones son enteras del
+  Host.
+- **Comprobado sobre el paquete que falló, no sobre un fixture.** Sustituir las tres
+  composiciones por las materializadas baja la validación de cuatro capas fallando a
+  tres: desaparecen los seis errores de `contracts` y el de `lifecycle`. Lo que queda en
+  esa corrida es ajeno a la composición y ya está identificado como siguiente trabajo:
+  `license_provenance[0]` sin `file`, `generated/build.py` fuera del manifest.
+- **Suite: 1116 OK (11 omitidas).** Una regresión nueva ejecuta el parser real sobre los
+  documentos materializados; la que fijaba las filas de plugins sobre el texto del prompt
+  se retira porque esa prosa ya no existe, y lo que de verdad importa se verifica donde
+  vive.
+
 ## Creator: contratos materializados en vez de transcritos — 2026-10-14
 Cambio de framework, medido sobre el fallo real que dejó tres generaciones post-budget
 en `RETAINED` sin manifest.
