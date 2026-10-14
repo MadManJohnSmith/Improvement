@@ -47,6 +47,8 @@ skill catalogue is compatible. It is a named abstention, before any turn.
 """
 
 import json
+import hashlib
+import re
 import os as os_module
 import stat as stat_module
 import tempfile
@@ -100,10 +102,102 @@ class CompatibleEvaluator:
     assertion of available skills is not a valid implementation.
     """
 
+    require_skill_load = True
+
     def prepare(self, client, corpus, mode, root):
         raise RunnerUnavailable(
             "adaptador sin comprobación efectiva de layout y skill por caso")
 
+
+
+class HostCorpusEvaluator(CompatibleEvaluator):
+    """Read-only Host publication preflight; never claims runtime skill loading.
+
+    The ACTIVE bundle and its inventory receipt bind the skill files to the
+    published generation. The preset read binds its skill root to that bundle.
+    Operational mode layouts still require the original session root, not an
+    isolated case directory; in that situation this adapter refuses dispatch.
+    """
+
+    def __init__(self, workspace):
+        self.workspace = Path(workspace)
+
+    def prepare(self, client, corpus, mode, root):
+        import transaction
+
+        managed = self.workspace / ".dsh-managed"
+        active = managed / "ACTIVE"
+        receipt_path = managed / "published-presets.json"
+        if (not active.is_file() or active.is_symlink() or
+                not receipt_path.is_file() or receipt_path.is_symlink()):
+            raise RunnerUnavailable("publicación Host ACTIVE/receipt ausente")
+        try:
+            generation = active.read_text(encoding="utf-8").strip()
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", generation):
+                raise ValueError("identificador ACTIVE inválido")
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            bundle = managed / "bundles" / generation
+            skills = bundle / "skills"
+            transaction._safe_tree(bundle)
+            if (receipt.get("generation_id") != generation or
+                    receipt.get("bundle_path") != str(bundle) or
+                    skills.is_symlink() or not skills.is_dir() or
+                    receipt.get("sha256") != hashlib.sha256(json.dumps(
+                        transaction._inventory(bundle), sort_keys=True
+                    ).encode()).hexdigest()):
+                raise ValueError("recibo/inventario no coincide con ACTIVE")
+            document = client.read_agent_preset(mode)
+            document = document.get("value", document)
+            if document.get("agentPreset") != mode:
+                raise ValueError("agentPresets/read no confirmó modo")
+            content = document.get("content")
+            if not isinstance(content, str):
+                raise ValueError("composición ausente")
+            # The published transaction config uses an exact absolute custom
+            # root, never ambient/default roots or a self-reported skill list.
+            import composition_contract
+            with tempfile.TemporaryDirectory(prefix="gate-composition-") as temp:
+                path = Path(temp) / "composition.yml"
+                path.write_text(content, encoding="utf-8")
+                rows = composition_contract.parse_composition(path)
+            provider = [row for row in rows if row["name"] ==
+                        "@deepseek-ai/dsh-skill-filesystem"]
+            if len(provider) != 1:
+                raise ValueError("proveedor de skills no único")
+            lines = [line.strip() for line in provider[0]["lines"]]
+            if lines[2:] != ["config:", "includeDefaultRoots: false",
+                             "customSkillDirs:",
+                             f"- {json.dumps(str(skills), ensure_ascii=False)}"]:
+                raise ValueError("skill root publicado no coincide con ACTIVE")
+            mode_skill = skills / mode / "SKILL.md"
+            if (mode_skill.is_symlink() or not mode_skill.is_file() or
+                    mode_skill.stat().st_nlink != 1):
+                raise ValueError("SKILL.md del modo no disponible en ACTIVE")
+            import layout_contract
+            blocks = list(layout_contract._LAYOUT_BLOCK.finditer(
+                mode_skill.read_text(encoding="utf-8")))
+            if len(blocks) != 1:
+                raise ValueError("mode-layout del modo ausente o ambiguo")
+            layout = json.loads(blocks[0].group("body"))
+            product = self.workspace.parent / layout.get("product_root", "")
+            expected = layout_contract.layout_from_paths(product, self.workspace)
+            if (layout != expected or not product.is_dir() or
+                    product.is_symlink() or
+                    self.workspace.is_symlink()):
+                raise ValueError("mode-layout no coincide con producto/workspace Host")
+            for case in corpus["cases"]:
+                name = case["target_skill"]
+                if (not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or
+                        not (skills / name / "SKILL.md").is_file() or
+                        (skills / name).is_symlink() or
+                        (skills / name / "SKILL.md").is_symlink()):
+                    raise ValueError(f"skill no disponible en bundle ACTIVE: {name}")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError,
+                transaction.TransactionError) as error:
+            raise RunnerUnavailable(f"preflight Host de skills no verificable: {error}") from error
+        raise RunnerUnavailable(
+            "skills disponibles en bundle ACTIVE, pero carga efectiva no observable "
+            "antes de session/create; se requiere carga de skill comprobable por caso")
 
 
 def resolve_session(client=None):
@@ -171,7 +265,7 @@ def _verify_mode(client, mode, verified=None):
 
 
 def _dispatch(client, case, mode, timeout, workspace, verified=None,
-              case_fd=None, workspace_check=None):
+              case_fd=None, workspace_check=None, require_skill_load=False):
     """Ask one mode to run one case and read back what it persisted.
 
     The path is the session API of DSH 0.2.0-rc.2, the same one the acceptance
@@ -238,7 +332,8 @@ def _dispatch(client, case, mode, timeout, workspace, verified=None,
         }, ensure_ascii=False))
         return _verdict_from(_read_mode_verdict(
             client, session_id, timeout, workspace, case_fd=case_fd,
-            workspace_check=workspace_check))
+            workspace_check=workspace_check,
+            target_skill=case["target_skill"] if require_skill_load else None))
     finally:
         # A dispatched case never stays live: the corpus is a sequence of
         # independent turns, and an orphaned one holds quota and workspace.
@@ -279,8 +374,34 @@ def _case_scenario(case):
     return sent
 
 
+def _skill_loaded(events, name):
+    """Only a matched successful DSH tool-skill load is runtime evidence."""
+    calls = set()
+    for event in events:
+        if event.get("type") not in ("tool/call", "tool/result"):
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        if event["type"] == "tool/call":
+            try:
+                args = json.loads(data.get("arguments", ""))
+            except (TypeError, ValueError):
+                continue
+            if (data.get("name") == "skill" and isinstance(args, dict) and
+                    args.get("name") == name and isinstance(data.get("callId"), str)):
+                calls.add((data.get("turn"), data["callId"]))
+        else:
+            message = data.get("message")
+            if (not data.get("error") and isinstance(message, dict) and
+                    message.get("isError") is False and
+                    (data.get("turn"), message.get("toolCallId")) in calls):
+                return True
+    return False
+
+
 def _read_mode_verdict(client, session_id, timeout, workspace,
-                       case_fd=None, workspace_check=None):
+                       case_fd=None, workspace_check=None, target_skill=None):
     """What the mode persisted for this turn, or nothing to read.
 
     The fold is the one ``creator_client`` uses for a Creator turn, so the
@@ -326,6 +447,8 @@ def _read_mode_verdict(client, session_id, timeout, workspace,
             # into an explicit NOT_COVERED naming what was missing. An aborted
             # turn reaches here with the same None and the same honesty.
             if aborted is not None:
+                return None
+            if target_skill is not None and not _skill_loaded(events, target_skill):
                 return None
             if workspace_check is not None and not workspace_check():
                 return None
@@ -655,6 +778,8 @@ def run_corpus(client, corpus, *, mode, candidate_digest, provider_name,
                         verdict, evidence = _dispatch(
                             client, case, route[case["case_id"]], timeout, path,
                             verified=verified, case_fd=fd,
+                            require_skill_load=getattr(
+                                evaluator, "require_skill_load", False),
                             workspace_check=lambda case_id=case["case_id"],
                             pinned_fd=fd: _same_workspace(
                                 root, root_fd, case_id, pinned_fd))

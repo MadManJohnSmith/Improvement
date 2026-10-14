@@ -1,228 +1,224 @@
-# Progreso agéntico de Improvement — vista de una página
+# Improvement agentic progress — single page view · [Spanish translation](progreso-agentico.es.md)
 
-**Actualización:** 2026-10-11 (estado derivado de ensayos externos, sin afirmar que las modificaciones locales estén integradas).
+**Updated:** 2026-10-11 (state derived from external trials, without asserting that the local modifications are integrated).
 
-**Qué es este documento:** una sola lectura del estado de **todos** los hitos
-C/D/E/F/G/M/P/U y B0–B4, con el estado derivado de la evidencia citada y no de la
-intención. `PLAN_IMPLEMENTACION.md` sigue siendo el índice de progreso; este archivo
-es su vista conjunta, para que ningún identificador quede sin buscar.
+**What is this document:** a single reading of the status of **all** milestones
+C/D/E/F/G/M/P/U and B0–B4, with the state derived from the cited evidence and not from the
+intent. `PLAN_IMPLEMENTACION.md` is still the progress index; this file
+is its joint view, so that no identifier is left to be hunted for.
 
-**Vocabulario (tomado, no inventado):**
+**Vocabulary (taken, not invented):**
 
-- `HECHO` — `PLAN_IMPLEMENTACION.md:17`: salida y gate comprobados con evidencia recuperable.
-- `PARCIAL` / `DECIDIDO` / `DECLINADO` / `RETENIDO` / `PENDIENTE` / `BLOQUEADO` — vocabulario de `PLAN_IMPLEMENTACION.md:18-21`. `RETENIDO` es candidato preservado, no aceptado, y no es `DECLINADO`.
-- `IMPLEMENTED_NOT_VERIFIED` / `EN CURSO` — vocabulario de `docs/status.md:4`.
-- `RETIRADO` — lo que `docs/status.md:28-34` llama «Eliminaciones de vigencia».
+- `HECHO` — `PLAN_IMPLEMENTACION.md:17`: a proven output and gate, with recoverable evidence.
+- `PARCIAL` / `DECIDIDO` / `DECLINADO` / `RETENIDO` / `PENDIENTE` / `BLOQUEADO` — vocabulary of `PLAN_IMPLEMENTACION.md:18-21`. `RETENIDO` is a preserved candidate, not accepted, and is not `DECLINADO`.
+- `IMPLEMENTED_NOT_VERIFIED` / `EN CURSO` — vocabulary of `docs/status.md:4`.
+- `RETIRADO` — what `docs/status.md:28-34` calls “Validity removals”.
 
-**Cómo leer las columnas.** *Estado derivado* es lo que la evidencia citada sostiene
-hoy. *HUS* distingue los hitos cuyo pasado se reutiliza por Git (`git show`) de los que
-siguen vivos en el árbol.
+**How to read the columns.** *Derived state* is what the cited evidence supports
+today. *HUS* distinguishes milestones whose past is reused via Git (`git show`) from those that
+still live in the tree.
 
 ---
 
-## B0–B4 · Base MVP comprobada (nomenclatura previa a C0–C7)
+## B0–B4 · Proven MVP base (pre-C0–C7 nomenclature)
 
-| ID | Qué fue | Estado derivado | HUS | Evidencia |
+| ID | What was it | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| B0 | Onboarding, skills, Host aislado y canal DSH | HECHO | vivo | `PLAN_IMPLEMENTACION.md:27`; `scripts/onboard.py`, `scripts/host_launcher.py`, `scripts/inference_channel.py` |
-| B1 | Auditoría, reparación, QA y reauditoría reales | HECHO | vivo | `PLAN_IMPLEMENTACION.md:28`; `scripts/missions.py`, `scripts/publisher.py` |
-| B2 | Controlador, presupuesto, memoria y métricas | HECHO | vivo | `PLAN_IMPLEMENTACION.md:29`; `scripts/host_controller.py`, `scripts/budget.py`, `scripts/decisions.py`, `scripts/metrics.py` |
-| B3 | Plugin de escritura y distribución privada | HECHO | vivo | `PLAN_IMPLEMENTACION.md:30`; `tests/test_workflow_write_plugin.py` |
-| B4 | Núcleo fail-closed en dos proyectos | HECHO | vivo | `PLAN_IMPLEMENTACION.md:31` |
+| B0 | Onboarding, skills, isolated Host and DSH channel | HECHO | live | `PLAN_IMPLEMENTACION.md:27`; `scripts/onboard.py`, `scripts/host_launcher.py`, `scripts/inference_channel.py` |
+| B1 | Real audit, repair, QA and re-audit | HECHO | live | `PLAN_IMPLEMENTACION.md:28`; `scripts/missions.py`, `scripts/publisher.py` |
+| B2 | Controller, budget, memory and metrics | HECHO | live | `PLAN_IMPLEMENTACION.md:29`; `scripts/host_controller.py`, `scripts/budget.py`, `scripts/decisions.py`, `scripts/metrics.py` |
+| B3 | Write plugin and private distribution | HECHO | live | `PLAN_IMPLEMENTACION.md:30`; `tests/test_workflow_write_plugin.py` |
+| B4 | Fail-closed core in two projects | HECHO | live | `PLAN_IMPLEMENTACION.md:31` |
 
-Límite conservado de la familia (fila B0): **no equivale al flujo de incorporación 3.0**.
+Preserved family boundary (row B0): **not equivalent to the 3.0 onboarding flow**.
 
-## C0–C7 · Etapas del flujo final (vigentes en el índice)
+## C0–C7 Final flow stages (current in the index)
 
-| ID | Etapa | Estado derivado | HUS | Evidencia |
+| ID | Stage | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| C0 | Contratos generacionales, biblioteca y catálogo | HECHO | vivo | `PLAN_IMPLEMENTACION.md:37` |
-| C1 | `bootstrap install` determinista | HECHO | vivo | `PLAN_IMPLEMENTACION.md:38` |
-| C2 | Automatización DSH Creator | HECHO | vivo | `PLAN_IMPLEMENTACION.md:39` |
-| C3 | Validador Host de generación | HECHO | vivo | `PLAN_IMPLEMENTACION.md:40` |
-| C4 | Backups, instalación transaccional y desinstalación | HECHO | vivo | `PLAN_IMPLEMENTACION.md:41` |
-| C5 | Aceptación automática DSH | HECHO | vivo | `PLAN_IMPLEMENTACION.md:42` |
-| C6 | Piloto clean-room en proyectos nuevos | HECHO | vivo | `PLAN_IMPLEMENTACION.md:43` |
-| C7 | Promoción y distribución de piloto | HECHO | vivo | `PLAN_IMPLEMENTACION.md:44` |
+| C0 | Generational contracts, library and catalog | HECHO | live | `PLAN_IMPLEMENTACION.md:37` |
+| C1 | Deterministic `bootstrap install` | HECHO | live | `PLAN_IMPLEMENTACION.md:38` |
+| C2 | DSH Creator automation | HECHO | live | `PLAN_IMPLEMENTACION.md:39` |
+| C3 | Host validator for the generation | HECHO | live | `PLAN_IMPLEMENTACION.md:40` |
+| C4 | Backups, transactional install and uninstall | HECHO | live | `PLAN_IMPLEMENTACION.md:41` |
+| C5 | Automatic DSH acceptance | HECHO | live | `PLAN_IMPLEMENTACION.md:42` |
+| C6 | Clean-room pilot on new projects | HECHO | live | `PLAN_IMPLEMENTACION.md:43` |
+| C7 | Pilot promotion and distribution | HECHO | live | `PLAN_IMPLEMENTACION.md:44` |
 
-**C2 necesita una nota que su fila no lleva.** El 2026-10-10 un turno headless real
-con el `creator-prompt.md` del run íntegro **no** persistió `generated/generation-manifest.json`
-y el run quedó `RETAINED`. La fila C2 sigue `HECHO` porque su gate propio se cumplió
-en su momento; aquel pase **no revalidó C2**. La causa medida fue la falta del overlay
-en headless: sin él `write` caía en la fila de upstream rechazada por el sandbox.
-Después, el ensayo X3 sí probó `creator_client.dsh_headless_command` con overlay y
-una generación real ACTIVE. Esa prueba fue **anterior** al ajuste del presupuesto
-Creator por run; no valida una generación post-presupuesto. Ver X2 y X3.
+**C2 needs a note its row does not carry.** On 2026-10-10 one real headless turn with the run's full `creator-prompt.md` **did not** persist `generated/generation-manifest.json`
+and the run was `RETAINED`. Row C2 continues `HECHO` because its own gate was fulfilled
+at the time; that pass **did not revalidate C2**. The measured cause was the lack of the overlay
+in headless: without it `write` fell in the upstream queue rejected by the sandbox.
+Afterwards, trial X3 did test `creator_client.dsh_headless_command` with overlay and
+a real ACTIVE generation. That trial is **before** the Creator per-run budget adjustment; it does not validate a post-budget generation. See X2 and X3.
 
-**Aviso de puntero:** `creator-prompt.md` no vive en el árbol canónico; lo
-escribe `scripts/creator_client.py:1062` dentro del run dir del workspace
-externo, así que solo es citable por run, no por ruta del repo. La nota mantiene
-la referencia como nombre de fichero precisamente para no apuntar a un camino
-que aquí no existe.
+**Pointer notice:** `creator-prompt.md` does not live in the canonical tree; it is
+written by `scripts/creator_client.py:1062` inside the external workspace's run dir,
+so it is citable only per run, not by a repo path. The note keeps
+the reference as a filename precisely so as not to point to a path
+that does not exist here.
+## D1–D9 · Declared debt (current in the index)
 
-## D1–D9 · Deuda declarada (vigente en el índice)
-
-| ID | Unidad | Estado derivado | HUS | Evidencia |
+| ID | Unit | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| D1 | CAS/lease o escritura atómica multiarchivo de `mode-state` | HECHO 2026-10-01 (con residuo declarado) | vivo | `PLAN_IMPLEMENTACION.md:73`; `tests/test_state_commit.py` |
-| D2 | Confinamiento mecánico de bash del auditor | HECHO 2026-10-01 (auditor); E4 cierra el reparador | vivo | `PLAN_IMPLEMENTACION.md:74`; `tests/test_auditor_confinement.py` |
-| D3 | Gate de reconteo `persisted_count` | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:75` |
-| D4 | Aviso y re-apuntado ante reescritura de commits | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:76` |
-| D5 | Retirada de candidata como mecanismo verificado | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:77`; `bootstrap.py state --retire` |
-| D6 | Enum de `verification-results` | DECIDIDO 2026-09-30 (aterriza en E7) | vivo | `PLAN_IMPLEMENTACION.md:78` |
-| D7 | Hallazgo rico (fingerprint, causa, prevención) | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:79` |
-| D8 | Vista derivada de hallazgos cerrados por work item | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:80` |
-| D9 | Directorio de evidencia fuera de `mode-state` | HECHO 2026-09-30 | vivo | `PLAN_IMPLEMENTACION.md:81` |
+| D1 | CAS/lease or atomic multi-file write of `mode-state` | HECHO 2026-10-01 (with a declared residue) | live | `PLAN_IMPLEMENTACION.md:73`; `tests/test_state_commit.py` |
+| D2 | Auditor bash mechanical confinement | FACT 2026-10-01 (auditor); E4 closes the repairman | live | `PLAN_IMPLEMENTACION.md:74`; `tests/test_auditor_confinement.py` |
+| D3 | `persisted_count` recount gate | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:75` |
+| D4 | Notice and re-pointing on commit rewrites | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:76` |
+| D5 | Candidate withdrawal as a verified mechanism | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:77`; `bootstrap.py state --retire` |
+| D6 | Enum for `verification-results` | DECIDIDO 2026-09-30 (lands in E7) | live | `PLAN_IMPLEMENTACION.md:78` |
+| D7 | Rich finding (fingerprint, cause, prevention) | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:79` |
+| D8 | Derived view of findings closed by work item | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:80` |
+| D9 | Evidence directory outside `mode-state` | HECHO 2026-09-30 | live | `PLAN_IMPLEMENTACION.md:81` |
 
-## E1–E9 · Endurecimiento post-C7 (vigente en el índice)
+## E1–E9 Post-C7 hardening (current in index)
 
-| ID | Unidad | Estado derivado | HUS | Evidencia |
+| ID | Unit | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| E1 | Commit transaccional de `mode-state` | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:85` |
-| E2 | Memoria episódica e índice | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:86` |
-| E3 | Ejecutor del gate de biblioteca | MECANISMO HECHO; EJECUCIÓN NO | vivo | `PLAN_IMPLEMENTACION.md:87` |
-| E4 | Confinamiento del reparador | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:88` |
-| E5 | Honestidad de la cobertura de stacks | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:89` |
-| E6 | Cerrar el bucle de lectura de la memoria episódica | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:90` |
-| E7 | Veredicto derivado calculado de verdad | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:91` |
-| E8 | El ledger de métricas se lee | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:92` |
-| E9 | La mitad de reflexión del RSI | HECHO 2026-10-01 | vivo | `PLAN_IMPLEMENTACION.md:93` |
+| E1 | Transactional commit of `mode-state` | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:85` |
+| E2 | Episodic memory and index | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:86` |
+| E3 | Library gate runner | HECHO MECHANISM; EXECUTION NO | live | `PLAN_IMPLEMENTACION.md:87` |
+| E4 | Repairer confinement | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:88` |
+| E5 | Honesty of stack coverage | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:89` |
+| E6 | Close the episodic memory reading loop | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:90` |
+| E7 | A genuinely calculated derived verdict | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:91` |
+| E8 | The metrics ledger is read | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:92` |
+| E9 | The reflection half of the RSI | HECHO 2026-10-01 | live | `PLAN_IMPLEMENTACION.md:93` |
 
-El índice canónico sigue con E10–E23, todas `HECHO` en su fila. E3 conserva su
-límite y conviene no leerlo como «probado»: el mecanismo del ejecutor está en código y
-protegido por regresiones, pero **no hay corrida operacional con modo real** porque
-`skill-gate-run` se abstiene antes de `session/create` al no existir un adaptador
-evaluador Host que verifique layout y skill efectiva por caso (`scripts/skill_gate_run.py:604-608`).
-Correr el corpus con credenciales propias es una decisión del operador, no un resultado
-del framework.
+The canonical index carries on with E10–E23, all `HECHO` in their rows. E3 keeps its
+limit and it is worth not reading it as "proven": the runner's mechanism is in code and
+guarded by regressions, but **there is no operational run with a real mode** because
+`skill-gate-run` abstains before `session/create`, there being no Host evaluator
+adapter that verifies layout and effective skill per case (`scripts/skill_gate_run.py:604-608`).
+Running the corpus against your own credentials is an operator decision, not a result
+of the framework.
 
-## F1–F6 · Propuestas del borrador de orquestación externa (familia cerrada)
+## F1–F6 · External orchestration draft proposals (closed family)
 
-| ID | Propuesta | Estado derivado | HUS | Evidencia |
+| ID | Proposal | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| F1 | Specs como artefacto versionado | DECIDIDO históricamente: incorporar trazabilidad, EARS opcional | histórico | `docs/external-orchestration-draft.md` |
-| F2 | Cerrar la composición Host real | DECIDIDO históricamente como prioridad del núcleo | histórico | F2 cubierto por C2/C5 |
-| F3 | Disparo por evento y delta por push | PENDIENTE / condicionado | histórico | requiere autorización de publicación remota |
-| F4 | «1 tarjeta = 1 worktree = 1 agente CLI» | DECIDIDO históricamente: no adoptar | histórico | `docs/external-orchestration-draft.md` |
-| F5 | Tres capas de ciclo de vida | Dividida: capa C `HECHO` (E2); capa B `DECLINADO` 2026-10-01 | vivo+histórico | `PLAN_IMPLEMENTACION.md:86`, `:108` |
-| F6 | Error concreto del MVP | HECHO (B0) | vivo | `PLAN_IMPLEMENTACION.md:27` |
+| F1 | Specs as a versioned artifact | DECIDIDO historically: incorporate traceability, EARS optional | historical | `docs/external-orchestration-draft.md` |
+| F2 | Close composition Real Host | DECIDIDO historically as core priority | historical | F2 covered by C2/C5 |
+| F3 | Trigger per event and delta per push | PENDING / conditional | historical | requires remote publishing authorization |
+| F4 | «1 card = 1 worktree = 1 CLI agent» | DECIDIDO historically: not to adopt | historical | `docs/external-orchestration-draft.md` |
+| F5 | Three layers of life cycle | Split: layer C `HECHO` (E2); layer B `DECLINADO` 2026-10-01 | living+historical | `PLAN_IMPLEMENTACION.md:86`, `:108` |
+| F6 | Specific MVP error | HECHO (B0) | live | `PLAN_IMPLEMENTACION.md:27` |
 
-## G0–G7 · Puertas del plan de lanzamiento (familia cerrada)
+## G0–G7 · Release plan doors (closed family)
 
-| ID | Puerta | Estado derivado | HUS | Evidencia |
+| ID | Door | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| G0 | Licencia | HECHO 2026-09-30 | vivo | `LICENSE` |
-| G1 | `recording_command` emite el JSON exacto | HECHO 2026-09-29 | vivo | `docs/plans/10-lanzamiento-publico.md:31` |
-| G2 | `decisions.py`/`metrics.py` dejan de ser huérfanos | HECHO 2026-09-29 | vivo | `docs/plans/10-lanzamiento-publico.md:32` |
-| G3 | Desbordamiento de runtime con traza | HECHO 2026-09-29 | vivo | `docs/plans/10-lanzamiento-publico.md:33` |
-| G4 | Instalación limpia probada fuera de local | HECHO 2026-09-29 | vivo | `docs/plans/10-lanzamiento-publico.md:34` |
-| G5 | Documentación pública | HECHO 2026-09-30 | vivo | `docs/plans/10-lanzamiento-publico.md:35` |
-| G6 | Etiqueta y notas | HECHO 2026-09-30 (autorización del titular) | vivo | `docs/plans/11-notas-beta-v0.1.0.md` |
-| G7 | Verificación contra el stack real | HECHO 2026-09-29 (26 de 30 stacks sin campaña) | vivo | `docs/plans/10-lanzamiento-publico.md:37` |
+| G0 | License | HECHO 2026-09-30 | live | `LICENSE` |
+| G1 | `recording_command` outputs the exact JSON | FACT 2026-09-29 | live | `docs/plans/10-lanzamiento-publico.md:31` |
+| G2 | `decisions.py`/`metrics.py` stop being orphans | HECHO 2026-09-29 | live | `docs/plans/10-lanzamiento-publico.md:32` |
+| G3 | Runtime overflow with trace | FACT 2026-09-29 | live | `docs/plans/10-lanzamiento-publico.md:33` |
+| G4 | Tested off-premises clean install | FACT 2026-09-29 | live | `docs/plans/10-lanzamiento-publico.md:34` |
+| G5 | Public documentation | HECHO 2026-09-30 | live | `docs/plans/10-lanzamiento-publico.md:35` |
+| G6 | Tag and notes | HECHO 2026-09-30 (owner authorization) | live | `docs/plans/11-notas-beta-v0.1.0.md` |
+| G7 | Verification against real stack | FACT 2026-09-29 (26 of 30 stacks without campaign) | live | `docs/plans/10-lanzamiento-publico.md:37` |
+G7 keeps the limit its row requires to be published as a limit: **26 of 30 stacks
+They are still declared without campaign** (`docs/status.md:250`), not as a guarantee.
 
-G7 conserva el límite que su fila exige publicar como límite: **26 de 30 stacks
-siguen declarados sin campaña** (`docs/status.md:250`), no como garantía.
+## M1–M9 · MVP v2.4 core closure (RETIRADO from tree — past reused)
 
-## M1–M9 · Cierre del núcleo MVP v2.4 (RETIRADA del árbol — pasado reutilizado)
+`docs/status.md:28-34` declares the elimination of these plans in force; `CHANGELOG.md:786`
+records that commit `c8aed51` deleted the three historical documents. **No row is
+current work**: reading them as backlog would invent an obligation.
 
-`docs/status.md:28-34` declara vigente la eliminación de estos planes; `CHANGELOG.md:786`
-registra que el commit `c8aed51` borró los tres documentos históricos. **Ninguna fila es
-trabajo vigente**: leerlas como backlog inventaría una obligación.
-
-| ID | Qué fue | Estado derivado | HUS | Acceso |
+| ID | What was it | Derived state | HUS | Access |
 |---|---|---|---|---|
-| M1 | Consumo de cola completa por proyecto | RETIRADO (se consumió en dos proyectos) | histórico | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:22-40` |
-| M2 | Reauditoría semántica como turno propio | RETIRADO (validado en piloto DSH real) | histórico | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:41-58` |
-| M3 | Controlador Host real | RETIRADO (ciclo mecánico conducido) | histórico | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:59-76` |
-| M4 | Aceptación integral por proyecto | RETIRADO (alcanzado con excepciones) | histórico | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:77-83` |
-| M5 | Decisiones e instrumentación como servicios | RETIRADO; sus dos servicios siguen en `scripts/` | vivo (servicios) | `scripts/decisions.py`, `scripts/metrics.py` |
-| M6 | De «límite documentado» a «probado» | RETIRADO (porción local demostrada) | histórico | `git show c8aed51^:docs/PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md` |
-| M7 | `write` rechaza el modo vigente | RESUELTO como plugin | vivo | `scripts/dsh-plugins/anti-escalation.mjs`; P5 |
-| M8 | Distribución remota del framework | Distribución RESUELTA 2026-09-13 (clean-room) | vivo | `docs/status.md` |
-| M9 | Barrido de esquema sobre la bash real | HECHO en su época (flag M9 dentro de P5) | vivo | P5 |
+| M1 | Full queue consumption per project | RETIRADO (done in two projects) | historical | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:22-40` |
+| M2 | Semantic re-audit as its own turn | RETIRADO (validated in real DSH pilot) | historical | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:41-58` |
+| M3 | Real Host Controller | RETIRADO (mechanical driven cycle) | historical | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:59-76` |
+| M4 | Comprehensive acceptance per project | RETIRADO (achieved with exceptions) | historical | `git show c8aed51^:docs/PLAN_PENDIENTES_CIERRE_NUCLEO.md:77-83` |
+| M5 | Decisions and instrumentation as services | RETIRADO; its two services remain at `scripts/` | live (services) | `scripts/decisions.py`, `scripts/metrics.py` |
+| M6 | From “documented limit” to “proven” | RETIRADO (local portion shown) | historical | `git show c8aed51^:docs/PLAN_EJECUCION_ARQUITECTURA_COMPLETA.md` |
+| M7 | `write` rejects the current mode | SOLVED as a plugin | live | `scripts/dsh-plugins/anti-escalation.mjs`; P5 |
+| M8 | Remote distribution of the framework | Distribution RESOLVED 2026-09-13 (clean-room) | live | `docs/status.md` |
+| M9 | Outline sweep over the actual bash | HECHO in its time (flag M9 inside P5) | live | P5 |
 
-**Los dos documentos que definían la familia son solo legibles por Git**, y ambos
-llevan su propia advertencia de «CONTENIDO HISTÓRICO — NO EJECUTAR».
+**The two documents that defined the family are only readable by Git**, and both
+They carry their own “HISTORICAL CONTENT — DO NOT RUN” warning.
 
-## P1–P11 · Hardening posterior a C7 (vigente en el índice)
+## P1–P11 · Hardening after C7 (current in the index)
 
-| ID | Unidad | Estado derivado | HUS | Evidencia |
+| ID | Unit | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| P1 | Registro de fuentes y biblioteca materializada | HECHO | vivo | `PLAN_IMPLEMENTACION.md:52` |
-| P2 | Integración biblioteca ↔ Creator | HECHO | vivo | `PLAN_IMPLEMENTACION.md:53` |
-| P3 | Despacho automático y ciclo de vida DSH | HECHO | vivo | `PLAN_IMPLEMENTACION.md:54` |
-| P4 | Sesión Creator ligada al workspace | HECHO | vivo | `PLAN_IMPLEMENTACION.md:55` |
-| P5 | Política anti-escalada de sandbox | HECHO | vivo | `PLAN_IMPLEMENTACION.md:56` |
-| P6 | Transacción con veredicto Host | HECHO | vivo | `PLAN_IMPLEMENTACION.md:57` |
-| P7 | Aceptación Host aislada del Creator | HECHO | vivo | `PLAN_IMPLEMENTACION.md:58` |
-| P8 | Instalación de modos como presets DSH | HECHO | vivo | `PLAN_IMPLEMENTACION.md:59` |
-| P9 | Gate operativo y ruta real de skills | HECHO | vivo | `PLAN_IMPLEMENTACION.md:60` |
-| P10 | Piloto tardis (Syncify) con DSH real | HECHO | vivo | `PLAN_IMPLEMENTACION.md:61` |
-| P11 | Gate de holdout para la biblioteca | IMPLEMENTED_NOT_VERIFIED | vivo | `docs/status.md:130` |
+| P1 | Source Registry and Materialized Library | HECHO | live | `PLAN_IMPLEMENTACION.md:52` |
+| P2 | Library integration ↔ Creator | HECHO | live | `PLAN_IMPLEMENTACION.md:53` |
+| P3 | Automatic DSH dispatch and lifecycle | HECHO | live | `PLAN_IMPLEMENTACION.md:54` |
+| P4 | Creator session bound to the workspace | HECHO | live | `PLAN_IMPLEMENTACION.md:55` |
+| P5 | Sandbox anti-escalation policy | HECHO | live | `PLAN_IMPLEMENTACION.md:56` |
+| P6 | Transaction with a Host verdict | HECHO | live | `PLAN_IMPLEMENTACION.md:57` |
+| P7 | Host acceptance isolated from the Creator | HECHO | live | `PLAN_IMPLEMENTACION.md:58` |
+| P8 | Mode installation as DSH presets | HECHO | live | `PLAN_IMPLEMENTACION.md:59` |
+| P9 | Operational gate and real skills route | HECHO | live | `PLAN_IMPLEMENTACION.md:60` |
+| P10 | Tardis pilot (Syncify) with real DSH | HECHO | live | `PLAN_IMPLEMENTACION.md:61` |
+| P11 | Holdout gate for the library | IMPLEMENTED_NOT_VERIFIED | live | `docs/status.md:130` |
 
-**P11 es el límite que más conviene no suavizar:** el gate ligado existe y decide
-sobre observaciones verificadas, pero **ningún cambio de biblioteca ha pasado por él
-con evidencia de un agente real**. Los 55 casos comprueban 25 skills, no los modos;
-el CLI del runner se abstiene antes de crear sesión al faltar un evaluador Host
-compatible por caso. La abstención del pase del 2026-10-10 y el `NOT_COVERED` de SC-123
-son evidencia de dos límites distintos, no scores de mejora.
+**P11 is the limit it serves not to soften:** the bound gate exists and decides
+on verified observations, but **no library changes have gone through it
+with evidence of a real agent**. The 55 cases test 25 skills, not the modes;
+runner CLI stops before creating session due to missing Host evaluator
+the pass abstained before `session/create`, there being no compatible Host evaluator adapter
+per case. The abstention of the 2026-10-10 pass and the `NOT_COVERED` of SC-123
+are evidence of two different limits, not improvement scores.
 
-## P0–P9 · Fases del plan de ejecución de arquitectura completa (RETIRADA del árbol)
+## P0–P9 · Full Architecture Execution Plan Phases (TREE REMOVAL)
 
-**Aviso de homonimia:** estos `P0`–`P9` no son las once unidades de hardening de
-arriba. El identificador `P2` aislado no identifica trabajo sin el documento y la
-época. Los dos documentos son legibles solo por Git (`c8aed51`).
+**Aviso de homonimia (homonymy notice):** these `P0`–`P9` are not the eleven hardening units
+above. The isolated identifier `P2` does not identify work without the document and the
+era. The two documents are readable only by Git (`c8aed51`).
 
-| ID | Fase | Estado derivado | HUS |
+| ID | Phase | Derived state | HUS |
 |---|---|---|---|
-| P0 | Reconciliar mandato, inventario y baseline | RETIRADO (ejecutado 2026-09-13) | histórico |
-| P1 | Descarga, preparación limpia y bootstrap | RETIRADO (ejecutado) | histórico |
-| P2 | Controles Host y composición nativa efectiva | RETIRADO (ejecutado) | histórico |
-| P3 | Auditoría completa, requisitos y cobertura | RETIRADO (ejecutado) | histórico |
-| P4 | Reparación normal completa y QA independiente | RETIRADO (ejecutado) | histórico |
-| P5 | Reauditoría, ledger y cierre | RETIRADO (ejecutado) | histórico |
-| P6 | Transición a la arquitectura final | RETIRADO (ejecutado) | histórico |
-| P7 | Reemplazo de los modos genéricos | RETIRADO (ejecutado) | histórico |
-| P8 | Regresiones y limpieza | RETIRADO (ejecutado) | histórico |
-| P9 | UX, métricas, distribución y cierre | RETIRADO; su salida pública es G5 | histórico |
+| P0 | Reconcile mandate, inventory and baseline | RETIRADO (executed 2026-09-13) | historical |
+| P1 | Download, clean preparation and bootstrap | RETIRADO (executed) | historical |
+| P2 | Host controls and real native composition | RETIRADO (executed) | historical |
+| P3 | Complete audit, requirements and coverage | RETIRADO (executed) | historical |
+| P4 | Complete Normal Repair and Independent QA | RETIRADO (executed) | historical |
+| P5 | Reaudit, ledger and closure | RETIRADO (executed) | historical |
+| P6 | Transition to final architecture | RETIRADO (executed) | historical |
+| P7 | Replacement of the generic modes | RETIRADO (executed) | historical |
+| P8 | Regressions and cleanup | RETIRADO (executed) | historical |
+| P9 | UX, metrics, distribution and closure | RETIRADO; its public output is G5 | historical |
+## U1–U6 · Workflow executor on the Host and default campaign
 
-## U1–U6 · Ejecutor de workflows en el Host y campaña por defecto
-
-`U` es la única familia que `PLAN_IMPLEMENTACION.md` **no** recoge como fila: su
-sección de estado vive en `docs/status.md:132-157` y su diseño en
+`U` is the only family that `PLAN_IMPLEMENTACION.md` **does not** carry as a row: its
+status section lives at `docs/status.md:132-157` and its design at
 `ARQUITECTURA_FLUJO_AGENTES.md:290-300`.
 
-| ID | Unidad | Estado derivado | HUS | Evidencia |
+| ID | Unit | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| U1 | Ejecutor de planes sin DSH | HECHO lo probado; Host puro | vivo | `docs/status.md:136`; `scripts/workflow.py`; `tests/test_workflow_executor.py` |
-| U2 | Entrada bootstrap y abstención | HECHO lo probado | vivo | `docs/status.md:137`; `tests/test_workflow_bootstrap.py` |
-| U3 | Paso `ask` con cliente falso | HECHO con cliente falso, no con DSH real | vivo | `docs/status.md:138`; `tests/test_workflow_ask.py` |
-| U4 | Bundle de distribución | PENDIENTE · no ejecutado (requiere autorización) | vivo | `CHANGELOG.md:9`, `:25` |
-| U5 | Skill-doctrina en `library/` | PENDIENTE · no ejecutado (gate con sesión real) | vivo | `ARQUITECTURA_FLUJO_AGENTES.md:294` |
-| U6 | Campaña de auditoría y reparación por defecto | IMPLEMENTED_NOT_VERIFIED · sin aceptación operativa | vivo | `docs/status.md:4`, `:142`, `:156` |
+| U1 | Plan executor without DSH | HECHO what is proven; pure Host | live | `docs/status.md:136`; `scripts/workflow.py`; `tests/test_workflow_executor.py` |
+| U2 | Bootstrap entry and abstention | HECHO what is proven | live | `docs/status.md:137`; `tests/test_workflow_bootstrap.py` |
+| U3 | Step `ask` with fake client | HECHO with fake client, not real DSH | live | `docs/status.md:138`; `tests/test_workflow_ask.py` |
+| U4 | Distribution Bundle | PENDING · not executed (requires authorization) | live | `CHANGELOG.md:9`, `:25` |
+| U5 | Skill-doctrine in `library/` | PENDING · not executed (gate with real session) | live | `ARQUITECTURA_FLUJO_AGENTES.md:294` |
+| U6 | Defect audit and repair campaign | IMPLEMENTED_NOT_VERIFIED · without operational acceptance | live | `docs/status.md:4`, `:142`, `:156` |
 
-**U6 acaba de moverse un poco, y conviene ser exacto.** El 2026-10-10 el workflow
-mostró, con DSH real, `FAIL → reparación → PASS` en dos runs separados y verificados
-(`r-5d7d11…` `RETAINED cause: gate-abort:gate-producto`; `r-7761c0…` `COMPLETED`), y
-la invalidación fail-closed de memoria (`MEMORY_RECONCILED`, 6 invalidados). Eso
-ejercita el mecanismo, **no** la aceptación operativa: el producto era ficticio y la
-campaña no cerra reglas de un repositorio real.
+**U6 has moved somewhat, and it matters to be exact.** On 2026-10-10 the workflow
+showed, with real DSH, `FAIL → reparación → PASS` in two separate and verified runs
+(`r-5d7d11…` `RETAINED cause: gate-abort:gate-producto`; `r-7761c0…` `COMPLETED`), and
+fail-closed memory invalidation (`MEMORY_RECONCILED`, 6 invalidated). That
+exercises the mechanism, **not** operational acceptance: the product was fictitious and the
+campaign does not close out the rules for a real repository.
 
-## X1–X3 · Evidencia posterior al pase del 2026-10-10
+## X1–X3 · Evidence after the 2026-10-10 pass
 
-| ID | Unidad | Estado derivado | Evidencia y límite |
+| ID | Unit | Derived state | Evidence and limit |
 |---|---|---|---|
-| X1 | Candidata de reparación sin `worktree` del producto | HOST/SHADOW Y PRESET REAL PROBADOS; ciclo íntegro con preset NO PROBADO | En `x1-live`, un producto ficticio y DSH headless ejercitaron provisión Host fuera del modo, `PROVISIONED → DIRTY`, diff verificado, tests 3/3 y reanudación exacta; el producto quedó intacto. El envoltorio `bwrap` corregido denegó escritura al producto, pero headless no compuso el preset (0 llamadas a `skill`) y dos turnos sumaron 386.441 tokens frente a 250k. En `x1-preset-real`, DSH web resolvió el preset real y cargó su skill, con puerta read-only sobre la sombra del Host; con techo 120.000 el supervisor detuvo la ejecución **antes de editar** por predicción de superarlo (104.372 medidos, 129.898 proyectados; en tanda posterior 97.973 medidos, 127.227 proyectados). **Con techo 200.000 sí llegó a editar**: 11 pasos y 180.107 tokens facturables, la sombra quedó sucia con el defecto canónico reparado (`Math.round(valor)` → `Math.round(valor * 100) / 100`, y el total con IVA redondeado sobre la tarifa ya redondeada), los tests (3/3, ejecutados por el operador desde fuera) pasaron contra la sombra y el producto canónico quedó intacto; el turno paró por proyección (180.107 medidos, 208.828 proyectados) antes de la segunda reclamación sucia y del cierre `DIRTY`. El tramo final se cerró después, con los comandos como archivos verificados por digest: el modo registró `DIRTY` con digest y rutas, persistió `work-items.json` y ejecutó el entrypoint (3/3). Los dos tramos del ciclo quedan ejercidos. Ensayos externos: `x1-live/RESULTADO.md` y `x1-preset-real/RESULTADO.md` |
-| X2 | Servidor web y transporte de evaluación | ARRANQUE PROBADO; EVALUADOR HOST AUSENTE | `dsh web` sí arrancó en `0.2.0-rc.2`; el fallo del pase anterior fue el home copiado con `profiles/web/node_modules/` vacío, no un bloqueo actual del arranque. **No existe** un endpoint `evaluator` en esa versión: el gate usa la API real de sesiones (`session/create` + `session/prompt` + `session/page`), pero el CLI no tiene un adaptador evaluador Host compatible que verifique `cwd` por caso y skill efectiva antes de crear sesión (`scripts/skill_gate_run.py:604-608`). Esto es distinto de la generación Creator y del targeting del corpus |
-| X3 | Creator y corpus gate contra modo real | CREATOR ACTIVE PRE-PRESUPUESTO; CORPUS NOT_COVERED | Con overlay headless model-facing, Creator generó un manifest `GENERATED` con 19 artefactos y `bootstrap accept`/Host activaron `ACTIVE` (ensayo externo `ensayo-x3-actualizado.md`). **Ocurrió antes del arreglo del budget Creator**; no acredita generación post-budget. En `corpus-fixed`, el frontmatter corregido permitió `skills/list` con 4 skills `modelInvocable` y `skill` reales, y se despachó un caso de 55 (`SC-123`). El gate dio `NOT_COVERED`: el caso compilado apuntaba a la **skill** `source-driven-development`, no al modo `fixture-auditor` que se despachó, y el modo exigió un layout de CWD (`ensayo-x3/fixture/workspace`) que el gate no le dio (sesiona en `case-workspaces/SC-123`), así que `__IMPROVEMENT_LAYOUT_OK__` no salió, el modo narró `RETAINED` sin `workflow_write` y `result.json` no existe. El gate no inventó PASS. Ensayos externos: `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
+| X1 | Repair candidate without `worktree` of the product | REAL HOST/SHADOW AND PRESET TESTED; entire cycle EXERCISED IN TWO TURNS | In `x1-live`, a fictional product and headless DSH exercised Host provision out of mode, `PROVISIONED → DIRTY`, diff verified, tests 3/3 and exact resume; The product was left intact. The corrected `bwrap` wrapper denied writes to the product, but headless did not compose the preset (0 calls to `skill`) and two turns totalled 386,441 tokens versus 250k. In `x1-preset-real`, DSH web resolved the actual preset and loaded its skill, with a read-only boundary around the Host shadow; with a ceiling of 120,000, the supervisor stopped the execution **before editing** due to a prediction of exceeding it (104,372 measured, 129,898 projected; in a later round 97,973 measured, 127,227 projected). **With a ceiling of 200,000, it did manage to edit**: 11 steps and 180,107 billable tokens, the shadow was left dirty with the canonical defect repaired (`Math.round(valor)` → `Math.round(valor * 100) / 100`, and the VAT-inclusive total rounded over an already rounded rate), the tests (3/3, executed by the operator from outside) passed against the shadow and the canonical product was left intact; the turn stopped on projection (180,107 measured, 208,828 projected) before the second dirty claim and the closure `DIRTY`. The final stretch was closed in a later turn, with the commands published as files verified by digest: the mode recorded `DIRTY` with digest and paths, persisted `work-items.json` and executed the entrypoint (3/3). The two stretches of the cycle were exercised, in separate turns. External tests: `x1-live/RESULTADO.md` and `x1-preset-real/RESULTADO.md` |
+| X2 | Web server and evaluation transport | BOOT PROVEN; HOST EVALUATOR ABSENT | `dsh web` did boot on `0.2.0-rc.2`; the failure of the previous pass was the copied home with empty `profiles/web/node_modules/`, not a current blocker of the starter. **There is no** `evaluator` endpoint in that version: the gate uses the actual sessions API (`session/create` + `session/prompt` + `session/page`), but the CLI does not have a supported Host evaluator adapter that checks the per-case `cwd` and the effective skill before creating the session (`scripts/skill_gate_run.py:604-608`). This is distinct from the Creator generating or the corpus targeting |
+| X3 | Creator and corpus gate against a real mode | PRE-BUDGET CREATOR ACTIVE; CORPUS NOT_COVERED | With a model-facing headless overlay, Creator generated a manifest `GENERATED` with 19 artifacts and `bootstrap accept`, and the Host activated it `ACTIVE` (external test `ensayo-x3-actualizado.md`). **This ran before the Creator budget fix**; it does not accredit post-budget generation. At `corpus-fixed`, the corrected frontmatter allowed `skills/list` with 4 real skills `modelInvocable` and `skill`, and one of the 55 cases (`SC-123`) was dispatched. The gate gave `NOT_COVERED`: the compiled case pointed to the **skill** `source-driven-development`, not the mode `fixture-auditor` that was shipped, and the mode required a CWD layout (`ensayo-x3/fixture/workspace`) that the gate did not give it (it ran at `case-workspaces/SC-123`), so `__IMPROVEMENT_LAYOUT_OK__` was never emitted, the mode narrated `RETAINED` without `workflow_write` and `result.json` was never written. The gate did not invent PASS. External tests: `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
 
-## Cómo llegar a la evidencia
+## How to get to the evidence
 
-- Estado vigente y pisadas del pase real: [docs/status.md](status.md)
-- Índice de progreso y deuda: [../PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md)
-- Diseño normativo: [../ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md)
-- Historial de cambios: [../CHANGELOG.md](../CHANGELOG.md)
-- Procedimiento verificado de sesión DSH real: [../skills/dsh-maintenance-session/SKILL.md](../skills/dsh-maintenance-session/SKILL.md)
+- Current status and the real pass's footprints: [status.md](status.md)
+- Progress and debt index: [../PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md)
+- Normative design: [../ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md)
+- Change history: [../CHANGELOG.md](../CHANGELOG.md)
+- Verified procedure for a real DSH session: [../skills/dsh-maintenance-session/SKILL.md](../skills/dsh-maintenance-session/SKILL.md)
 
-Nada en este documento convierte una regresión estática en prueba viva: cada fila
-`HECHO` lo es por su gate, y cada fila no `HECHO` nombra la pieza que falta.
+Nothing in this document turns a static regression into live testing: every row
+`HECHO` is so because of its gate, and every row that is not `HECHO` names the missing piece.

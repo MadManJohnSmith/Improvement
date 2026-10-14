@@ -60,6 +60,15 @@ class StackPlanTests(unittest.TestCase):
             self.assertEqual(value['missing_capability'],
                              'BLOCKED-naming-capability-and-provision-step')
 
+    def test_requirements_without_manage_py_is_not_django(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'requirements.txt': 'pytest\n',
+                                       'scripts/tests/test_value.py': 'def test_value(): assert True\n'})
+            value = stack.plan(product, workspace=root / 'ws')
+            self.assertNotIn('python-django', {entry['stack'] for entry in value['stacks']})
+            self.assertIn('python-generic', {entry['stack'] for entry in value['stacks']})
+
     def test_missing_capability_names_the_exact_provision_step(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

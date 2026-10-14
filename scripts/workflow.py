@@ -923,6 +923,13 @@ def _assistant_text(data):
         text = message.get('text')
         if isinstance(text, str) and text.strip():
             return text
+        content = message.get('content')
+        if isinstance(content, list):
+            texts = [block['text'] for block in content
+                     if isinstance(block, dict) and block.get('type') == 'text'
+                     and isinstance(block.get('text'), str) and block['text'].strip()]
+            if texts:
+                return '\n'.join(texts)
     text = data.get('text')
     if isinstance(text, str) and text.strip():
         return text
@@ -979,7 +986,14 @@ def _fold_ask(observation, state, request_id):
                 continue
             text = _assistant_text(data)
             if text is None:
-                raise ValueError('assistant/message del turno correlacionado sin texto extraíble')
+                message = data.get('message', data)
+                content = message.get('content') if isinstance(message, dict) else None
+                if (not isinstance(content, list) or not content or
+                        any(not isinstance(block, dict) or
+                            block.get('type') not in ('reasoning', 'tool-call')
+                            for block in content)):
+                    raise ValueError('assistant/message del turno correlacionado sin texto extraíble')
+                continue
             state['texts'].append(text)
         elif (event_type == 'turn/end' and request_turn is not None
                 and data.get('turn') == request_turn):

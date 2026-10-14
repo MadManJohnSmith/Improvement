@@ -1,33 +1,49 @@
-# Contrato local de cobertura de auditoría
+# Local audit coverage contract
 
-El modo completo conserva el alcance autorizado y sus dimensiones de revisión según [arquitectura §13](../ARQUITECTURA_FLUJO_AGENTES.md#13-cobertura-y-contratos). `scripts/audit.py` solo comprueba inventario, partición y estados declarados; no es un auditor semántico ni un control de permisos.
+**English** | [Español](audit-contract.es.md)
 
-## Preparar el inventario
+The full mode preserves the authorized scope and its review dimensions under
+[architecture §13](../ARQUITECTURA_FLUJO_AGENTES.md#13-cobertura-y-contratos).
+`scripts/audit.py` only checks inventory, partition and declared states; it is neither a
+semantic auditor nor a permission control.
 
-En una raíz estable, previamente autorizada y sin secretos, ejecutar:
+## Preparing the inventory
+
+Run against a stable, previously authorized, secret-free root:
 
 ```sh
-python3 -B /ruta/framework/scripts/audit.py inventory \
-  --product /ruta/producto --exclusions /ruta/workspace/exclusions.json \
-  > /ruta/workspace/inventory.json
+python3 -B /path/framework/scripts/audit.py inventory \
+  --product /path/product --exclusions /path/workspace/exclusions.json \
+  > /path/workspace/inventory.json
 ```
 
-`--exclusions` es opcional. Su archivo es un objeto de rutas relativas exactas a motivos, por ejemplo `{".git": "Metadatos Git fuera de la revisión de código autorizada"}`. No hay globs, exclusiones implícitas de dependencias ni lectura de archivos de instrucciones por el script. El operador determina el alcance y autoriza las exclusiones; un motivo escrito en JSON no crea esa autoridad. Una auditoría de historia Git exige otro alcance explícito, no tratar `.git` excluido como revisado.
+`--exclusions` is optional. Its file is an object mapping exact relative paths to reasons,
+for example `{ ".git": "Git metadata outside the authorized code review" }`. There are no
+globs, implicit dependency exclusions, or instruction-file reads by the script. The operator
+determines scope and authorizes exclusions; a reason written in JSON does not create that
+authority. Auditing Git history requires a separate explicit scope, not treating an excluded
+`.git` as reviewed.
 
-El inventario enumera directorios con errores visibles, ordena archivos y calcula SHA-256 por bloques. Una exclusión de archivo o directorio registra su tipo y motivo sin leer su contenido; un directorio excluido representa una frontera, no un conteo de sus archivos. Rechaza symlinks encontrados (incluido un destino de exclusión), archivos especiales, rutas absolutas o traversal y exclusiones inexistentes/anidadas. No inspecciona descendientes de una frontera excluida. No garantiza estabilidad ante escritores concurrentes hostiles; usar una copia estable o montada en lectura cuando corresponda.
+The inventory enumerates directories with visible errors, orders files and calculates SHA-256
+in chunks. An excluded file or directory records its kind and reason without reading its
+content; an excluded directory is a boundary, not a count of its files. Encountered symlinks
+(including an exclusion target), special files, absolute/traversal paths and missing/nested
+exclusions are rejected. Descendants of an excluded boundary are not inspected. It does not
+guarantee stability against hostile concurrent writers; use a stable or read-only mounted
+copy where appropriate.
 
-## Manifiesto y consolidación
+## Manifest and consolidation
 
-El manifiesto v1 conserva sus campos y añade `inventory`, con el objeto exacto obtenido arriba:
+The v1 manifest preserves its fields and adds `inventory`, exactly as emitted above:
 
 ```json
 {
   "version": 1,
-  "root": "/ruta/producto",
+  "root": "/path/product",
   "inventory": {
     "version": 1,
-    "files": {"src/example.py": "<sha256 real>"},
-    "exclusions": {".git": {"kind": "directory", "reason": "Metadatos excluidos por el alcance autorizado"}}
+    "files": {"src/example.py": "<real sha256>"},
+    "exclusions": {".git": {"kind": "directory", "reason": "Metadata excluded by authorized scope"}}
   },
   "units": [
     {"unit_id": "core", "files": ["src/example.py"], "depends_on": [], "status": "ACCEPTED"}
@@ -35,32 +51,61 @@ El manifiesto v1 conserva sus campos y añade `inventory`, con el objeto exacto 
 }
 ```
 
-`ACCEPTED` en una unidad es una declaración de revisión terminada, no una prueba de profundidad. Las referencias de perspectivas, decisiones y evidencia semántica permanecen en los artefactos de revisión de la unidad.
+`ACCEPTED` for a unit is a declaration that review finished, not proof of depth. Perspective
+references, decisions and semantic evidence stay in that unit's review artifacts.
 
 ```sh
-python3 -B /ruta/framework/scripts/audit.py consolidate \
-  --root /ruta/workspace --manifest /ruta/workspace/manifest.json \
-  --findings /ruta/workspace/findings.json --cycle-id audit-001 \
-  --base-revision revision-observada
+python3 -B /path/framework/scripts/audit.py consolidate \
+  --root /path/workspace --manifest /path/workspace/manifest.json \
+  --findings /path/workspace/findings.json --cycle-id audit-001 \
+  --base-revision observed-revision
 ```
 
-`findings.json` conserva la forma `{"findings": [...]}`. Cada entrada JSON de la CLI, incluido el manifiesto completo con inventario y unidades, tiene un límite de 2 MiB. El inventario emitido no reserva espacio para esa envoltura: comprobar el tamaño del manifiesto antes de consolidar; uno excesivo se rechaza sin emitir ciclo. No se soportan manifiestos ilimitados ni partición automática en fragmentos; una ampliación de ese contrato necesita trabajo y regresiones propios, no omitir archivos para encajar.
+`findings.json` keeps the shape `{"findings": [...]}`. Every JSON input to the CLI, including
+the full manifest with inventory and units, is bounded at 2 MiB. The emitted inventory does not
+reserve space for the wrapper: check manifest size before consolidating; an oversized one is
+rejected without emitting a cycle. Unlimited manifests and automatic partition into fragments
+are not supported; expanding that contract needs its own work and regressions, not omitting
+files to fit.
 
-El workspace debe ser externo y no solaparse con el producto. El identificador de ciclo es un segmento de hasta 64 caracteres alfanuméricos, guiones o guiones bajos, empezando por alfanumérico. No se sobrescriben ciclos ni archivos activos existentes: conservarlos y reconciliarlos antes de otra publicación; este comando no implementa la transición automática entre ciclos.
+The workspace must be external and not overlap the product. A cycle ID is one segment of up to
+64 alphanumeric, hyphen or underscore characters, starting with alphanumeric. Existing cycles
+or active files are not overwritten: preserve and reconcile them before another publication;
+this command does not implement the automatic transition between cycles.
 
-Al consolidar:
+On consolidation it:
 
-- Reenumera la misma raíz y compara hashes/exclusiones con el snapshot. Archivos nuevos, borrados o alterados invalidan la base; falla antes de escribir el ciclo.
-- Rechaza archivos duplicados por unidad, propietarios solapados, dependencias desconocidas/circulares y archivos asignados dentro de exclusiones.
-- Devuelve `coverage.status: PARTITION_VERIFIED` solo si todo archivo incluido está asignado. Los omitidos quedan en `coverage_gaps`; la falta de snapshot produce `INVENTORY_MISSING`.
-- Emite `UNVERIFIED` para el ciclo si la partición está incompleta/no verificada o existe alguna unidad cuyo estado no sea `ACCEPTED`. No inventa hallazgos por la mera existencia de gaps.
-- Con partición verificada y todas las unidades aceptadas, conserva `AUDIT_COMPLETE` o `AUDIT_COMPLETE_WITH_RETAINED_ITEMS`, según los estados de hallazgos. Un cierre completo puede contener hallazgos retenidos; no significa producto corregido ni libre de defectos.
-- Conserva la cola declarada de reparación incluso con cobertura incompleta, para permitir unidades independientes autorizadas. Su estado `READY_FOR_REPAIR` no certifica la evidencia semántica ni concede reparación.
+- Re-enumerates the same root and compares hashes/exclusions with the snapshot. New, deleted or
+  changed files invalidate the base; it fails before writing the cycle.
+- Rejects duplicate files within a unit, overlapping owners, unknown/cyclic dependencies and
+  files assigned inside exclusions.
+- Returns `coverage.status: PARTITION_VERIFIED` only when every included file is assigned.
+  Omissions become `coverage_gaps`; a missing snapshot yields `INVENTORY_MISSING`.
+- Emits `UNVERIFIED` when the partition is incomplete/unverified or any unit is not `ACCEPTED`.
+  It does not invent findings merely because gaps exist.
+- With a verified partition and all units accepted, preserves `AUDIT_COMPLETE` or
+  `AUDIT_COMPLETE_WITH_RETAINED_ITEMS` depending on finding states. A complete close may still
+  have retained findings; it does not mean a repaired or defect-free product.
+- Preserves the declared repair queue even with incomplete coverage, to allow authorized
+  independent units. Its `READY_FOR_REPAIR` state does not certify semantic evidence or grant
+  repair authority.
 
-Genera además `coverage-matrix.json` con conteos de archivos incluidos/asignados, entradas excluidas, gaps y unidades pendientes. No es una matriz que certifique lectura o doble revisión por archivo. La deduplicación existente por fingerprint tampoco valida causa ni autenticidad de hallazgos; el coordinador conserva sus evidencias originales.
+It also emits `coverage-matrix.json` with counts of included/assigned files, excluded entries,
+gaps and pending units. It is not a matrix certifying reading or double review of each file.
+The existing fingerprint deduplication does not validate cause or authenticity of findings
+either; the coordinator preserves their original evidence.
 
-## Compatibilidad y límites
+## Compatibility and limits
 
-La API `consolidate(root, cycle_id, base_revision, units, findings, snapshot=None)` admite consumidores anteriores. Sin snapshot no certifica cobertura: devuelve `UNVERIFIED` y conserva hallazgos/cola. Los archivos de evidencia históricos no se migran ni se recalifican automáticamente. `write_consolidated` toma el snapshot de `manifest.inventory`.
+The API `consolidate(root, cycle_id, base_revision, units, findings, snapshot=None)` supports
+older consumers. Without a snapshot it certifies no coverage: it returns `UNVERIFIED` and
+preserves findings/queue. Historical evidence files are neither migrated nor requalified
+automatically. `write_consolidated` takes the snapshot from `manifest.inventory`.
 
-Los requisitos de doble perspectiva, prevención de recurrencia, verificación humana, memoria de decisiones y cifras de fuentes vigentes se aplican en las skills/Host/revisión. Este validador no los autentica ni demuestra ejecución. `audit.py consolidate` no exige ni valida memoria de decisiones ni métricas, porque no es el punto donde el ciclo las escribe: desde G2 el cierre de turno del controlador Host (`scripts/host_controller.py`) es quien escribe el evento en `metrics/` y ratifica la decisión en `decisions/`, con cierre fail-closed y unidad reconciliable. La evidencia humana y su validación mecánica específica siguen fuera de este contrato. Cambiar un prompt no implementa enforcement.
+Double perspective, recurrence prevention, human verification, decision memory and current
+source counts apply in skills/Host/review. This validator neither authenticates nor proves
+their execution. `audit.py consolidate` does not require or validate decision memory or metrics,
+because it does not write them: since G2 the Host controller's turn close
+(`scripts/host_controller.py`) writes the event in `metrics/` and ratifies the decision in
+`decisions/`, fail-closed with a reconcilable unit. Human evidence and its specific mechanical
+validation remain outside this contract. Changing a prompt does not implement enforcement.

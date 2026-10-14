@@ -1,33 +1,35 @@
-# Plan 08 — C7: promoción y distribución
+# Plan 08 — C7: promotion and distribution
 
-**Salida:** versión piloto reproducible, documentada y legalmente distribuible.
-**Precondiciones:** C0–C6.
+**Outcome:** reproducible, documented, and legally distributable pilot version.
+**Prerequisites:** C0–C6.
 
-## Pasos
+**English** | [Español](08-c7-promocion.es.md)
 
-1. Reconciliar resultados, retenciones, drift, rollback y feedback.
-2. Actualizar arquitectura/índice/status/guías solo con hechos.
-3. Ejecutar suites y validadores desde un clone nuevo.
-4. Resolver licencia del framework.
-5. Añadir `THIRD_PARTY_NOTICES.md` si se reutilizó código/texto MIT u otra licencia.
-6. Revisar procedencia, datos privados, rutas y secretos.
-7. Crear tag de piloto.
-8. Publicar solo en destino/alcance autorizados.
-9. Repetir clean-room desde el tag.
-10. Emitir informe de límites y feedback.
+## Steps
+
+1. Reconcile results, retentions, drift, rollback, and feedback.
+2. Update architecture/index/status/guides only with facts.
+3. Run suites and validators from a fresh clone.
+4. Resolve the framework license.
+5. Add `THIRD_PARTY_NOTICES.md` if MIT or other licensed code/text was reused.
+6. Review provenance, private data, paths, and secrets.
+7. Create the pilot tag.
+8. Publish only to authorized destinations/within authorized scope.
+9. Repeat the clean-room run from the tag.
+10. Issue a report on limitations and feedback.
 
 ## Gate
 
-- tag reproducible;
-- clone limpio + proveedor DSH preparado;
-- bootstrap/Creator/accept/rollback demostrados;
-- documentos y licencia coherentes;
-- no rutas/identidades del mantenedor;
-- feedback y límites visibles;
-- publicación autorizada o retención explícita.
+- reproducible tag;
+- clean clone + prepared DSH provider;
+- bootstrap/Creator/accept/rollback demonstrated;
+- coherent documents and license;
+- no maintainer paths/identities;
+- visible feedback and limitations;
+- authorized publication or explicit retention.
 
-La ausencia de publicación pública no bloquea el MVP técnico si la distribución privada autorizada está acreditada.
+The absence of public publication does not block the technical MVP if authorized private distribution is documented.
 
-## Adaptación
+## Adaptation
 
-El destino, licencia, avisos y alcance de publicación son decisiones del titular. La falta de autorización conserva C7 `BLOQUEADO`, no se convierte en éxito por tener commits locales.
+The destination, license, notices, and scope of publication are decisions for the owner. Lack of authorization keeps C7 `BLOQUEADO`; local commits do not turn it into a success.

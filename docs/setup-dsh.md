@@ -1,144 +1,186 @@
-# Preparación DSH: estado actual y destino 3.0
+# DSH preparation: current state and the 3.0 target
 
-## Prerrequisito final
+**English** | [Español](setup-dsh.es.md)
 
-El usuario instala/configura DSH una vez y configura al menos un proveedor/modelo. El framework:
+## Final prerequisite
 
-- no lee/copia API keys;
-- reutiliza configuración efectiva de DSH;
-- usa token/cookie local de consola solo en memoria para RPC;
-- no modifica routing/proveedores/credenciales globales.
+The user installs/configures DSH once and configures at least one provider/model. The framework:
 
-Si Creator/proveedor/capacidad falta, bootstrap conserva `RETAINED` con una sola acción del titular.
+- does not read/copy API keys;
+- reuses DSH's effective configuration;
+- uses the console's local token/cookie in memory only, for RPC;
+- does not modify global routing/providers/credentials.
 
-## Pruebas contra el runtime instalado
-Dos regresiones levantan el runtime DSH de verdad y **se saltan si no encuentran `DSH_MODULE_ROOT`**, así que una suite en verde no dice nada sobre ellas mientras la variable no esté puesta:
+If Creator/provider/capacity is missing, bootstrap keeps `RETAINED` with a single action for the
+owner.
+
+## Tests against the installed runtime
+Two regressions raise the real DSH runtime and **skip themselves if they cannot find
+`DSH_MODULE_ROOT`**, so a green suite says nothing about them while the variable is unset:
 
 ```bash
-DSH_MODULE_ROOT=/ruta/absoluta/al/node_modules python3 -B -m unittest discover -s tests
+DSH_MODULE_ROOT=/absolute/path/to/node_modules python3 -B -m unittest discover -s tests
 ```
 
-`test_real_services_and_fail_closed` levanta `ctx.fs`, `ctx.shell`, `ctx.subprocess` y `ctx.sandboxPolicy` y comprueba la denegación real: el producto queda intacto ante un intento de escritura y un proceso descendiente también queda bloqueado. `test_same_mode_escalation_writes_and_outside_denied` monta un preset por agente y necesita **`@deepseek-ai/dsh-agent-preset`, que no se publica hasta 0.1.7-alpha.1**; con un runtime anterior se salta nombrando la versión que falta.
+`test_real_services_and_fail_closed` raises `ctx.fs`, `ctx.shell`, `ctx.subprocess` and
+`ctx.sandboxPolicy` and checks the real denial: the product stays intact against a write attempt
+and a descendant process is blocked too. `test_same_mode_escalation_writes_and_outside_denied`
+mounts a per-agent preset and needs **`@deepseek-ai/dsh-agent-preset`, not published until
+0.1.7-alpha.1**; with an older runtime it skips naming the missing version.
 
-Un `skip` por defecto no es una prueba: si una de estas deja de correr porque el entorno cambió, el fallo se camufla de salto verde. Si tocas una prueba viva, ejecútala con la variable puesta antes de darla por buena.
-`tests/test_auditor_confinement.py` es la tercera, y es la que mide D2. Levanta el runtime con la política apuntando al **workspace** y comprueba, en la misma corrida, lo que decide el diseño: la bash lee el producto pero no puede escribirlo (`EROFS` real, y los descendientes heredan la frontera), `ctx.fs` tampoco lo alcanza, y el auditor **sigue pudiendo escribir su `mode-state`**. La regresión incluye el negativo: con la política en la raíz de sesión, que es lo que hace la composición actual, el producto sí se clobbera.
-Dos detalles que solo se ven ejecutando. La sesión **no debe vivir bajo `/tmp`**: `/tmp` es raíz escribible del sandbox y se remonta, así que un producto alojado ahí desaparece en vez de quedar en solo lectura —se lee como «archivo inexistente», no como denegación—. Y `writableRoots()` del runtime admite **una sola** raíz configurable: por eso el auditor se confina pero el reparador no, que necesita su candidata y su estado a la vez.
+A default skip is not a test: if one of these stops running because the environment changed,
+the failure disguises itself as a green skip. If you touch a live regression, run it with the
+variable set before trusting it.
 
-## Preparación comprobada actual
+`tests/test_auditor_confinement.py` is the third, and the one that measures D2. It raises the
+runtime with the policy pointing at the **workspace** and checks, in the same run, what decides
+the design: the bash reads the product but cannot write it (a real `EROFS`, and descendants
+inherit the boundary), `ctx.fs` cannot reach it either, and the auditor **can still write its
+`mode-state`**. The regression includes the negative: with the policy at the session root, which
+is what the current composition does, the product does get clobbered.
 
-Standard mantiene cwd en el padre con framework/producto/workspace. `onboard.py --prepare-skills --session-root` copia skills al workspace y crea enlaces gestionados en `<padre>/.agents/skills`.
+Two details only visible by running it. The session **must not live under `/tmp`**: `/tmp` is
+the sandbox's writable root and gets remounted, so a product hosted there disappears instead of
+becoming read-only —it reads as "file does not exist", not as denial—. And the runtime's
+`writableRoots()` admits **one single** configurable root: that is why the auditor is confined
+but the repairer is not, since it needs its candidate and its state at once.
 
-Primero dry-run, después `--init`. Repetición idempotente; entradas ajenas, enlaces alterados y overrides de mayor precedencia bloquean. `--update-skills` respalda carpetas completas antes de sustituir. `--remove-links` retira solo enlaces propios.
+## Checked current preparation
 
-Los enlaces no conceden permisos ni sandbox. Un workspace por padre; padres confiables; no concurrencia hostil.
+Standard keeps cwd at the parent with framework/product/workspace.
+`onboard.py --prepare-skills --session-root` copies skills into the workspace and creates
+managed links at `<parent>/.agents/skills`.
 
-## Mecanismo comprobado del loader
+Dry-run first, then `--init`. Repetition is idempotent; foreign entries, altered links and
+higher-precedence overrides block. `--update-skills` backs up complete folders before
+replacing. `--remove-links` removes only owned links.
 
-El runtime comprobado descubre skills desde el cwd/proyecto y sigue enlaces de directorio. Standard monta filesystem/tool-skill. Las regresiones verifican:
+The links grant neither permissions nor sandbox. One workspace per parent; trusted parents; no
+hostile concurrency.
 
-- dos padres;
-- cuerpos diferentes bajo mismo nombre;
-- origen lógico/destino real;
-- cuerpo/hash exactos;
-- rechazo cruzado;
-- ausencia de fuga de caché.
+## Checked loader mechanics
 
-Ejecutar:
+The checked runtime discovers skills from the cwd/project and follows directory links. Standard
+mounts filesystem/tool-skill. The regressions verify:
+
+- two parents;
+- different bodies under the same name;
+- logical source/real destination;
+- exact body/hash;
+- cross rejection;
+- no cache leakage.
+
+Run:
 
 ```bash
 DSH_MODULE_ROOT=/absolute/node_modules node tests/test_dsh_skill_root.mjs
 python3 -B -m unittest discover -s tests -v
 ```
 
-### Description sin comillas: descarte silencioso
+### Description without quotes: silent discard
 
-`SKILL.md` con `description` plana que contiene `: ` no carga. El parser YAML que usa DSH sobre el cuerpo del frontmatter lanza `Nested mappings are not allowed in compact mappings`, `parseSkillFile` atrapa el error y devuelve `undefined`, así que el skill no entra en el catálogo y la tool `skill` devuelve `unknown or no longer available`: una sesión cataloga cero skills sin un fallo visible. Medido con `@deepseek-ai/dsh` 0.2.0-rc.2.
+A `SKILL.md` with a plain `description` containing `: ` does not load. The YAML parser DSH uses
+over the frontmatter body throws `Nested mappings are not allowed in compact mappings`,
+`parseSkillFile` catches the error and returns `undefined`, so the skill does not enter the
+catalogue and the `skill` tool answers `unknown or no longer available`: a session catalogues
+zero skills without a visible failure. Measured with `@deepseek-ai/dsh` 0.2.0-rc.2.
 
-La corrección canónica es entrecomillar `name` y `description` con comillas dobles; también cargan la comilla simple y los valores planos que no llevan `: `, así que la regresión no retira generaciones antiguas válidas. El prompt Creator cita explícitamente esas comillas, la validación Host rechaza la forma plana en los bytes `generated` y en los `packaged` antes de ACTIVE, y `tests/test_dsh_frontmatter_shape.mjs` prueba el comportamiento contra el loader real.
+The canonical correction is to quote `name` and `description` with double quotes; single
+quotes and plain values without `: ` also load, so the regression does not retire older valid
+generations. The Creator prompt quotes those quotes explicitly, the Host validation rejects
+the plain form in `generated` bytes and in `packaged` before ACTIVE, and
+`tests/test_dsh_frontmatter_shape.mjs` proves the behaviour against the real loader.
 
 ```bash
 DSH_MODULE_ROOT=/absolute/node_modules node tests/test_dsh_frontmatter_shape.mjs
 ```
 
-Sin `DSH_MODULE_ROOT` ese test sale por la rama de skip y no prueba nada: un skip no es una prueba, así que si se toca la regresión hay que ejecutarla con la variable puesta.
+Without `DSH_MODULE_ROOT` that test leaves by the skip branch and proves nothing: a skip is
+not a test, so touching the regression requires running it with the variable set.
 
-## Presets y plugin actuales
+## Current presets and plugin
 
-Los presets de Syncify/RehabWeb y `workflow-write` demostraron composición/routing/subagentes/escritura. Son fixtures de referencia del MVP, no distribución final ni defaults de terceros. El lanzamiento automático carga `workflow-write.mjs` como overlay `--patch` (`scripts/dsh-plugins/cordis-patch.yml`) sobre el perfil del titular: sin instalación en el home DSH ni dependencias; `DSH_PLUGIN_PATCH=0` lo omite.
+The Syncify/RehabWeb presets and `workflow-write` proved composition/routing/subagents/writing.
+They are MVP reference fixtures, neither a final distribution nor third-party defaults.
+Automatic launch loads `workflow-write.mjs` as a `--patch` overlay
+(`scripts/dsh-plugins/cordis-patch.yml`) over the owner's profile: no installation into the
+DSH home and no dependencies; `DSH_PLUGIN_PATCH=0` omits it.
 
-C4 debe empaquetar plugins/modos generados sin rutas absolutas del mantenedor y activar el conjunto mediante manifest/puntero gestionado.
+C4 must package generated plugins/modes without maintainer absolute paths and activate the set
+via a manifest/managed pointer.
 
-## Errores de sandbox
+## Sandbox errors
 
-`sandbox_permissions` es opcional y solo para escalada estrictamente mayor; el modo vigente no debe reenviarse como escalada. `workflow-write` corrige el caso observado para escritura. Error de esquema o «strictly wider» no autoriza probar `danger-full-access`.
+`sandbox_permissions` is optional and only for strictly wider escalation; the current mode
+must not be resent as an escalation. `workflow-write` corrects the observed case for writing.
+A schema error or «strictly wider» does not authorize trying `danger-full-access`.
 
-Auditor requiere lectura producto/framework y escritura solo en workspace. Si no hay granularidad, `RETAINED`, no acceso total.
+Auditor requires product/framework read and workspace-only write. Without granularity,
+`RETAINED`, not total access.
 
-## Flujo operativo vigente
+## Current operational flow
 
 ```text
-<padre-común>/
+<common-parent>/
 ├── Improvement/
-├── <Proyecto>/
-└── <Proyecto>-workspace/
+├── <Project>/
+└── <Project>-workspace/
     ├── creator-runs/
     └── mode-state/
 ```
 
-`bootstrap install --launch-dsh` reutiliza una instancia DSH Web sana o inicia una
-sola con `DSH_HOME` y el padre común como cwd. Crea una única sesión Creator; el
-preset Creator no debe delegar, abrir subagentes ni iniciar workflows. La instancia
-queda activa al terminar.
+`bootstrap install --launch-dsh` reuses a healthy DSH Web instance or starts one with
+`DSH_HOME` and the common parent as cwd. It creates a single Creator session; the Creator
+preset must not delegate, open subagents or start workflows. The instance stays active on
+completion.
 
-Creator genera tres presets seleccionables: `<proyecto>-auditor`,
-`<proyecto>-continuous-repair` y `<proyecto>-implementer` (este último para cambios
-pedidos, no hallazgos). Cada modo contiene `mode.json`, `preset.yml`,
-`agent.cordis.yml` y `SKILL.md`. Su composición debe montar persona, bash, fs,
-fs-search, skill-filesystem y tool-skill; el Host retiene una composición incompleta
-o con filas de subagente/delegación, workflow, web/red o plugin-manager. Cada
-`SKILL.md` de modo o skill lleva `name` idéntico al directorio y `description` no
-vacía.
+Creator generates three selectable presets: `<project>-auditor`,
+`<project>-continuous-repair` and `<project>-implementer` (the latter for requested changes,
+not findings). Each mode contains `mode.json`, `preset.yml`, `agent.cordis.yml` and `SKILL.md`.
+Its composition must mount persona, bash, fs, fs-search, skill-filesystem and tool-skill; the
+Host retains an incomplete composition or one with subagent/delegation rows, workflow, web/
+network or plugin-manager. Each mode or skill `SKILL.md` carries a `name` identical to the
+directory and a non-empty `description`.
 
-El Host materializa un bundle de declaraciones `@deepseek-ai/dsh-agent-preset`,
-copia todas las skills y recursos generados y cada skill de modo bajo
-`bundle/skills/<name>`, y reconfigura cada `dsh-skill-filesystem` con
-`includeDefaultRoots: false` y `customSkillDirs` apuntando al root absoluto del
-bundle. Colisiones, symlinks y entradas no regulares bloquean la instalación. Luego
-instala mediante `pluginManager/installBundle`, consulta `agentPresets/list` y solo
-considera la instalación activa cuando ambos IDs del recibo aparecen sin diagnóstico
-`broken`. El runtime vigente ya no lee la ruta legacy `$DSH_HOME/.agent-presets`.
+The Host materializes a bundle of `@deepseek-ai/dsh-agent-preset` declarations, copies all
+generated skills and resources and each mode skill under `bundle/skills/<name>`, and
+reconfigures each `dsh-skill-filesystem` with `includeDefaultRoots: false` and
+`customSkillDirs` pointing at the bundle's absolute root. Collisions, symlinks and irregular
+entries block the installation. It then installs via `pluginManager/installBundle`, queries
+`agentPresets/list` and treats the installation as active only when every receipt preset ID
+appears without a `broken` diagnostic. The current runtime no longer reads the legacy
+`$DSH_HOME/.agent-presets` path.
 
-Los tres modos comparten `<Proyecto>-workspace/mode-state`; Host preflightea e
-inicializa schemas estrictos, caps de archivo/registro y slot candidato. La persona
-obliga a cargar primero el skill homónimo. Auditor solo usa `workflow_write` para
-estado. Repair no usa write/edit; cambia código por bash con workdir candidato,
-deriva identidad con full base+IDs, verifica invariantes canónicas pre/post y no
-commitea por un prompt simple. Los reemplazos son por archivo, no transacción
-multiarchivo; no existe CAS/lease ni confinamiento mecánico de bash, por lo que el
-lifecycle sigue EN CURSO hasta piloto DSH real. Las rutas son relativas al padre. El
-producto no recibe estado del flujo. La aceptación es determinista y veraz: valida paquete, plan, hashes y
-política, pero no crea sesiones evaluator/reviewer ni afirma holdouts dinámicos.
-`READY_FOR_INSTALL` autoriza la publicación; `ACTIVE` se escribe únicamente tras
-publicación y roster verificados. Para pruebas e integración se debe usar siempre
-un `DSH_HOME` temporal, nunca `~/.dsh`.
+The three modes share `<Project>-workspace/mode-state`; the Host preflights and initializes
+strict schemas, file/record caps and the candidate slot. The persona forces loading the
+eponymous skill first. Auditor only uses `workflow_write` for state. Repair does not use
+write/edit; it changes code through bash with the candidate as workdir, derives identity from
+full base+IDs, checks canonical invariants pre/post and does not commit from a simple prompt.
+Replacements are per file, not a multi-file transaction; there is no CAS/lease nor mechanical
+bash confinement, so the lifecycle is still IN PROGRESS until a real DSH pilot. Paths are
+relative to the parent. The product receives no state from the flow. Acceptance is
+deterministic and truthful: it validates package, plan, hashes and policy, but creates no
+evaluator/reviewer sessions and does not assert dynamic holdouts. `READY_FOR_INSTALL`
+authorizes publication; `ACTIVE` is written only after publication and a verified roster.
+Tests and integration must always use a temporary `DSH_HOME`, never `~/.dsh`.
 
-`scripts/bootstrap.py` implementa actualmente los subcomandos `install`, `accept`,
-`finalize`, `verify-acceptance`, `update`, `uninstall` y `purge-data` descritos por
-el flujo C0–C7.
+`scripts/bootstrap.py` currently implements the `install`, `accept`, `finalize`,
+`verify-acceptance`, `update`, `uninstall` and `purge-data` subcommands the C0–C7 flow
+describes.
 
-## Aceptación final de una generación
+## Final acceptance of a generation
 
-Debe verificar:
+It must verify:
 
-- catálogo/carga/origen/cuerpo;
-- capabilities y routing intactos;
-- Auditor sin escritura de producto;
-- Repair en candidato;
-- rojo→verde;
+- catalogue/load/source/body;
+- capabilities and routing intact;
+- Auditor without product writes;
+- Repair in the candidate;
+- red→green;
 - QA;
-- reauditoría;
-- checkpoint/reapertura;
+- re-audit;
+- checkpoint/reopening;
 - rollback/uninstall;
 - post-promotion smoke.
 
-Creator solo solicita; Host decide.
+Creator only requests; the Host decides.

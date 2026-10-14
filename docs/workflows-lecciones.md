@@ -1,108 +1,98 @@
-# Lecciones de las campañas de workflows (ZCode) y del flujo agéntico
+# Lessons from the workflow campaigns (ZCode) and the agentic flow
 
-**Vista de una página.** Cada fila es un fallo o un éxito **medido**, atribuido a la
-evidencia que lo produjo. No es un resumen de las campañas: es lo que hay que
-repetir y lo que hay que impedir, con la prueba permanente que lo sostiene.
+> **English (canonical).** A Spanish translation lives at [workflows-lecciones.es.md](workflows-lecciones.es.md).
 
-**Qué evidencia hay y qué no.** Este documento se escribió **sin acceso al journal
-de los runs**. `ListWorkflowRuns` y `GetWorkflowRun` no están disponibles en la
-sesión que lo redactó: la respuesta fue `workflow_introspection_unavailable`, una
-carencia de capacidad, no un proyecto vacío. Lo único que persiste en
-`.zcode/workflow-runs/` y `~/.zcode/workflow-runs/` es el **programa lowered**
-(`dwfrun-*.mjs`), no el journal ni los artefactos: no hay veredicto por run, no
-hay `log()`, no hay token usage. Por tanto:
+**One-page view.** Each row is a **measured** failure or success, attributed to the evidence that produced it. It is not a campaign summary: it records what must be repeated and what must be prevented, plus the permanent test that backs it.
 
-- «Run terminó» **no** es «hallazgo correcto». Un run puede cerrar `COMPLETED`
-  con el hallazgo equivocado dentro.
-- «Gate verde local» **no** es «DSH real». Las pruebas del árbol usan cliente
-  falso inyectado; solo algunas campañas ejecutaron sesión DSH real.
-- Lo que aquí se afirma como *contraejemplo con éxito contrario* sale de un
-  `run.json`, de una observación o de un test que se puede volver a ejecutar.
-  Lo demás queda marcado `SIN PRUEBA`.
+**What evidence exists and what does not.** This document was written **without access to
+the runs' journals**. In that session `ListWorkflowRuns` and `GetWorkflowRun` were
+unavailable; the answer was `workflow_introspection_unavailable`, a capability gap and not
+an empty project. What persisted in `.zcode/workflow-runs/` and `~/.zcode/workflow-runs/`
+was only the **lowered program** (`dwfrun-*.mjs`), not the journal or the artifacts: no
+per-run verdict, no `log()` and no token usage. The later X1 evidence is attributed to its
+own external trials, not inferred from those programs. Thus:
 
-**Regla de atribución.** Cada fila nombra un run id (`dwfrun-…`/`dwfeval-…`), un
-sha, un `r-…` de run del ejecutor o una ruta+linea. Sin uno de esos, la fila es
-folklore y no entra.
+- “Run finished” is **not** “finding correct”. A run can close `COMPLETED` with the wrong
+  finding inside.
+- “Local gate green” is **not** “real DSH”. Repo tests inject a fake client; only some
+  campaigns ran a real DSH session.
+- Anything stated here as an *opposite success counterexample* comes from a `run.json`, an
+  observation or a test that can be re-executed. The rest is marked `SIN PRUEBA`.
+
+**Attribution rule.** Every row names a run id (`dwfrun-…`/`dwfeval-…`), a sha, an
+executor `r-…` id or a path with line. Without one, the row is folklore and does not enter.
 
 ---
 
-## 1. Matriz atribuible de lecciones
+## 1. Attributable lesson matrix
 
-`L<nn>` es el identificador. La columna *Prueba* apunta a la regresión
-permanente; `—` significa que la barrera es de documentación o de otra prueba ya
-existente, y se dice cuál.
+`L<nn>` is the identifier. The *Test* column points at the permanent regression; `—` means the barrier is documentation or another existing test, which one is named.
 
-### 1.1 Fallos y cómo quedaron cerrados
+### 1.1 Failures and how they were closed
 
-| ID | Síntoma | Causa verificada | Barrera preventiva | Prueba | Éxito contrario |
+| ID | Symptom | Verified cause | Preventive barrier | Test | Opposite success |
 |---|---|---|---|---|---|
-| L01 | Un gate de campaña daba verde sin haber leído la suite | `unittest` escribe recuento y veredicto en **stderr**; el gate parseaba solo stdout y no veía `Ran N tests` | El parser de veredicto une los dos flujos antes de extraer nada | `tests/test_workflow_lessons.py` ([W01]) | `dwfrun-27cccb98` documentó el defecto en su propio comentario de código |
-| L02 | `MEMORY_RECONCILED {invalidated: 6, hits: 0}` publicado igualmente | La memoria mide sobre la instantánea del workspace, no sobre la base del producto | La reconciliación invalida el grupo entero ante contexto distinto y lo registra en journal | `tests/test_workflow_lessons.py` ([W02]) | `docs/status.md:175` publica el registro con las 6 invalidaciones declaradas, no escondidas |
-| L03 | Índice de memoria que sobrevive a un gate que falló | Publicar memoria tras `RUN_COMPLETED` solo, sin mirar el veredicto del gate | Memoria solo tras run terminal; un run `RETAINED` no publica | `tests/test_workflow_lessons.py` ([W03]) | `r-5d7d11…` quedó `RETAINED cause: gate-abort:gate-producto` y no publicó |
-| L04 | Reanudar reejecutaba todo y perdía el run | `_run_id_for` se calculaba por contenido mutable en vez del sha del plan | El id del run sale del sha del plan: el mismo plan reanuda el mismo run dir | `tests/test_workflow_lessons.py` ([W04]) | `r-7761c0…` reanudó y llegó a `COMPLETED` con 11→14 eventos |
-| L05 | Un `MEMORY_RECONCILED` con run terminado pero sin PASS/FAIL coherente | La publicación de memoria se intentaba fuera del cierre terminal y podía reescribir el veredicto | El fallo de publicación se registra sin convertir el veredicto en PASS o FAIL a posteriori | `scripts/workflow.py:1796-1803` + `tests/test_workflow_memory.py` | Run con `memory_error` registrado y veredicto intacto |
-| L06 | Portadas afirmaban `848 pruebas en verde` con 932 en el árbol | La suite creció sin commitear; la cifra publicada describía `HEAD` | El test de consistencia **descubre** la cifra y exige que una antigua se declare antigua | `tests/test_architecture_consistency.py:352` | `README.md:290`/`README.es.md:289` publican 933, descubiertas, no recordadas |
-| L07 | La suite ensuciaba su propia salida con `usage:` en stderr | CLIs que deben salir con 2 escriben en stderr, y los tests solo redirigen stdout | La salida de los subprocesos se captura completa en cada regresión | `tests/test_architecture_consistency.py:386` | Suite corre sin `usage:` sobre la línea de puntos |
-| L08 | Cifras «verdes» repetidas en dos documentos | Dos recuentos escritos a mano a dieciséis líneas de distancia | Una sola cifra por documento, descubierta, más una prueba que la coteja | `tests/test_architecture_consistency.py:352` | Un único sitio publica la cuenta, y el test la verifica |
-| L09 | Creator real no persistió `generated/generation-manifest.json` | El turno headless de 29 tool calls quedó quiescente sin artefacto; tras medirlo, la causa fue la sesión sin el overlay `--patch`, que hacía caer `write` en la fila de upstream rechazada por el sandbox | Un paquete aceptado tiene que nombrar quién lo produjo; el argv headless pasa por la función oficial que compone el overlay | `docs/status.md:205-212` (§Pase integral), ensayo externo `ensayo-x3-actualizado.md:18-28` | El paquete del pase lo produjeron herramientas deterministas, **no** el modelo; después, X3 con overlay sí generó 19 artefactos y fue ACTIVE, **antes** del arreglo del presupuesto |
-| L10 | Corpus gate sin endpoint evaluator ni adaptador Host | El diagnóstico de arranque era **falso**: `dsh web` sí arrancaba; el home copiado tenía `profiles/web/node_modules/` vacío. Lo que **no existe** en `0.2.0-rc.2` es un endpoint `evaluator`, y lo que no ofrece el CLI es el adaptador que verifica layout/skill efectiva antes de `session/create` | El gate se abstiene fail-closed nombrando la pieza que falta y no inventa endpoint ni veredicto | `docs/status.md:187-215` (§Pase integral), `scripts/skill_gate_run.py:604-608`, `tests/test_skill_gate_run.py` | `action: reject` en la partición antifraude: el candidato inventado perdió 0.488 < 1.000 |
-| L11 | Candidata de reparación sin worktree del producto | `git worktree add` bloqueado por el sandbox: `Read-only file system` + `[sandbox: file access denied]` | La candidata nace como repositorio sombra que provisiona el Host bajo el workspace (contrato `Host-provision_repair-shadow-only`) | `docs/status.md:210-226` (§Pase integral), `tests/test_mode_lifecycle.py` | `x1-live/RESULTADO.md`: DSH headless real persistió `PROVISIONED → DIRTY`, diff verificado, tests 3/3; el preset real sólo se cargó en `x1-preset-real`, que se detuvo antes de editar |
-| L12 | Attempt de escalada de permisos | El modo intentó `danger-full-access` sin canal de aprobación | Anti-escalación exacta: prohibidos `sandbox_permissions`/`justification` con cualquier valor; denegación o error de schema → `RETAINED` sin reintento | `ARQUITECTURA_FLUJO_AGENTES.md:160` + `tests/test_mode_lifecycle.py` | `docs/status.md:180`: reintento con `danger-full-access` rechazado sin canal |
-| L13 | Evaluador de corpus recibía la respuesta esperada | El prompt del evaluador llevaba marcado el veredicto esperado | El prompt de evaluación nunca contiene la respuesta esperada | `tests/test_skill_gate_run.py:114` | Un candidato sin evidencia no queda cubierto: se reporta como ocurrió |
-| L14 | Un fichero de informe servía de ruta y la publicación fallaba | El corrector devolvía prosa con la ruta dentro, y esa prosa se usó como ruta | La ruta canónica se conoce fuera de la respuesta del subagente | `dwfrun-d8fb7dd5` (comentario del propio script, corregido en su reenvío) | El informe quedó publicado como artefacto en el reenvío |
-| L15 | Un subagente leyó rutas locales del mantenedor dentro del informe | El encargo incluía rutas personales esperando que el arqueólogo las usara | Los encargos a subagentes prohíben rutas locales y material de terceros | `tests/test_architecture_consistency.py:175-188` | `dwfrun-577fa719` trabajó con `git show <sha>:<ruta>`, sin rutas vivas |
-| L16 | Preset verificado pero skill no descubierta | `description` sin comillas con `: ` dentro rompía el frontmatter (`Nested mappings are not allowed in compact mappings`) | `host_validator.skill_frontmatter_issue` rechaza el frontmatter no parseable antes de publicar | Ensayo externo `corpus-fixed/RESULTADO.md:5-9` (negativo con DSH real) | Tras entrecomillar el frontmatter, `skills/list` devolvió 4 skills `modelInvocable` y la llamada `skill` devolvió contenido |
-| L17 | Caso de corpus compilaba una **skill** y despachaba a un **modo** | `SC-123` apuntaba a `source-driven-development`, pero el gate despachó al modo `fixture-auditor`; el modo exigió el layout `<producto>/<workspace>` que el directorio del caso no tenía y narró `RETAINED` sin `workflow_write` | Targeting y layout explícitos antes de aceptar un caso como prueba de modo; el gate sigue leyendo `result.json`, nunca prosa | Ensayo externo `corpus-fixed/RESULTADO.md:11-23` | `NOT_COVERED` con evidencia, no PASS inventado |
+| L01 | A campaign gate was green without ever reading the suite | `unittest` writes its count and verdict to **stderr**; the gate parsed only stdout and never saw `Ran N tests` | The verdict parser merges both streams before extracting anything (see §3) | `tests/test_workflow_lessons.py` ([W01]) | `dwfrun-27cccb98` documented the defect in its own code comment |
+| L02 | `MEMORY_RECONCILED {invalidated: 6, hits: 0}` was published anyway | Memory is measured against the workspace snapshot, not the product base | Reconciliation invalidates the whole group when the context differs and records it in the journal | `tests/test_workflow_lessons.py` ([W02]) | `docs/status.md:175` publishes the record with all six invalidations disclosed, not hidden |
+| L03 | A memory index that survived a failed gate | Memory was published after `RUN_COMPLETED` alone, without looking at the gate verdict | Publish memory only after a terminal run; a `RETAINED` run does not publish | `tests/test_workflow_lessons.py` ([W03]) | `r-5d7d11…` stayed `RETAINED cause: gate-abort:gate-producto` and did not publish |
+| L04 | Resuming re-executed everything and lost the run | `_run_id_for` was computed from mutable content instead of the plan sha | The run id comes from the plan sha: the same plan resumes the same run dir | `tests/test_workflow_lessons.py` ([W04]) | `r-7761c0…` resumed and reached `COMPLETED`, with 11→14 events |
+| L05 | A `MEMORY_RECONCILED` with the run finished but no coherent PASS/FAIL | Memory publication was attempted outside terminal closure and could rewrite the verdict | Publication failure is recorded without turning the verdict into PASS or FAIL afterwards | `scripts/workflow.py:1796-1803` + `tests/test_workflow_memory.py` | Run recorded with `memory_error` logged and the verdict intact |
+| L06 | Front pages claimed `848 tests in green` with 932 in the tree | The suite grew without a commit; the published figure described `HEAD` | The consistency test **discovers** the figure and demands an old one be declared old | `tests/test_architecture_consistency.py:352` | `README.md:290`/`README.es.md:289` publish 933, discovered rather than remembered |
+| L07 | The suite dirtied its own output with `usage:` on stderr | CLIs that must exit with code 2 write on stderr, and the tests redirected only stdout | Subprocess output is captured in full in every regression | `tests/test_architecture_consistency.py:386` | The suite runs clean, with no `usage:` above the line of dots |
+| L08 | Repeated “green” figures in two documents | Two hand-written counts sixteen lines apart | One figure per document, discovered, plus a test that cross-checks it | `tests/test_architecture_consistency.py:352` | A single place publishes the count, and the test verifies it |
+| L09 | A real Creator did not persist `generated/generation-manifest.json` | The 29-tool-call headless turn went quiescent without an artefact; once measured, the cause was the session running without the `--patch` overlay, which made `write` fall into the upstream row the sandbox rejected | An accepted package must name who produced it; the headless argv goes through the official function that composes the overlay | `docs/status.md:205-212` (full pass section), external trial `ensayo-x3-actualizado.md:18-28` | The package from that pass was produced by deterministic tools, **not** by the model; afterwards X3 with the overlay did generate 19 artefacts and was ACTIVE, **before** the budget fix |
+| L10 | Corpus gate without an evaluator endpoint or Host adapter | The startup diagnosis was **false**: `dsh web` did start; the copied home had `profiles/web/node_modules/` empty. What does **not** exist in `0.2.0-rc.2` is an `evaluator` endpoint, and what the CLI does not offer is the adapter that checks layout and effective skill before `session/create` | The gate abstains fail-closed, naming the missing piece, and invents neither endpoint nor verdict | `docs/status.md:187-215` (full pass section), `scripts/skill_gate_run.py:604-608`, `tests/test_skill_gate_run.py` | `action: reject` on the anti-fraud partition: the invented candidate lost 0.488 < 1.000 |
+| L11 | Repair candidate without a product worktree | `git worktree add` was blocked by the sandbox: `Read-only file system` + `[sandbox: file access denied]` | The candidate is born as a shadow repository provisioned by the Host under the workspace (contract `Host-provision_repair-shadow-only`) | `docs/status.md:210-226` (full pass section), `tests/test_mode_lifecycle.py` | `x1-live/RESULTADO.md`: real headless DSH persisted `PROVISIONED → DIRTY` with a verified diff and 3/3 tests. Under the real preset, `x1-preset-real/RESULTADO.md` edited in 11 steps and 180,107 tokens (the 3/3 tests of that turn were run by the operator from outside); a later turn of the mode registered `DIRTY` with digest and paths, persisted `work-items.json` and ran the entrypoint (3/3). The full cycle under the real preset was therefore exercised across **two** turns, not one |
+| L12 | Permission-escalation attempt | The mode attempted `danger-full-access` without an approval channel | Exact anti-escalation: `sandbox_permissions`/`justification` are forbidden at every value; denial or schema error → `RETAINED` without retry | `ARQUITECTURA_FLUJO_AGENTES.md:160` + `tests/test_mode_lifecycle.py` | `docs/status.md:180`: retry with `danger-full-access` rejected without a channel |
+| L13 | The corpus evaluator received the expected answer | The evaluator prompt carried the marked expected verdict | The evaluation prompt never contains the expected answer | `tests/test_skill_gate_run.py:114` | A candidate without evidence stays uncovered: it was reported as it happened |
+| L14 | A report file served as a path and publication failed | The reviewer returned prose with the path inside it, and that prose was used as the path | The canonical path is known outside the subagent's answer | `dwfrun-d8fb7dd5` (comment in its own script, fixed on resubmission) | The report ended up published as an artefact on the resubmission |
+| L15 | A subagent read the maintainer's local paths into the report | The assignment included personal paths, expecting the archaeologist to use them | Assignments to subagents forbid local paths and third-party material | `tests/test_architecture_consistency.py:175-188` | `dwfrun-577fa719` used `git show <sha>:<path>`, with no live paths |
+| L16 | Verified preset but undiscovered skill | An unquoted `description` containing `: ` broke the frontmatter (`Nested mappings are not allowed in compact mappings`) | `host_validator.skill_frontmatter_issue` rejects unparseable frontmatter before publishing | External trial `corpus-fixed/RESULTADO.md:5-9` (negative case with real DSH) | After quoting the frontmatter, `skills/list` returned 4 `modelInvocable` skills and the `skill` call returned content |
+| L17 | A corpus case compiled a **skill** and dispatched to a **mode** | `SC-123` pointed at `source-driven-development`, but the gate dispatched to the `fixture-auditor` mode; the mode required the `<product>/<workspace>` layout, which the case directory did not have, and narrated `RETAINED` without `workflow_write` | Explicit targeting and layout before accepting a case as proof of a mode; the gate keeps reading `result.json`, never prose | External trial `corpus-fixed/RESULTADO.md:11-23` | `NOT_COVERED` with evidence, not an invented PASS |
 
-### 1.2 Casos de éxito que hay que conservar
+### 1.2 Successes that must be preserved
 
-| ID | Qué salió bien | Evidencia | Prueba |
+| ID | What worked | Evidence | Test |
 |---|---|---|---|
-| L18 | `FAIL → repair → PASS` completo en ejecutor con memoria | `r-5d7d11…` retenido por gate; `r-7761c0…` completado reparado | `tests/test_workflow_memory.py:360` |
-| L19 | Memoria incremental entre campañas con producto git sintético | 22 pruebas: cambio/borrado/rename/base/config, symlink, memoria malformada, dos planes | `tests/test_workflow_memory.py:66-477` |
-| L20 | Preflight headless real contra DSH 0.2.0-rc.2 | `PING-OK`, `turn_end.reason.kind = completed`, `totalTokens = 6509` | `docs/status.md:174` (entorno, no prueba automatizada) |
-| L21 | Skills cargadas e invocadas en sesión DSH real | auditor 3, reparador 2, implementador 1; turno trivial → 0 tool calls | `docs/status.md:176` |
-| L22 | Abstención real verificada con write-probe | `Decision: I abstain`; producto intacto tras el intento | `docs/status.md:177` |
-| L23 | Validador Host sobre paquete real | `READY_FOR_ACCEPTANCE`, 10/10 capas PASS | `docs/status.md:178` |
-| L24 | Corpus gate antifraude contra candidato inventado | `action: reject`, 0.488 < 1.000 en partición de entrenamiento | `docs/status.md:179` + `tests/test_corpus_gate.py` |
-| L25 | Confinamiento canónico denegando escritura desde el repo | Intento denegado; reintento escalado rechazado | `docs/status.md:180` |
-| L26 | Implementador real con candidata externa aceptada | commit `95aa9b2`, 6/6 tests nuevos, producto intacto, sin commit/merge/push implícitos | `docs/status.md:9` |
-| L27 | Fuentes externas tratadas como no confiables y reproducidas | Cada afirmación que sostenía un cambio de código se verificó en el árbol antes de cambiar código | `fuentes-memoria.md` (evidencia externa) y `dwfrun-0666568b`, cuyo programa inferior repite la orden: el pase arranca por inventario, no por el informe previo |
-| L28 | Reconciliación idéntica sin reescritura | Índice distinto no se pisa; bytes idénticos reproducen el mismo índice | `tests/test_workflow_lessons.py` ([W06]); `git show HEAD:scripts/workflow_evidence.py:276-309` |
-| L29 | Reenvío de campaña que arrastra el arreglo del intento anterior | `dwfrun-d8fb7dd5` corrigió la lección de `finalPath` en su reenvío | `dwfrun-d8fb7dd5` |
+| L18 | Complete `FAIL → repair → PASS` in the executor with memory | `r-5d7d11…` retained by the gate; `r-7761c0…` completed, repaired | `tests/test_workflow_memory.py:360` |
+| L19 | Incremental memory between campaigns using a synthetic git product | 22 tests: change/deletion/rename/base/config, symlink, malformed memory, two plans | `tests/test_workflow_memory.py:66-477` |
+| L20 | Real headless preflight against DSH 0.2.0-rc.2 | `PING-OK`, `turn_end.reason.kind = completed`, `totalTokens = 6509` | `docs/status.md:174` (environment, not an automated test) |
+| L21 | Skills loaded and invoked in a real DSH session | auditor 3, repairer 2, implementer 1; trivial turn → 0 tool calls | `docs/status.md:176` |
+| L22 | Real abstention verified with a write-probe | `Decision: I abstain`; product intact after the attempt | `docs/status.md:177` |
+| L23 | Host validator over a real package | `READY_FOR_ACCEPTANCE`, 10/10 layers PASS | `docs/status.md:178` |
+| L24 | Anti-fraud corpus gate against an invented candidate | `action: reject`, 0.488 < 1.000 on the training partition | `docs/status.md:179` + `tests/test_corpus_gate.py` |
+| L25 | Canonical confinement denying a write from the repo | Attempt denied; escalated retry rejected | `docs/status.md:180` |
+| L26 | Real implementer with accepted external candidate | commit `95aa9b2`, 6/6 new tests, product intact, no implicit commit/merge/push | `docs/status.md:9` |
+| L27 | External sources treated as untrusted and reproduced | Every claim that backed a code change was verified in the tree before changing code | `fuentes-memoria.md` (external evidence) and `dwfrun-0666568b`, whose lowered program repeats the order: the pass starts from inventory, not from the previous report |
+| L28 | Identical reconciliation without rewriting | A different index is not overwritten; identical bytes reproduce the same index | `tests/test_workflow_lessons.py` ([W06]); `git show HEAD:scripts/workflow_evidence.py:276-309` |
+| L29 | Campaign resubmission carries the fix from the previous attempt | `dwfrun-d8fb7dd5` fixed the `finalPath` lesson on its resubmission | `dwfrun-d8fb7dd5` |
 
 ---
 
-## 2. No probado: lo que estos runs no demuestran
+## 2. Not proved: what these runs do not demonstrate
 
-Ninguna de estas filas se rellena con suposición; todas quedan declaradas.
-La **cobertura** real de las campañas es esta tabla, no el recuento de lecciones.
+None of these rows is filled by supposition; current gaps are separated from superseded historical evidence. The actual **coverage** (*cobertura*) of the campaigns is this table, not the lesson count. “Not proved” is the original *No probado* evidence category, not a claim that every historical limitation still applies.
 
-| Hueco | Por qué no está probado | Dónde se declara |
+| Gap | Why it is not proved | Where stated |
 |---|---|---|
-| No hay acceso al journal | `ListWorkflowRuns`/`GetWorkflowRun` devolvieron `workflow_introspection_unavailable` | §0 de este documento |
-| «Run terminó» ≠ «hallazgo correcto» | Sin journal no hay veredicto por run; los `.mjs` son el programa, no el resultado | §0 |
-| Creator end-to-end | El turno sin overlay no persistió el manifest. Con overlay sí (X3, ACTIVE, 19 artefactos), pero **antes** del arreglo del presupuesto: no valida el gate vigente | `docs/status.md` (§Pase integral, nº 2), `ensayo-x3-actualizado.md` |
-| Ciclo de reparación íntegro bajo preset real | `x1-live` midió la provisión del Host y la obediencia del modo bajo headless; `x1-preset-real` cargó el preset y su skill pero se detuvo **antes de editar** por predicción de superar 120k tokens | `x1-live/RESULTADO.md`, `x1-preset-real/RESULTADO.md` |
-| `git worktree add` real | Bloqueado por el sandbox de sesión; el diseño ya no lo usa, pero una sesión que actúe sobre lectura-escritura directa del canónico sigue sin probarse | `docs/status.md:210-226` |
-| `dsh web` / endpoint evaluator / adaptador Host | `dsh web` **sí** arranca (home vacío, instalación real): el falso bloqueo se corrigió. No existe el endpoint `evaluator` en `0.2.0-rc.2`, y el CLI tampoco ofrece el adaptador que comprueba layout y skill efectiva antes de `session/create`: el runner se abstiene sin gastar | `docs/status.md:187-215`, `scripts/skill_gate_run.py:604-608` |
-| Corpus completo contra modo real | Un caso de 55 falló con `NOT_COVERED`: compilaba una **skill** y despachó a un **modo** que exigía otro layout, y el modo no escribió `result.json`. Los 55 casos apuntan a 25 skills, no a los modos: no es una prueba del modo auditor | `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
-| `skill_router` contra sesión real | Sigue siendo solo selector informativo | `docs/status.md:9` |
-| Confinamiento mecánico de bash en campaña | No se ejerció | `docs/status.md:9` |
-| 26 de 30 stacks sin campaña | Declarados como hueco real de la beta | `docs/status.md:250` |
+| No journal access in the original writing session | `ListWorkflowRuns`/`GetWorkflowRun` returned `workflow_introspection_unavailable` | Opening evidence note of this document |
+| “Run finished” ≠ “correct finding” | Without the journal there was no per-run verdict; `.mjs` files are programs, not results | Opening evidence note of this document |
+| Creator end-to-end in a journal-verified pass | With the `--patch` overlay Creator persisted 19 artifacts and the session was `ACTIVE`, but that pass prepred dates the budget gate fix, so it does not validate the current gate | `docs/status.md:230-242`, `docs/progreso-agentico.md:215` |
+| Discovery and design exercised with the overlay missing | The quiescent turn of L09 never persisted the manifest: `workspace write` fell in the upstream row the sandbox rejected | L09, `docs/status.md:205-212` |
+| **SUPERSEDED (2026-10-11)** Full repair cycle under a real preset in a single turn | `x1-live` measured Host provisioning and mode behaviour headless; `x1-preset-real` resolved the preset and loaded its skill under a 120k cap, but the supervisor stopped **before editing** by projected token cost (104.372 measured, 129.898 projected; later batch 97.973/127.227). Superseded by the 200k-cap turn described below | `docs/progreso-agentico.md:215`, `x1-preset-real/RESULTADO.md`; kept as history |
+| Full repair cycle under a real preset in a single turn | Under a 200k cap the mode reached the edit (11 steps, 180.107 billable tokens) but the turn stopped on projection before the second dirty claim and the `DIRTY` closure, and its 3/3 tests were run by the operator, not the mode. A **later** turn closed the remaining stretch: the mode recorded `DIRTY` with digest and paths, persisted `work-items.json` and ran the project entrypoint (3/3) | `x1-live/RESULTADO.md`, `x1-preset-real/RESULTADO.md`; `docs/progreso-agentico.md:215` |
+| `git worktree add` real | Blocked by the session sandbox; the design no longer uses it, but a session acting with direct read-write on the canonical remains unproven | `docs/status.md:210-226` |
+| `dsh web` / evaluator endpoint / Host adapter | `dsh web` **does** boot (empty home, real install): the false block was corrected. There is no `evaluator` endpoint in `0.2.0-rc.2`, and the CLI does not offer the adapter that checks layout and effective skill before `session/create`: the runner abstains without spending | `docs/status.md:187-215`, `scripts/skill_gate_run.py:604-608` |
+| Full corpus against a real mode | One case of 55 failed with `NOT_COVERED`: it compiled a **skill** and dispatched to a **mode** that required another layout, and the mode did not write `result.json`. The 55 cases target 25 skills, not the modes: not a proof of the auditor mode | `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
+| `skill_router` against a real session | Still only an informative selector | `docs/status.md:9` |
+| Mechanical bash confinement in a campaign | Not exercised | `docs/status.md:9` |
 
-## 3. Cómo se mantiene este documento
+---
 
-- **Una lección, una prueba.** Una lección que dice tener prueba permanente
-  apunta a `tests/test_workflow_lessons.py` con su identificador; si la prueba
-  no está en el árbol, `DocumentedLessonsMapTests` falla.
-- **Atribución obligatoria.** `test_lessons_map_at_least_a_run_id_or_a_commit_
-  for_each_lesson` exige que cada fila nombre un run id, un sha, un `r-…` o una
-  ruta. Sin atribución la fila no entra.
-- **Nada local ni ajeno.** Las campañas corrieron en rutas del mantenedor y
-  algún `.mjs` guardado contiene credenciales literalmente. Lo publicable es la
-  lección, no el rastro: `test_no_local_paths_or_borrowed_identifiers_in_the_
-  lessons_doc` rechaza rutas personales y material de terceros en este archivo.
-- **Los `code fixes` de las lecciones viven donde el código vive.** Este
-  documento documenta y prueba; no sustituye a `X1` ni edita `scripts/`,
-  `README*`, `docs/status.md`, `CHANGELOG.md` ni `ARQUITECTURA_FLUJO_AGENTES.md`.
+## 3. How this document is maintained
+
+- **One lesson, one test.** A lesson that claims to have a permanent test points to `tests/test_workflow_lessons.py` with its identifier; if the test is not in the tree, `DocumentedLessonsMapTests` fails.
+- **Mandatory attribution.** `test_lessons_map_at_least_a_run_id_or_a_commit_for_each_lesson` requires every row to name a run id, a sha, an `r-…` or a path. Without attribution, the row does not enter.
+- **Nothing local or borrowed.** The campaigns ran on the maintainer's paths and some saved `.mjs` contain credentials literally. What is publishable is the lesson, not the trail: `test_no_local_paths_or_borrowed_identifiers_in_the_lessons_doc` rejects personal paths and third-party material in this file.
+- **A lesson's code fixes live where the code lives.** This document documents and tests; it does not replace `X1` nor edit `scripts/`, `README*`, `docs/status.md`, `CHANGELOG.md` or `ARQUITECTURA_FLUJO_AGENTES.md`.
+- **Historical claims are corrected, not erased.** When later evidence changes a claim (for example the DIRTY closure of X1), the old text is kept identified as superseded and the new evidence is dated (§2). This is also the L01 lesson applied to the document itself.

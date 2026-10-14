@@ -1,42 +1,44 @@
-# Plan 06 — C5: aceptación automática DSH
+# Plan 06 — C5: automatic DSH acceptance
 
-**Salida:** `bootstrap accept` evalúa un candidato sin que Creator se autoapruebe.
-**Precondiciones:** C0–C4.
+**Outcome:** `bootstrap accept` evaluates a candidate without Creator approving itself.
+**Prerequisites:** C0–C4.
 
-## Escenarios obligatorios
+**English** | [Español](06-c5-aceptacion.es.md)
 
-- descubrimiento de los dos modos;
-- carga nativa/origen/cuerpo exactos;
-- lectura dirigida;
-- evidencia externa;
-- Auditor sin escritura de producto;
-- reparación en candidato;
-- rojo→verde;
-- QA por actor/sesión observable;
-- reauditoría semántica;
-- reapertura/checkpoint;
+## Required scenarios
+
+- discovery of both modes;
+- exact native loading/origin/body;
+- targeted reading;
+- external evidence;
+- Auditor without product write access;
+- repair in a candidate;
+- red→green;
+- QA by an observable actor/session;
+- semantic re-audit;
+- reopening/checkpoint;
 - rollback/uninstall;
-- routing/config global inalterados.
+- unchanged routing/global configuration.
 
-## Controles
+## Controls
 
-- fixtures públicos separados de holdouts Host;
-- tests/rúbricas/thresholds read-only;
-- review separada de Creator;
-- `verify` mecánico más juicio semántico explícito;
-- ausencia de aislamiento → `DEGRADED_REVIEW`, no independencia;
-- falta de evidencia → `UNVERIFIED/RETAINED`;
-- repair vuelve siempre a Host evaluation;
-- digest exacto de candidato/contrato.
+- public fixtures separate from Host holdouts;
+- read-only tests/rubrics/thresholds;
+- review separate from Creator;
+- mechanical `verify` plus explicit semantic judgment;
+- lack of isolation → `DEGRADED_REVIEW`, not independence;
+- missing evidence → `UNVERIFIED/RETAINED`;
+- repair always returns to Host evaluation;
+- exact candidate/contract digest.
 
-## Salida
+## Output
 
-`host-verdict.json`, `evidence-ledger.jsonl`, `acceptance-record.json`, `retention-bundle` si aplica, `rollback-record` si falla.
+`host-verdict.json`, `evidence-ledger.jsonl`, `acceptance-record.json`, `retention-bundle` if applicable, `rollback-record` on failure.
 
 ## Gate
 
-Solo Host puede emitir `ACTIVE`. Todo fallo deja generación staged o rollback íntegro; ninguna aceptación declarativa de Creator cambia estado.
+Only Host can issue `ACTIVE`. Every failure leaves an intact staged generation or rollback; no declarative acceptance by Creator changes state.
 
-## Adaptación
+## Adaptation
 
-El escenario mínimo puede crecer por proyecto, nunca reducir criterios inmutables. Los holdouts se regeneran cuando un repair los expone.
+The minimum scenario may grow per project, but immutable criteria must never be reduced. Holdouts are regenerated when a repair exposes them.

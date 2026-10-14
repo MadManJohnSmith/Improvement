@@ -1,5 +1,55 @@
 # Cambios
 
+## Creator: contratos materializados en vez de transcritos — 2026-10-14
+Cambio de framework, medido sobre el fallo real que dejó tres generaciones post-budget
+en `RETAINED` sin manifest.
+- **El defecto.** El prompt de Creator (*prompt 1.0.0*) tenía una sección, "Ciclo
+  operativo obligatorio y experiencia novata", de 25.114 bytes sobre un prompt de
+  50.054: el 50,2 % del contexto inicial pedía al modelo que transcribiera a mano
+  los objetos `mode_lifecycle` de auditor y reparador, más los comandos exactos de
+  repair/implementer. Esos bytes ya los calcula el Host de forma determinista
+  (`expected_lifecycle`, `scripts/mode_lifecycle.py:825`) y el validador los
+  compara **byte a byte**: el modelo pagaba tokens por reproducir un valor que el
+  Host conoce, con riesgo de divergencia en cada reescritura.
+- **El cambio.** `materialize_deterministic_contracts`
+  (`scripts/creator_client.py`) escribe los tres contratos en `contracts/` del run
+  antes de que el prompt los nombre; `CreatorSession.prepare` lo invoca y el
+  prompt 1.1.0 solo remite a los ficheros. La materialización es idempotente y
+  fail-closed: un contrato ausente, simbólico o alterado aborta en vez de dejar
+  una versión vieja que el validador rechazaría después. Medido: el prompt baja
+  a **26.193 bytes (−47,7 %)** y el trabajo del modelo pasa de rederivar a copiar.
+- **No se relajó nada.** Las prohibiciones que vivían en esa prosa
+  (`simple_prompt_does_not_authorize: [commit, merge, push, publish]`,
+  `candidate_root` exacto, `bash_workdir: session-cwd-only-all-calls`,
+  `required_before_final`) están dentro del contrato materializado. La aserción que
+  las fijaba sobre el texto del prompt se movió a los documentos
+  (`test_lifecycle_contracts_are_materialized_exactly`), más una regresión que
+  exige rechazar un contrato manipulado. El contrato materializado se verifica
+  contra `expected_lifecycle`, es decir, contra la misma fuente que usará el
+  validador.
+- **Lo que midió el tercer ensayo.** `gen-9540ff9e80cc`, mismo producto ficticio y
+  mismo presupuesto (1,25 M), terminó `RETAINED` con **1.217.696 tokens
+  facturables** (904.576 de caché) y sin manifest. El cuello ya no era el prompt:
+  el modelo leyó `schemas/modes.schema.json` siete veces,
+  `schemas/skills.schema.json` tres, construyó paquetes de sondeo contra el
+  validador y leyó `docs/`. 64 resultados de herramienta sumaron **598.262
+  caracteres** (9.347 de media; una sola lectura de schema, 64.481). El prompt
+  1.1.0 lo lleva escrito como regla concreta de economía.
+- **El cuarto ensayo midió el cambio, y mejoró sin cerrar.** `gen-5d75bb55eaae`
+  (2026-10-14, prompt 1.1.0, mismo producto ficticio y mismo presupuesto) se detuvo en
+  **1.185.582 tokens facturables** y sigue `RETAINED`, pero fue el **primer ensayo
+  post-budget que produjo un paquete completo con manifest**: 22 ficheros, 20 artefactos,
+  `generation-manifest.json`, `acceptance-plan.json` y los tres modos con sus skills. Las
+  lecturas de schemas pasaron de siete copias de `modes.schema.json` a una por schema y no
+  construyó paquetes de sondeo (47 llamadas frente a 65). El paquete **no pasó** la
+  validación Host: cuatro capas, con `agent.cordis.yml` escrito con la forma equivocada
+  en los tres modos (`name:`/`plugins:` en vez de filas `- id:`), una entrada de
+  `license_provenance` sin `file` y `generated/build.py` fuera del manifest. Los contratos
+  materializados se copiaron bien; el contrato de composición no. El gate del Creator
+  sigue abierto.
+- **Suite: 1115 OK (11 omitidas).** Cifras publicadas (README y status) actualizadas
+  a la medida, con la distinción entre corrida con y sin el módulo DSH externo.
+
 ## Diseño del canal System 1 y liberación de su bloqueante — 2026-10-12
 Diseño nuevo, sin código de canal todavía. Lo implementado es el prerequisito.
 - **Bloqueante liberado.** `DshLocalClient` envuelve `session/selectModel` y lee

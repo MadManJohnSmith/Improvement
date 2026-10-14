@@ -1,308 +1,308 @@
 {
-  "schema_version": 2,
-  "diagram_type": "workflow",
-  "meta": {
-    "title": "El ciclo operativo: auditar, reparar, integrar",
-    "quality_profile": "showcase",
-    "views": [
-      {
-        "id": "ciclo",
-        "label": "El ciclo completo",
-        "focus": [
-          "p_auditoria",
-          "auditar",
-          "p_reparacion",
-          "candidata",
-          "verifica",
-          "integra"
-        ],
-        "note": "De un prompt simple a la integración: el operador manda en cada transición."
-      },
-      {
-        "id": "verificacion",
-        "label": "Verificación real",
-        "focus": [
-          "candidata",
-          "verifica",
-          "integra"
-        ],
-        "note": "La evidencia es el entrypoint propio del producto; un mock nunca es un resultado."
-      },
-      {
-        "id": "retencion",
-        "label": "Fail-closed",
-        "focus": [
-          "auditar",
-          "verifica",
-          "retenido"
-        ],
-        "note": "Todo desvío del contrato retiene el turno con causa y siguiente acción."
-      },
-      {
-        "id": "aprendizaje",
-        "label": "El ciclo aprende",
-        "focus": [
-          "integra",
-          "gate_biblio"
-        ],
-        "note": "Las observaciones de cada campaña puntúan la biblioteca en el gate de holdout."
-      }
+ "schema_version": 2,
+ "diagram_type": "workflow",
+ "meta": {
+  "title": "The operational cycle: audit, repair, integrate",
+  "quality_profile": "showcase",
+  "views": [
+   {
+    "id": "ciclo",
+    "label": "The full cycle",
+    "focus": [
+     "p_auditoria",
+     "auditar",
+     "p_reparacion",
+     "candidata",
+     "verifica",
+     "integra"
     ],
-    "output": "docs/diagrams/ciclo-operativo.html",
-    "viewBox": [
-      1210,
-      776
+    "note": "From a simple prompt to integration: the operator is in command at every transition."
+   },
+   {
+    "id": "verificacion",
+    "label": "Real verification",
+    "focus": [
+     "candidata",
+     "verifica",
+     "integra"
     ],
-    "legend": {
-      "mode": "auto",
-      "entries": {
-        "backend": {
-          "label": "Lógica del modo"
-        },
-        "security": {
-          "label": "Retención fail-closed"
-        },
-        "database": {
-          "label": "Biblioteca de skills"
-        },
-        "external": {
-          "label": "Acción del operador"
-        }
-      }
+    "note": "The evidence is the product's own entrypoint; a mock is never a result."
+   },
+   {
+    "id": "retencion",
+    "label": "Fail-closed",
+    "focus": [
+     "auditar",
+     "verifica",
+     "retenido"
+    ],
+    "note": "Any deviation from the contract retains the turn with a cause and a next action."
+   },
+   {
+    "id": "aprendizaje",
+    "label": "Future design, not operational",
+    "focus": [
+     "integra",
+     "gate_biblio"
+    ],
+    "note": "The holdout gate abstains today: without a Host evaluator adapter there are no linked observations."
+   }
+  ],
+  "output": "docs/diagrams/ciclo-operativo.html",
+  "viewBox": [
+   1210,
+   776
+  ],
+  "legend": {
+   "mode": "auto",
+   "entries": {
+    "backend": {
+     "label": "Mode logic"
+    },
+    "security": {
+     "label": "Fail-closed retention"
+    },
+    "database": {
+     "label": "Skill library"
+    },
+    "external": {
+     "label": "Operator action"
     }
+   }
+  }
+ },
+ "lanes": [
+  {
+   "id": "operador",
+   "label": "Operator (you)"
   },
-  "lanes": [
-    {
-      "id": "operador",
-      "label": "Operador (tú)"
-    },
-    {
-      "id": "auditor",
-      "label": "<Proyecto>-auditor"
-    },
-    {
-      "id": "reparador",
-      "label": "<Proyecto>-continuous-repair"
-    },
-    {
-      "id": "cerrado",
-      "label": "Fail-closed",
-      "variant": "exception"
-    },
-    {
-      "id": "biblioteca",
-      "label": "Biblioteca de skills"
-    }
-  ],
-  "phases": [
-    {
-      "id": "auditar",
-      "label": "Auditar",
-      "fromCol": 0,
-      "toCol": 1
-    },
-    {
-      "id": "reparar",
-      "label": "Reparar",
-      "fromCol": 2,
-      "toCol": 4,
-      "variant": "emphasis"
-    },
-    {
-      "id": "integrar",
-      "label": "Integrar",
-      "fromCol": 5,
-      "toCol": 5,
-      "variant": "security"
-    }
-  ],
-  "mainPath": [
-    "p_auditoria",
-    "auditar",
-    "p_reparacion",
-    "candidata",
-    "verifica",
-    "integra"
-  ],
-  "semanticChecks": {
-    "allowedRoots": [
-      "p_auditoria"
-    ],
-    "allowedTerminals": [
-      "integra",
-      "retenido",
-      "gate_biblio"
-    ],
-    "requiredEdges": [
-      {
-        "from": "auditar",
-        "to": "p_reparacion"
-      },
-      {
-        "from": "verifica",
-        "to": "integra"
-      }
-    ],
-    "requiredPaths": [
-      {
-        "from": "p_auditoria",
-        "to": "integra"
-      }
-    ]
+  {
+   "id": "auditor",
+   "label": "<Project>-auditor"
   },
-  "nodes": [
-    {
-      "id": "p_auditoria",
-      "lane": "operador",
-      "col": 0,
-      "type": "external",
-      "label": "Prompt de auditoría",
-      "sublabel": "«Audita este proyecto; no publiques.»",
-      "width": 200
-    },
-    {
-      "id": "auditar",
-      "lane": "auditor",
-      "col": 1,
-      "type": "backend",
-      "label": "Observa y persiste",
-      "sublabel": "hallazgos con evidencia + handoff",
-      "width": 176
-    },
-    {
-      "id": "p_reparacion",
-      "lane": "operador",
-      "col": 2,
-      "type": "external",
-      "label": "Prompt de reparación",
-      "sublabel": "copiado del handoff",
-      "width": 150
-    },
-    {
-      "id": "candidata",
-      "lane": "reparador",
-      "col": 3,
-      "type": "backend",
-      "label": "Reclama candidata",
-      "sublabel": "worktree hermano · registro antes de editar",
-      "width": 220
-    },
-    {
-      "id": "verifica",
-      "lane": "reparador",
-      "col": 4,
-      "type": "backend",
-      "label": "Corrige y verifica",
-      "sublabel": "entrypoint real · PASS / FAIL / BLOCKED",
-      "width": 204
-    },
-    {
-      "id": "integra",
-      "lane": "operador",
-      "col": 5,
-      "type": "external",
-      "label": "Integra",
-      "sublabel": "git merge --ff-only + push",
-      "width": 140
-    },
-    {
-      "id": "retenido",
-      "lane": "cerrado",
-      "col": 2,
-      "type": "security",
-      "label": "RETAINED",
-      "sublabel": "el turno termina con un resultado legible",
-      "width": 210
-    },
-    {
-      "id": "gate_biblio",
-      "lane": "biblioteca",
-      "col": 5,
-      "type": "database",
-      "label": "Gate de holdout",
-      "sublabel": "las observaciones puntúan la biblioteca",
-      "width": 210
-    }
+  {
+   "id": "reparador",
+   "label": "<Project>-continuous-repair"
+  },
+  {
+   "id": "cerrado",
+   "label": "Fail-closed",
+   "variant": "exception"
+  },
+  {
+   "id": "biblioteca",
+   "label": "Skill library"
+  }
+ ],
+ "phases": [
+  {
+   "id": "auditar",
+   "label": "Audit",
+   "fromCol": 0,
+   "toCol": 1
+  },
+  {
+   "id": "reparar",
+   "label": "Repair",
+   "fromCol": 2,
+   "toCol": 4,
+   "variant": "emphasis"
+  },
+  {
+   "id": "integrar",
+   "label": "Integrate",
+   "fromCol": 5,
+   "toCol": 5,
+   "variant": "security"
+  }
+ ],
+ "mainPath": [
+  "p_auditoria",
+  "auditar",
+  "p_reparacion",
+  "candidata",
+  "verifica",
+  "integra"
+ ],
+ "semanticChecks": {
+  "allowedRoots": [
+   "p_auditoria"
   ],
-  "edges": [
-    {
-      "from": "p_auditoria",
-      "to": "auditar"
-    },
-    {
-      "from": "auditar",
-      "to": "p_reparacion",
-      "label": "handoff: el siguiente prompt, listo"
-    },
-    {
-      "from": "p_reparacion",
-      "to": "candidata"
-    },
-    {
-      "from": "candidata",
-      "to": "verifica"
-    },
-    {
-      "from": "verifica",
-      "to": "integra",
-      "label": "candidata verificada · producto intacto"
-    },
-    {
-      "from": "auditar",
-      "to": "retenido",
-      "label": "desvío del contrato",
-      "variant": "security",
-      "role": "error"
-    },
-    {
-      "from": "verifica",
-      "to": "retenido",
-      "label": "check fallido o drift",
-      "variant": "security",
-      "role": "error"
-    },
-    {
-      "from": "integra",
-      "to": "gate_biblio",
-      "label": "observaciones de la campaña"
-    }
+  "allowedTerminals": [
+   "integra",
+   "retenido",
+   "gate_biblio"
   ],
-  "cards": [
-    {
-      "dot": "emerald",
-      "title": "Cada turno deja memoria",
-      "items": [
-        "El handoff trae el siguiente prompt listo para copiar",
-        "Los hallazgos llevan evidencia archivo:línea",
-        "La deduplicación usa (hallazgo, revisión)"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "Nada sin el operador",
-      "items": [
-        "El auditor solo lee tu producto",
-        "Integrar es un merge --ff-only normal",
-        "Nada se publica sin tu push"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "Fail-closed",
-      "items": [
-        "Un desvío del contrato retiene el turno",
-        "RETAINED nombra causa y siguiente acción",
-        "Un BLOCKED nunca se registra como PASS"
-      ]
-    },
-    {
-      "dot": "cyan",
-      "title": "El ciclo aprende",
-      "items": [
-        "Persistir consulta el índice de episodios",
-        "Un arreglo previo viaja como prior_episode",
-        "Las observaciones de la campaña puntúan la biblioteca en el gate"
-      ]
-    }
+  "requiredEdges": [
+   {
+    "from": "auditar",
+    "to": "p_reparacion"
+   },
+   {
+    "from": "verifica",
+    "to": "integra"
+   }
+  ],
+  "requiredPaths": [
+   {
+    "from": "p_auditoria",
+    "to": "integra"
+   }
   ]
+ },
+ "nodes": [
+  {
+   "id": "p_auditoria",
+   "lane": "operador",
+   "col": 0,
+   "type": "external",
+   "label": "Audit prompt",
+   "sublabel": "«Audit this project; do not publish.»",
+   "width": 200
+  },
+  {
+   "id": "auditar",
+   "lane": "auditor",
+   "col": 1,
+   "type": "backend",
+   "label": "Observe and persist",
+   "sublabel": "findings with evidence + handoff",
+   "width": 176
+  },
+  {
+   "id": "p_reparacion",
+   "lane": "operador",
+   "col": 2,
+   "type": "external",
+   "label": "Repair prompt",
+   "sublabel": "copied from the handoff",
+   "width": 150
+  },
+  {
+   "id": "candidata",
+   "lane": "reparador",
+   "col": 3,
+   "type": "backend",
+   "label": "Claim candidate",
+   "sublabel": "shadow · registry before editing",
+   "width": 220
+  },
+  {
+   "id": "verifica",
+   "lane": "reparador",
+   "col": 4,
+   "type": "backend",
+   "label": "Fix and verify",
+   "sublabel": "real entrypoint · PASS / FAIL / BLOCKED",
+   "width": 204
+  },
+  {
+   "id": "integra",
+   "lane": "operador",
+   "col": 5,
+   "type": "external",
+   "label": "Integrate",
+   "sublabel": "applies the diff",
+   "width": 140
+  },
+  {
+   "id": "retenido",
+   "lane": "cerrado",
+   "col": 2,
+   "type": "security",
+   "label": "RETAINED",
+   "sublabel": "the turn ends with a readable result",
+   "width": 210
+  },
+  {
+   "id": "gate_biblio",
+   "lane": "biblioteca",
+   "col": 5,
+   "type": "database",
+   "label": "Not operational",
+   "sublabel": "holdout gate: no Host adapter",
+   "width": 210
+  }
+ ],
+ "edges": [
+  {
+   "from": "p_auditoria",
+   "to": "auditar"
+  },
+  {
+   "from": "auditar",
+   "to": "p_reparacion",
+   "label": "handoff: the next prompt, ready"
+  },
+  {
+   "from": "p_reparacion",
+   "to": "candidata"
+  },
+  {
+   "from": "candidata",
+   "to": "verifica"
+  },
+  {
+   "from": "verifica",
+   "to": "integra",
+   "label": "verified candidate · product intact"
+  },
+  {
+   "from": "auditar",
+   "to": "retenido",
+   "label": "deviation from the contract",
+   "variant": "security",
+   "role": "error"
+  },
+  {
+   "from": "verifica",
+   "to": "retenido",
+   "label": "failed check or drift",
+   "variant": "security",
+   "role": "error"
+  },
+  {
+   "from": "integra",
+   "to": "gate_biblio",
+   "label": "design only (no observations)"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "Each turn leaves memory",
+   "items": [
+    "The handoff brings the next prompt, ready to copy",
+    "Findings carry file:line evidence",
+    "Deduplication uses (finding, revision)"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Nothing without the operator",
+   "items": [
+    "The auditor only reads your product",
+    "To integrate is to review and apply the shadow diff",
+    "Nothing is published without your push"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Fail-closed",
+   "items": [
+    "A deviation from the contract retains the turn",
+    "RETAINED names the cause and the next action",
+    "A BLOCKED is never recorded as a PASS"
+   ]
+  },
+  {
+   "dot": "cyan",
+   "title": "The closure that is not yet automatic",
+   "items": [
+    "Persisting queries the episode index",
+    "A previous fix travels as prior_episode",
+    "The holdout gate abstains today: the Host evaluator adapter is missing."
+   ]
+  }
+ ]
 }

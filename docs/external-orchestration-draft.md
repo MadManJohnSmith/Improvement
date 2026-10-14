@@ -1,129 +1,103 @@
-# Borrador: expansión de orquestación externa — specs EARS, kanban de worktrees e índice local
+# Draft: external orchestration expansion — EARS specs, worktree kanban and local index
 
-**Estado:** RETOMADO por decisión del titular (2026-09-30) como **material de diseño de la unidad D11**, no como diseño vigente. Nada de este documento es arquitectura, implementación ni evidencia: la autoridad sigue siendo [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0.
-**Fecha:** 2026-09-13 (propuesta) · retomado el 2026-09-30
-**Subordinado a:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) (diseño normativo vigente, v3.0)
-**Origen:** análisis del mantenedor con ZCode sobre capacidades de herramientas agénticas de terceros (Factory/droid, Cursor, AWS Kiro, Vibe Kanban, Aider) y su encaje con el flujo existente.
+**Status:** RESUMED by the owner (2026-09-30) as **D11 design material**, not as the current
+design. Nothing here is architecture, implementation or evidence; authority remains with
+[ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md) v3.0.
+**Date:** 2026-09-13 (proposal) · resumed 2026-09-30
+**Subordinate to:** [ARQUITECTURA_FLUJO_AGENTES.md](../ARQUITECTURA_FLUJO_AGENTES.md)
+(current normative design, v3.0)
+**Origin:** maintainer analysis with ZCode of third-party agent tooling (Factory/droid,
+Cursor, AWS Kiro, Vibe Kanban, Aider) and its fit with the existing flow.
 
-La decisión del 2026-09-30 no adopta este contenido: lo marca como punto de partida de
-D11 (paquete de memoria F5, RSI y disparador por commit, en «Deuda declarada» de
-[PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md)) y le fija una condición de decisión
-medible, la del propio borrador (F5, «Criterio de salida», más abajo): el ensayo de búsqueda
-de símbolos midiendo el coste de navegar el repositorio sin índice frente a con índice. Ese
-ensayo no se ha corrido, así
-que la memoria episódica sigue sin justificarse con evidencia. Lo que sí decide la retomada
-es que el trabajo ya no está aparcado: cada incremento pasa por arquitectura, regresión y
-`CHANGELOG.md` como cualquier otra unidad.
+**English** | [Español](external-orchestration-draft.es.md)
 
-Este documento no compite con la arquitectura normativa ni con [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md): propone qué capacidades de terceros valen la pena evaluar, cuáles se rechazan y cómo se mapearían sobre las piezas ya implementadas. Cualquier adopción pasa primero por las reglas habituales: decisión del mantenedor, actualización de la arquitectura y acreditación por separado.
+The 2026-09-30 decision does not adopt this content: it marks it as the starting point of D11
+(F5 memory package, RSI and commit trigger, under "Declared debt" in
+[PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md)) and sets a measurable decision condition,
+the one in this draft (F5, "Exit criterion", below): a symbol-search trial measuring the cost
+of navigating the repository without an index versus with one. That trial has not run, so
+episodic memory remains unjustified by evidence. What the resumption does decide is that the
+work is no longer parked: each increment goes through architecture, regression and
+`CHANGELOG.md` like any other unit.
 
-## 1. Hechos de entorno sobre los que se apoya la propuesta
+This document does not compete with the normative architecture or
+[PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md): it proposes which third-party capabilities
+are worth evaluating, which are rejected and how they would map onto the implemented pieces.
+Any adoption goes through the usual rules first: maintainer decision, architecture update and
+separate evidence.
 
-Verificados el 2026-09-13; re-verificar en el momento de implementar.
+## 1. Environment facts the proposal rests on
 
-- **9router** opera como capa de inferencia del Host con combos `Orquestrador`, `Subagents`, `ATM`, `Subagents-Audits`, `Subagents-Coding` (cadenas de fallback sobre múltiples proveedores y cuentas, round-robin). Existen dos canales por cliente: NORMAL y RAW (`x-9router-token-saver: off`), que conmutan compresión RTK/Ponytail por petición. El mapeo autorizado de roles (§15 de la arquitectura: orquestador y QA por canal RAW, ejecución por canal NORMAL) ya está aplicado en el Host.
-- **Clientes alternativos de ejecución**: Codex CLI (v0.153.4) tiene perfiles por combo (`orquestrador`, `audits`, `coding` y variantes `-raw`) con `wire_api="responses"` soportado por 9router. Permite ejecutar unidades headless (`codex exec --profile …`) sin pasar por DSH.
-- **Piezas del framework reutilizables**: `scripts/host_launcher.py` (aislamiento fail-closed bubblewrap), `scripts/inference_channel.py` (inferencia acotada por lanzamiento), `scripts/publisher.py` (recibos), `scripts/budget.py` (ledger de límites), `scripts/missions.py` (`verify`/`reaudit` mecánicos), `scripts/audit.py` (partición/inventario), presets DSH con `subagent-model-selection` apuntando a 9router.
-- **Herramientas externas evaluadas** (investigación web, pendiente de verificación práctica): Vibe Kanban (BloopAI, open source, Rust) orquesta agentes CLI (Claude Code, Codex, Gemini CLI, Amp) con un worktree de git por tarjeta; AWS Kiro formaliza requirements en formato EARS con tareas y criterios de aceptación; Factory/droid ofrece Missions (milestones con git handoffs), Spec Mode y revisión de PRs por evento (Droid Review); Cursor ofrece Tab predictivo, memories e indexado semántico — todos en nube ajena.
+Verified 2026-09-13; re-verify at implementation time.
 
-## 2. Evaluación de encaje por funcionalidad
+- **9router** operates as the Host inference layer with combos `Orquestrador`, `Subagents`,
+  `ATM`, `Subagents-Audits`, `Subagents-Coding` (fallback chains across multiple providers and
+  accounts, round-robin). Each client has NORMAL and RAW channels (`x-9router-token-saver:
+  off`), switching RTK/Ponytail compression per request. The authorized role mapping
+  (architecture §15: orchestrator and QA on RAW, execution on NORMAL) is already applied in
+  the Host.
+- **Alternative execution clients:** Codex CLI (v0.153.4) has combo profiles
+  (`orquestrador`, `audits`, `coding` and `-raw` variants) with `wire_api="responses"`
+  supported by 9router. They can run headless units (`codex exec --profile …`) without DSH.
 
-Criterio de encaje: respeta unidades de autorización, evidencia mecánica, un escritor por entorno, privacidad de datos y ausencia de dependencia de nubes ajenas para código/estado.
+## 2. Fit assessment by capability
 
-| Funcionalidad (origen) | Encaje | Lectura |
+| Capability | Fit | Decision |
 |---|---|---|
-| Missions: milestones + git handoffs (Factory) | **Patrón, no producto** | Coincide con la etapa 4 (handoff determinista) y el ciclo por `cycle_id`. No adoptar el producto; el patrón ya está en la arquitectura y parcialmente en `missions.py`. |
-| Spec Mode / specs durables (Factory, Kiro, spec-kit) | **Alto** — propuesta F1 | El framework ya exige criterios de aceptación por mandato (§6) pero no una spec como artefacto versionado consumible por workers. EARS aporta verificabilidad mecánica. |
-| Droid Review / Bugbot: revisión de PRs por evento (Factory, Cursor) | **Medio** — propuesta F3, condicionada | El disparo por evento y el delta por push no existen en el flujo. La publicación de hallazgos externos debe pasar por el contrato del publicador (§8), no por una integración ad-hoc. |
-| Tab predictivo, fast-apply, modelos propietarios (Cursor) | **Rechazado** | Dependencia de modelos cerrados y nube ajena; no replicable; contradice no objetivos. |
-| Indexado semántico del codebase en nube (Cursor, Factory) | **Rechazado como servicio; sustituto local en F5** | El codebase completo nunca debe residir en nubes ajenas. El sustituto local es una pieza nueva que hay que diseñar con presupuesto de crecimiento (ver F5). |
-| Memories en nube (Cursor) | **Rechazado como servicio; sustituto local en F5 (capa C)** | Ídem. La memoria de decisiones ya tiene contrato en §7; la episódica es complementaria y debe decaer. |
-| Vibe Kanban: 1 tarjeta = 1 worktree = 1 agente CLI | **Alto como ensayo** — propuesta F4 | Da la superficie de ejecución paralela con aislamiento por worktree sin desarrollarla. No es un "dashboard vacío": ejecuta unidades reales. Riesgo: su flujo de git/merge debe someterse a los controles del Host, no sustituirlos. |
-| Repo map por tree-sitter (Aider) | **Alto** — parte de F5 | Contexto estructurado barato para el orquestador; encaja con "rutas y símbolos son localizadores, no prueba de equivalencia semántica" (§7). |
-| container-use / sandbox por contenedor (Dagger) | **Bajo por ahora** | `host_launcher.py` ya es el rig de aislamiento local. Un contenedor por agente solo si el launcher resulta insuficiente para paralelismo real. |
-| Agentes en nube que producen PRs (Jules, Devin, Copilot coding agent) | **Rechazado** | Código y estado fuera del entorno; contra privacidad y contra el modelo de autorización local. |
+| EARS specifications | Useful as a testable mandate artifact, not as a substitute for tests | Evaluate in F1 |
+| Coding→Audits bounded loop | Useful if each pass has its own evidence and budget | Evaluate in F2 |
+| Event-driven review | Useful for local diff/commit triggers; never auto-publish | Evaluate in F3 |
+| Worktree kanban | Test-only parallelism; cannot be the current repair candidate, which is a Host-provisioned shadow repository with its own `.git` | Evaluate in F4 |
+| Local codebase index | Only if a controlled trial measures lower navigation cost than no index | Evaluate in F5 |
 
-## 3. Diseño propuesto por fases (borrador)
+## 3. Proposed phased design (draft)
 
-Cada fase declara: objetivo, qué se reutiliza, qué es nuevo y su criterio de salida. Ninguna fase está autorizada ni implementada.
+### F1 — EARS specs as a mandate artifact
 
-### F1 — Specs EARS como artefacto del mandato
+For a requirement that can be expressed with WHEN/THEN, emit a versioned spec before writing
+code. The spec records its origin and the acceptance test that proves it; it never grants
+permission to modify a repository.
 
-- **Objetivo:** que toda misión no trivial produzca `requirements.md` (sentencias EARS verificables), `design.md` opcional y `tasks.md` (tareas con criterios de aceptación por tarea y dependencias), como archivos del estado de la misión.
-- **Reutiliza:** mandato de misión (§6), aceptación sin bucles (§9), workspace externo (§14).
-- **Nuevo:** plantilla/skill de especificación; convención de dónde viven los archivos (decisión abierta D1).
-- **Criterio de salida:** una misión de ensayo donde Executor/QA/Auditor consumen las tareas por referencia a `tasks.md` y `missions.verify` valida contra los criterios declarados, no contra texto de conversación.
+### F2 — Bounded Coding→Audits validation loop
 
-### F2 — Loop de validación Coding→Audits acotado
+Coding makes a candidate change, Audits checks it and returns evidence. Repetition is bounded
+by the mandate budget and cannot silently relax the acceptance criterion.
 
-- **Objetivo:** tras cada tarea implementada, un auditor independiente evalúa contra el criterio EARS de esa tarea; defecto → corrección (máximo acotado, ya existe el límite de dos intentos en v0.1); aceptación → siguiente unidad.
-- **Reutiliza:** roles executor/QA/auditor con `actor_id` distinto (etapa 4), `missions.verify`/`reaudit`, `budget.py` para el presupuesto del loop.
-- **Nuevo:** nada estructural; es composición de mecanismos existentes sobre las specs de F1.
-- **Criterio de salida:** ciclo sintético donde la aceptación de una tarea exige veredicto del auditor con evidencia, y el presupuesto corta el loop de forma determinista.
+### F3 — Event-based review (diff → audit → external publication)
 
-### F3 — Revisión por eventos (diff → auditoría → publicación externa)
+A local event can start a review but cannot publish. Publication is always a separate,
+explicit operator decision; the event's digest binds the review to the diff it saw.
 
-- **Objetivo:** que un commit/PR dispare una unidad de auditoría incremental sobre el delta y publique hallazgos como comentarios externos, sin intervención humana por evento.
-- **Reutiliza:** `reaudit` incremental (§13), `host_launcher.py` para la ejecución aislada, executor headless (Codex perfiles o DSH).
-- **Nuevo:** disparador (hook local o CI), y una decisión de contrato: cómo se publica fuera sin romper las propiedades del publicador (§8: identidad real, autorización, idempotencia). No usar `gh` ad-hoc como publicador paralelo sin resolver esto.
-- **Criterio de salida:** ensayo donde un push genera auditoría del delta con hallazgos publicados y re-verificables, y un segundo push no repite la auditoría completa.
+### F4 — Worktree kanban as a parallel execution trial
 
-### F4 — Kanban de worktrees como ensayo de ejecución paralela
+Worktrees may isolate parallel trial units only outside the canonical framework repository and
+under an explicit mandate. This is a **draft experiment**, not the current repair design: the
+product read-only boundary means a worktree writes into the product's `.git/worktrees/` and
+fails. The implemented repair candidate is a shadow repository with its own `.git` under the
+workspace.
 
-- **Objetivo:** evaluar Vibe Kanban como superficie de coordinación visual de unidades paralelas, cada una en su worktree, ejecutadas por perfiles Codex hacia 9router (o por DSH si se integra).
-- **Reutiliza:** canal dual 9router (NORMAL/RAW) por rol; perfiles Codex existentes; límite de un escritor por entorno (§11) — el worktree es el entorno.
-- **Riesgos a probar antes de adoptar:** el flujo de git/merge de la herramienta no debe eludir el publicador ni la autorización de integración; los candidatos y recibos deben seguir viviendo en el estado externo del framework; evaluar qué datos del repo expone la herramienta.
-- **Criterio de salida:** un ensayo con dos unidades paralelas independientes ejecutadas, evidencia conservada en el formato del framework y merge solo tras aceptación.
+### F5 — Local codebase index and episodic memory (local replacement for cloud indexing)
 
-### F5 — Índice local del codebase y memoria episódica (sustituto local del indexado en nube)
+An index is warranted only if it measurably lowers the cost of locating symbols and evidence
+under the same task/budget. The baseline must navigate the repository without an index; the
+candidate uses a local index under the same scope. Measure time, tokens, false matches and
+stale results. A useful result is a decision for D11, not permission to upload private code.
 
-Pieza nueva más importante; diseñar antes de construir. Tres capas con ciclos de vida distintos:
+## 4. Open decisions (require maintainer decision)
 
-- **Capa A — artefactos del trabajo** (specs, decisiones, convenciones): viven en git, no necesitan base de datos; su crecimiento lo acota el ciclo de vida del feature. Ya cubierto por F1 y §7; no reinventar.
-- **Capa B — índice del codebase**: chunking por símbolos con tree-sitter (funciones/clases/docstrings, no ventanas de texto), embeddings 100% locales (modelo pequeño de embedding en CPU; p. ej. vía Ollama o fastembed), almacenamiento en SQLite+sqlite-vec (un archivo por repo, fuera del árbol canónico), re-indexado incremental por hash de contenido. Acceso **pull-based** vía MCP o CLI: el agente consulta cuando su tarea lo requiere y recibe solo los chunks relevantes.
-- **Capa C — memoria episódica**: aprendizajes entre sesiones con compaction jerárquica (entrada → resumen por módulo → caducidad LRU con TTL), presupuesto duro por repo y archivo en git de lo que sale de caliente.
-- **Invariantes exigidos:** todo local (ningún embedding ni código en nubes ajenas); crecimiento acotado (presupuestos por repo, decaimiento, consolidación); jerarquía progresiva (repo map siempre cargado y pequeño → resúmenes → chunks a demanda) para no inflar tokens; el índice es un **localizador**, no prueba de nada (misma regla que §7 para rutas y símbolos).
-- **Relación con la memoria de decisiones de §7:** complementaria. La de §7 es el contrato normativo de decisiones técnicas; las capas B/C son herramientas de acceso y recuerdo, sin autoridad.
-- **Criterio de salida:** un ensayo donde un executor encuentra los símbolos pertinentes de un repo mediano vía consulta al índice, con medición de tokens consumidos frente a navegación manual, y con el índice demostrando re-indexado incremental y presupuesto respetado.
+- Which EARS subset is worth preserving as a mandatory artifact rather than a prompt convention?
+- What is the bounded QA loop's stop rule and how is a failed pass recorded?
+- What local event is an authorized review trigger, without turning it into auto-publish?
+- Does a local symbol index beat navigation without one on this repository under the same task?
 
-**Decisión 2026-10-01 — capa C implementada (E2/E6), capa B DECLINADA con motivo medido.**
+## 5. Non-goals (consistent with architecture §2)
 
-- **Capa C** está implementada y en uso: `scripts/episodes.py` (ledger append-only más índice O(1))
-  y, desde E6, **consultada por `workflow_write` en cada escritura de hallazgo**, que estampa
-  `evidence.prior_episode` cuando un arreglo ya verificado había cerrado ese código. Lo que el
-  borrador pedía y no está: la compaction jerárquica y el LRU con TTL. Hay tope de disco e índice,
-  no decaimiento. **Declarado, no oculto.**
-- **Capa B se declina.** Tres razones, en orden de peso:
-  1. **Duplica alcance que los modos ya tienen.** `scripts/composition_contract.py` exige que todo
-     modo generado lleve `@deepseek-ai/dsh-tool-fs-search` con `sampleOverCapGlobResults: false`: los
-     modos ya buscan en todo el producto. Un índice sería una segunda fuente de verdad sobre el
-     producto, que es el mismo antipatrón que este framework lleva tres unidades cerrando —la memoria
-     episódica (E2), la candidata sombra (E4) y el conflicto worktree/confinamiento (D2)—.
-  2. **Sus dependencias no son distribuibles aquí.** `tree_sitter`, `sqlite_vec`, `fastembed` y
-     `onnxruntime` no están instalados y la política prohíbe meter dependencias en este árbol. Es la
-     misma regla que hizo rechazar el motor de `microsoft/skillopt`: se toma el diseño, no la cadena.
-  3. **No es una brecha de corrección sino de ergonomía.** Su propio invariante —«el índice es un
-     localizador, no prueba de nada»— lo sitúa fuera del árbol de aquello que el framework acierta.
-- **Qué cambiaría la decisión:** una campaña real que mida tokens de navegación por encima de lo que
-  `fs-search` cubre. Si aparece, el índice se construye **por la capacidad que a los modos les
-  falta** —estructura e identidad de símbolo, no una copia de la búsqueda— y con salida medida en
-  tokens, como pedía el criterio original.
+No autonomous publishing, no cloud code indexing by default, no model-made Host verdicts, no
+worktree inside the canonical repository for a trial, no new runtime dependency without a
+measured benefit and an explicit decision.
 
-## 4. Decisiones abiertas (requieren decisión del mantenedor)
+## 6. Provenance
 
-- **D1 — Ubicación de las specs:** dentro del workspace externo de la misión (estado de la misión) vs. dentro del árbol del producto (cuando el producto las debe versionar). Afecta a §14.
-- **D2 — Ejecutor de las tarjetas kanban:** perfiles Codex existentes (menor integración, ya opera sobre 9router) vs. plugin/integración DSH (más control, más trabajo). Vibe Kanban no soporta DSH como agente nativo hoy.
-- **D3 — Contrato de publicación de hallazgos externos (F3):** nuevo binding del publicador vs. retención local con notificación. Requiere decisión antes de implementar F3.
-- **D4 — Motor de embeddings y presupuesto de la capa B:** modelo, dimensiones, presupuesto de vectores por repo y política TTL/LRU concreta.
-- **D5 — Si F4 se adopta, qué datos del repo se exponen a la herramienta** y quién posee el worktree (Host vs. herramienta).
-
-## 5. No objetivos (coherentes con §2 de la arquitectura)
-
-- No adoptar plataformas de agentes en nube ni suscripciones cuyo modelo de valor sea infraestructura ajena (Jules, Devin, Factory Pro como plataforma).
-- No perseguir Tab predictivo ni fast-apply propietarios.
-- No construir una plataforma universal nueva ni un dashboard sin trabajo real detrás.
-- No introducir dependencias de nube para embeddings, índices ni memorias.
-
-## 6. Procedencia
-
-Análisis de capacidades de terceros basado en documentación pública verificada el 2026-09-13 (Factory docs, repositorios y comparativas citadas en la sesión de origen). Los hechos de entorno (combos y canales de 9router, perfiles Codex, piezas de `scripts/`) corresponden al estado comprobable del Host en esa fecha; su vigencia se re-verifica al implementar. Este borrador no acredita ejecución: las etapas de [PLAN_IMPLEMENTACION.md](../PLAN_IMPLEMENTACION.md) siguen siendo la única matriz de estado.
+This is a proposal informed by the listed third-party tools and maintainer trials. It does not
+copy their implementation or grant them authority. Every adopted piece needs its own
+provenance, architecture change and regression.

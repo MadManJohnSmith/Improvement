@@ -1216,6 +1216,17 @@ class CreatorTests(Base):
         self.assertNotIn("`project-workspace/mode-state`", prompt)
         self.assertIn("--run-dir", prompt)
 
+    def test_prompt_prioritizes_generation_over_validator_source_exploration(self):
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        guidance = prompt.index("## Orden de trabajo y lecturas")
+        self.assertLess(guidance, prompt.index("## Objetivo"))
+        self.assertIn("No leas el código\nfuente de host_validator.py", prompt)
+        self.assertIn("schemas normativos", prompt)
+        self.assertIn("prevalidación Host", prompt)
+        self.assertIn("generated/", prompt)
+        self.assertIn("sin cambiar el presupuesto\nni los criterios del Host", prompt)
+
     def test_prompt_exposes_exact_generation_contracts_and_prevalidation(self):
         cc.CreatorSession(self.run_dir).prepare()
         prompt = (self.run_dir / "creator-prompt.md").read_text()
@@ -1261,26 +1272,73 @@ class CreatorTests(Base):
         self.assertIn(f"basename `{self.root.name}`", prompt)
         self.assertNotIn("session_root\":\"/", prompt)
         self.assertIn("Repara los hallazgos de la auditoría; no publiques.", prompt)
-        self.assertIn("`unrelated_candidates: ignore-preserve`", prompt)
-        self.assertIn("prohibido validar supuestos\nsobre candidatas ajenas", prompt)
-        self.assertIn("<workspace>/candidates/repair-<digest16>", prompt)
-        self.assertIn("omitted-session-cwd", prompt)
-        self.assertIn("puerta de solo lectura sobre la sombra que el\nHost ya provisionó", prompt)
-        self.assertIn(
-            "Verifica desde el cwd de sesión con `workdir` omitido", prompt)
-        self.assertIn("repositorio sombra con su propio `.git`", prompt)
-        self.assertIn("índice y HEAD en el `.git/worktrees/` del producto", prompt)
-        self.assertIn("prohibido crear o aceptar una candidata bajo\n`./project/...`", prompt)
-        self.assertIn("La integración es el patch que produce\n`candidate_diff_command`", prompt)
-        self.assertIn("Nunca\nmerge/push/publish", prompt)
-        self.assertIn("candidate_commit", prompt)
-        self.assertIn("scripts/host_validator.py", prompt)
-        self.assertIn("Antes de emitir `status: GENERATED`", prompt)
-        # A plain ': ' in a description is discarded by DSH's YAML parser, so
-        # the regulated prompt must name the quoting rather than say "valid
-        # YAML" and leave the scalar shape to the Creator's guess. The rule
-        # lives in the shared "Salida obligatoria" section, so it also reaches
-        # regeneration and skill_lifecycle prompts.
+
+    def test_lifecycle_contracts_are_materialized_exactly(self):
+        """The exact lifecycle lives in run contracts, not in prose.
+
+        The prompt used to make the model transcribe these roles from ~12,400
+        characters of prose: tokens spent reproducing bytes the Host already
+        computes, with every rewrite risk of divergence from what the Validator
+        then compares byte for byte. The materialized documents are now the
+        seam, so the regression checks them directly and the prompt only has to
+        point at them.
+        """
+        cc.CreatorSession(self.run_dir).prepare()
+        contracts = self.run_dir / "contracts"
+        layout = {
+            "session_root": self.root.name,
+            "product_root": "project",
+            "workspace_root": "workspace",
+            "state_root": "workspace/mode-state",
+        }
+        for role, source in (
+                ("auditor", expected_lifecycle("auditor", layout)),
+                ("continuous-repair", expected_lifecycle("continuous-repair", layout)),
+                ("implementer", expected_lifecycle("implementer", layout))):
+            path = contracts / f"{role}.mode-lifecycle.json"
+            self.assertTrue(path.is_file(), path)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), source)
+        # The prompt delegates to them and keeps the Host-only outsourcing.
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        for name in ("auditor.mode-lifecycle.json",
+                     "continuous-repair.mode-lifecycle.json",
+                     "implementer.mode-lifecycle.json"):
+            self.assertIn(f"`{name}`", prompt)
+        self.assertIn("El Host compara\nambos con `expected_lifecycle(role, layout)`", prompt)
+        # The prohibitions the prose carried are inside the contract, so the
+        # shortened section did not quietly drop them.
+        repair = expected_lifecycle("continuous-repair", layout)["repair_candidate"]
+        self.assertEqual(repair["simple_prompt_does_not_authorize"],
+                         ["commit", "merge", "push", "publish"])
+        self.assertEqual(repair["candidate_root"],
+                         "${session-cwd}/<workspace>/candidates/repair-<digest16>")
+        self.assertIn("provision_workdir", repair)
+        audit = expected_lifecycle("auditor", layout)
+        self.assertEqual(audit["tool_policy"]["bash_workdir"],
+                         "session-cwd-only-all-calls")
+        self.assertTrue(audit["audit_handoff"]["required_before_final"])
+
+    def test_materialized_contracts_reject_a_tampered_document(self):
+        """A silently stale contract would ship divergence to the Validator."""
+        cc.CreatorSession(self.run_dir).prepare()
+        path = self.run_dir / "contracts" / "auditor.mode-lifecycle.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["bounds"]["findings.jsonl"] = 999
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaises(ValueError) as caught:
+            cc.CreatorSession(self.run_dir).prepare()
+        self.assertIn("alterado", str(caught.exception))
+
+    def test_yaml_quoting_rule_lives_in_the_shared_output_section(self):
+        """A plain ': ' is discarded by DSH's YAML parser.
+
+        The prompt must name the quoting rather than say "valid YAML" and leave
+        the scalar shape to the Creator's guess. The rule lives in the shared
+        "Salida obligatoria" section, so it also reaches regeneration and
+        skill_lifecycle prompts.
+        """
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
         self.assertIn("siempre con comillas\ndobles", prompt)
         self.assertIn('`name: "<name>"`', prompt)
         self.assertIn('`description: "<texto>"`', prompt)

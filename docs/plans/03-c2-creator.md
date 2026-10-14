@@ -1,35 +1,41 @@
-# Plan 03 — C2: automatización DSH Creator
+# Plan 03 — C2: DSH Creator automation
 
-**Salida:** Creator genera un paquete específico válido desde una petición automática del bootstrap.
-**Precondiciones:** C0/C1; cliente RPC local y proveedor DSH configurado.
+**English** | [Español](03-c2-creator.es.md)
 
-## Pasos
+**Output:** Creator generates a valid project-specific package from an automatic bootstrap request.
+**Preconditions:** C0/C1; local RPC client and configured DSH provider.
 
-1. Implementar cliente Host-side sin persistir token/cookie.
-2. Crear sesión Creator con cwd/roots/inputs correctos.
-3. Enviar prompt versionado que invoque capacidades internas scope/audit/architect/document/test/develop.
-4. Resolver cada necesidad en orden obligatorio: base inmutable → catálogo especializado → composición → override limitado → extensión.
-5. Si se genera extensión, incluir justificación de por qué no aplican capas anteriores y su contrato/escenarios propios.
-6. Supervisar requests, tokens, timeout, descendientes y checkpoint.
-7. Exigir `generation-manifest.json`, `finish.json`, contracts, modes, skills y acceptance-plan.
-8. Verificar que Creator solo escribe staging.
-9. Hacer que Creator emita `bootstrap.accept.request` con digest exacto.
-10. Retener ante unresolved decisions, outputs faltantes o self-acceptance.
+## Steps
+
+1. Implement a Host-side client without persisting a token/cookie.
+2. Create a Creator session with the correct cwd/roots/inputs.
+3. Send a versioned prompt invoking the internal scope/audit/architect/document/test/develop capabilities.
+4. Resolve each need in the mandatory order: base inmutable (the immutable base) → catálogo especializado (the specialized pattern catalog) → composition → limited override → extension.
+5. If an extension is generated, include a justification for why the preceding layers do not apply, and its own contract/scenarios.
+6. Monitor requests, tokens, timeout, descendants and checkpoint.
+7. Require `generation-manifest.json`, `finish.json`, contracts, modes, skills and acceptance-plan.
+8. Verify that Creator writes only to staging.
+9. Have Creator emit `bootstrap.accept.request` with the exact digest.
+10. Retain on unresolved decisions, missing outputs or self-acceptance.
+
+> **Bilingual terms.** `base inmutable` and `catálogo especializado` are kept verbatim: they are
+> the Spanish terms the repository's tests assert on, and `docs/creator-preset-spec.md`
+> defines the same order with their meanings.
 
 ## Gates
 
-- sesión Creator observable y autenticada localmente;
-- sin credenciales en artefactos;
-- generación repeatable en fixture;
-- dos modos específicos y skills justificadas;
-- ningún preset universal;
-- finish/checkpoint recuperables;
-- Creator no puede marcar ACTIVE.
+- Creator session is observable and authenticated locally;
+- no credentials in artifacts;
+- repeatable generation on a fixture;
+- two project-specific modes and justified skills;
+- no universal preset;
+- finish/checkpoint can be recovered;
+- Creator cannot mark ACTIVE.
 
-## Negativos
+## Negative cases
 
-Prompt injection desde el proyecto, intento de modificar Host/validator, provider/model nuevo, output fuera de staging, manifest falso, prompt sin fuente, capacidad no observada, timeout y generación parcial.
+Prompt injection from the project, attempt to modify Host/validator, new provider/model, output outside staging, false manifest, prompt without source, unobserved capability, timeout and partial generation.
 
-## Adaptación autorizada
+## Authorized adaptation
 
-El cliente DSH y la forma de autenticar se adaptan al runtime observado. No añadir API general ni aceptar shell libre como sustituto.
+The DSH client and authentication method are adapted to the observed runtime. Do not add a general API or accept unrestricted shell access as a substitute.

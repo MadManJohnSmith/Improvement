@@ -1,38 +1,40 @@
-# Plan 01 — C0: contratos, schemas y fixtures
+# Plan 01 — C0: contracts, schemas and fixtures
 
-**Salida:** corpus de contratos versionados y fixtures válidos/negativos para validar C1–C5.
-**Precondiciones:** arquitectura 3.0, runtime observado y servicios Host MVP disponibles.
+**English** | [Español](01-c0-contratos-fixtures.es.md)
 
-## Artefactos
+**Output:** corpus of versioned contracts and valid/negative fixtures for validating C1–C5.
+**Preconditions:** architecture 3.0, observed runtime and available MVP Host services.
 
-- schemas de `run`, `project-manifest`, `instructions-index`, `capabilities`, `generation-manifest`, `modes`, `skills`, `scenario`, `handoff`, `drift`, `backup`, `promotion`, `rollback`;
-- schema de biblioteca base inmutable, catálogo de patrones, composición, override limitado, transferencia y extensión;
-- aplicabilidad, invariantes, límites, procedencia y escenarios por skill del catálogo;
-- fixtures de proyecto Python/backend y multiparte;
+## Artifacts
+
+- schemas for `run`, `project-manifest`, `instructions-index`, `capabilities`, `generation-manifest`, `modes`, `skills`, `scenario`, `handoff`, `drift`, `backup`, `promotion`, `rollback`;
+- schema for the immutable base library, pattern catalog, composition, limited override, transfer and extension;
+- applicability, invariants, limits, provenance and scenarios for each catalog skill;
+- Python/backend and multipart project fixtures;
 - golden manifests;
-- corpus positivo/negativo de paths, hashes, symlinks, colisiones, capabilities, routing y licencias;
-- `THIRD_PARTY_NOTICES.md` si se copia material MIT;
-- `tests/test_generation_contracts.py` y validadores stdlib.
+- positive/negative corpus for paths, hashes, symlinks, collisions, capabilities, routing and licenses;
+- `THIRD_PARTY_NOTICES.md` if MIT material is copied;
+- `tests/test_generation_contracts.py` and stdlib validators.
 
-## Pasos
+## Steps
 
-1. Derivar campos de arquitectura v3.0 y `docs/creator-preset-spec.md`.
-2. Definir versión/schema y unknown-field policy.
-3. Definir ownership de cada artefacto y estados Host.
-4. Crear fixtures externos primero; no incluir resultados reales en repo.
-5. Implementar parse/validate sin mutación parcial.
-6. Crear negativos: path traversal, symlink, hash stale, manifest incompleto, routing nuevo, provider nuevo, skill huérfana, ciclo de carga, unresolved decision, extensión libre cuando aplica una base, override fuera de slots, transferencia sin aceptación destino y skill duplicada sin diferencia material.
-7. Ejecutar corpus y revisar falsos positivos.
-8. Actualizar `PLAN_IMPLEMENTACION.md` solo si el gate pasa.
+1. Derive fields from architecture v3.0 and `docs/creator-preset-spec.md`.
+2. Define the version/schema and unknown-field policy.
+3. Define ownership of each artifact and Host states.
+4. Create external fixtures first; do not include real run results in the repository.
+5. Implement parsing/validation without partial mutation.
+6. Create negative cases: path traversal, symlink, stale hash, incomplete manifest, new routing, new provider, orphaned skill, load cycle, unresolved decision, free-form extension when a base applies, override outside slots, transfer without destination acceptance and duplicate skill with no material difference.
+7. Run the corpus and review false positives.
+8. Update `PLAN_IMPLEMENTACION.md` only if the gate passes.
 
 ## Gates
 
-- todo artifact generado tiene schema y owner;
-- positivo completo acepta sin DSH;
-- cada negativo falla cerrado sin escritura;
-- manifest exhaustivo y hashes verificables;
-- fixtures no contienen rutas, credenciales ni proyectos reales.
+- every generated artifact has a schema and owner;
+- the complete positive case is accepted without DSH;
+- every negative case fails closed without writing;
+- exhaustive manifest and verifiable hashes;
+- fixtures contain no real paths, credentials or projects.
 
-## Adaptación autorizada
+## Authorized adaptation
 
-Registrar cambios de campos, compatibilidad, fixtures o límites en el run C0; una modificación contractual requiere primero arquitectura.
+Record changes to fields, compatibility, fixtures or limits in the C0 run; a contract change requires changing the architecture first.

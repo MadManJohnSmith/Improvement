@@ -211,6 +211,10 @@ def verification_verdict(workspace, fase):
     derived = state_reconcile.verification_verdicts(state)
     if gaps:
         return EXIT_BLOCKED, _verdict_payload(fase, 'BLOCKED', derived, candidate, gaps)
+    if not candidate or not candidate.get('head') or not candidate.get('candidate_diff_digest'):
+        return EXIT_BLOCKED, _verdict_payload(
+            fase, 'BLOCKED', derived, candidate,
+            reason='candidato vigente sin identidad verificable en work-items.json')
     if records:
         try:
             capability_plan.validate_verification_results(value, records, candidate)

@@ -12,6 +12,30 @@ class ArchitectureConsistencyTest(unittest.TestCase):
     def read(self, relative):
         return (ROOT / relative).read_text()
 
+    def test_every_current_document_has_english_and_spanish_paths(self):
+        """Docs stay bilingual when a new operational document is added."""
+        for root in (ROOT / 'docs', ROOT / 'docs' / 'plans'):
+            english = sorted(path for path in root.glob('*.md')
+                             if not path.name.endswith('.es.md'))
+            self.assertTrue(english)
+            for path in english:
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    spanish = path.with_name(path.stem + '.es.md')
+                    self.assertTrue(spanish.is_file())
+                    en = path.read_text(encoding='utf-8')
+                    es = spanish.read_text(encoding='utf-8')
+                    self.assertIn(spanish.name, en)
+                    self.assertIn(path.name, es)
+
+    def test_the_plans_index_lists_the_lifecycle_and_decision_designs(self):
+        """Two designs a reader must find from the index, in both languages."""
+        english = self.read('docs/plans/README.md')
+        spanish = self.read('docs/plans/README.es.md')
+        for name in ('project-lifecycle-modes.md',
+                     'system-one-decision-channel.md'):
+            self.assertIn(name, english)
+            self.assertIn(name.replace('.md', '.es.md'), spanish)
+
     def test_normative_architecture_is_v3(self):
         architecture = self.read('ARQUITECTURA_FLUJO_AGENTES.md')
         plan = self.read('PLAN_IMPLEMENTACION.md')
@@ -90,7 +114,9 @@ class ArchitectureConsistencyTest(unittest.TestCase):
                               f"{name} nombra el caso real pero no dice qué "
                               f"queda sin probar")
                 self.assertIn('ab5c0c6', text, "el commit verificado del reparador")
-                self.assertIn('docs/progreso-agentico.md', text,
+                progress_path = ('docs/progreso-agentico.es.md' if name.endswith('.es.md')
+                                 else 'docs/progreso-agentico.md')
+                self.assertIn(progress_path, text,
                               "la vista de hitos no está enlazada desde la portada")
 
     def test_status_documents_have_no_trailing_whitespace(self):

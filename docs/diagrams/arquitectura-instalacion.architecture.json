@@ -2,49 +2,59 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Qué instala Improvement en tu máquina",
+    "title": "What Improvement installs on your machine",
     "quality_profile": "showcase",
     "views": [
       {
         "id": "escrituras",
-        "label": "Quién escribe qué",
+        "label": "Who writes what",
         "focus": [
           "auditor",
           "reparador",
           "estado",
           "candidata"
         ],
-        "note": "El auditor solo escribe estado; el reparador solo escribe en la candidata."
+        "note": "The auditor writes state; the repairer writes the candidate and state. The Host publishes verified helpers."
       },
       {
         "id": "frontera",
-        "label": "Frontera de integración",
+        "label": "Integration boundary",
         "focus": [
           "operador",
           "producto",
           "candidata"
         ],
-        "note": "Nada llega a tu rama sin el merge y el push del operador."
+        "note": "The product stays untouched: the operator reviews and applies a diff, not a worktree merge."
       },
       {
         "id": "plan",
-        "label": "Verificación real",
+        "label": "Real verification",
         "focus": [
           "plan",
           "reparador",
           "estado"
         ],
-        "note": "El plan de capacidades nombra el entrypoint real y qué falta en la máquina."
+        "note": "The capability plan names the actual entrypoint and what is missing on the machine."
       },
       {
         "id": "skills",
-        "label": "Procedencia",
+        "label": "Provenance",
         "focus": [
           "biblioteca",
           "host",
           "auditor"
         ],
-        "note": "Creator reutiliza contra el snapshot congelado; el guard viaja en el bundle."
+        "note": "Creator reuses against the frozen snapshot; the guard ships in the bundle."
+      },
+      {
+        "id": "decision",
+        "label": "Advisory decisions",
+        "focus": [
+          "sistema1",
+          "host",
+          "helpers"
+        ],
+        "note": "System 1 is design only; the Host has already published digest-pinned helpers."
       }
     ],
     "output": "docs/diagrams/arquitectura-instalacion.html",
@@ -52,16 +62,16 @@
       "mode": "auto",
       "entries": {
         "backend": {
-          "label": "Modo generado"
+          "label": "Generated mode"
         },
         "database": {
-          "label": "Estado en disco"
+          "label": "On-disk state"
         },
         "security": {
-          "label": "Autoridad (Host)"
+          "label": "Authority (Host)"
         },
         "external": {
-          "label": "Operador y árboles de código"
+          "label": "Operator and code trees"
         }
       }
     }
@@ -70,8 +80,8 @@
     {
       "id": "operador",
       "type": "external",
-      "label": "Operador",
-      "sublabel": "prompts breves e integración",
+      "label": "Operator",
+      "sublabel": "short prompts and integration",
       "pos": [
         40,
         320
@@ -84,8 +94,8 @@
     {
       "id": "host",
       "type": "security",
-      "label": "DSH Host",
-      "sublabel": "valida, activa o retiene",
+      "label": "Improvement Host",
+      "sublabel": "validates · activates · retains",
       "pos": [
         40,
         110
@@ -94,13 +104,13 @@
         150,
         64
       ],
-      "tag": "estados mecánicos"
+      "tag": "mechanical states"
     },
     {
       "id": "biblioteca",
       "type": "database",
-      "label": "Biblioteca de skills",
-      "sublabel": "21 base + 4 patrones · 50 fuentes",
+      "label": "Skill library",
+      "sublabel": "21 base + 4 patterns · 50 sources",
       "pos": [
         300,
         40
@@ -109,13 +119,13 @@
         190,
         72
       ],
-      "tag": "procedencia registrada"
+      "tag": "provenance recorded"
     },
     {
       "id": "auditor",
       "type": "backend",
-      "label": "<Proyecto>-auditor",
-      "sublabel": "examina y persiste hallazgos",
+      "label": "<Project>-auditor",
+      "sublabel": "inspects and persists findings",
       "pos": [
         300,
         170
@@ -128,8 +138,8 @@
     {
       "id": "reparador",
       "type": "backend",
-      "label": "<Proyecto>-continuous-repair",
-      "sublabel": "corrige y verifica en candidata",
+      "label": "<Project>-continuous-repair",
+      "sublabel": "edits shadow repo · verifies via entrypoint",
       "pos": [
         300,
         420
@@ -142,8 +152,8 @@
     {
       "id": "producto",
       "type": "external",
-      "label": "Tu producto",
-      "sublabel": "repo canónico",
+      "label": "Your product",
+      "sublabel": "canonical repo",
       "pos": [
         640,
         60
@@ -152,13 +162,13 @@
         180,
         64
       ],
-      "tag": "sin escritura de los modos"
+      "tag": "no mode writes"
     },
     {
       "id": "estado",
       "type": "database",
       "label": "mode-state/",
-      "sublabel": "findings · handoffs · verificaciones · overflows",
+      "sublabel": "findings · handoffs · checks · overflows",
       "pos": [
         640,
         230
@@ -171,8 +181,8 @@
     {
       "id": "candidata",
       "type": "external",
-      "label": "Candidata",
-      "sublabel": "worktree hermano aislado",
+      "label": "Candidate",
+      "sublabel": "shadow repo with its own .git",
       "pos": [
         640,
         420
@@ -186,7 +196,7 @@
       "id": "plan",
       "type": "database",
       "label": "capability-plan.json",
-      "sublabel": "entrypoints reales del producto",
+      "sublabel": "real product entrypoints",
       "pos": [
         890,
         230
@@ -195,28 +205,59 @@
         190,
         72
       ],
-      "tag": "firmado por digest"
+      "tag": "digest-signed"
+    },
+    {
+      "id": "helpers",
+      "type": "database",
+      "label": "Host helpers",
+      "sublabel": "3 files · pinned SHA-256",
+      "pos": [
+        890,
+        355
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "already implemented"
+    },
+    {
+      "id": "sistema1",
+      "type": "external",
+      "label": "System 1 (design)",
+      "sublabel": "NOT IMPLEMENTED · advisory",
+      "pos": [
+        890,
+        460
+      ],
+      "size": [
+        190,
+        72
+      ],
+      "tag": "not operational yet"
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "<Proyecto>-workspace/ (hermano del producto)",
+      "label": "<Project>-workspace/",
       "wraps": [
         "estado",
-        "plan"
+        "plan",
+        "helpers"
       ]
     },
     {
       "kind": "security-group",
-      "label": "Frontera: commit y push solo del operador",
+      "label": "Boundary: only the operator commits and pushes",
       "wraps": [
         "producto"
       ]
     },
     {
       "kind": "security-group",
-      "label": "Guard anti-escalada first-party en bash",
+      "label": "First-party anti-escalation guard in bash",
       "wraps": [
         "auditor",
         "reparador"
@@ -228,114 +269,146 @@
       "id": "bib-host",
       "from": "biblioteca",
       "to": "host",
-      "label": "snapshot con digest"
+      "label": "digest-pinned snapshot"
     },
     {
       "id": "op-aud",
       "from": "operador",
       "to": "auditor",
-      "label": "prompt breve"
+      "label": "short prompt"
     },
     {
       "id": "op-rep",
       "from": "operador",
       "to": "reparador",
-      "label": "prompt breve"
+      "label": "short prompt"
     },
     {
       "id": "host-aud",
       "from": "host",
       "to": "auditor",
-      "label": "activa o RETAINED"
+      "label": "activates or RETAINED"
     },
     {
       "id": "host-rep",
       "from": "host",
       "to": "reparador",
-      "label": "activa o RETAINED"
+      "label": "activates or RETAINED"
     },
     {
       "id": "aud-prod",
       "from": "auditor",
       "to": "producto",
-      "label": "solo lectura",
+      "label": "read-only",
       "variant": "dashed"
     },
     {
       "id": "aud-est",
       "from": "auditor",
       "to": "estado",
-      "label": "persiste hallazgos + handoff",
-      "variant": "emphasis"
+      "label": "findings",
+      "variant": "emphasis",
+      "labelDy": -28,
+      "labelDx": -42
     },
     {
       "id": "est-rep",
       "from": "estado",
       "to": "reparador",
-      "label": "hallazgos OPEN"
+      "label": "OPEN findings"
     },
     {
       "id": "rep-est",
       "from": "reparador",
       "to": "estado",
-      "label": "registra verificación"
+      "label": "records verification"
     },
     {
       "id": "rep-cand",
       "from": "reparador",
       "to": "candidata",
-      "label": "edita solo aquí",
+      "label": "edits only here",
       "variant": "emphasis"
     },
     {
       "id": "plan-rep",
       "from": "plan",
       "to": "reparador",
-      "label": "entrypoint real"
+      "label": "real entrypoint"
     },
     {
       "id": "op-prod",
       "from": "operador",
       "to": "producto",
-      "label": "git merge --ff-only + push",
+      "label": "reviews and applies diff · commit/push",
       "variant": "security"
+    },
+    {
+      "id": "host-helpers",
+      "from": "host",
+      "to": "helpers",
+      "label": "publishes",
+      "labelDy": -20,
+      "labelDx": 32
+    },
+    {
+      "id": "helpers-rep",
+      "from": "helpers",
+      "to": "reparador",
+      "label": "invokes after SHA-256 check"
+    },
+    {
+      "id": "s1-host",
+      "from": "sistema1",
+      "to": "host",
+      "label": "future proposal · no authority",
+      "variant": "dashed"
     }
   ],
   "cards": [
     {
       "dot": "rose",
-      "title": "La frontera",
+      "title": "The boundary",
       "items": [
-        "Los modos nunca escriben tu producto",
-        "La candidata vive en un worktree hermano",
-        "El commit y el push son del operador"
+        "Modes never write to your product",
+        "Candidate: shadow repository with its own .git",
+        "Only the operator commits and pushes"
       ]
     },
     {
       "dot": "cyan",
-      "title": "Memoria acotada",
+      "title": "Bounded memory",
       "items": [
-        "Hallazgos anclados a un fragmento literal",
-        "Deduplicación por (hallazgo, revisión)",
-        "Topes por fichero: compacta con recibo"
+        "Findings anchored to a literal excerpt",
+        "Deduplication by (finding, revision)",
+        "Per-file limits: compact with a receipt"
       ]
     },
     {
       "dot": "amber",
-      "title": "Skills con procedencia",
+      "title": "Skills with provenance",
       "items": [
-        "21 base + 4 patrones desde 50 fuentes fijadas",
-        "Creator reutiliza contra el snapshot con digest",
-        "El guard anti-escalada viaja en el bundle"
+        "21 base + 4 patterns from 50 pinned sources",
+        "Creator reuses against the digest-pinned snapshot",
+        "The anti-escalation guard ships in the bundle"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Verificación real",
+      "title": "Real verification",
       "items": [
-        "El plan nombra el entrypoint propio del producto",
-        "PASS exige evidencia del stack real",
-        "Falta una herramienta: BLOCKED, nunca PASS"
+        "The plan names the product’s own entrypoint",
+        "PASS requires evidence from the real stack",
+        "Missing tool: BLOCKED, never PASS"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Decision models (design only)",
+      "items": [
+        "System 1 proposes; it never authorizes",
+        "Versioned rubric and threshold still pending",
+        "The Host validates or abstains"
       ]
     }
   ]

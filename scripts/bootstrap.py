@@ -1447,6 +1447,7 @@ def main():
     p_run.add_argument("--output", required=True)
     p_run.add_argument("--candidate-digest", required=True)
     p_run.add_argument("--mode", default="")
+    p_run.add_argument("--workspace", help="Workspace con publicación Host ACTIVE")
     p_run.add_argument("--timeout", type=int, default=900)
 
     p_trigger = sub.add_parser(
@@ -1627,7 +1628,9 @@ def main():
                     client, corpus, mode=args.mode,
                     candidate_digest=args.candidate_digest,
                     provider_name=getattr(client, "provider_name", "dsh"),
-                    timeout=args.timeout)
+                    timeout=args.timeout,
+                    evaluator=(skill_gate_run.HostCorpusEvaluator(args.workspace)
+                               if args.workspace else None))
             except skill_gate_run.RunnerUnavailable as error:
                 # Abstain and name the missing piece. Inventing observations
                 # here would be the one thing the gate must never do.

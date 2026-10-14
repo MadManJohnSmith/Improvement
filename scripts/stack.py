@@ -461,6 +461,8 @@ def detect(product):
         for marker in spec['markers']:
             root = _marker_root(product, marker)
             if root is not None:
+                if stack == 'python-django' and not (product / root / 'manage.py').is_file():
+                    continue
                 found.append({'stack': stack, 'markers': [marker], 'root': root})
                 break
     return found

@@ -2,7 +2,7 @@
 
 [English](README.md) | **Español**
 
-[![Licencia: Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue)](LICENSE) [![Estado: beta](https://img.shields.io/badge/estado-beta-orange)](docs/plans/10-lanzamiento-publico.md) [![pruebas](https://img.shields.io/github/actions/workflow/status/MadManJohnSmith/Improvement/ci.yml?label=pruebas)](https://github.com/MadManJohnSmith/Improvement/actions/workflows/ci.yml) [![versión](https://img.shields.io/github/v/release/MadManJohnSmith/Improvement?include_prereleases&sort=semver&label=versi%C3%B3n)](https://github.com/MadManJohnSmith/Improvement/releases)
+[![Licencia: Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue)](LICENSE) [![Estado: beta](https://img.shields.io/badge/estado-beta-orange)](docs/plans/10-lanzamiento-publico.es.md) [![pruebas](https://img.shields.io/github/actions/workflow/status/MadManJohnSmith/Improvement/ci.yml?label=pruebas)](https://github.com/MadManJohnSmith/Improvement/actions/workflows/ci.yml) [![versión](https://img.shields.io/github/v/release/MadManJohnSmith/Improvement?include_prereleases&sort=semver&label=versi%C3%B3n)](https://github.com/MadManJohnSmith/Improvement/releases)
 
 **Un auditor y un reparador que viven junto a tu repositorio: encuentran los defectos
 reales, los arreglan verificándolo con tus propias pruebas y dejan el commit y el push en
@@ -14,11 +14,13 @@ la cabeza de quien lo hizo. Improvement convierte esa rutina en un ciclo con mem
 hablas con prompts de una línea, el framework hace el trabajo pesado y tú decides qué se
 integra.
 
-Al instalarlo, genera **dos modos hechos a la medida de tu proyecto**. El **auditor**
-examina el código y registra cada hallazgo con su evidencia (`archivo:línea`) y su
-severidad. El **reparador** corrige en un repositorio sombra aislado, verifica cada arreglo
-contra los comandos reales de tu proyecto y deja tu árbol intacto. Nada llega a tu rama sin
-pasar por ti.
+Una generación nueva puede incluir **tres modos hechos a la medida de tu proyecto**;
+el implementador es opcional y las generaciones anteriores con dos roles siguen siendo
+válidas. El **auditor** examina el código y registra cada hallazgo con su evidencia
+(`archivo:línea`) y severidad. El **reparador** corrige hallazgos en un repositorio sombra
+aislado. El **implementador** atiende una petición de cambio distinta en su propia
+candidata sombra. La verificación depende de los comandos declarados por el proyecto;
+ninguna candidata llega a tu rama sin tu decisión.
 
 Es un framework probado en tres campañas completas sobre repositorios reales: Syncify
 (una app de música en Rust/Tauri/Vue), RehabWeb (una app clínica en Django/Vue) y LoboApp
@@ -37,14 +39,14 @@ navegador (`npx @deepseek-ai/dsh web`); su
 [documentación](https://deepseek-harness.github.io/deepseek-harness/) cuenta el resto.
 Está en *developer preview* y itera rápido.
 
-Improvement instala en DSH los dos modos generados para tu proyecto, como presets de
+Improvement instala en DSH los modos generados para tu proyecto, como presets de
 agente: es la aplicación donde hablas con ellos. Tus credenciales de proveedor viven en
 DSH; Improvement nunca las lee ni las pide, solo comprueba que el proveedor que
 configuraste existe.
 
 ### Requisitos
 
-Linux, `git` y Python 3, y [DSH](docs/setup-dsh.md) ya configurado con al menos un
+Linux, `git` y Python 3, y [DSH](docs/setup-dsh.es.md) ya configurado con al menos un
 proveedor/modelo tuyo. Nada más.
 
 Clona el framework **junto a tu proyecto, nunca dentro**, y ejecuta un comando:
@@ -57,8 +59,9 @@ python3 -B scripts/bootstrap.py install \
   --launch-dsh
 ```
 
-Eso descubre tu proyecto, genera `<TuProyecto>-auditor` y `<TuProyecto>-continuous-repair`
-con sus skills, valida el paquete en 10 capas, hace backup, instala y activa; si algo
+Eso descubre tu proyecto y solicita generar `<TuProyecto>-auditor` y
+`<TuProyecto>-continuous-repair`, con `<TuProyecto>-implementer` opcional y sus skills; cuando Creator
+termina el paquete, el Host lo valida en 10 capas, hace backup, instala y activa; si algo
 falla, hace rollback dejando el estado recuperable. Tu producto no se toca durante la
 instalación.
 
@@ -80,7 +83,7 @@ estructura que sobrevive a los ciclos:
 
 ## De dónde salen los modos
 
-Los dos modos no salen de una plantilla vacía: se componen en cada instalación desde una
+Los modos no salen de una plantilla vacía: se componen en cada generación desde una
 **biblioteca de skills** con procedencia registrada. La base son 21 skills inmutables —
 desarrollo dirigido por tests, depuración sistemática, endurecimiento de seguridad,
 revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
@@ -108,7 +111,7 @@ caso. Un ensayo real anterior con SC-123 dio `NOT_COVERED` al despachar el caso 
 skill a un modo auditor con layout incompatible, no un score aprobado. Solo observaciones
 ligadas a corpus y candidata por un evaluador verificado podrían entrar en
 `bound-skill-gate`; hasta entonces no hay mejora operacional de la biblioteca demostrada.
-Véase [el procedimiento del gate](docs/usage.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
+Véase [el procedimiento del gate](docs/usage.es.md#compilar-el-corpus-y-ligar-el-gate-a-lo-que-se-midio).
 
 ## Cómo se usa
 
@@ -127,21 +130,21 @@ Cada auditoría deja un handoff con el siguiente prompt listo para copiar. La ca
 vigente es un repositorio sombra provisionado por el Host, con `.git` propio, no una rama
 de tu proyecto: no comparte ancestry para fusionarla. Revisa y valida el diff/patch
 completo contra la verificación registrada antes de aplicarlo en tu proyecto; commit y
-publicación solo por tu decisión. [Procedimiento del operador](docs/usage.md#integración-y-recuperación-de-espacio-operador).
+publicación solo por tu decisión. [Procedimiento del operador](docs/usage.es.md#integración-y-recuperación-de-espacio-operador).
 
-![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.png)
+![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.es.png)
 
 *Ciclo operativo conceptual. El cierre del aprendizaje aún no es operativo: las
 observaciones de las campañas no puntúan automáticamente el corpus de 25 skills. Es un
 diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscuro en la
-[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+[versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html) (controles de la interfaz compartida en inglés).*
 
 ## Los términos que verás
 
 | Término | Qué es |
 |---|---|
-| DSH (DeepSeek Harness) | El runtime de agentes open source de DeepSeek, donde viven los dos modos y tus credenciales de proveedor. |
-| Modo | Cada uno de los dos agentes generados para tu proyecto: el auditor y el reparador. |
+| DSH (DeepSeek Harness) | El runtime de agentes open source de DeepSeek, donde viven los modos generados y tus credenciales de proveedor. |
+| Modo | Un preset específico del proyecto: auditor, continuous-repair o (en generaciones nuevas) implementer. |
 | Hallazgo | Un defecto registrado con evidencia (`archivo:línea`), severidad, causa y prevención. |
 | Handoff | El registro que deja cada auditoría, con el siguiente prompt listo para copiar. |
 | Candidata | El repositorio sombra aislado en el workspace donde el reparador cambia código. |
@@ -207,7 +210,7 @@ la unidad que lo cerró y el arreglo que funcionó. `bootstrap.py state` cuenta 
 Las veintiséis declaradas son el hueco real de la beta: el plan resuelve su comando igual, y
 si falta una herramienta el resultado es `BLOCKED` nombrándola — jamás un `PASS`
 inventado. Ejercitarlas con repositorios reales es exactamente para lo que existe la
-beta. La tabla completa, una fila por stack, está en el [estado comprobado](docs/status.md).
+beta. La tabla completa, una fila por stack, está en el [estado comprobado](docs/status.es.md).
 
 ## Casos reales
 
@@ -294,7 +297,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1096 pruebas en verde** (11 omitidas sin runtime externo).
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1115 pruebas en verde** (11 omitidas sin el módulo DSH externo; medida el 2026-10-14).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 
@@ -360,11 +363,13 @@ real es una skill permanente: `skills/dsh-maintenance-session/SKILL.md`.
 
 ## Qué obtienes en tu repo
 
-![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.png)
+![Qué instala Improvement en tu máquina](docs/diagrams/arquitectura-instalacion.es.png)
 
-*La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, los dos
-modos, la memoria acotada y la frontera de integración. También
-explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
+*La biblioteca con procedencia que alimenta la generación, el guard anti-escalada, el auditor
+y el reparador, la memoria acotada y la frontera de integración (esta vista no muestra el
+tercer rol implementer de las generaciones nuevas). El diagrama distingue los helpers
+publicados por el Host y verificados por SHA-256 (implementados) del canal System 1 advisory
+(diseñado, no implementado). También explorable: [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html) (controles de la interfaz compartida en inglés).*
 
 ```
 tu-proyecto/
@@ -420,10 +425,10 @@ validada mecánicamente; y el ciclo auditoría → reparación → pase, el hall
 persistido, la reparación verificada en una candidata externa y la abstención sin
 autoridad, todo conducido por una **sesión DSH real** el 2026-10-10.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
-estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md), y lo que
+estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md), y lo que
 esa pasada no pudo probar —Creator end-to-end, el corpus de 25 skills contra un modo real,
 una corrida Creator íntegra con la sombra provisionada por el Host— queda dicho como tal en el
-[estado comprobado](docs/status.md), siempre como historia con su fecha.
+[estado comprobado](docs/status.es.md), siempre como historia con su fecha.
 
 Si la sesión se cae a mitad de turno — y en una developer preview pasa — el trabajo no se
 pierde: una candidata interrumpida se reanuda verificando la identidad exacta registrada
@@ -442,15 +447,15 @@ produce.
 
 ## Documentación
 
-- [Uso operativo](docs/usage.md) — el ciclo completo, integración y recuperación de espacio
-- [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html), como HTML explorables
-- [Preparación de DSH](docs/setup-dsh.md)
-- [Estado comprobado](docs/status.md)
-- [Progreso de hitos, una página](docs/progreso-agentico.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
+- [Uso operativo](docs/usage.es.md) — el ciclo completo, integración y recuperación de espacio
+- [Diagramas interactivos](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html) — el ciclo operativo y la [arquitectura instalada](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.es.html), como HTML explorables
+- [Preparación de DSH](docs/setup-dsh.es.md)
+- [Estado comprobado](docs/status.es.md)
+- [Progreso de hitos, una página](docs/progreso-agentico.es.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
-- [Planes de implementación](docs/plans/README.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.md)
+- [Planes de implementación](docs/plans/README.es.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
-- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.md) (publicada el 2026-09-30)
+- [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.es.md) (publicada el 2026-09-30)
 
 ## Licencia
 

@@ -112,6 +112,14 @@ class CampaignGateTests(unittest.TestCase):
         self.assertEqual(self.verdict()['unverified'], [])
         self.assertEqual(ledger.read_bytes(), antes)
 
+    def test_ledger_sin_candidato_no_acredita_pass(self):
+        (self.state / 'work-items.json').unlink()
+        self.write_ledger()
+        code, _output = self.run_gate('pre')
+        self.assertEqual(code, campaign.EXIT_BLOCKED)
+        self.assertEqual(self.verdict()['verdict'], 'BLOCKED')
+        self.assertIn('candidato', self.verdict()['reason'])
+
     def test_ledger_que_no_casa_con_la_candidata_da_fail(self):
         self.write_ledger(diff='f' * 64)
         code, output = self.run_gate('post')
