@@ -6,7 +6,7 @@
 
 This document records only the current status. The detail of previous iterations is in Git/`CHANGELOG.md`, not here.
 
-**Acceptance as of 2026-10-14:** the complete local suite with the external DSH module passes 1112 tests (1 skipped). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. Two post-budget Creator runs spent 1,204,185 and 1,196,251 billable tokens respectively (including cache reads), hit their preventive guards before writing a manifest and remained RETAINED. No post-budget ACTIVE generation exists. These are open operational acceptance gates, not production completion.
+**Acceptance as of 2026-10-14:** the local suite passes 1115 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the prompt carries the reading behaviour measured in a real trial as an economy rule. Four post-budget runs are measured: the first two stopped before writing any manifest, the third spent 1,217,696 tokens with no manifest, and the fourth (prompt 1.1.0) spent 1,185,582 and produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape. All four ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured and the next defect identified.
 
 
 
@@ -92,8 +92,9 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1112 tests … OK (skipped=1)` in this
-working tree. This local run is not DSH operational acceptance. Without the
+closed on 2026-10-14 with `Ran 1115 tests … OK (skipped=11)` in this
+working tree on a machine without the external DSH module; with the module installed
+the same tree skips only 1. This local run is not DSH operational acceptance. Without the
 external components, additional regressions are skipped; each skip names its
 missing component:
 
@@ -297,6 +298,59 @@ indivisibly, so a journal observer cannot stop exactly at the ceiling: the
 last step is the one that crossed it. In both the model continued reading schemas without manifest or
 `turn/end`. Each figure was recalculated separately by decompressing the whole durable journal and
 matched the live accounting.
+
+A third post-budget trial (2026-10-14, `gen-9540ff9e80cc`, same product and the same
+budget) ended `RETAINED` with **1,217,696 billable tokens** (904,576 cache reads) and
+**still no manifest**, so the Creator gate remains open. That trial did measure where the
+context goes and produced the change that is shipped now. Of the 50,054 bytes the old
+prompt sent, the section *"Ciclo operativo obligatorio y experiencia novata"* alone
+accounted for **25,114 bytes (50.2%)**: prose that asked the model to transcribe two JSON
+blobs that the Host already computes and compares byte for byte
+(`expected_lifecycle`, `scripts/mode_lifecycle.py:825`). Those contracts are now
+**materialized into the run** before the prompt names them
+(`materialize_deterministic_contracts`, `scripts/creator_client.py`), the prompt shrank to
+**26,193 bytes (−47.7%)** and the model's work becomes copying instead of re-deriving. The
+regulatory prose survived the cut: the assert fell on the prompt text, now it falls on the
+materialized documents (`test_lifecycle_contracts_are_materialized_exactly`), which is a
+stronger seam because the Host rewrites bytes, not wording.
+
+The third trial also located the new bottleneck, and it is the model's own behaviour rather
+than the prompt: it read `schemas/modes.schema.json` **seven times** and
+`schemas/skills.schema.json` three, built probe packages (`probe-generated`, minimal
+`mode.json`, bare manifest) to test the validator, and read the narrative docs from
+`docs/`. Tool results totalled **598,262 characters** over 64 calls, an average of 9,347 per
+call, with a single schema read returning 64,481. Since that observation is real
+measurement rather than intent, the prompt carries it as a concrete economy rule
+(prompt 1.1.0): each large schema is read once, contracts are not re-read after being
+materialized, and no probe package is built.
+
+### A fourth trial with the economy rules, measured
+
+The fourth post-budget trial (`gen-5d75bb55eaae`, 2026-10-14, same product and budget) ran
+with prompt 1.1.0 and stopped with **1,185,582 billable tokens** — still `RETAINED`, so the
+**Creator gate remains open**. What changed is what it produced where the third produced
+nothing: **the first complete post-budget package with a manifest** (22 files, 20 artifacts,
+`generation-manifest.json`, `acceptance-plan.json`, the three modes and their skills). The
+spending pattern the rule targeted did move: the schema reads went from seven copies of
+`modes.schema.json` to one per schema, and there are no probe packages in its 47 tool calls
+(against seven schema reads and three probes before). Fewer tokens on the same product is
+not the win by itself; reaching the end of the package is.
+
+Two measured facts qualify that progress, and neither is asserted about the model's
+intention:
+
+- The package **failed** Host validation, in four layers: a `license_provenance` entry
+  missing `file`, `generated/build.py` not listed in the manifest, and the three
+  `agent.cordis.yml` written with the wrong shape — `name:`/`plugins:` nesting instead of
+  the top-level `- id:` rows the composition parser expects, which fails
+  `validate_persona_bootstrap` for all three modes. So the materialized contracts were
+  copied correctly, but the composition contract was not.
+- It stopped on the **token** guard, not the clock: 300.61 s elapsed of the 1,500 allowed,
+  with 1,185,582 billable tokens against the 1.25 M ceiling. So the wall-clock deadline was
+  nowhere near binding, and the package still ran out of tokens before finishing.
+
+The prompt is currently at **26,193–27,708 bytes** (27508 measured in this trial), against
+the 50,054 of prompt 1.0.0.
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign

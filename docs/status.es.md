@@ -6,7 +6,7 @@
 
 Este documento registra únicamente el estado vigente. El detalle de iteraciones anteriores está en Git/`CHANGELOG.md`, no aquí.
 
-**Aceptación al 2026-10-14:** la suite local completa con el módulo DSH externo pasa 1112 pruebas (1 omitida). La verificación Host del implementador liga un comando al plan de capacidades verificado por digest. Sobre un checkout fresco de Syncify remoto en `9e4cb5b`, una candidata sombra externa pasó el gate Host ligado al plan y 278 pruebas Python (2 omitidas, 81 subpruebas); es un caso Host acotado, no un nuevo turno DSH del implementador ni aceptación completa del escritorio. El preflight Host del corpus ahora comprueba publicación ACTIVE, recibo, archivos de skills y layout del modo; un evaluador compatible futuro también debe observar una llamada y un resultado correctos de la herramienta skill en el mismo turno, pero el adaptador actual sigue absteniéndose antes de crear sesión porque no puede acreditar el layout por caso ni la carga efectiva. Ensayos U6 reales con DSH web produjeron journals verificables por digest, pero quedaron RETAINED: un preset copiado conservaba una raíz de sesión antigua y no escribió el resultado de auditoría contratado; no se obtuvo un veredicto Host completo de campaña. La ruta `nrouter-raw/Orquestrador` completó inferencia, corrigiendo el diagnóstico previo sobre acceso a inferencia. Dos corridas Creator post-budget gastaron 1.204.185 y 1.196.251 tokens facturables respectivamente (incluidas lecturas de caché), alcanzaron sus guardias preventivas antes de escribir un manifest y quedaron RETAINED. No hay generación ACTIVE post-budget. Son gates de aceptación operativa abiertos, no una terminación de producción.
+**Aceptación al 2026-10-14:** la suite local pasa 1115 pruebas en una máquina sin el módulo DSH externo (11 omitidas; con el módulo instalado solo se omite 1). La verificación Host del implementador liga un comando al plan de capacidades verificado por digest. Sobre un checkout fresco de Syncify remoto en `9e4cb5b`, una candidata sombra externa pasó el gate Host ligado al plan y 278 pruebas Python (2 omitidas, 81 subpruebas); es un caso Host acotado, no un nuevo turno DSH del implementador ni aceptación completa del escritorio. El preflight Host del corpus ahora comprueba publicación ACTIVE, recibo, archivos de skills y layout del modo; un evaluador compatible futuro también debe observar una llamada y un resultado correctos de la herramienta skill en el mismo turno, pero el adaptador actual sigue absteniéndose antes de crear sesión porque aún no puede acreditar el layout del preset por caso ni la carga efectiva. Ensayos U6 reales con DSH web produjeron journals verificables por digest, pero quedaron RETAINED: un preset copiado conservaba una raíz de sesión antigua y no escribió el resultado de auditoría contratado; no se obtuvo un veredicto Host completo de campaña. La ruta `nrouter-raw/Orquestrador` completó inferencia, corrigiendo el diagnóstico previo sobre acceso a inferencia. **El gate abierto es Creator.** Contra su coste de generación se entregaron dos cambios estructurales: los contratos deterministas de modo ya se materializan en `contracts/` del run en lugar de que el modelo los transcriba de 25.114 bytes de prosa, lo que bajó el prompt un 47,7 %, y el prompt lleva como regla de economía la conducta de lectura medida en un ensayo real. Se miden cuatro corridas post-budget: las dos primeras se detuvieron antes de escribir manifest, la tercera gastó 1.217.696 tokens sin manifest, y la cuarta (prompt 1.1.0) gastó 1.185.582 y produjo el primer paquete completo con manifest —que después **falló** la validación Host en cuatro capas, con los tres `agent.cordis.yml` escritos con la forma equivocada. Las cuatro corrieron sobre el mismo producto ficticio, no sobre un repositorio real del operador. **No existe generación ACTIVE post-budget**, así que esto no es una terminación de producción: es el gate abierto, con el coste medido y el siguiente defecto identificado.
 
 **Implementador (parcial, aceptación en un solo caso real):** el contrato Host/Creator admite un tercer preset `implementer` opcional y conserva las generaciones de dos roles; la transacción prueba publicación local de los tres. `mode_lifecycle.provision_implementation` liga petición exacta y base limpia a una sombra aislada en workspace, conserva el trabajo sucio al reanudar y `verify_implementation` mide diff y corre un caso de comportamiento en candidata (ahora liga el comando pedido a un plan de capacidades Host verificado por digest y bloquea entrypoints ausentes, alterados o no disponibles); regresiones focalizadas lo ejercitan con producto temporal externo, pero este cambio no tiene aceptación nueva en un turno DSH real. **El 2026-10-10 un turno DSH real** sobre un producto ficticio dejó una candidata externa con commit `95aa9b2`, 6/6 tests nuevos correctos y el producto sin el campo pedido, sin commit/merge/push implícitos: el mecanismo se ejerció, en un solo caso y con la candidata creada como clon dentro del workspace. `skill_router` solo selecciona sobre roster cuya definición/entrypoint/bundle/recibo están ligados al manifest de la generación ACTIVE; abstiene si falta evidencia, presupuesto o integridad. **Sí se cargaron e invocaron skills en sesión DSH real** (auditor 3, reparador 2, implementador 1; un turno trivial no cargó ninguna), pero `skill_router` sigue siendo solo selector informativo y no se ha ejercitado contra una sesión real. **La reparación ya no pide un `worktree` del producto**: `mode_lifecycle.provision_repair` crea, desde el Host, un repositorio sombra con `.git` propio bajo el workspace y la sesión solo lo verifica y registra (contrato `Host-provision_repair-shadow-only`). **Probado en dos ensayos externos distintos, con límite bien acotado**: bajo headless DSH real (`x1-live`) la sombra del Host, `PROVISIONED → DIRTY`, el diff verificado, tests 3/3 y la reanudación exacta se ejercieron, con producto intacto; bajo web RPC con preset real y `bwrap` (`x1-preset-real`) el preset se resolvió, cargó su skill y ejecutó los sentinelas, pero el supervisor detuvo los turnos por presupuesto **antes de editar** (99.022 medidos con 128.213 proyectados, y después 97.973 con 127.227, frente a 120.000 por turno; el ensayo acumuló 243.165 totalTokens); **El 2026-10-11, con el techo subido a 200.000, el modo completó la edición y luego el cierre**: 11 pasos y 180.107 tokens para reparar (`Math.round(valor)` → `Math.round(valor * 100) / 100` y el total con IVA redondeado sobre la tarifa ya redondeada), con el producto canónico intacto. En un turno posterior, **ya con los comandos publicados como archivos verificados por digest**, el modo cerró el ciclo: emitió `__IMPROVEMENT_CANDIDATE_RECORD__` con `status: DIRTY`, `candidate_diff_digest` y `changed_paths`, lo persiguió en `work-items.json` y ejecutó el entrypoint del producto contra la sombra (3/3 en verde). El ciclo íntegro bajo preset real queda **probado en sus dos tramos**, con la salvedad de que el registro `DIRTY` lo persistió el modo mediante edición sobre el archivo de estado, no por el comando de registro canónico. Sigue sin probarse confinamiento mecánico de bash en campaña. Workflow de usuario entra por `bootstrap workflow run`, no por plugin de modo; se mantiene la prohibición de filas delegat/subagent/workflow. No hay publicación remota.
 
@@ -91,8 +91,9 @@ Esta experiencia está implementada (C0–C7) y en hardening sobre piloto real; 
 La cuenta que se publica («NNN pruebas en verde») no es el total, y decirlo es
 justo lo que la hace publicable. La cifra vigente se **mide**, no se recuerda:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/ruta/al/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-cerró el 2026-10-14 con `Ran 1112 tests … OK (skipped=1)` en este
-árbol de trabajo. Esta corrida local no constituye aceptación operativa DSH.
+cerró el 2026-10-14 con `Ran 1115 tests … OK (skipped=11)` en este
+árbol de trabajo en una máquina sin el módulo DSH externo; con el módulo instalado
+el mismo árbol omite solo 1. Esta corrida local no constituye aceptación operativa DSH.
 Sin los componentes externos se omiten regresiones adicionales; cada omisión
 nombra el componente que falta:
 
@@ -308,6 +309,59 @@ indivisible, así que un observador del journal no puede parar exactamente en el
 último paso fue el que lo pasó. En ambos el modelo seguía leyendo schemas sin manifest ni
 `turn/end`. Cada cifra se recalculara aparte descomprimiendo el journal durable completo y
 coincidió con la contabilidad en vivo.
+
+Un tercer ensayo post-budget (2026-10-14, `gen-9540ff9e80cc`, mismo producto y mismo
+presupuesto) quedó `RETAINED` con **1.217.696 tokens facturables** (904.576 lecturas de
+caché) y **seguía sin manifest**: el gate del Creator continúa abierto. Ese ensayo sí midió
+hacia dónde se va el contexto y produjo el cambio que se entrega ahora. De los 50.054 bytes
+que enviaba el prompt antiguo, la sección *"Ciclo operativo obligatorio y experiencia
+novata"* ocupaba sola **25.114 bytes (50,2 %)**: prosa que pedía al modelo transcribir dos
+objetos JSON que el Host ya calcula y compara byte a byte (`expected_lifecycle`,
+`scripts/mode_lifecycle.py:825`). Esos contratos ahora se **materializan en el run** antes de
+que el prompt los nombre (`materialize_deterministic_contracts`,
+`scripts/creator_client.py`), el prompt bajó a **26.193 bytes (−47,7 %)** y el trabajo del
+modelo pasa a copiar en lugar de rederivar. La prosa normativa sobrevivió al recorte: la
+aserción estaba sobre el texto del prompt y ahora cae sobre los documentos materializados
+(`test_lifecycle_contracts_are_materialized_exactly`), que es una costura más fuerte porque
+el Host reescribe bytes, no redacción.
+
+El tercer ensayo también localizó el cuello nuevo, y es la conducta del modelo, no el
+prompt: leyó `schemas/modes.schema.json` siete veces, `schemas/skills.schema.json` tres,
+construyó paquetes de sondeo (`probe-generated`, `mode.json` mínimo, manifest vacío) para
+tantear al validador y leyó la documentación narrativa de `docs/`. Los resultados de
+herramientas sumaron **598.262 caracteres** en 64 llamadas, 9.347 de media por llamada, con
+una sola lectura de schema devolviendo 64.481. Como esa observación es medición real y no
+intención, el prompt la lleva como regla concreta de economía (prompt 1.1.0): cada schema
+grande se lee una vez, los contratos materializados no se releen y no se construyen
+paquetes de sondeo.
+
+### Un cuarto ensayo con las reglas de economía, medido
+
+El cuarto ensayo post-budget (`gen-5d75bb55eaae`, 2026-10-14, mismo producto y mismo
+presupuesto) corrió con el prompt 1.1.0 y se detuvo con **1.185.582 tokens facturables**:
+sigue `RETAINED`, así que el **gate del Creator continúa abierto**. Lo que cambió es qué
+produjo donde el tercero no produjo nada: **el primer paquete post-budget completo con
+manifest** (22 ficheros, 20 artefactos, `generation-manifest.json`, `acceptance-plan.json`,
+los tres modos y sus skills). El patrón de gasto que la regla atacaba sí se movió: las
+lecturas de schemas pasaron de siete copias de `modes.schema.json` a una por schema, y sus
+47 llamadas de herramienta no construyen ningún paquete de sondeo (frente a siete lecturas y
+tres sondeos antes). Gastar menos tokens sobre el mismo producto no es la ganancia por sí
+sola; llegar al final del paquete sí lo es.
+
+Dos hechos medidos matizan ese avance, y ninguno se afirma sobre la intención del modelo:
+
+- El paquete **falló** la validación del Host en cuatro capas: una entrada de
+  `license_provenance` sin `file`, `generated/build.py` fuera del manifest, y los tres
+  `agent.cordis.yml` escritos con la forma equivocada —anidamiento `name:`/`plugins:` en
+  vez de las filas `- id:` de nivel superior que espera el parser de composición—, lo que
+  rompe `validate_persona_bootstrap` en los tres modos. Los contratos materializados se
+  copiaron bien; el contrato de composición no.
+- Se detuvo por la guardia de **tokens**, no por reloj: 300,61 s transcurridos de 1.500
+  permitidos, con 1.185.582 tokens facturables frente al techo de 1,25 M. El deadline de
+  pared no estaba cerca de obligar, y aun así se agotaron los tokens antes de terminar.
+
+El prompt mide ahora **26.193–27.708 bytes** (27508 en este ensayo), frente a los 50.054
+del prompt 1.0.0.
 
 Tampoco se midió coste en dinero en este entorno: se declara en tokens (≈1.456.519 tokens en los
 seis turnos con uso medido). El pase es una muestra sobre un producto ficticio, no una campaña

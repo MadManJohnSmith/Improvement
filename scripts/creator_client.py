@@ -31,10 +31,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
-from mode_lifecycle import (repair_candidate_diff_command,
-                            repair_provision_command, repair_reconcile_command,
-                            repair_recording_command, repair_resume_command,
-                            startup_check)
+from mode_lifecycle import expected_lifecycle, startup_check
 from onboard import checked
 import workflow_reasoning
 
@@ -51,7 +48,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -206,6 +203,54 @@ def _run_workspace(run_dir):
     return run_dir.parent.parent if run_dir.parent.name == "creator-runs" else run_dir.parent
 
 
+# Deterministic role contracts, precomputed by the Host (§5.4). The Creator must
+# copy them, not recompute them: the Validator compares them byte for byte, so a
+# model transcribing them from prose is paying tokens to reproduce a value the
+# Host already knows. Writing them into the run makes the package a copy instead
+# of a re-derivation.
+MATERIALIZED_ROLES = ("auditor", "continuous-repair", "implementer")
+
+
+def _deterministic_contracts(run_dir, layout):
+    """Return the per-role contracts the Host already computes exactly."""
+    return {role: expected_lifecycle(role, layout) for role in MATERIALIZED_ROLES}
+
+
+def materialize_deterministic_contracts(run_dir, layout):
+    """Write the exact mode contracts into ``contracts/`` of the run.
+
+    The prompt then only names these files instead of asking the model to
+    reproduce their content. Deterministic, idempotent and fail-closed: a
+    missing or altered document raises, because a silently stale contract would
+    make the package diverge from what the Validator will demand.
+    """
+    run_dir = Path(run_dir)
+    target = run_dir / "contracts"
+    target.mkdir(parents=True, exist_ok=True)
+    written = {}
+    for role, contract in _deterministic_contracts(run_dir, layout).items():
+        path = target / f"{role}.mode-lifecycle.json"
+        payload = json.dumps(contract, ensure_ascii=False, indent=2,
+                             sort_keys=True) + "\n"
+        if path.is_symlink():
+            raise ValueError(f"Contrato determinista es enlace simbólico: {path}")
+        if path.exists():
+            if not path.is_file():
+                raise ValueError(f"Contrato determinista no es archivo: {path}")
+            try:
+                current = path.read_text(encoding="utf-8")
+            except OSError as error:
+                raise ValueError(f"Contrato determinista ilegible {path}: {error}") from error
+            if current != payload:
+                raise ValueError(
+                    f"Contrato determinista alterado: {path}; "
+                    "el Host lo recalcula y no acepta una versión distinta")
+        else:
+            path.write_text(payload, encoding="utf-8")
+        written[role] = path
+    return written
+
+
 def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
     """Build the versioned Creator prompt from run inputs (§4.5).
 
@@ -231,11 +276,6 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     workspace_root = layout["workspace_root"]
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
-    repair_command = repair_provision_command(layout)
-    repair_diff_command = repair_candidate_diff_command(layout)
-    repair_resume = repair_resume_command(layout)
-    repair_record_command = repair_recording_command(layout)
-    repair_reconcile_cmd = repair_reconcile_command(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
 
     header = f"""# Creator Generation Request — {project_name}
@@ -265,6 +305,22 @@ regla imprescindible, consulta la sección pertinente del schema o contrato,
 no la implementación completa. Esto reduce lecturas sin cambiar el presupuesto
 ni los criterios del Host; no declares GENERATED ni ACTIVE sin la validación y
 aceptación reales.
+
+Reglas concretas de economía, derivadas de ensayos reales de este run:
+
+- Los contratos deterministas ya están materializados: `mode_lifecycle` y los
+  comandos de repair/implementer se leen una vez de `contracts/` y se copian.
+  Releerlos o reimprimirlos en bash para "inspeccionarlos" vuelve a gastar el
+  contexto que ahorró la materialización.
+- Los schemas grandes (`schemas/modes.schema.json`, `schemas/skills.schema.json`)
+  se leen **una sola vez cada uno** y ya: su lectura repetida es el mayor gasto
+  medido de la generación. Cuando un error de la prevalidación Host nombre el
+  campo, corrige el archivo y revalida: no releas el schema entero de nuevo.
+- No construyas paquetes de sondeo (`probe-generated`, `mode.json` vacío, manifest
+  mínimo) para tantear al validador: cada sondeo devuelve el informe completo y se
+  paga dos veces. Escribe el paquete real en `generated/` y validalo.
+- No leas documentación narrativa del framework (`docs/`, `tests/`) para deducir
+  reglas: el contrato vigente está en este prompt, en `contracts/` y en los schemas.
 """
 
     if prompt_type == "initial_onboarding":
@@ -434,9 +490,10 @@ en resultados DSH exitosos. Está prohibido separar o reescribir el comando, con
 tras un check fallido,
 inferir, ascender, hacer `cd` o cambiar workdir para buscar el layout. Todas las rutas
 relativas posteriores se resuelven desde ese cwd observado e inalterado. En Auditor,
-toda llamada bash del turno omite `workdir` o usa exactamente `.` (`bash_workdir:
-session-cwd-only-all-calls`); un comando planeado que requiera otro workdir se reescribe
-antes de invocarlo con `git -C <product>`, `npm --prefix <product>/ui`,
+toda llamada bash del turno omite `workdir` o usa exactamente `.`
+(`bash_workdir: session-cwd-only-all-calls`); un comando planeado que requiera otro
+workdir se reescribe antes de invocarlo con `git -C <product>`,
+`npm --prefix <product>/ui`,
 `cargo --manifest-path <product>/Cargo.toml` o una opción equivalente. Nunca usa `cd` ni
 workdir de subdirectorio: cualquier override accidental o drift de `pwd` produce
 inmediatamente `RETAINED`, sin reintento ni más acciones. Esta regla no elimina el
@@ -445,150 +502,24 @@ código.
 
 ## Ciclo operativo obligatorio y experiencia novata
 
-Los dos `mode.json` y sus `SKILL.md` deben repetir exactamente un bloque estructurado
-`json mode-lifecycle`; el Host compara el JSON por rol, no acepta promesas narrativas.
-Usa `schema_version: 1`, `state_root: "{state_root}"`, `state_schema:
-"state-schema.json"`, `read_before_write: true`, `write_method:
-"workflow_write-full-replacement-not-atomic"` y estos límites exactos en ambos:
-`findings.jsonl: 200`, `handoffs.jsonl: 50`, `work-items.json: 200`,
-`verification-results.jsonl: 200`, `overflows.jsonl: 100`.
-
-Ambos modos declaran y aplican `overflow_receipt` sobre `overflows.jsonl`: antes de
-cualquier reemplazo completo que descarte registros por límite de archivo o por
-deduplicación, añade primero a `overflows.jsonl` un recibo con `overflow_id` nuevo y
-único, el `file` afectado, la `reason` de la causa y `dropped_records` con hasta 32
-identificadores de lo descartado; solo después escribe el archivo compactado. Un
-registro que sale del estado sin recibo es una pérdida sin traza.
-
-Auditor debe incluir `audit_handoff` con `required_before_final: true`, dedupe
-`["finding_id","base_revision"]`, writes `findings.jsonl`, `handoffs.jsonl`,
-`work-items.json`, persist_order `["findings.jsonl","handoffs.jsonl","work-items.json"]`,
-`evidence_anchor` con `fields_written_by_the_mode: [path, excerpt]`,
-`fields_computed_by_the_tool: [line, located, fingerprint, prior_episode]`, excerpt
-verbatim con su indentación,
-`resolved: exactly-one-occurrence-in-the-product`, `absent` y `ambiguous` con
-`refused-write` (nunca adivinar), `no_anchor: allowed-and-visible-...`; el bloque
-`episodic_memory` con index `mode-state/episodes-index.json`,
-`written_by: host-only-on-a-verified-repair`, `consult_before_persisting: true` y
-`repeat_is_not_new_work: the-prevention-failed-which-is-its-own-finding`; final_fields
-`persisted_path`, `persisted_count`, `next_prompt`, la regla
-`persisted_count: copy-the-number-the-count-command-prints` con su `count_command`
-central, `handoff_coverage: audit-handoff-names-every-open-finding-at-its-base-revision`
-y next_prompt exacto `Repara los hallazgos de la auditoría; no publiques.`. Su
-procedimiento lee primero el estado actual, deduplica por finding/base, conserva
-solo los 200 hallazgos y 50 handoffs más recientes, y reemplaza cada archivo
-completo con `workflow_write` en el orden declarado; el handoff de auditoría nombra
-exactamente los hallazgos que `findings.jsonl` deja OPEN en esa misma base, y el
-conteo reportado es el que imprime el `count_command` (que recalcula el conjunto
-abierto desde el fichero y verifica la cobertura del handoff), nunca un número
-recordado. Debe funcionar con `Audita completamente este proyecto; no modifiques
-ni publiques.`.
-
-Ambos lifecycle incluyen `startup` con el comando inicial exacto y `tool_policy` con
-`session_workdir: observed-unchanged-session-cwd`; Auditor declara además
-`bash_workdir: session-cwd-only-all-calls`, solo usa bash read-only y `workflow_write`
-para estado, y retiene inmediatamente ante cualquier override; Repair jamás usa tools
-write/edit, y cualquier comando que cambie código usa bash con workdir exactamente igual
-al candidato. Antes de operar Repair captura HEAD y `status --porcelain=v1` canónicos,
-los vuelve a comprobar tras cada fase y ante cualquier drift queda RETAINED sin más
-acciones. Comprueba además que el diff pertenece solo al candidato.
-
-Implementer usa `expected_lifecycle("implementer", layout)` y el prefijo persona
-`persona_prefix(preset_id, "implementer")` exacto. No convierte la petición de cambio
-en finding_id. La candidata kind=implement se provisiona SOLO por Host a partir de
-petición exacta y base limpia con `provision_implementation`, en espacio `implement/`
-del workspace, con `.git` propio. La persona no inventa un worktree ni obtiene
-escritura canónica; cualquier falta de recibo o deriva es RETAINED. Aceptación:
-caso verificable del comportamiento nuevo y entrypoints reales del producto;
-FAIL/BLOCKED no son PASS. Ningún prompt concede commit, merge, push ni publicación.
-
-Continuous Repair incluye el procedimiento exacto de `expected_lifecycle`: el prompt
-simple autoriza crear/reusar y editar el candidato, no commit/merge/push/publicación.
-La identidad es SHA-256 de `full-base + LF + IDs seleccionados únicos ordenados`; usa
-los primeros 16 hex en `candidates/repair-<digest16>`. El contrato declara `candidate_root`
-exacto `${{session-cwd}}/<workspace>/candidates/repair-<digest16>` y `candidate_workdir`
-relativo `<workspace>/candidates/repair-<digest16>` y `provision_workdir:
-omitted-session-cwd`. Verifica desde el cwd de sesión con `workdir` omitido ejecutando el
-`provision_command` central exacto, sustituyendo sus tres
-placeholders `<digest16>`, `<full-base>` y `<declared-base>` ya validados:
-`{repair_command}`. **Ese comando es una puerta de solo lectura sobre la sombra que el
-Host ya provisionó, no una provisión**: el contrato declara
-`provision: Host-provision_repair-shadow-only`, y sin recibo del Host el resultado es
-`RETAINED`; clonar, hacer `worktree add` o inicializar git en bash está prohibido.
-**La candidata es un repositorio sombra con su propio `.git`, no un worktree del producto.**
-Un worktree guarda índice y HEAD en el `.git/worktrees/` del producto, así que con el
-producto en solo lectura —que es lo que el sandbox impone— hasta `git add` falla dentro de
-la candidata. La sombra se crea copiando el árbol de trabajo sin `.git` e inicializando un
-repositorio propio, de modo que una sola raíz escribible cubre candidata y estado y el
-producto queda de solo lectura real. Está prohibido crear o aceptar una candidata bajo
-`./{product_root}/...` o que comparta su `.git`. La integración es el patch que produce
-`candidate_diff_command`; el operador lo aplica.
-La verificación del candidato usa el entrypoint propio del producto listado en el plan de
-capacidades (`.dsh-managed/capability-plan.json`, escrito por el Host al instalar): su comando de
-pruebas y, cuando exista, su lint, ejecutados contra la sombra candidata; el `command` de todo
-registro de verificación es ese entrypoint. Un arnés, mock o copia del código del producto escrita
-a mano es material de investigación y jamás se registra como resultado de verificación
-(`real_stack_verification.evidence: product-own-entrypoint-only`): no demuestra el comportamiento
-del producto real. Si el entrypoint no corre por una capacidad faltante, materialízala exactamente
-como diga el `provision_step` del plan — cada artefacto fuera del árbol del producto, y dentro del
-producto solo para rutas que el plan marque como gitignored. Si la capacidad sigue faltando,
-registra `BLOCKED` nombrando la capacidad exacta y su paso de provisión; nunca PASS, nunca FAIL,
-nunca un stub.
-La base registrada en hallazgos, handoffs e ítems es procedencia de auditoría, no un candado. Si
-esa base declarada difiere del HEAD canónico actual del producto, el modo PRUEBA la relación en
-lugar de improvisar: exige el producto canónico limpio y pasa la base declarada en el placeholder
-`declared_base` del comando de provisión exacto, que ejecuta la comprobación de ascendencia. Si y
-solo si esa comprobación pasa y el producto está limpio, reancla (`stale_base_policy:
-re-anchor-when-declared-base-is-ancestor-of-clean-head`): `full_base` es el HEAD canónico actual,
-la identidad de la candidata se deriva de esa base efectiva, el `base_revision` de la candidata
-registrada es la base efectiva, y el informe final declara ambas bases con la prueba de ancestría.
-Hallazgos y handoffs conservan su base declarada sin cambios. Cualquier otra relación (historia
-divergente, historia reescrita o forzada, producto canónico sucio, base desconocida) es
-`RETAINED` duro sin más acción.
-Antes de crear/reusar lee y valida estrictamente `work-items.json.candidate`. Si el target
-está sucio, solo permite `resume_policy: exact-recorded-only`: mismo path, branch,
-base y digest de hallazgos, estado `DIRTY` o `RETAINED` pendiente de verificación, y
-evidencia `candidate_diff_digest` + `changed_paths`. Captura esa evidencia con el comando
-central `{repair_diff_command}`. Reanuda sin cambiar bytes únicamente con el comando
-central `{repair_resume}`, sustituyendo sus tres slots por valores ya validados. Este
-recomprueba sombra registrada exacta, HEAD base, canonical limpio/inalterado, diff no
-vacío y byte-idéntico, paths completos confinados a archivos regulares sin symlinks y
-ausencia de submódulos. Registro ausente o discrepancia de digest/path/base/status deja
-la colisión `RETAINED`; nunca adopta una sombra sucia arbitraria.
-Declara además `record_before_first_edit: true`, `record_statuses:
-["PROVISIONED","DIRTY"]`, `unrecorded_dirty_target: RETAINED-never-adopted`,
-`interrupted_turn_recovery: recorded-PROVISIONED-target-may-become-DIRTY-by-recording-command`
-y el comando central `{repair_record_command}`. Si el comando central de reanudación falla SOLO porque el `candidate_diff_digest` registrado quedó obsoleto mientras el registro ya coincidía exactamente en path, branch, base y digest de hallazgos, eso NO es una colisión y NUNCA requiere decisión del operador: ejecuta el comando central `{repair_reconcile_cmd}`, persiste el objeto JSON que imprime tras el marcador `__IMPROVEMENT_CANDIDATE_RECONCILE__` verbatim como el nuevo registro `DIRTY` y reanuda normalmente (`stale_record_policy: reconcile-then-resume`, con las precondiciones exactas de identidad target, worktree registrado, HEAD base, canonical limpio e inalterado, diff no vacío, paths confinados sin symlinks y sin submódulos). Cualquier discrepancia real de path, branch, base o digest de hallazgos sigue siendo `RETAINED` duro. Todo registro de candidata es el objeto JSON exacto que los comandos centrales imprimen tras su marcador: se persiste verbatim, campo a campo, sin añadir, quitar, renombrar, reordenar ni reformatear campos y sin alterar valores (la `path` es el nombre relativo del candidato que trae el objeto, nunca una ruta absoluta); editar a mano, re-clavar o envolver el objeto emitido para que encaje está prohibido. El procedimiento DEBE reclamar la
-candidata antes de editarla: nada de cambio de código puede ocurrir antes de que exista
-`work-items.json.candidate` con estado `PROVISIONED` que coincida en path, branch, head,
-base y `finding_ids_digest`. Ese reclamo se persiste con el `recording_command` central
-justo después de que el `provision_command` tenga éxito, guardando verbatim el objeto
-JSON impreso tras el marcador `__IMPROVEMENT_CANDIDATE_RECORD__`; tras el primer cambio
-de código se repite el mismo comando y se persiste el objeto recién emitido de la misma
-forma verbatim (ya trae `status: DIRTY` con `candidate_diff_digest` y `changed_paths`).
-Si el objeto verbatim no se puede persistir, no se cambia código y se reporta
-`RETAINED`. Una candidata registrada `PROVISIONED` que ya aparezca sucia es un
-turno interrumpido: se recupera con el `recording_command`, jamás creando otra vez ni
-descartando su diff.
-Para creación o reutilización limpia ejecuta literalmente el `provision_command` central,
-cuyos `provision_checks` se limitan a invariantes canónicos y a la identidad target: path
-y branch target ausentes o reutilizables como la misma sombra, HEAD/base y limpieza del
-target al reutilizar, sin colisión del target. El contrato declara
-`unrelated_candidates: ignore-preserve`: está expresamente prohibido validar supuestos
-sobre candidatas ajenas o bloquear, modificar o borrar una por estar dirty, clean, stale
-o en otra base. No improvisa: solo una incompatibilidad del target queda RETAINED con
-una acción concreta. Las
-llamadas bash posteriores que modifican o prueban código usan `workdir` exactamente
-`{workspace_root}/candidates/repair-<digest16>` relativo al cwd de sesión, nunca `.`. Modifica y
-prueba solo candidato; lo deja sucio o produce patch. `candidate_commit` es null salvo
-una solicitud de usuario separada y explícita que autorice commit. Nunca
-merge/push/publish.
-
-El estado tiene schemas estrictos y caps de archivo/registro. `workflow_write` hace
-reemplazos completos por archivo, no una transacción multiarchivo ni control de
-concurrencia; el lifecycle no se declara HECHO hasta que exista prueba real DSH y un
-protocolo de escritor único/lease o tool Host equivalente. Debe funcionar con
-`Repara los hallazgos de la auditoría; no publiques.` sin JSON, paths ni configuración.
+El Host ya calculó en `contracts/` los tres contratos `mode-lifecycle` exactos
+para este layout: `auditor.mode-lifecycle.json`,
+`continuous-repair.mode-lifecycle.json` e `implementer.mode-lifecycle.json`.
+Para cada rol copia el objeto íntegro del fichero correspondiente, sin
+reconstruirlo ni simplificarlo, en `mode.json` como `mode_lifecycle` y en
+`SKILL.md` dentro de un único bloque `json mode-lifecycle`. El Host compara
+ambos con `expected_lifecycle(role, layout)`; una diferencia es RETAINED.
+No incluyas los ficheros `contracts/` del run en el manifest: no son artefactos
+Creator, sino entradas Host. La conducta del modo debe aplicar el contrato,
+no limitarse a mostrarlo: estado acotado, recibos de overflow, verificación real,
+workdir de auditor confinado al cwd de sesión, candidata sombra Host de repair
+e implementer, sin commit/merge/push/publicación. Auditor responde al prompt
+`Audita completamente este proyecto; no modifiques ni publiques.` y entrega
+handoff persistido. Repair responde a
+`Repara los hallazgos de la auditoría; no publiques.` usando el estado y los
+comandos exactos del contrato. Implementer
+atiende la petición de cambio del usuario sin transformarla en finding de auditor.
+Ningún modo se declara PASS si su verificación devuelve FAIL o BLOCKED.
 
 ## Salida obligatoria
 
@@ -1150,6 +1081,13 @@ class CreatorSession:
         prompt = build_creator_prompt(
             self.run_dir, run_doc, project_manifest, instructions_index
         )
+
+        # Materialize the deterministic role contracts before the prompt names
+        # them: the model copies these files instead of re-deriving their bytes
+        # from prose.
+        request = _read_json(self.run_dir / "inputs" / "bootstrap-request.json")
+        materialize_deterministic_contracts(
+            self.run_dir, layout_from_paths(request["project"], request["workspace"]))
 
         # Save prompt
         prompt_path = self.run_dir / "creator-prompt.md"
