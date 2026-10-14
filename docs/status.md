@@ -6,7 +6,7 @@
 
 This document records only the current status. The detail of previous iterations is in Git/`CHANGELOG.md`, not here.
 
-**Acceptance as of 2026-10-14:** the local suite passes 1106 tests (11 skipped). Host implementer verification binds one command to the digest-checked capability plan; stack detection no longer mistakes a requirements-only Python project for Django. A fresh remote Syncify checkout at `9e4cb5b` passed six product tests, but the initial candidate trial hit that now-corrected stack-detection defect and no new DSH implementer acceptance was obtained. Corpus Host preflight checks ACTIVE publication, receipt and skill files, then abstains before session creation because per-case preset layout and effective runtime skill loading cannot yet be proved. The U6 gate blocks a ledger with no candidate identity, but no new U6 journal and Host verdict were obtained. A post-budget Creator attempt exited with provider HTTP 403/402 before model inference (zero tokens); it produced no manifest and remained RETAINED. These are open operational acceptance gates, not production completion.
+**Acceptance as of 2026-10-14:** the complete local suite with the external DSH module passes 1112 tests (1 skipped). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. Two post-budget Creator runs spent 1,204,185 and 1,196,251 billable tokens respectively (including cache reads), hit their preventive guards before writing a manifest and remained RETAINED. No post-budget ACTIVE generation exists. These are open operational acceptance gates, not production completion.
 
 
 
@@ -91,10 +91,11 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
-`PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1106 tests … OK (skipped=11)` in this
-working tree. This local run is not DSH operational acceptance. **Eleven regressions are skipped** on a machine
-without the external components, and they all name the missing component:
+`PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
+closed on 2026-10-14 with `Ran 1112 tests … OK (skipped=1)` in this
+working tree. This local run is not DSH operational acceptance. Without the
+external components, additional regressions are skipped; each skip names its
+missing component:
 
 | absent component | what is lost |
 |---|---|

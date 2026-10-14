@@ -182,6 +182,29 @@ class FakeAskClient:
 
 
 class WorkflowAskTests(unittest.TestCase):
+    def test_intermediate_tool_only_message_does_not_abort_correlated_turn(self):
+        state = workflow._new_ask_state()
+        observed = {"running": True, "events": [
+            {"seq": 1, "type": "turn/start", "data": {"turn": 4}},
+            {"seq": 2, "type": "user/message", "data": {"turn": 4,
+             "message": {"source": {"rpcId": "req-4"}}}},
+            {"seq": 3, "type": "assistant/message", "data": {"turn": 4,
+             "message": {"content": [{"type": "reasoning", "text": "private"},
+                                      {"type": "tool-call", "name": "skill"}]}}},
+        ], "descendants": [], "jobs": []}
+        self.assertEqual(workflow._fold_ask(observed, state, "req-4")["texts"], [])
+        self.assertFalse(state["terminal"])
+
+    def test_assistant_text_accepts_real_content_blocks_without_tool_payload(self):
+        self.assertEqual(workflow._assistant_text({"message": {"content": [
+            {"type": "text", "text": "Audit complete"},
+            {"type": "tool_use", "name": "skill", "input": {"secret": "hidden"}},
+            {"type": "text", "text": "Evidence recorded"},
+        ]}}), "Audit complete\nEvidence recorded")
+        self.assertIsNone(workflow._assistant_text({"message": {"content": [
+            {"type": "tool_use", "name": "skill", "input": {"secret": "hidden"}},
+        ]}}))
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

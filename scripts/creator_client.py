@@ -250,6 +250,21 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Workspace directory (exact basename):** `{workspace_root}`
 **Mode-state path from their common parent (exact):** `{state_root}`
 **Base revision:** {base_rev}
+
+## Orden de trabajo y lecturas
+
+La generación es el trabajo principal. Lee primero los inputs de este run y el
+proyecto; usa los contratos exactos incluidos en este prompt y consulta solo los
+schemas normativos que necesites para concretar un archivo. No leas el código
+fuente de host_validator.py, mode_lifecycle.py, layout_contract.py ni
+composition_contract.py para reconstruir sus reglas: la prevalidación Host al
+final es la fuente de errores concretos. Escribe los archivos en `generated/`
+temprano, valida con el comando Host indicado abajo y corrige los errores que
+devuelva; evita inspeccionar implementaciones Host preventivamente. Si falta una
+regla imprescindible, consulta la sección pertinente del schema o contrato,
+no la implementación completa. Esto reduce lecturas sin cambiar el presupuesto
+ni los criterios del Host; no declares GENERATED ni ACTIVE sin la validación y
+aceptación reales.
 """
 
     if prompt_type == "initial_onboarding":

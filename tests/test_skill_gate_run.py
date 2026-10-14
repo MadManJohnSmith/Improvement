@@ -34,6 +34,8 @@ class _FixtureEvaluator(skill_gate_run.CompatibleEvaluator):
     This is not a claim that DSH operational modes can load library skills. A
     production adapter must inspect their effective publication and layout.
     """
+    require_skill_load = False  # Fixture simulates effective catalog, not DSH events.
+
     def prepare(self, client, corpus, mode, root):
         self.root = root
         return {case["case_id"]: mode for case in corpus["cases"]}
@@ -190,6 +192,7 @@ class HostCorpusEvaluatorTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.corpus = corpus_compiler.compile_corpus(LIBRARY)
         self.client = _FakeClient()
+        (self.tmp / "product").mkdir()
         self.managed = self.tmp / "project" / ".dsh-managed"
         self.bundle = self.managed / "bundles" / "generation-1"
         self.skills = self.bundle / "skills"
@@ -198,6 +201,13 @@ class HostCorpusEvaluatorTest(unittest.TestCase):
             path = self.skills / name
             path.mkdir()
             (path / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Test\n---\n")
+        mode_skill = self.skills / "test-auditor"
+        mode_skill.mkdir()
+        (mode_skill / "SKILL.md").write_text(
+            "---\nname: test-auditor\ndescription: Test\n---\n"
+            '```json mode-layout\n{"session_root":"' + self.tmp.name +
+            '","product_root":"product","workspace_root":"project",'
+            '"state_root":"project/mode-state"}\n```\n')
         (self.bundle / "package.json").write_text('{"name":"test"}')
         import transaction
         import hashlib
@@ -223,7 +233,53 @@ class HostCorpusEvaluatorTest(unittest.TestCase):
 
     def test_published_skill_files_still_abstain_on_incompatible_case_layout(self):
         with self.assertRaisesRegex(skill_gate_run.RunnerUnavailable,
-                                    "carga efectiva no observable.*cwd/layout fijo"):
+                                    "carga efectiva no observable"):
+            self.run_host()
+        self.assertEqual(self.client.sessions, [])
+
+    def test_persisted_pass_without_runtime_skill_load_is_not_scored(self):
+        case_dir = self.tmp / "case"
+        case_dir.mkdir()
+        (case_dir / "result.json").write_text(json.dumps({
+            "verdict": "PASS", "evidence": "claimed pass"}))
+        self.assertIsNone(skill_gate_run._read_mode_verdict(
+            self.client, "sess-0", 1, case_dir,
+            target_skill="api-and-interface-design"))
+
+    def test_skill_loading_requires_matching_successful_tool_result(self):
+        call = {"type": "tool/call", "data": {
+            "turn": 1, "callId": "one", "name": "skill",
+            "arguments": '{"name":"api-and-interface-design"}'}}
+        success = {"type": "tool/result", "data": {
+            "turn": 1, "message": {"toolCallId": "one", "isError": False}}}
+        self.assertTrue(skill_gate_run._skill_loaded(
+            [call, success], "api-and-interface-design"))
+        self.assertFalse(skill_gate_run._skill_loaded(
+            [call], "api-and-interface-design"))
+        self.assertFalse(skill_gate_run._skill_loaded(
+            [call, success], "another-skill"))
+        self.assertFalse(skill_gate_run._skill_loaded(
+            [call, {"type": "tool/result", "data": {
+                "turn": 1, "message": {"toolCallId": "one", "isError": True}}}],
+            "api-and-interface-design"))
+        self.assertFalse(skill_gate_run._skill_loaded(
+            [call, {"type": "tool/result", "data": {
+                "turn": 2, "message": {"toolCallId": "one", "isError": False}}}],
+            "api-and-interface-design"))
+
+    def test_wrong_published_mode_layout_abstains_before_session_create(self):
+        import hashlib
+        import transaction
+        path = self.skills / "test-auditor" / "SKILL.md"
+        path.write_text(path.read_text().replace('"product_root":"product"',
+                                                 '"product_root":"other"'))
+        digest = hashlib.sha256(json.dumps(
+            transaction._inventory(self.bundle), sort_keys=True).encode()).hexdigest()
+        (self.managed / "published-presets.json").write_text(json.dumps({
+            "generation_id": "generation-1", "bundle_path": str(self.bundle),
+            "sha256": digest}))
+        with self.assertRaisesRegex(skill_gate_run.RunnerUnavailable,
+                                    "mode-layout no coincide"):
             self.run_host()
         self.assertEqual(self.client.sessions, [])
 

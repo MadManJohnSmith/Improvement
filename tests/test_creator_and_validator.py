@@ -1216,6 +1216,17 @@ class CreatorTests(Base):
         self.assertNotIn("`project-workspace/mode-state`", prompt)
         self.assertIn("--run-dir", prompt)
 
+    def test_prompt_prioritizes_generation_over_validator_source_exploration(self):
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        guidance = prompt.index("## Orden de trabajo y lecturas")
+        self.assertLess(guidance, prompt.index("## Objetivo"))
+        self.assertIn("No leas el código\nfuente de host_validator.py", prompt)
+        self.assertIn("schemas normativos", prompt)
+        self.assertIn("prevalidación Host", prompt)
+        self.assertIn("generated/", prompt)
+        self.assertIn("sin cambiar el presupuesto\nni los criterios del Host", prompt)
+
     def test_prompt_exposes_exact_generation_contracts_and_prevalidation(self):
         cc.CreatorSession(self.run_dir).prepare()
         prompt = (self.run_dir / "creator-prompt.md").read_text()
