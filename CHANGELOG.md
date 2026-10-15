@@ -1,5 +1,22 @@
 # Cambios
 
+## El sexto ensayo Creator: inyectar el lifecycle no redujo el coste — 2026-10-14
+Resultado negativo, registrado como tal porque cambia el diagnóstico.
+- `gen-7384d8946857`, mismo producto ficticio, mismo presupuesto de 1,25 M, con el Host ya
+  inyectando lifecycle y composición (prompt 1.5.0): **1.211.333 tokens facturables**,
+  **sin manifest**, solo `capabilities.json` y `project-manifest.json` en `generated/`.
+  No llegó al paso donde el Host habría inyectado las partes deterministas.
+- **El lazo rojo.** El prompt enviado medía 28.052 bytes y contenía la prohibición literal
+  de leer `host_validator.py` y la regla de leer cada schema grande una sola vez. El
+  journal muestra al modelo leyendo `modes.schema.json` **siete veces**, `skills.schema.json`
+  tres y `host_validator.py` dos, en 52 llamadas. No es un fallo del cambio de inyección;
+  es que el texto no está surtiendo efecto.
+- **Consecuencia para el diseño.** Seis corridas medidas (1,217,696 / 1,185,582 / 1.221,576 /
+  1,217,696 / 1,221,576 / 1.211,333) con el mismo producto y presupuesto establecen que la
+  redacción no controla el patrón de lectura. Lo que queda es del lado del Host: dar a
+  Creator el andamio exacto de salida, o exigir un presupuesto de lecturas verificable fuera
+  del modelo. Suite: **1122 OK (11 omitidas)**.
+
 ## Creator: el Host inyecta el `mode-lifecycle` en lugar de que se copie — 2026-10-14
 El último bloque determinista duplicado. El fence `mode_lifecycle` se escribe dos veces por
 modo (`mode.json` y `SKILL.md`): **58.281 de 97.214 bytes, el 59 %** del paquete real

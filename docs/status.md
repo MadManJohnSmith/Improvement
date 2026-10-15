@@ -6,7 +6,7 @@
 
 This document records only the current status. The detail of previous iterations is in Git/`CHANGELOG.md`, not here.
 
-**Acceptance as of 2026-10-14:** the local suite passes 1116 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the operational composition is materialized the same way. Five post-budget runs are measured: the first two stopped before writing any manifest, the third and the fifth stopped with no manifest as well (1,217,696 and 1,221,576 tokens), and the fourth (prompt 1.1.0, the one that obeyed the reading rule) produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape; a layer that materializing compositions and re-running the validator on the same real package clears completely. All five ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured and the next defect identified.
+**Acceptance as of 2026-10-14:** the local suite passes 1122 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the operational composition is materialized the same way. Six post-budget runs are measured: the first two stopped before writing any manifest, three more stopped with no manifest as well (1,217,696; 1,221,576; 1,211,333) and the fourth (prompt 1.1.0, the one that obeyed the reading rule) produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape; a layer that materializing compositions and re-running the validator on the same real package clears completely. All six ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured, the next defect identified, and six measured runs (1,204,185 / 1,196,251 / 1,217,696 / 1,185,582 / 1,221,576 / 1,211,333 billable tokens) that establish that prose wording does not control the reading pattern, so the remaining work is Host-side scaffolding or an enforced read budget rather than more prompt text.
 
 
 
@@ -391,6 +391,26 @@ reached a manifest. The wording has now been asked to do the work twice; the rem
 structure is to make the Host the only source of what the Creator needs — which is the
 materialization already applied to lifecycle and composition, and is why the next candidate
 is not more prose.
+
+### The sixth trial: injected lifecycle did not reduce the generation cost
+
+The sixth real DSH trial (`gen-7384d8946857`, same fictional product and 1.25 M budget,
+with the Host injecting lifecycle and composition, prompt 1.5.0) ended `RETAINED` at
+**1,211,333 billable tokens**, with **no manifest** and only `capabilities.json` plus
+`project-manifest.json` in `generated/`. It did not reach the step where the Host would
+inject the deterministic parts. That is a negative result for the expectation that removing
+lifecycle transcription would by itself let Creator finish under the budget.
+
+The journal names what occupied the context. In 52 tool calls, the model read
+`schemas/modes.schema.json` **seven times** with the read tool, `skills.schema.json` three
+times and `host_validator.py` twice. The **28,052-byte prompt that was actually sent**
+contained both the explicit prohibition on reading `host_validator.py` and the rule to read
+each large schema only once; the model did both anyway. This is the deterministic red loop:
+the prompt contained the rule, the durable journal records the contradictory calls, and the
+run stopped before the package was written. This does not prove why the model ignored it;
+it does show that more wording is not an effective cost control. The Host must either give
+Creator the exact output scaffold it needs or enforce a read budget outside the model.
+
 
 ### The manifest, derived instead of written: the real package now passes
 
