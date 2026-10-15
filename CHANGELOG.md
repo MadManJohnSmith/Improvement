@@ -1,5 +1,25 @@
 # Cambios
 
+## El séptimo ensayo Creator: entregar el andamiaje no hizo que se escribiera — 2026-10-14
+Medición decisiva, registrada porque cierra una línea de trabajo.
+- `gen-c7d23ab5608d`, mismo producto ficticio y mismo presupuesto de 1,25 M, prompt 1.6.0 con
+  los modos ya escritos y válidos en disco por el Host: **1.240.199 tokens facturables** —el
+  más alto de los siete— y `RETAINED`.
+- El andamiaje quedó **intacto**: los 12 ficheros de modo idénticos byte a byte a los del
+  Host, todos los marcadores `__IMPROVEMENT_FILL_*` en su sitio, y sin `acceptance-plan.json`
+  ni `capabilities.json` ni manifest.
+- **Cero llamadas `write`/`edit` en 41 llamadas de herramienta.** El modelo se pasó el turno
+  leyendo: `skills.schema.json` seis veces con `read` y más con `sed`, sus `mode.json` y
+  `SKILL.md`, y su `generation-manifest.json` tres veces. El `sed` sobre `host_validator.py`
+  desapareció (esa prohibición sí se cumplió); el patrón de lectura no.
+- **Qué se concluye, y es cambio de diseño, no otro ensayo.** Entregarle el paquete al modelo
+  no hace que lo escriba: lo inspecciona y gasta el presupuesto haciéndolo, en una corrida
+  donde no había nada que diseñar. Siete corridas medidas sobre el mismo producto y
+  presupuesto (1.204.185 / 1.196.251 / 1.217.696 / 1.185.582 / 1.221.576 / 1.211.333 /
+  1.240.199) sin ninguna generación ACTIVE post-budget, habiendo probado una vez cada variante
+  de prompt y de entrada preescrita. La siguiente unidad de trabajo es un mecanismo distinto
+  para la prosa que queda, no un octavo intento del mismo. Suite: **1125 OK (11 omitidas)**.
+
 ## Creator: el andamiaje lo escribe el Host antes de la sesión — 2026-10-14
 El sexto ensayo dejó el diagnóstico: la redacción no controla el patrón de lectura, así que
 lo que falta es del lado del Host. Esto es ese paso.
