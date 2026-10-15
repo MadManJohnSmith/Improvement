@@ -862,6 +862,60 @@ def mode_composition(preset_id, role=None):
     return "\n".join(lines) + "\n"
 
 
+_LIFECYCLE_FENCE_RE = re.compile(
+    r"(?ms)^```json mode-lifecycle[ \t]*\n.*?\n```[ \t]*$")
+MATERIALIZED_ROLE_NAMES = frozenset({"auditor", "continuous-repair",
+                                     "implementer"})
+
+
+def inject_lifecycle_contracts(generated, layout):
+    """Write the exact lifecycle contract into each mode's JSON and skill.
+
+    The same contract appears twice per mode: 58,281 of 97,214 bytes (59%) in
+    the real `gen-5d75bb55eaae`. The Validator already computes it, so the
+    Host can inject those bytes while the Creator keeps its own decisions.
+    """
+    generated = Path(generated)
+    modes_root = generated / "modes"
+    if not modes_root.is_dir() or modes_root.is_symlink():
+        raise ValueError("generated/modes/ faltante o enlace simbólico")
+    touched = []
+    for mode_dir in sorted(p for p in modes_root.iterdir()
+                           if p.is_dir() and not p.is_symlink()):
+        mode_path = mode_dir / "mode.json"
+        skill_path = mode_dir / "SKILL.md"
+        if mode_path.is_symlink() or skill_path.is_symlink():
+            raise ValueError(f"{mode_dir.name}: mode.json/SKILL.md enlace simbólico")
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        role = mode.get("role") if isinstance(mode, dict) else None
+        if role not in MATERIALIZED_ROLE_NAMES:
+            raise ValueError(f"{mode_dir.name}/mode.json role inválido: {role!r}")
+        contract = expected_lifecycle(role, layout)
+
+        text = skill_path.read_text(encoding="utf-8")
+        blocks = list(_LIFECYCLE_FENCE_RE.finditer(text))
+        if len(blocks) != 1:
+            raise ValueError(
+                f"{mode_dir.name}/SKILL.md requiere un solo bloque "
+                f"json mode-lifecycle, encontrados: {len(blocks)}")
+        fence = ("```json mode-lifecycle\n"
+                 + json.dumps(contract, ensure_ascii=False, indent=2)
+                 + "\n```")
+        if mode.get("mode_lifecycle") != contract:
+            mode["mode_lifecycle"] = contract
+            mode_path.write_text(
+                json.dumps(mode, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+        if blocks[0].group(0) != fence:
+            skill_path.write_text(
+                text[:blocks[0].start()] + fence + text[blocks[0].end():],
+                encoding="utf-8")
+        touched.append(mode_dir.name)
+    if not touched:
+        raise ValueError("generated/modes/ sin modos que inyectar")
+    return touched
+
+
 def expected_lifecycle(role, layout):
     common = {
         "schema_version": SCHEMA_VERSION,

@@ -733,8 +733,10 @@ class CreatorTests(Base):
         generated, manifest = self.make_package()
         session = cc.CreatorSession(self.run_dir)
         prep = session.prepare()
-        # The Host completes the derived half before finishing, so the digest
-        # that has to survive a rerun is the completed manifest's.
+        # The Host injects the deterministic mode parts and completes the
+        # manifest before finishing, so the digest that survives a rerun is the
+        # post-injection manifest's.
+        cc.inject_deterministic_mode_parts(self.run_dir, generated)
         completed = cc.complete_manifest(self.run_dir, generated,
                                          session_ref="session-generate")
         session.create_finish(completed)
@@ -1309,7 +1311,7 @@ class CreatorTests(Base):
                      "continuous-repair.mode-lifecycle.json",
                      "implementer.mode-lifecycle.json"):
             self.assertIn(f"`{name}`", prompt)
-        self.assertIn("El Host compara\nambos con `expected_lifecycle(role, layout)`", prompt)
+        self.assertIn("El Host **escribe el contrato real dentro de ese bloque**", prompt)
         # The prohibitions the prose carried are inside the contract, so the
         # shortened section did not quietly drop them.
         repair = expected_lifecycle("continuous-repair", layout)["repair_candidate"]
@@ -1333,6 +1335,51 @@ class CreatorTests(Base):
         with self.assertRaises(ValueError) as caught:
             cc.CreatorSession(self.run_dir).prepare()
         self.assertIn("alterado", str(caught.exception))
+
+    def test_host_injects_lifecycle_from_marker_without_model_transcription(self):
+        """The Creator supplies prose; the Host supplies the exact contract.
+
+        The lifecycle JSON appears twice in every generated mode and occupies
+        59% of the real package `gen-5d75bb55eaae`. The model need not write
+        those bytes: a one-line marker is sufficient, and the Host fills the
+        exact object into both `mode.json` and `SKILL.md` before hashes are
+        computed. This test exercises the real validator, not an internal
+        equality helper.
+        """
+        generated, _manifest = self.make_package()
+        for role in ("auditor", "continuous-repair"):
+            mode_dir = generated / "modes" / f"project-{role}"
+            mode_path = mode_dir / "mode.json"
+            mode = json.loads(mode_path.read_text(encoding="utf-8"))
+            mode.pop("mode_lifecycle")
+            mode_path.write_text(json.dumps(mode, indent=2) + "\n")
+            skill_path = mode_dir / "SKILL.md"
+            text = skill_path.read_text(encoding="utf-8")
+            from mode_lifecycle import _LIFECYCLE_FENCE_RE
+            text = _LIFECYCLE_FENCE_RE.sub(
+                "```json mode-lifecycle\n{}\n```", text)
+            skill_path.write_text(text, encoding="utf-8")
+            (mode_dir / "agent.cordis.yml").write_text("placeholder\n")
+
+        touched = cc.inject_deterministic_mode_parts(self.run_dir, generated)
+        self.assertEqual(sorted(touched),
+                         ["project-auditor", "project-continuous-repair"])
+        cc.complete_manifest(self.run_dir, generated,
+                             session_ref="session-real")
+        import host_validator
+        report = host_validator.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.passed, report.layers)
+
+    def test_host_rejects_missing_lifecycle_marker(self):
+        """A missing fence is refused instead of fabricating a skill contract."""
+        generated, _manifest = self.make_package()
+        skill = generated / "modes/project-auditor/SKILL.md"
+        text = skill.read_text(encoding="utf-8")
+        from mode_lifecycle import _LIFECYCLE_FENCE_RE
+        skill.write_text(_LIFECYCLE_FENCE_RE.sub("", text), encoding="utf-8")
+        with self.assertRaises(ValueError) as caught:
+            cc.inject_deterministic_mode_parts(self.run_dir, generated)
+        self.assertIn("mode-lifecycle", str(caught.exception))
 
     def test_mode_composition_is_materialized_and_validates(self):
         """The operational composition is copied, not composed by the model.
@@ -1365,8 +1412,7 @@ class CreatorTests(Base):
             self.assertIn("@deepseek-ai/dsh-tool-fs-search", names)
             self.assertIn("./anti-escalation.mjs", names)
         prompt = (self.run_dir / "creator-prompt.md").read_text()
-        self.assertIn("copia literal", prompt)
-        self.assertIn("filas\n`- id:` de nivel superior, no un documento `name:`/`plugins:`", prompt)
+        self.assertIn("el Host lo reemplaza\ncon las siete filas operativas exactas", prompt)
 
     def test_complete_manifest_recomputes_artifacts_hashes_and_provenance(self):
         """The derived half of the manifest is computed, not transcribed.

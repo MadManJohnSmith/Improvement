@@ -92,7 +92,7 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1120 tests … OK (skipped=11)` in this
+closed on 2026-10-14 with `Ran 1122 tests … OK (skipped=11)` in this
 working tree on a machine without the external DSH module; with the module installed
 the same tree skips only 1. This local run is not DSH operational acceptance. Without the
 external components, additional regressions are skipped; each skip names its
@@ -426,7 +426,32 @@ that bound gives the same zero-layer result with 20 artifacts and no `build.py`.
 
 That is the structural direction, measured on one package rather than claimed: the Creator's
 remaining work is the part only it can decide, and everything derivable is now arithmetic
-the Host does for free. Suite is **1120 tests** (11 skipped without the external module).
+the Host does for free. Suite is **1122 tests** (11 skipped without the external module).
+
+### The lifecycle contract is injected, and the package measured heavier — on purpose
+
+The last remaining block of duplicated determinism was the `mode_lifecycle` fence: the
+same contract is written into `mode.json` **and** into `SKILL.md` for every mode, and in
+the real package `gen-5d75bb55eaae` that duplication is **58,281 of 97,214 bytes, 59%** of
+everything shipped. It is also the block the Validator compares byte for byte, so it is the
+one place where hand-copying buys nothing.
+
+The Creator now writes only a one-line marker in each `SKILL.md` and may leave
+`mode_lifecycle` out of `mode.json`; the Host injects the exact contract into both files
+before hashes are computed (`inject_lifecycle_contracts`, `scripts/mode_lifecycle.py`,
+called from `verify_generation_output`). The prompt stopped asking for a copy that is no
+longer needed.
+
+Measured on the real package: three failing layers (`schema`, `contracts`, `lifecycle`) go
+to **zero** with no manual repair, and the model's own lifecycle text — which it wrote in
+its own key order and formatting — is replaced by the canonical one.
+
+One honest counter-intuitive result: the package gets **heavier**, not lighter (97,214 →
+114,936 bytes, +18,2%). That is not a regression, and it is worth saying why. The size the
+model's package had was low because its three `agent.cordis.yml` were **malformed** — 2,557
+bytes of `name:`/`plugins:` documents that the composition parser rejects — while the
+correct ones are 17,468 bytes. The growth is the cost of shipping a package that is
+actually valid, not of the injection itself.
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign
