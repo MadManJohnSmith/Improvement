@@ -1372,30 +1372,26 @@ class CreatorTests(Base):
         """The derived half of the manifest is computed, not transcribed.
 
         The real run `gen-5d75bb55eaae` failed on exactly these fields: a
-        hand-written artifact list that omitted `build.py`, hashes computed by
-        the model, and a provenance entry missing the required `file`. The
-        completion below repairs all three, and it does it from the run, so the
+        hand-written artifact list that omitted a file still in `generated/`,
+        hashes computed by the model, and a provenance entry missing the required
+        `file`. The completion below repairs all three from the run, so the
         defect class is gone rather than fixed by wording.
         """
         generated, manifest = self.make_package()
         manifest["artifacts"][0]["sha256"] = "0" * 64
         first = json.loads(json.dumps(manifest["artifacts"][0]))
+        omitted = manifest["artifacts"][1]["path"]
         del manifest["artifacts"][1]  # drop an entry: the file is still there
-        (generated / "build.py").write_text("# helper\n")
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
 
-        completed = cc.complete_manifest(self.run_dir, generated)
+        completed = cc.complete_manifest(self.run_dir, generated,
+                                         session_ref="session-real")
 
         paths = {art["path"] for art in completed["artifacts"]}
-        self.assertIn("build.py", paths)
-        on_disk = sorted(p.relative_to(generated).as_posix()
-                         for p in generated.rglob("*")
-                         if p.is_file() and not p.is_symlink()
-                         and p.name != "generation-manifest.json")
-        self.assertEqual(sorted(paths), on_disk)
-        # the first artifact's hash is recomputed, and the restored second one
-        # matches its real file
+        # the omitted entry is restored from what is actually on disk
+        self.assertIn(omitted, paths)
+        self.assertEqual(len(completed["artifacts"]), len(paths))
         actual_first = next(art for art in completed["artifacts"]
                             if art["path"] == first["path"])
         self.assertNotEqual(actual_first["sha256"], "0" * 64)
@@ -1434,6 +1430,23 @@ class CreatorTests(Base):
         })
         completed = cc.complete_manifest(self.run_dir, generated)
         self.assertEqual(completed["creator"]["session_ref"], "session-real-ref")
+
+    def test_complete_manifest_rejects_a_temporary_build_helper(self):
+        """A leftover helper is a defect, not an artifact.
+
+        `gen-5d75bb55eaae` left `build.py` in `generated/` —its own first line
+        said it was meant to be removed before the manifest— and manifesting
+        every file would have shipped it. The Validator already fails on the
+        unmanifested file, so the Host refuses to paper over it by listing it.
+        """
+        generated, _manifest = self.make_package()
+        (generated / "build.py").write_text(
+            "# Temporary Creator build helper; removed before manifest "
+            "generation.\n")
+        with self.assertRaises(ValueError) as caught:
+            cc.complete_manifest(self.run_dir, generated)
+        self.assertIn("fuera del contrato de salida", str(caught.exception))
+        self.assertIn("build.py", str(caught.exception))
 
     def test_complete_manifest_rejects_outside_the_host_contract(self):
         """A manifest carrying extra fields is refused, not silently completed."""

@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
@@ -49,7 +49,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.3.0"
+PROMPT_VERSION = "1.4.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -309,14 +309,37 @@ def materialize_deterministic_contracts(run_dir, layout, project_name):
     return written
 
 
+# Files the prompt declares as output. Anything else found in generated/ is a
+# leftover the Creator meant to remove, not an artifact: the real run left a
+# build helper behind and its own header said it should have been deleted.
+DECLARED_OUTPUT_ROOTS = ("modes", "skills", "contracts")
+DECLARED_OUTPUT_FILES = frozenset({
+    "project-manifest.json", "capabilities.json", "acceptance-plan.json",
+    "generation-report.md",
+})
+
+
+def _is_declared_output(relative):
+    """Whether a file in generated/ belongs to the declared output contract."""
+    path = PurePosixPath(relative)
+    if path.parts[0] in DECLARED_OUTPUT_ROOTS:
+        return True
+    return relative in DECLARED_OUTPUT_FILES
+
+
 def _manifest_derived(run_dir, generated, *, session_ref=None):
     """Return the manifest fields the Host derives from the run and the package.
 
     Every one of these is checked afterwards by the Validator, and every one of
-    them was a real defect in `gen-5d75bb55eaae`: the artifact list missed
-    `build.py` (unmanifested file), the hashes were hand-computed, and a
+    them was a real defect in `gen-5d75bb55eaae`: the artifact list missed a
+    file that was still in `generated/`, the hashes were hand-computed, and a
     provenance entry lacked the required `file`. Deriving them here makes the
     manifest a computed fact instead of a transcription.
+
+    Only files in the declared output contract are manifested. The run left a
+    temporary build helper in the package — its own first line says it was meant
+    to be removed before the manifest — and manifesting every file blindly would
+    turn that leftover into a published artifact.
     """
     run_dir = Path(run_dir)
     generated = Path(generated)
@@ -330,10 +353,14 @@ def _manifest_derived(run_dir, generated, *, session_ref=None):
     import host_validator as hv
 
     artifacts = []
+    stray = []
     for path in sorted(p for p in generated.rglob("*")
                        if p.is_file() and not p.is_symlink()):
         relative = path.relative_to(generated).as_posix()
         if relative == "generation-manifest.json":
+            continue
+        if not _is_declared_output(relative):
+            stray.append(relative)
             continue
         raw = path.read_bytes()
         artifacts.append({
@@ -344,6 +371,10 @@ def _manifest_derived(run_dir, generated, *, session_ref=None):
         })
     if not artifacts:
         raise ValueError("generated/ sin artefactos que manifestar")
+    if stray:
+        raise ValueError(
+            "Archivos fuera del contrato de salida en generated/: "
+            + ", ".join(sorted(stray)))
 
     project = Path(request["project"])
     provenance = []
@@ -731,8 +762,12 @@ Escribe bajo `{run_dir}/generated/`:
   demás** antes de validar —`schema_version`, `generation_id`, `status`, `project`,
   `creator`, `framework`, `artifacts` con rutas, tipos y sha256, `effective_routing_digest`,
   `context_policy` y `license_provenance`—, tomándolo del run y del contenido real de
-  `generated/`: incluye cada fichero que hayas escrito, sin excepción. No escribas hashes a
-  mano ni una lista parcial de artefactos: ambos fueron fallos medidos de una corrida real.
+  `generated/`. Solo se manifiestan los ficheros del contrato de salida de arriba
+  (`modes/`, `skills/`, `contracts/`, `project-manifest.json`, `capabilities.json`,
+  `acceptance-plan.json`, `generation-report.md`): si dejas en `generated/` un helper
+  temporal de construcción, la validación falla nombrandolo en lugar de manifestarlo. Borra
+  tus ficheros auxiliares antes de terminar. No escribas hashes a mano ni una lista parcial
+  de artefactos: ambos fueron fallos medidos de una corrida real.
   Escribe el manifest con esos dos campos aunque el resto lo complete el Host después).
 - `project-manifest.json`
 - `capabilities.json`

@@ -92,7 +92,7 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1119 tests … OK (skipped=11)` in this
+closed on 2026-10-14 with `Ran 1120 tests … OK (skipped=11)` in this
 working tree on a machine without the external DSH module; with the module installed
 the same tree skips only 1. This local run is not DSH operational acceptance. Without the
 external components, additional regressions are skipped; each skip names its
@@ -412,12 +412,21 @@ rejecting it.
 
 Verified against the real package, not a fixture: with the materialized compositions and the
 completed manifest, that same generation goes from **four failing layers to zero**
-(`schema`, `manifest`, `contracts` and `lifecycle` all clean). The `build.py` the model
-forgot to list is now manifested with its real hash, and the provenance entry carries `file`.
+(`schema`, `manifest`, `contracts` and `lifecycle` all clean), and the provenance entry
+carries `file`.
+
+That verification also corrected an error this document had just made. The first version
+manifested every file found in `generated/`, which meant `build.py` — a **temporary Creator
+build helper** whose own first line reads *"removed before manifest generation"* — was
+declared a legitimate artifact with its hash and silence. That would have shipped a leftover.
+The completion is now bounded to the declared output contract (`modes/`, `skills/`,
+`contracts/`, and the four declared files): a file outside it fails with its name instead of
+being papered over, matching the Validator's own complaint. Re-running the real package with
+that bound gives the same zero-layer result with 20 artifacts and no `build.py`.
 
 That is the structural direction, measured on one package rather than claimed: the Creator's
 remaining work is the part only it can decide, and everything derivable is now arithmetic
-the Host does for free. Suite is **1119 tests** (11 skipped without the external module).
+the Host does for free. Suite is **1120 tests** (11 skipped without the external module).
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign
