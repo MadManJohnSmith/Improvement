@@ -551,7 +551,21 @@ Measured on an external Node fixture: the three schema-valid `mode.json` documen
 their `SKILL.md` entrypoints contain operational prose with no markers, and all 12 mode files
 are on disk (**90,641 bytes**) before the model opens its session. The prompt is 28,615
 bytes. This is a completed mechanical capability with 1125 regression tests green; **no
-ACTIVE claim** is made. A real Creator trial under the new division of labor has not run yet.
+ACTIVE claim** is made.
+
+### The eighth trial exposed a contradictory prompt, not a generation-cost result
+
+The first real run with Host-derived prose (`gen-89d0dc81bb14`, same product and 1.25 M
+budget) exited after **216,019 billable tokens** and 53.24 seconds with `rc=1`, no manifest
+and only the twelve Host-written mode files. Its journal and stderr show the model explicitly
+noticing the contradiction: the opening section said the modes were complete and must not be
+rewritten, while later sections said `mode_lifecycle` could be absent and instructed it to
+replace the full `SKILL.md` fence with an empty `{}` marker. This run therefore does **not**
+measure whether Host-derived prose gets Creator to ACTIVE; it measures a prompt-contract
+failure I introduced while evolving the scaffold. The obsolete instructions were removed,
+and regressions now assert that the prompt does not ask for empty lifecycle markers, partial
+mode files, or a direct validation of a manifest the Host has not completed. A new trial is
+required before claiming a cost improvement.
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign

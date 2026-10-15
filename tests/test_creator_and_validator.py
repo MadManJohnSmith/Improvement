@@ -1270,7 +1270,7 @@ class CreatorTests(Base):
         self.assertIn("`Syncify-workspace`", prompt)
         self.assertIn("`Syncify-workspace/mode-state`", prompt)
         self.assertNotIn("`project-workspace/mode-state`", prompt)
-        self.assertIn("--run-dir", prompt)
+        self.assertIn("la prevalidación Host ocurre\nal terminar la sesión", prompt)
 
     def test_prompt_declares_the_scaffold_and_what_the_creator_owns(self):
         """The Host writes full modes; the prompt only asks for decisions."""
@@ -1350,7 +1350,7 @@ class CreatorTests(Base):
         self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("`escalation_channel: forbidden`", prompt)
-        self.assertIn("json mode-lifecycle", prompt)
+        self.assertIn("el `mode_lifecycle` exacto", prompt)
         self.assertIn("`startup_workdir: session-cwd-only`", prompt)
         self.assertIn("`workdir_override: forbidden-before-layout`", prompt)
         self.assertIn("primera\nllamada bash omite `workdir` o usa `.`", prompt)
@@ -1396,13 +1396,15 @@ class CreatorTests(Base):
             path = contracts / f"{role}.mode-lifecycle.json"
             self.assertTrue(path.is_file(), path)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), source)
-        # The prompt delegates to them and keeps the Host-only outsourcing.
+        # The prompt describes the already materialized result, not a recipe
+        # to re-read and copy those files.
         prompt = (self.run_dir / "creator-prompt.md").read_text()
-        for name in ("auditor.mode-lifecycle.json",
-                     "continuous-repair.mode-lifecycle.json",
-                     "implementer.mode-lifecycle.json"):
-            self.assertIn(f"`{name}`", prompt)
-        self.assertIn("El Host **escribe el contrato real dentro de ese bloque**", prompt)
+        self.assertIn("El Host ya escribió el `mode_lifecycle` exacto", prompt)
+        self.assertNotIn("Escribe el `SKILL.md` de cada modo", prompt)
+        self.assertNotIn("`mode_lifecycle` puede quedar vacío o ausente", prompt)
+        self.assertNotIn("```json mode-lifecycle\n{}\n```", prompt)
+        self.assertNotIn("Tras ese descubrimiento acotado, prepara el paquete completo", prompt)
+        self.assertNotIn("ejecuta la prevalidación Host read-only", prompt)
         # The prohibitions the prose carried are inside the contract, so the
         # shortened section did not quietly drop them.
         repair = expected_lifecycle("continuous-repair", layout)["repair_candidate"]
@@ -1503,7 +1505,7 @@ class CreatorTests(Base):
             self.assertIn("@deepseek-ai/dsh-tool-fs-search", names)
             self.assertIn("./anti-escalation.mjs", names)
         prompt = (self.run_dir / "creator-prompt.md").read_text()
-        self.assertIn("el Host lo reemplaza\ncon las siete filas operativas exactas", prompt)
+        self.assertIn("el Host\nescribió el `mode_lifecycle`, la composición", prompt)
 
     def test_complete_manifest_recomputes_artifacts_hashes_and_provenance(self):
         """The derived half of the manifest is computed, not transcribed.
