@@ -83,6 +83,14 @@ composición reemplaza a la generada, todo antes de calcular los hashes del mani
 paquete real `gen-5d75bb55eaae` ese contrato duplicado es el 59 % de los bytes
 distribuidos, y que el modelo escribiera las tres composiciones con la forma equivocada fue
 lo que le costó la generación.
+
+Cuando el modelo gastaría su turno en decidir la **forma** del paquete —qué claves existen, con
+qué anidamiento, qué contienen los fences—, el Host escribe el andamiaje completo antes de la
+sesión: cada modo generado se entrega completo y válido contra el schema, con la parte
+determinista ya exacta y solo la prosa marcada para que el Creator la reemplace. Un marcador
+que siga en su sitio hace fallar el paquete nombrando el modo, así que un contrato válido que
+no describe nada no puede pasar.
+
 compara la copia byte a byte. Pedir al modelo que transcriba un valor que el Host ya conoce
 es un coste sin autoridad detrás: gasta contexto en reproducir y convierte cada cambio de
 redacción en un riesgo de divergencia. Medido en el ensayo real `gen-5d75bb55eaae`
