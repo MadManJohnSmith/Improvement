@@ -530,6 +530,29 @@ spend its budget reading instead. The honest conclusion for anyone reading this 
 Creator gate has seven measured attempts and no success, and that the next unit of work is a
 different mechanism for the remaining prose, not an eighth attempt at the same one.
 
+### The Host now writes the operational prose too
+
+The seventh trial established that leaving **only** the mode prose to the model did not
+converge: 1,240,199 tokens and zero writes. Reading the one complete real package showed
+what that prose actually was: a restatement of the role contract (startup sentinel,
+no escalation, no PASS on FAIL/BLOCKED) with a few product facts the Host already has (base
+revision, verification entrypoint, observed areas). None of it was new judgement about the
+product. The Host can derive it from `expected_lifecycle`,
+`discovery/project-manifest.json` and `stack.plan` — so it does.
+
+`mode_prose` (`scripts/creator_client.py`) writes `purpose`, `invariants`, description and
+skill body for the three roles in `prepare()`. The scaffold now starts complete, without
+placeholders. It is still fail-closed for an incomplete mode: a leftover marker names the
+mode and blocks publication; an existing mode written by the Creator is preserved on resume.
+The Creator's genuine decisions remain acceptance requirements, scenarios, capabilities and
+project-specific skills, not wording around the Host's own contract.
+
+Measured on an external Node fixture: the three schema-valid `mode.json` documents and
+their `SKILL.md` entrypoints contain operational prose with no markers, and all 12 mode files
+are on disk (**90,641 bytes**) before the model opens its session. The prompt is 28,615
+bytes. This is a completed mechanical capability with 1125 regression tests green; **no
+ACTIVE claim** is made. A real Creator trial under the new division of labor has not run yet.
+
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign
 on the operator's real repository.

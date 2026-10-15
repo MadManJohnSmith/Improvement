@@ -1,5 +1,23 @@
 # Cambios
 
+## Creator: la prosa operacional sale del Host, no del turno del modelo — 2026-10-14
+El séptimo ensayo dejó una prueba negativa decisiva: con los modos completos y válidos salvo
+la prosa, el modelo gastó 1.240.199 tokens y escribió **cero** bytes. El mecanismo que faltaba
+no era otro prompt, sino quitar esa prosa del turno.
+- **Qué se entregó.** `mode_prose` (`scripts/creator_client.py`) construye `purpose`,
+  `invariants`, descripción y cuerpo de los tres modos a partir del contrato de rol,
+  `discovery/project-manifest.json` y `stack.plan`. Los hechos que la prosa del único paquete
+  real completado mencionaba —revisión base, entrada de verificación, áreas del inventario—
+  los calcula el Host; el resto reexpresaba reglas que `expected_lifecycle` ya impone. El
+  andamiaje ahora nace completo **sin marcadores**, y `prepare()` lo escribe antes del prompt.
+- **Límite.** Esto no sustituye el juicio del Creator sobre requisitos, escenarios de
+  aceptación, capacidades o skills específicas. Esos siguen siendo su trabajo. No se afirma
+  que este cambio llegue a ACTIVE: aún no se ha hecho un ensayo real del nuevo reparto.
+- **Comprobado.** Los tres `mode.json` generados validan contra su schema; los tres
+  `SKILL.md` llevan prosa operacional sin marcadores y conservan layout/lifecycle exactos;
+  12 ficheros de modo, **90.641 bytes** escritos antes de que el modelo abra sesión (fixture
+  Node externo), prompt **28.615 bytes**, suite **1125 OK (11 omitidas)**.
+
 ## El séptimo ensayo Creator: entregar el andamiaje no hizo que se escribiera — 2026-10-14
 Medición decisiva, registrada porque cierra una línea de trabajo.
 - `gen-c7d23ab5608d`, mismo producto ficticio y mismo presupuesto de 1,25 M, prompt 1.6.0 con
