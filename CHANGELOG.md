@@ -1,5 +1,25 @@
 # Cambios
 
+## Creator: el andamiaje lo escribe el Host antes de la sesión — 2026-10-14
+El sexto ensayo dejó el diagnóstico: la redacción no controla el patrón de lectura, así que
+lo que falta es del lado del Host. Esto es ese paso.
+- **Qué se entregó.** `write_package_scaffold` (`scripts/creator_client.py`) crea
+  `generated/modes/<preset>/` para los tres roles con los cuatro ficheros **completos y
+  válidos de entrada**: `mode_lifecycle` exacto, composición exacta, identidad de layout,
+  frontmatter, y todo campo que el validador comprueba mecánicamente. Lo único que queda por
+  escribir es la prosa, marcada con `__IMPROVEMENT_FILL_PURPOSE__` y
+  `__IMPROVEMENT_FILL_DESCRIPTION__`: `purpose`, `invariants`, descripción y cuerpo del
+  skill. Se escribe en `prepare()`, antes de construir el prompt, y respeta lo que el Creator
+  ya dejó escrito para no romper una reanudación.
+- **Fail-closed.** `verify_generation_output` rechaza un paquete cuyo marcador siga en su
+  sitio, nombrando el modo. Un scaffold sin rellenar deja de ser un paquete válido que no
+  describe nada. El prompt 1.6.0 ya no describe la forma del paquete: remite al andamiaje y
+  declara qué es del Creator y qué recalcula el Host.
+- **Medido.** El scaffold pesa 85.411 bytes en 12 ficheros, todos escritos antes de que el
+  modelo abra sesión, y los `mode.json` generados pasan el schema de entrada. El paquete real
+  `gen-5d75bb55eaae`, con solo la prosa rellenada sobre el andamiaje, queda `GENERATED`:
+  validación Host completa. Suite: **1125 OK (11 omitidas)**.
+
 ## El sexto ensayo Creator: inyectar el lifecycle no redujo el coste — 2026-10-14
 Resultado negativo, registrado como tal porque cambia el diagnóstico.
 - `gen-7384d8946857`, mismo producto ficticio, mismo presupuesto de 1,25 M, con el Host ya
@@ -15,7 +35,7 @@ Resultado negativo, registrado como tal porque cambia el diagnóstico.
   1,217,696 / 1,221,576 / 1.211,333) con el mismo producto y presupuesto establecen que la
   redacción no controla el patrón de lectura. Lo que queda es del lado del Host: dar a
   Creator el andamio exacto de salida, o exigir un presupuesto de lecturas verificable fuera
-  del modelo. Suite: **1122 OK (11 omitidas)**.
+  del modelo. Suite: **1125 OK (11 omitidas)**.
 
 ## Creator: el Host inyecta el `mode-lifecycle` en lugar de que se copie — 2026-10-14
 El último bloque determinista duplicado. El fence `mode_lifecycle` se escribe dos veces por
@@ -35,7 +55,7 @@ modo (`mode.json` y `SKILL.md`): **58.281 de 97.214 bytes, el 59 %** del paquete
   `lifecycle`) pasan a **cero** sin reparación manual. **El paquete pesa más**, 97.214 →
   114.936 bytes, y se declara: las composiciones malformadas del modelo pesaban 2.557
   bytes y las correctas 17.468. El aumento es el precio de un paquete que valida, no de la
-  inyección. Suite: **1122 OK (11 omitidas)**.
+  inyección. Suite: **1125 OK (11 omitidas)**.
 
 ## Creator: manifest completado por el Host, acotado al contrato de salida — 2026-10-14
 El paquete del cuarto ensayo dejó dos fallos mecánicos, no decisiones: un fichero en

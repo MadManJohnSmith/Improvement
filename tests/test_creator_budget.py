@@ -71,7 +71,10 @@ class Base(unittest.TestCase):
         """Reuse the canonical valid-package fixture from the Creator tests."""
         import importlib
         module = importlib.import_module("tests.test_creator_and_validator")
-        return module.CreatorTests.make_package(self)
+        generated, manifest = module.CreatorTests.make_package(self)
+        cc.CreatorSession(self.run_dir).prepare()
+        module.fill_scaffold_prose(self.run_dir, generated)
+        return generated, manifest
 
 
 class PromptEfficiency(Base):

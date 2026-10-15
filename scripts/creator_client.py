@@ -50,7 +50,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.5.0"
+PROMPT_VERSION = "1.6.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -253,6 +253,105 @@ def _artifact_type(relative):
     return "reference"
 
 
+# Text the Creator is expected to replace. A scaffold whose purpose is still a
+# placeholder describes a mode that has not been written yet, so the Host can
+# name it instead of shipping an empty operational contract.
+PROSE_PLACEHOLDER = "__IMPROVEMENT_FILL_PURPOSE__"
+
+SCAFFOLD_MODE_DEFAULTS = {
+    "schema_version": 1,
+    "reuse_source": "composition",
+    "inputs": [],
+    "anti_triggers": [],
+    "anti_goals": [],
+    "state_machine": {"states": ["READY"], "transitions": [],
+                      "initial": "READY", "terminal": ["READY"]},
+    "handoffs": [],
+    "failure_modes": {"retries": 0, "timeout_seconds": 60,
+                      "on_failure": "retain"},
+}
+
+
+def write_mode_scaffold(generated, preset_id, role, layout):
+    """Write a complete, schema-valid mode directory for the Creator to fill.
+
+    The scaffold removes the work the trials burn their budget on: deciding
+    which keys `mode.json` has, in what shape, and what the lifecycle and
+    composition contain. Everything the Validator checks mechanically is
+    already exact here; the fields that are genuine judgement — `purpose`,
+    `invariants`, the SKILL prose — are placeholders the Creator replaces. A
+    placeholder left in place is a validation error naming the mode, not a
+    silently empty contract.
+    """
+    mode_dir = Path(generated) / "modes" / preset_id
+    if mode_dir.is_symlink():
+        raise ValueError(f"modes/{preset_id} es enlace simbólico")
+    if mode_dir.exists() and not mode_dir.is_dir():
+        raise ValueError(f"modes/{preset_id} no es un directorio")
+    mode_dir.mkdir(parents=True, exist_ok=True)
+
+    mode = dict(SCAFFOLD_MODE_DEFAULTS)
+    mode.update({
+        "kind": "mode",
+        "name": preset_id,
+        "preset_id": preset_id,
+        "role": role,
+        "purpose": PROSE_PLACEHOLDER,
+        "reads": [layout["product_root"]],
+        "writes": [layout["state_root"]],
+        "required_capabilities": [],
+        "forbidden_capabilities": [],
+        "invariants": [PROSE_PLACEHOLDER],
+        "triggers": [role],
+        "scenarios": [],
+        "provenance": {"license": "MIT"},
+        "mode_lifecycle": expected_lifecycle(role, layout),
+    })
+    (mode_dir / "mode.json").write_text(
+        json.dumps(mode, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (mode_dir / "preset.yml").write_text(
+        f"id: {preset_id}\nname: {preset_id}\nagent: ./agent.cordis.yml\n",
+        encoding="utf-8")
+    (mode_dir / "agent.cordis.yml").write_text(
+        mode_composition(preset_id, role), encoding="utf-8")
+    (mode_dir / "SKILL.md").write_text(
+        "---\n"
+        f'name: "{preset_id}"\n'
+        'description: "__IMPROVEMENT_FILL_DESCRIPTION__"\n'
+        "---\n\n"
+        f"# {preset_id}\n\n"
+        f"{PROSE_PLACEHOLDER}\n\n"
+        "```json mode-layout\n"
+        + json.dumps(layout, ensure_ascii=False, separators=(",", ":"))
+        + "\n```\n\n"
+        "```json mode-lifecycle\n"
+        + json.dumps(expected_lifecycle(role, layout), ensure_ascii=False,
+                     indent=2)
+        + "\n```\n",
+        encoding="utf-8")
+    return mode_dir
+
+
+def write_package_scaffold(generated, project_name, layout):
+    """Write every mode skeleton the generation declares, before the prompt.
+
+    Conservative about prose: a mode whose `mode.json` already exists is left
+    alone, so a resumed run keeps whatever the Creator wrote.
+    """
+    generated = Path(generated)
+    modes_root = generated / "modes"
+    if modes_root.is_symlink():
+        raise ValueError("generated/modes es enlace simbólico")
+    modes_root.mkdir(parents=True, exist_ok=True)
+    created = []
+    for role in MATERIALIZED_ROLES:
+        preset_id = f"{project_name}-{role}"
+        if not (modes_root / preset_id / "mode.json").is_file():
+            write_mode_scaffold(generated, preset_id, role, layout)
+        created.append(preset_id)
+    return created
+
+
 def _deterministic_contracts(run_dir, layout, project_name):
     """Return the per-role contracts the Host already computes exactly.
 
@@ -268,6 +367,40 @@ def _deterministic_contracts(run_dir, layout, project_name):
         preset_id = f"{project_name}-{role}"
         contracts[preset_id] = mode_composition(preset_id, role)
     return contracts
+
+
+def _unfilled_scaffold(generated):
+    """Return the preset ids whose scaffold prose was never replaced.
+
+    Both the `mode.json` fields and the `SKILL.md` frontmatter are checked: an
+    unreplaced placeholder is exactly the case where a package validates and
+    describes nothing.
+    """
+    generated = Path(generated)
+    unfilled = []
+    modes_root = generated / "modes"
+    for mode_dir in sorted(p for p in modes_root.glob("*") if p.is_dir()):
+        mode_path = mode_dir / "mode.json"
+        if not mode_path.is_file():
+            continue
+        try:
+            mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        left = PROSE_PLACEHOLDER in (
+            [mode.get("purpose")] + list(mode.get("invariants") or []))
+        skill = mode_dir / "SKILL.md"
+        if not left and skill.is_file():
+            # Only the prose above the lifecycle fence is the Creator's: below
+            # it the contract is written by the Host and never holds a marker.
+            text = skill.read_text(encoding="utf-8")
+            fence = text.find("```json mode-lifecycle")
+            head = text[:fence] if fence != -1 else text
+            left = (PROSE_PLACEHOLDER in head
+                    or "__IMPROVEMENT_FILL_DESCRIPTION__" in head)
+        if left or not str(mode.get("purpose", "")).strip():
+            unfilled.append(mode_dir.name)
+    return unfilled
 
 
 def inject_deterministic_mode_parts(run_dir, generated):
@@ -538,6 +671,22 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Workspace directory (exact basename):** `{workspace_root}`
 **Mode-state path from their common parent (exact):** `{state_root}`
 **Base revision:** {base_rev}
+
+## El andamiaje ya está escrito
+
+El Host ya creó `generated/modes/<preset>/` para los tres presets con
+`mode.json`, `preset.yml`, `agent.cordis.yml` y `SKILL.md` **completos y
+válidos**: el `mode_lifecycle` exacto, la composición exacta, la identidad de
+layout y el frontmatter. **No reescribas esos ficheros desde cero ni cambies su
+estructura.** Lo único que falta en ellos es la prosa, marcada con
+`{PROSE_PLACEHOLDER}`: reemplaza `purpose` y `invariants` en `mode.json`, y
+`description` más el cuerpo en `SKILL.md`, con texto concreto de este proyecto.
+No dejes ningún marcador: un paquete con marcador se rechaza nombrando el modo.
+Tampoco hace falta que escribas `mode_lifecycle`, la composición ni el manifest
+completo: el Host los escribe y los recalcula él mismo. Tu trabajo es
+`generated/acceptance-plan.json`, `capabilities.json`,
+`generation-report.md`, los escenarios de `contracts/` si los justificas, y el
+contenido real de los modos y skills.
 
 ## Orden de trabajo y lecturas
 
@@ -1348,9 +1497,14 @@ class CreatorSession:
         # them: the model copies these files instead of re-deriving their bytes
         # from prose.
         request = _read_json(self.run_dir / "inputs" / "bootstrap-request.json")
+        layout = layout_from_paths(request["project"], request["workspace"])
         materialize_deterministic_contracts(
-            self.run_dir, layout_from_paths(request["project"], request["workspace"]),
-            run_doc["project"]["name"])
+            self.run_dir, layout, run_doc["project"]["name"])
+
+        # The scaffold is written before the prompt too, so the Creator fills
+        # prose instead of inventing a package shape.
+        write_package_scaffold(self.run_dir / "generated",
+                               run_doc["project"]["name"], layout)
 
         # Save prompt
         prompt_path = self.run_dir / "creator-prompt.md"
@@ -1458,6 +1612,15 @@ class CreatorSession:
                 raise ValueError(
                     "Creator intentó escribir host-verdict.json (auto-aprobación)"
                 )
+
+        # A prose placeholder left in the scaffold is a mode that was never
+        # written. It is rejected here rather than allowed to reach the
+        # validator as a valid-but-empty operational contract.
+        placeholders = _unfilled_scaffold(gen_dir)
+        if placeholders:
+            raise ValueError(
+                "Scaffold sin completar (purpose/description sigue siendo "
+                "marcador): " + ", ".join(sorted(placeholders)))
 
         # Then the deterministic parts of the modes are written by the Host, so
         # the lifecycle contract is not transcribed twice per mode and a

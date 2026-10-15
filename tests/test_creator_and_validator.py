@@ -59,6 +59,40 @@ def skill_markdown(name, description="Generated project skill", layout=None, rol
     return text
 
 
+def fill_scaffold_prose(run_dir, generated):
+    """Replace the Host scaffold placeholders the way the Creator must.
+
+    The Host writes complete, valid mode skeletons before the prompt; the only
+    work left in them is prose. Tests that exercise a generation reaching
+    GENERATED need that prose filled, or they are testing an unwritten mode.
+    """
+    import creator_client as _cc
+    generated = Path(generated)
+    for mode_dir in sorted(p for p in (generated / "modes").glob("*")
+                           if p.is_dir()):
+        mode_path = mode_dir / "mode.json"
+        if not mode_path.is_file():
+            continue
+        mode = json.loads(mode_path.read_text(encoding="utf-8"))
+        preset = mode.get("preset_id") or mode_dir.name
+        role = mode.get("role") or preset
+        if mode.get("purpose") == _cc.PROSE_PLACEHOLDER or not str(
+                mode.get("purpose", "")).strip():
+            mode["purpose"] = f"Proposito real de {preset}"
+        if _cc.PROSE_PLACEHOLDER in (mode.get("invariants") or []):
+            mode["invariants"] = [f"Invariante real de {preset}"]
+        mode_path.write_text(json.dumps(mode, ensure_ascii=False, indent=2)
+                             + "\n", encoding="utf-8")
+        skill = mode_dir / "SKILL.md"
+        if skill.is_file():
+            text = skill.read_text(encoding="utf-8")
+            text = (text.replace(_cc.PROSE_PLACEHOLDER, f"Contenido real de {preset}: {role}.")
+                        .replace("__IMPROVEMENT_FILL_DESCRIPTION__",
+                                 f"Descripcion real de {preset}"))
+            skill.write_text(text, encoding="utf-8")
+    return generated
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -448,7 +482,9 @@ class CreatorTests(Base):
         self.assertEqual(state["deadline"], 1017.0)
 
     def test_manifest_waits_for_terminal_and_quiescence(self):
-        self.make_package()
+        generated, _manifest = self.make_package()
+        cc.CreatorSession(self.run_dir).prepare()
+        fill_scaffold_prose(self.run_dir, generated)
 
         class Client:
             authenticated = True
@@ -485,6 +521,8 @@ class CreatorTests(Base):
 
     def test_terminal_prevalidation_failure_hands_off_to_host_retention(self):
         generated, manifest = self.make_package()
+        cc.CreatorSession(self.run_dir).prepare()
+        fill_scaffold_prose(self.run_dir, generated)
         plan_path = generated / "acceptance-plan.json"
         plan = json.loads(plan_path.read_text())
         del plan["public_scenarios"][0]["type"]
@@ -543,6 +581,8 @@ class CreatorTests(Base):
         claim and not a fact the Host can re-derive.
         """
         generated, manifest = self.make_package()
+        cc.CreatorSession(self.run_dir).prepare()
+        fill_scaffold_prose(self.run_dir, generated)
         plan_path = generated / "acceptance-plan.json"
         plan = json.loads(plan_path.read_text())
         del plan["public_scenarios"][0]["type"]
@@ -737,6 +777,7 @@ class CreatorTests(Base):
         # manifest before finishing, so the digest that survives a rerun is the
         # post-injection manifest's.
         cc.inject_deterministic_mode_parts(self.run_dir, generated)
+        fill_scaffold_prose(self.run_dir, generated)
         completed = cc.complete_manifest(self.run_dir, generated,
                                          session_ref="session-generate")
         session.create_finish(completed)
@@ -1230,6 +1271,66 @@ class CreatorTests(Base):
         self.assertIn("`Syncify-workspace/mode-state`", prompt)
         self.assertNotIn("`project-workspace/mode-state`", prompt)
         self.assertIn("--run-dir", prompt)
+
+    def test_prompt_declares_the_scaffold_and_what_the_creator_owns(self):
+        """The scaffold is written by the Host, so the prompt says what to fill.
+
+        The trials burned their budget deciding the shape of the package: which
+        keys `mode.json` has and what the lifecycle and composition contain.
+        Those are already exact on disk before the prompt is sent, and the prompt
+        must point at that instead of describing the shape again.
+        """
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn("## El andamiaje ya está escrito", prompt)
+        self.assertIn("No reescribas esos ficheros desde cero", prompt)
+        self.assertIn(f"`{cc.PROSE_PLACEHOLDER}`", prompt)
+        self.assertIn("un paquete con marcador se rechaza", prompt)
+
+    def test_scaffold_is_schema_valid_and_rejects_its_own_placeholder(self):
+        """The scaffold validates; an unfilled one is refused by name."""
+        cc.CreatorSession(self.run_dir).prepare()
+        generated = self.run_dir / "generated"
+        for role in cc.MATERIALIZED_ROLES:
+            path = generated / "modes" / f"project-{role}" / "mode.json"
+            gc.validate("modes", json.loads(path.read_text(encoding="utf-8")))
+        # An untouched scaffold is a mode that was never written. A minimal
+        # manifest gets us past the existence gate to the scaffold gate.
+        (generated / "generation-manifest.json").write_text(json.dumps({
+            "status": "GENERATED",
+            "required_capabilities": [],
+            "forbidden_capabilities": [],
+        }))
+        with self.assertRaises(ValueError) as caught:
+            cc.CreatorSession(self.run_dir).verify_generation_output()
+        self.assertIn("Scaffold sin completar", str(caught.exception))
+        self.assertIn("project-auditor", str(caught.exception))
+
+    def test_scaffold_with_prose_filled_validates_end_to_end(self):
+        """Filling only the prose turns the scaffold into a valid package."""
+        generated, _manifest = self.make_package()
+        session = cc.CreatorSession(self.run_dir)
+        session.prepare()
+        for role, purpose in (
+                ("auditor", "Audita el producto"),
+                ("continuous-repair", "Repara hallazgos"),
+                ("implementer", "Implementa el cambio")):
+            mode_dir = generated / "modes" / f"project-{role}"
+            mode = json.loads((mode_dir / "mode.json").read_text(encoding="utf-8"))
+            mode["purpose"] = purpose
+            mode["invariants"] = ["Estado acotado"]
+            (mode_dir / "mode.json").write_text(
+                json.dumps(mode, ensure_ascii=False, indent=2) + "\n")
+            skill = mode_dir / "SKILL.md"
+            skill.write_text(skill.read_text(encoding="utf-8")
+                             .replace(cc.PROSE_PLACEHOLDER, f"Contenido de {purpose}.")
+                             .replace("__IMPROVEMENT_FILL_DESCRIPTION__",
+                                      f"Descripcion de {purpose}"))
+        session.verify_generation_output()
+        cc.complete_manifest(self.run_dir, generated, session_ref="session-real")
+        import host_validator
+        report = host_validator.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.passed, report.layers)
 
     def test_prompt_prioritizes_generation_over_validator_source_exploration(self):
         cc.CreatorSession(self.run_dir).prepare()

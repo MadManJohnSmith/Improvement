@@ -77,6 +77,12 @@ contract goes into `mode.json` and into the `SKILL.md` fence, and the compositio
 the generated one, all before the manifest hashes are computed. In the real package
 `gen-5d75bb55eaae` that duplicated contract is 59% of the shipped bytes, and the model
 writing all three compositions in the wrong shape is what cost it a generation.
+
+Where a model would spend its turn deciding the **shape** of the package — which keys exists,
+in what nesting, what the fences contain — the Host writes the whole scaffold before the
+session: every generated mode ships complete and schema-valid, with the deterministic part
+already exact, and only prose left marked for the Creator to replace. A marker still in place
+fails the package naming the mode, so a valid contract that describes nothing cannot pass.
 Asking the model to transcribe a value the Host already knows is a cost with no authority
 behind it: it spends context on reproduction and turns every wording change into a
 divergence risk. Measured on the real trial `gen-5d75bb55eaae` (2026-10-14), the lifecycle
