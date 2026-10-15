@@ -49,7 +49,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.2.0"
+PROMPT_VERSION = "1.3.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -212,6 +212,46 @@ def _run_workspace(run_dir):
 MATERIALIZED_ROLES = ("auditor", "continuous-repair", "implementer")
 
 
+# Fields of generation-manifest.json the Host derives from the run and the
+# package, and the two the Creator must still decide. The manifest's three real
+# failures (gen-5d75bb55eaae) were all in the derived half: a provenance entry
+# missing `file`, an unmanifested file, and hashes the model had to compute by
+# hand. Computing them here costs no tokens and cannot drift.
+MANIFEST_DERIVED_PREFIX = ("schema_version", "generation_id", "status", "project",
+                           "creator", "framework", "artifacts",
+                           "effective_routing_digest", "context_policy",
+                           "license_provenance")
+MANIFEST_CREATOR_FIELDS = ("required_capabilities", "forbidden_capabilities")
+
+
+def _artifact_type(relative):
+    """Return the schema artifact type for a package file.
+
+    Mirrors the rule the Validator enforces for SKILL.md, and extends it to the
+    other families by path. An unknown file still gets a type: the explicit
+    failing case in a real run was an unmanifested helper, not a wrong type.
+    """
+    name = Path(relative).name
+    parts = Path(relative).parts
+    if name == "generation-manifest.json":
+        return "manifest"
+    if parts[0] == "modes":
+        if name == "mode.json":
+            return "mode-definition"
+        if name == "SKILL.md":
+            return "skill-entrypoint"
+        return "mode-adapter"
+    if parts[0] == "skills":
+        return "skill-entrypoint" if name == "SKILL.md" else "skill-adapter"
+    if parts[0] == "contracts":
+        return "contract"
+    if name == "acceptance-plan.json":
+        return "plan"
+    if name == "capabilities.json":
+        return "manifest"
+    return "reference"
+
+
 def _deterministic_contracts(run_dir, layout, project_name):
     """Return the per-role contracts the Host already computes exactly.
 
@@ -267,6 +307,140 @@ def materialize_deterministic_contracts(run_dir, layout, project_name):
             path.write_text(payload, encoding="utf-8")
         written[name] = path
     return written
+
+
+def _manifest_derived(run_dir, generated, *, session_ref=None):
+    """Return the manifest fields the Host derives from the run and the package.
+
+    Every one of these is checked afterwards by the Validator, and every one of
+    them was a real defect in `gen-5d75bb55eaae`: the artifact list missed
+    `build.py` (unmanifested file), the hashes were hand-computed, and a
+    provenance entry lacked the required `file`. Deriving them here makes the
+    manifest a computed fact instead of a transcription.
+    """
+    run_dir = Path(run_dir)
+    generated = Path(generated)
+    request = _read_json(run_dir / "inputs" / "bootstrap-request.json")
+    routing = _read_json(run_dir / "inputs" / "effective-routing.json")
+    discovery = _read_json(run_dir / "discovery" / "project-manifest.json")
+    dsh = request.get("dsh") or {}
+    run_doc = _read_json(run_dir / "run.json")
+    # Imported here, as in verify_generation_output: host_validator reads this
+    # module for the Creator command helpers, so a top-level import is a cycle.
+    import host_validator as hv
+
+    artifacts = []
+    for path in sorted(p for p in generated.rglob("*")
+                       if p.is_file() and not p.is_symlink()):
+        relative = path.relative_to(generated).as_posix()
+        if relative == "generation-manifest.json":
+            continue
+        raw = path.read_bytes()
+        artifacts.append({
+            "path": relative,
+            "type": _artifact_type(relative),
+            "sha256": _digest_bytes(raw),
+            "size_bytes": len(raw),
+        })
+    if not artifacts:
+        raise ValueError("generated/ sin artefactos que manifestar")
+
+    project = Path(request["project"])
+    provenance = []
+    product_manifests = sorted(
+        p for p in project.rglob("package.json")
+        if p.is_file() and not p.is_symlink() and
+        "node_modules" not in p.parts and ".git" not in p.parts)
+    for path in product_manifests:
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(document, dict):
+            continue
+        licence = document.get("license")
+        if not isinstance(licence, str) or not licence.strip():
+            continue
+        provenance.append({
+            "file": path.relative_to(project).as_posix(),
+            "source": f"{project.name}/{path.relative_to(project).as_posix()}",
+            "license": licence,
+        })
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": run_doc["generation_id"],
+        "status": "GENERATED",
+        "project": {
+            "name": discovery["name"],
+            "root_identity": discovery["root_identity"],
+            "base_revision": discovery["base_revision"],
+        },
+        "creator": {
+            "session_ref": session_ref or _persisted_session_id(run_dir)
+            or "unbound-creator-session",
+            "runtime_version": dsh.get("version") or "unavailable",
+        },
+        "framework": {"revision": run_doc.get("framework_revision", "unknown")},
+        "artifacts": artifacts,
+        "effective_routing_digest": routing["routing_digest"],
+        "context_policy": {
+            "skill_entrypoint_max_bytes": 32768,
+            "support_file_max_bytes": hv.SUPPORT_FILE_MAX_BYTES,
+            "warning_ratio": 0.9,
+        },
+        "license_provenance": provenance,
+    }
+
+
+def _persisted_session_id(run_dir):
+    """Return the Creator session id recorded in the durable run state.
+
+    `session_ref` in the manifest has to name the session that actually
+    produced the package. Reading it from `creator-session.json` means a rerun in
+    a fresh process still records the real session instead of a placeholder,
+    because the state outlives the in-memory session object.
+    """
+    path = _session_state_path(Path(run_dir))
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        state = _read_json(path)
+    except (OSError, ValueError):
+        return None
+    session_id = state.get("session_id") if isinstance(state, dict) else None
+    return session_id if isinstance(session_id, str) and session_id else None
+
+
+def complete_manifest(run_dir, generated, *, session_ref=None):
+    """Fill the derived half of generation-manifest.json, keeping the Creator's own.
+
+    The Creator still owns `required_capabilities` and `forbidden_capabilities`,
+    which are decisions rather than facts. Everything else is recomputed here and
+    overwritten, so a hand-written artifact list or hash cannot ship: the real run
+    lost three modes and two further layers to exactly those fields.
+    """
+    run_dir = Path(run_dir)
+    generated = Path(generated)
+    manifest_path = generated / "generation-manifest.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise ValueError("generation-manifest.json faltante o es enlace simbólico")
+    manifest = _read_json(manifest_path)
+    if not isinstance(manifest, dict):
+        raise ValueError("generation-manifest.json no es un objeto")
+
+    unknown = set(manifest) - set(MANIFEST_DERIVED_PREFIX) - set(MANIFEST_CREATOR_FIELDS)
+    if unknown:
+        raise ValueError(
+            f"Campos de manifest fuera del contrato Host: {sorted(unknown)}")
+
+    derived = _manifest_derived(run_dir, generated, session_ref=session_ref)
+    for field in MANIFEST_CREATOR_FIELDS:
+        value = manifest.get(field)
+        if not isinstance(value, list):
+            raise ValueError(f"Manifest sin lista válida en {field}")
+        derived[field] = value
+    _atomic_json(manifest_path, derived)
+    return derived
 
 
 def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
@@ -552,7 +726,14 @@ rechaza antes de GENERATED. Un frontmatter inválido bloquea el paquete antes
 de ACTIVE; esto aplica también a regeneración y skill_lifecycle.
 
 Escribe bajo `{run_dir}/generated/`:
-- `generation-manifest.json` (status: GENERATED, con schema_version, generation_id, status, project: {{name, root_identity, base_revision}}, creator: {{session_ref, runtime_version}}, framework: {{revision}}, artifacts: [{{path, type, sha256}}], required_capabilities, forbidden_capabilities, effective_routing_digest, context_policy: {{skill_entrypoint_max_bytes, support_file_max_bytes, warning_ratio}}, license_provenance)
+- `generation-manifest.json` (solo con tus dos decisiones: `required_capabilities` y
+  `forbidden_capabilities` como listas no vacías. El Host **recalcula y sobrescribe todo lo
+  demás** antes de validar —`schema_version`, `generation_id`, `status`, `project`,
+  `creator`, `framework`, `artifacts` con rutas, tipos y sha256, `effective_routing_digest`,
+  `context_policy` y `license_provenance`—, tomándolo del run y del contenido real de
+  `generated/`: incluye cada fichero que hayas escrito, sin excepción. No escribas hashes a
+  mano ni una lista parcial de artefactos: ambos fueron fallos medidos de una corrida real.
+  Escribe el manifest con esos dos campos aunque el resto lo complete el Host después).
 - `project-manifest.json`
 - `capabilities.json`
 - `modes/{project_name}-auditor/`
@@ -1184,32 +1365,40 @@ class CreatorSession:
             raise ValueError("generation-manifest.json es enlace simbólico")
 
         manifest = _read_json(manifest_path)
+        if not isinstance(manifest, dict):
+            raise ValueError("generation-manifest.json no es un objeto")
 
-        # Status must be GENERATED
+        # The Creator's own claims are checked before the Host overwrites the
+        # derived half: a status other than GENERATED or a path outside staging
+        # is something the Creator emitted, and rewriting the manifest first
+        # would erase the evidence instead of rejecting it.
         if manifest.get("status") != "GENERATED":
             raise ValueError(
                 f"Creator emitió status {manifest.get('status')!r}; "
                 "debe ser GENERATED"
             )
 
-        # Must have artifacts
-        if not manifest.get("artifacts"):
-            raise ValueError("Manifest sin artefactos")
+        for field in ("required_capabilities", "forbidden_capabilities"):
+            if not isinstance(manifest.get(field), list):
+                raise ValueError(f"Manifest sin lista válida en {field}")
 
-        # Check Creator only wrote inside staging (generated/)
-        for art in manifest["artifacts"]:
-            path = art.get("path", "")
+        for art in manifest.get("artifacts", []):
+            path = art.get("path", "") if isinstance(art, dict) else ""
             if path.startswith("/") or ".." in path:
                 raise ValueError(
                     f"Artefacto con ruta fuera de staging: {path}"
                 )
-
-        # Check no self-acceptance
-        for art in manifest["artifacts"]:
-            if art.get("path", "").endswith("host-verdict.json"):
+            if path.endswith("host-verdict.json"):
                 raise ValueError(
                     "Creator intentó escribir host-verdict.json (auto-aprobación)"
                 )
+
+        # Then the derived half is recomputed rather than transcribed: artifacts,
+        # hashes, provenance and the routing digest are facts the Host can read
+        # off the run, and the real run that failed lost a layer to a
+        # hand-written artifact list and another to its hashes.
+        manifest = complete_manifest(self.run_dir, gen_dir,
+                                      session_ref=self._session_ref)
 
         # Host-owned read-only prevalidation must pass before create_finish()
         # advances run.json/checkpoint.json to GENERATED.

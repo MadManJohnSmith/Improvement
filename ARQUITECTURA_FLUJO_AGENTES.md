@@ -65,9 +65,10 @@ Specialization happens once during incorporation or regeneration. In normal use 
 
 ### 1.3 The deterministic part is not re-derived
 The Host computes some contracts exactly from the layout: the `mode_lifecycle` block per
-role, the central repair/implementation commands and the whole operational composition
+role, the central repair/implementation commands, the whole operational composition
 (`agent.cordis.yml`, seven fixed rows whose only variable — the persona prefix — is computed
-by the Host too). Those values are **materialized into `contracts/` of the run before the
+by the Host too) and the derived half of `generation-manifest.json` (ten of its twelve
+fields). Those values are **materialized into `contracts/` of the run before the
 prompt names them**, and Creator copies them; the Validator compares the copy byte for byte.
 Asking the model to transcribe a value the Host already knows is a cost with no authority
 behind it: it spends context on reproduction and turns every wording change into a
