@@ -70,9 +70,10 @@ La especialización sucede una vez durante la incorporación o regeneración. En
 
 ### 1.3 Lo determinista no se rederiva
 El Host calcula algunos contratos de forma exacta a partir del layout: el bloque
-`mode_lifecycle` por rol, los comandos centrales de repair/implementación y la composición
+`mode_lifecycle` por rol, los comandos centrales de repair/implementación, la composición
 operativa completa (`agent.cordis.yml`: siete filas fijas cuyo único valor variable —el
-prefijo de persona— también lo calcula el Host). Esos valores se **materializan en
+prefijo de persona— también lo calcula el Host) y la mitad derivada de
+`generation-manifest.json` (diez de sus doce campos). Esos valores se **materializan en
 `contracts/` del run antes de que el prompt los nombre**, y Creator los copia; el validador
 compara la copia byte a byte. Pedir al modelo que transcriba un valor que el Host ya conoce
 es un coste sin autoridad detrás: gasta contexto en reproducir y convierte cada cambio de

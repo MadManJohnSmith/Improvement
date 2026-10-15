@@ -1,5 +1,28 @@
 # Cambios
 
+## Creator: manifest completado por el Host — 2026-10-14
+El paquete del cuarto ensayo dejó dos fallos mecánicos, no decisiones: `build.py` fuera de
+la lista `artifacts` y `license_provenance[0]` sin el campo `file` obligatorio. El Host ya
+tenía los datos para ambos; el modelo los inventaba a mano y pagaba tokens por hacerlo.
+- **El cambio.** `complete_manifest` (`scripts/creator_client.py`) recorre `generated/`
+  y deriva ruta, tipo, sha256 y tamaño de todos los artefactos; toma
+  `effective_routing_digest` de `inputs/effective-routing.json` y
+  `license_provenance` de los manifiestos propios del producto. Sobrescribe diez de los
+  doce campos, conservando las dos decisiones del Creator (`required_capabilities` y
+  `forbidden_capabilities`). Lo hace después de comprobar `status: GENERATED` y rutas de
+  staging para no borrar evidencia de una afirmación inválida.
+- **Regresiones nuevas.** Una planta hash falso, omite un artefacto y añade `build.py`;
+  exige que el completador produzca el manifest exhaustivo con hashes reales y
+  provenance con `file`. Otra exige rechazo de campos desconocidos. El test de
+  handoff con un paquete inválido sigue usando un fallo que el Host no repara
+  (acceptance-plan sin `type`), en lugar de un hash falso que ya no puede shippear.
+- **Prueba de fuego, sobre el paquete real.** Copiando las composiciones
+  materializadas y completando el manifest del propio `gen-5d75bb55eaae`, el
+  validador Host pasa de **cuatro capas fallando a cero**. `build.py` se manifiesta
+  con su hash y la procedencia lleva `file`. No se atribuye a un ensayo nuevo ni a
+  un Creator ACTIVE: es la misma generación real corregida por la parte determinista
+  del Host. Suite: **1119 OK (11 omitidas)**.
+
 ## El quinto ensayo Creator: la regla de economía no se obedeció — 2026-10-14
 Evidencia, no una corrección.
 - `gen-9d6b04ec81c3`, mismo producto ficticio y mismo presupuesto, con las composiciones ya

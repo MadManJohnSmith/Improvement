@@ -534,10 +534,19 @@ class CreatorTests(Base):
         self.assertEqual(run["status"], "RETAINED")
 
     def test_terminal_invalid_package_is_not_redispatched_before_host_handoff(self):
+        """A finished but invalid package still hands off to Host retention.
+
+        The seeded defect is a hand-written hash on an artifact, which the Host
+        now recomputes — that specific class of failure cannot ship any more, so
+        the planted defect here is one the Host deliberately does not repair: a
+        plan that breaks the acceptance-plan schema, which is the Creator's own
+        claim and not a fact the Host can re-derive.
+        """
         generated, manifest = self.make_package()
-        manifest["artifacts"][0]["sha256"] = "0" * 64
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        plan_path = generated / "acceptance-plan.json"
+        plan = json.loads(plan_path.read_text())
+        del plan["public_scenarios"][0]["type"]
+        plan_path.write_bytes((json.dumps(plan, indent=2) + "\n").encode())
         session = cc.CreatorSession(self.run_dir)
         session.prepare()
         state = {
@@ -724,7 +733,11 @@ class CreatorTests(Base):
         generated, manifest = self.make_package()
         session = cc.CreatorSession(self.run_dir)
         prep = session.prepare()
-        session.create_finish(manifest)
+        # The Host completes the derived half before finishing, so the digest
+        # that has to survive a rerun is the completed manifest's.
+        completed = cc.complete_manifest(self.run_dir, generated,
+                                         session_ref="session-generate")
+        session.create_finish(completed)
         # The rerun is immutable, but it is still a run whose spend has to be
         # inside the limit; the account below is what the budget gate reads.
         cc._update_json(self.run_dir / cc.CREATOR_SESSION_FILE, {
@@ -1354,6 +1367,83 @@ class CreatorTests(Base):
         prompt = (self.run_dir / "creator-prompt.md").read_text()
         self.assertIn("copia literal", prompt)
         self.assertIn("filas\n`- id:` de nivel superior, no un documento `name:`/`plugins:`", prompt)
+
+    def test_complete_manifest_recomputes_artifacts_hashes_and_provenance(self):
+        """The derived half of the manifest is computed, not transcribed.
+
+        The real run `gen-5d75bb55eaae` failed on exactly these fields: a
+        hand-written artifact list that omitted `build.py`, hashes computed by
+        the model, and a provenance entry missing the required `file`. The
+        completion below repairs all three, and it does it from the run, so the
+        defect class is gone rather than fixed by wording.
+        """
+        generated, manifest = self.make_package()
+        manifest["artifacts"][0]["sha256"] = "0" * 64
+        first = json.loads(json.dumps(manifest["artifacts"][0]))
+        del manifest["artifacts"][1]  # drop an entry: the file is still there
+        (generated / "build.py").write_text("# helper\n")
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+
+        completed = cc.complete_manifest(self.run_dir, generated)
+
+        paths = {art["path"] for art in completed["artifacts"]}
+        self.assertIn("build.py", paths)
+        on_disk = sorted(p.relative_to(generated).as_posix()
+                         for p in generated.rglob("*")
+                         if p.is_file() and not p.is_symlink()
+                         and p.name != "generation-manifest.json")
+        self.assertEqual(sorted(paths), on_disk)
+        # the first artifact's hash is recomputed, and the restored second one
+        # matches its real file
+        actual_first = next(art for art in completed["artifacts"]
+                            if art["path"] == first["path"])
+        self.assertNotEqual(actual_first["sha256"], "0" * 64)
+        self.assertEqual(actual_first["sha256"],
+                         cc._digest_bytes(
+                             (generated / first["path"]).read_bytes()))
+        # provenance carries the file reference that was missing before
+        import generation_contracts as gc
+        for entry in completed["license_provenance"]:
+            self.assertIn("file", entry)
+        gc.validate("generation-manifest", completed)
+        # the Creator's own decision survives the recomputation
+        self.assertEqual(completed["required_capabilities"],
+                         manifest["required_capabilities"])
+        self.assertEqual(completed["forbidden_capabilities"],
+                         manifest["forbidden_capabilities"])
+
+    def test_complete_manifest_records_the_real_persisted_session(self):
+        """`session_ref` names the session that produced the package.
+
+        A rerun reaches this path in a fresh process, so reading the id from the
+        durable run state is what keeps the manifest honest; a placeholder would
+        pass the schema and still be false.
+        """
+        generated, _manifest = self.make_package()
+        session = cc.CreatorSession(self.run_dir)
+        prep = session.prepare()
+        cc._write_json(self.run_dir / cc.CREATOR_SESSION_FILE, {
+            "schema_version": 1,
+            "generation_id": prep["generation_id"],
+            "session_id": "session-real-ref",
+            "request_id": "request-real",
+            "prompt_digest": prep["prompt_digest"],
+            "deadline": 9999, "cursor": 1,
+            "reason": "TERMINAL_QUIESCENT",
+        })
+        completed = cc.complete_manifest(self.run_dir, generated)
+        self.assertEqual(completed["creator"]["session_ref"], "session-real-ref")
+
+    def test_complete_manifest_rejects_outside_the_host_contract(self):
+        """A manifest carrying extra fields is refused, not silently completed."""
+        generated, manifest = self.make_package()
+        manifest["surprise"] = True
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n")
+        with self.assertRaises(ValueError) as caught:
+            cc.complete_manifest(self.run_dir, generated)
+        self.assertIn("fuera del contrato Host", str(caught.exception))
 
     def test_yaml_quoting_rule_lives_in_the_shared_output_section(self):
         """A plain ': ' is discarded by DSH's YAML parser.

@@ -92,7 +92,7 @@ This experience is implemented (C0–C7) and in hardening on a real pilot; the c
 The published count ("NNN tests green") is not the total, and saying so is
 exactly what makes it publishable. The current figure is **measured**, not remembered:
 `PYTHONDONTWRITEBYTECODE=1 DSH_MODULE_ROOT=/path/to/external/dsh/node_modules TMPDIR=/tmp python3 -B -m unittest discover -s tests`
-closed on 2026-10-14 with `Ran 1116 tests … OK (skipped=11)` in this
+closed on 2026-10-14 with `Ran 1119 tests … OK (skipped=11)` in this
 working tree on a machine without the external DSH module; with the module installed
 the same tree skips only 1. This local run is not DSH operational acceptance. Without the
 external components, additional regressions are skipped; each skip names its
@@ -391,6 +391,33 @@ reached a manifest. The wording has now been asked to do the work twice; the rem
 structure is to make the Host the only source of what the Creator needs — which is the
 materialization already applied to lifecycle and composition, and is why the next candidate
 is not more prose.
+
+### The manifest, derived instead of written: the real package now passes
+
+The fourth trial's package had two remaining failures that were mechanical, not decisions:
+`generated/build.py` absent from the `artifacts` list and a `license_provenance` entry
+missing the required `file` (both real failures, in `gen-5d75bb55eaae`). The manifest is
+where the Host already owns almost everything: ten of its twelve fields are read off the run
+or computed from the contents of `generated/`, and only `required_capabilities` and
+`forbidden_capabilities` are decisions the Creator owns.
+
+So the Host now completes it. `complete_manifest` (`scripts/creator_client.py`) recomputes
+`artifacts` by walking `generated/` (path, type, sha256, size), derives
+`effective_routing_digest` from `inputs/effective-routing.json`, builds
+`license_provenance` from the product's own manifest files, and **overwrites** everything
+except the Creator's two decisions. It runs inside `verify_generation_output` **after** the
+Creator's own claims are checked — a status other than GENERATED or a path outside staging
+still raises, because rewriting first would erase the evidence of a bad package instead of
+rejecting it.
+
+Verified against the real package, not a fixture: with the materialized compositions and the
+completed manifest, that same generation goes from **four failing layers to zero**
+(`schema`, `manifest`, `contracts` and `lifecycle` all clean). The `build.py` the model
+forgot to list is now manifested with its real hash, and the provenance entry carries `file`.
+
+That is the structural direction, measured on one package rather than claimed: the Creator's
+remaining work is the part only it can decide, and everything derivable is now arithmetic
+the Host does for free. Suite is **1119 tests** (11 skipped without the external module).
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign
