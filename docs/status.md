@@ -6,7 +6,7 @@
 
 This document records only the current status. The detail of previous iterations is in Git/`CHANGELOG.md`, not here.
 
-**Acceptance as of 2026-10-14:** the local suite passes 1125 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the operational composition is materialized the same way. Six post-budget runs are measured: the first two stopped before writing any manifest, three more stopped with no manifest as well (1,217,696; 1,221,576; 1,211,333) and the fourth (prompt 1.1.0, the one that obeyed the reading rule) produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape; a layer that materializing compositions and re-running the validator on the same real package clears completely. All six ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured, the next defect identified, and six measured runs (1,204,185 / 1,196,251 / 1,217,696 / 1,185,582 / 1,221,576 / 1,211,333 billable tokens) that establish that prose wording does not control the reading pattern, so the remaining work is Host-side scaffolding or an enforced read budget rather than more prompt text.
+**Acceptance as of 2026-10-14:** the local suite passes 1125 tests on a machine without the external DSH module (11 skipped; only 1 skipped with the module installed). Host implementer verification binds one command to the digest-checked capability plan. On a fresh remote Syncify checkout at `9e4cb5b`, an external shadow candidate passed the plan-bound Host gate and 278 Python tests (2 skipped, 81 subtests); this was a bounded Host case, not a new DSH implementer turn or full desktop acceptance. Corpus Host preflight now checks ACTIVE publication, receipt, skill files and mode layout; a compatible future evaluator must also observe a successful same-turn skill tool call, but the current adapter still abstains before session creation because per-case layout and effective loading cannot yet be established. Real DSH web U6 trials produced digest-verifiable journals but remained RETAINED: a copied preset had a stale session root and did not write the contracted audit result; no full Host campaign verdict was obtained. The `nrouter-raw/Orquestrador` route completed inference, correcting the earlier inference-access diagnosis. **Creator is the open gate.** Two structural changes were shipped against its generation cost: the deterministic mode contracts are now materialized into `contracts/` of the run instead of being transcribed by the model from 25,114 bytes of prose, cutting the prompt 47.7%, and the operational composition is materialized the same way. Seven post-budget runs are measured: the first two stopped before writing any manifest, three more stopped with no manifest as well (1,217,696; 1,221,576; 1,211,333) and the fourth (prompt 1.1.0, the one that obeyed the reading rule) produced the first complete package with a manifest — which then failed Host validation in four layers, with the three `agent.cordis.yml` written in the wrong shape; a layer that materializing compositions and re-running the validator on the same real package clears completely. All seven ran on the same fictitious product, not a real operator repository. **No post-budget ACTIVE generation exists**, so this is not production completion: it is the open gate with the cost measured, the next defect identified, and seven measured runs (1,204,185 / 1,196,251 / 1,217,696 / 1,185,582 / 1,221,576 / 1,211,333 / 1,240,199 billable tokens) that establish that prose wording does not control the reading pattern, so the remaining work is Host-side scaffolding or an enforced read budget rather than more prompt text.
 
 
 
@@ -498,10 +498,37 @@ scaffold, reaches `GENERATED` with the full Host validation passing. This narrow
 Creator's actual job to what is genuinely its judgement: the acceptance plan, the scenarios,
 the capabilities, and prose that describes the project.
 
-What is not claimed here: the seven-reads pattern has not been exercised against **this**
-scaffold yet. It may be that seeing a complete package on disk changes the model's reading
-behaviour, or it may not, and the only way to know is a trial. What is measured is that the
-package can now be completed by filling prose alone.
+### The seventh trial: the scaffold was not filled, and the answer is now measured
+
+The trial that settles the question was run after shipping the scaffold
+(`gen-c7d23ab5608d`, 2026-10-14, same fictional product and 1.25 M budget, prompt 1.6.0 with
+the modes already written and valid on disk). It ended `RETAINED` with **1,240,199 billable
+tokens** — the highest of the seven — and with the scaffold **untouched**: every
+`__IMPROVEMENT_FILL_PURPOSE__` and `__IMPROVEMENT_FILL_DESCRIPTION__` marker still in place,
+the 12 mode files byte-identical to what the Host wrote, and no `acceptance-plan.json`,
+`capabilities.json` or manifest.
+
+The journal explains it. In **41 tool calls the model wrote and edited nothing at all** —
+zero `write`/`edit` calls — and spent the whole turn reading: `skills.schema.json` six times
+with the read tool plus more through `sed` inside `bash`, `mode.json` and `SKILL.md` to
+inspect the scaffold it was given, and its own `generation-manifest.json` three times. The
+`sed` over `host_validator.py` that the sixth trial had is gone, so that specific prohibition
+was followed; the reading pattern is not.
+
+This is the decisive measurement, and it closes the scaffolding idea: **handing the model the
+package does not make it write the package.** It inspects a finished artifact and consumes
+its budget doing so, in a run where nothing needed designing. Combined with the six trials
+before it, the seven runs over the same product and budget now give 1,204,185 / 1,196,251 /
+1,217,696 / 1,185,582 / 1,221,576 / 1,211,333 / 1,240,199 tokens with no post-budget ACTIVE
+generation, and every variation of prompt and pre-written input has now been tried once.
+
+What follows from that, and it is a design change rather than another trial: the Creator's
+turn cannot be the place where the package is produced. The scaffold, the composition, the
+lifecycle and the manifest already come from the Host, and the prose is the only part that
+still goes through the model — while the evidence is that a model asked to write prose will
+spend its budget reading instead. The honest conclusion for anyone reading this is that the
+Creator gate has seven measured attempts and no success, and that the next unit of work is a
+different mechanism for the remaining prose, not an eighth attempt at the same one.
 
 No cost in money was measured in this environment either: it is declared in tokens (≈1,456,519 tokens in the
 six turns with measured usage). The pass is a sample of a fictitious product, not a campaign
