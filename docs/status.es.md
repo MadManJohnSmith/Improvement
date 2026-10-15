@@ -543,6 +543,30 @@ leyendo—. La conclusión honesta para quien lea esto es que el gate de Creator
 intentos medidos y ningún éxito, y que la siguiente unidad de trabajo es un mecanismo distinto
 para la prosa que queda, no un octavo intento del mismo.
 
+### El Host escribe también la prosa operacional
+
+El séptimo ensayo estableció que dejar **solo** la prosa de modos al modelo no convergía:
+1.240.199 tokens y cero escrituras. Leer el único paquete real completo mostró qué era esa
+prosa en realidad: una reexpresión del contrato de rol (sentinela de arranque, sin escalada,
+sin PASS sobre FAIL/BLOCKED) con unos pocos hechos del producto que el Host ya tiene (revisión
+base, entrypoint de verificación, áreas observadas). Nada de eso era juicio nuevo sobre el
+producto. El Host puede derivarlo de `expected_lifecycle`,
+`discovery/project-manifest.json` y `stack.plan` —y eso hace.
+
+`mode_prose` (`scripts/creator_client.py`) escribe `purpose`, `invariants`, descripción y
+cuerpo del skill para los tres roles en `prepare()`. El andamiaje nace ahora completo, sin
+marcadores. Sigue siendo fail-closed ante un modo incompleto: un marcador sobrante nombra el
+modo y bloquea publicación; un modo existente que escribió el Creator se conserva en una
+reanudación. Las decisiones genuinas del Creator siguen siendo requisitos de aceptación,
+escenarios, capacidades y skills específicas del producto, no la redacción alrededor del
+contrato propio del Host.
+
+Medido sobre un fixture Node externo: los tres `mode.json` válidos contra schema y sus
+`SKILL.md` contienen prosa operacional sin marcadores, y los 12 ficheros de modo están en
+disco (**90.641 bytes**) antes de que el modelo abra sesión. El prompt mide 28.615 bytes. Es
+una capacidad mecánica completada con 1125 pruebas de regresión en verde; **no se afirma
+ACTIVE**. Aún no se ha corrido un ensayo real de Creator bajo este nuevo reparto.
+
 Tampoco se midió coste en dinero en este entorno: se declara en tokens (≈1.456.519 tokens en los
 seis turnos con uso medido). El pase es una muestra sobre un producto ficticio, no una campaña
 sobre un repositorio real del operador.

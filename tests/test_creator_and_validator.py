@@ -1273,38 +1273,28 @@ class CreatorTests(Base):
         self.assertIn("--run-dir", prompt)
 
     def test_prompt_declares_the_scaffold_and_what_the_creator_owns(self):
-        """The scaffold is written by the Host, so the prompt says what to fill.
-
-        The trials burned their budget deciding the shape of the package: which
-        keys `mode.json` has and what the lifecycle and composition contain.
-        Those are already exact on disk before the prompt is sent, and the prompt
-        must point at that instead of describing the shape again.
-        """
+        """The Host writes full modes; the prompt only asks for decisions."""
         cc.CreatorSession(self.run_dir).prepare()
         prompt = (self.run_dir / "creator-prompt.md").read_text()
         self.assertIn("## El andamiaje ya está escrito", prompt)
-        self.assertIn("No reescribas esos ficheros desde cero", prompt)
-        self.assertIn(f"`{cc.PROSE_PLACEHOLDER}`", prompt)
-        self.assertIn("un paquete con marcador se rechaza", prompt)
+        self.assertIn("No reescribas esos ficheros desde\ncero", prompt)
+        self.assertNotIn(cc.PROSE_PLACEHOLDER, prompt)
+        self.assertIn("la prosa derivada del contrato de rol", prompt)
 
-    def test_scaffold_is_schema_valid_and_rejects_its_own_placeholder(self):
-        """The scaffold validates; an unfilled one is refused by name."""
+    def test_scaffold_is_schema_valid_and_prose_is_host_derived(self):
+        """The Host writes complete modes, not placeholders to spend tokens on."""
         cc.CreatorSession(self.run_dir).prepare()
         generated = self.run_dir / "generated"
         for role in cc.MATERIALIZED_ROLES:
             path = generated / "modes" / f"project-{role}" / "mode.json"
-            gc.validate("modes", json.loads(path.read_text(encoding="utf-8")))
-        # An untouched scaffold is a mode that was never written. A minimal
-        # manifest gets us past the existence gate to the scaffold gate.
-        (generated / "generation-manifest.json").write_text(json.dumps({
-            "status": "GENERATED",
-            "required_capabilities": [],
-            "forbidden_capabilities": [],
-        }))
-        with self.assertRaises(ValueError) as caught:
-            cc.CreatorSession(self.run_dir).verify_generation_output()
-        self.assertIn("Scaffold sin completar", str(caught.exception))
-        self.assertIn("project-auditor", str(caught.exception))
+            mode = json.loads(path.read_text(encoding="utf-8"))
+            gc.validate("modes", mode)
+            self.assertNotIn(cc.PROSE_PLACEHOLDER, path.read_text())
+            skill = path.with_name("SKILL.md")
+            self.assertNotIn("__IMPROVEMENT_FILL_", skill.read_text())
+            self.assertIn("Audita completamente este proyecto" if role == "auditor"
+                          else "Repara los hallazgos" if role == "continuous-repair"
+                          else "Implementa el cambio solicitado", skill.read_text())
 
     def test_scaffold_with_prose_filled_validates_end_to_end(self):
         """Filling only the prose turns the scaffold into a valid package."""

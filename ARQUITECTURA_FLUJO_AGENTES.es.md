@@ -87,9 +87,12 @@ lo que le costó la generación.
 Cuando el modelo gastaría su turno en decidir la **forma** del paquete —qué claves existen, con
 qué anidamiento, qué contienen los fences—, el Host escribe el andamiaje completo antes de la
 sesión: cada modo generado se entrega completo y válido contra el schema, con la parte
-determinista ya exacta y solo la prosa marcada para que el Creator la reemplace. Un marcador
-que siga en su sitio hace fallar el paquete nombrando el modo, así que un contrato válido que
-no describe nada no puede pasar.
+determinista ya exacta. El séptimo ensayo mostró que ni siquiera la prosa restante de los
+modos convergía si se dejaba al modelo (1.240.199 tokens, cero escrituras), y el único paquete
+completo mostró que reexpresaba el contrato de rol del Host y hechos del producto que el
+propio Host deriva. El Host deriva ahora esa prosa desde el rol, discovery y `stack.plan`
+antes de abrir la sesión. Un marcador que siga en su sitio hace fallar el paquete nombrando
+el modo, así que un contrato válido que no describe nada no puede pasar.
 
 compara la copia byte a byte. Pedir al modelo que transcriba un valor que el Host ya conoce
 es un coste sin autoridad detrás: gasta contexto en reproducir y convierte cada cambio de
