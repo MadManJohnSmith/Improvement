@@ -50,7 +50,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.7.0"
+PROMPT_VERSION = "1.8.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -787,10 +787,10 @@ aceptación reales.
 
 Reglas concretas de economía, derivadas de ensayos reales de este run:
 
-- Los contratos deterministas ya están materializados: `mode_lifecycle` y los
-  comandos de repair/implementer se leen una vez de `contracts/` y se copian.
-  Releerlos o reimprimirlos en bash para "inspeccionarlos" vuelve a gastar el
-  contexto que ahorró la materialización.
+- Los contratos deterministas y los tres modos ya están escritos por el Host.
+  No necesitas leerlos para copiarlos: céntrate en requisitos, escenarios,
+  capacidades y skills específicas. Releerlos o reimprimirlos en bash para
+  "inspeccionarlos" vuelve a gastar el contexto que ahorró el andamiaje.
 - Los schemas grandes (`schemas/modes.schema.json`, `schemas/skills.schema.json`)
   se leen **una sola vez cada uno** y ya: su lectura repetida es el mayor gasto
   medido de la generación. Cuando un error de la prevalidación Host nombre el
@@ -814,17 +814,11 @@ El paquete debe incluir tres modos finales y presets DSH seleccionables:
 Generaciones antiguas con los dos primeros siguen siendo válidas para rollback;
 una generación nueva incluye implementer y prueba aceptación del comportamiento pedido.
 
-Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
-`preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
-`preset_id` igual al directorio y `role` (`auditor`, `continuous-repair` o
-`implementer`), y `mode_lifecycle` puede quedar vacío o ausente: el Host escribe
-el contrato real antes de validar. Cada `agent.cordis.yml` puede escribirse con
-cualquier contenido de relleno —por ejemplo vacío— porque el Host lo reemplaza
-con las siete filas operativas exactas que ya materializó en
-`contracts/<preset-id>.agent.cordis.yml` (persona con su `config.prefix`, bash,
-filesystem, búsqueda con `config.sampleOverCapGlobResults: false`, proveedor de
-skills, loader y guard `./anti-escalation.mjs`). La validación falla si el fichero
-no existe. El lifecycle estructurado y la persona fijan
+Cada directorio `generated/modes/<preset-id>/` ya contiene `mode.json`,
+`preset.yml`, `agent.cordis.yml` y `SKILL.md` completos. Consérvalos: el Host
+escribió el `mode_lifecycle`, la composición con sus siete filas y la prosa
+operativa antes de esta sesión. No vacíes ni reescribas ninguno. El lifecycle
+estructurado y la persona fijan
 `escalation_channel: forbidden`: jamás envían `sandbox_permissions` ni
 `justification`, con ningún valor (incluidos `workspace-write` y
 `danger-full-access`), incluso como reintento tras denegación o error de schema;
@@ -924,10 +918,12 @@ comandos extensos. No repitas lecturas de archivos ya vistos ni explores todo el
 framework o el árbol del proyecto cuando la evidencia específica baste. Si falta
 una fuente necesaria, léela: ahorrar contexto nunca autoriza inventar datos.
 
-Tras ese descubrimiento acotado, prepara el paquete completo bajo `generated/`;
-crea primero los contratos y artefactos específicos, y termina con
-`generated/generation-manifest.json` tras calcular sus hashes sobre los archivos
-reales. Evita rondas de planificación que no escriban o verifiquen artefactos.
+Tras ese descubrimiento acotado, escribe solo lo que falta bajo `generated/`:
+requisitos, escenarios, capacidades y skills específicas; los tres modos ya
+existen y el Host calcula hashes y manifest. Escribe
+`generated/generation-manifest.json` solo con tus dos decisiones de
+capacidades. Evita rondas de planificación que no escriban ni verifiquen
+artefactos.
 Comprueba localmente la conformidad antes de solicitar aceptación: optimiza el
 orden y el volumen de lectura, sin omitir contratos, escenarios, holdouts ni validación Host.
 Si el presupuesto restante no permite completar el paquete, retén el intento en
@@ -979,20 +975,11 @@ código.
 
 ## Ciclo operativo obligatorio y experiencia novata
 
-El Host ya calculó en `contracts/` los tres contratos `mode-lifecycle` exactos
-para este layout: `auditor.mode-lifecycle.json`,
-`continuous-repair.mode-lifecycle.json` e `implementer.mode-lifecycle.json`.
-Escribe el `SKILL.md` de cada modo con **un único** bloque de marcador, tal cual
-y sin contenido propio:
-```json mode-lifecycle
-{{}}
-```
-El Host **escribe el contrato real dentro de ese bloque** antes de validar, y
-hace lo mismo con `mode_lifecycle` dentro de `mode.json`: no transcribas el
-contrato ni lo resumas ni lo copies a mano. Si el bloque falta, está duplicado o
-trae contenido propio, la validación falla. No incluyas los ficheros `contracts/`
-del run en el manifest: no son artefactos Creator, sino entradas Host. La
-conducta del modo debe aplicar el contrato, no limitarse a mostrarlo: estado
+El Host ya escribió el `mode_lifecycle` exacto en el `mode.json` y el
+`SKILL.md` de los tres modos, y lo validará de nuevo al cerrar. No reescribas
+esos bloques ni intentes sustituirlos por marcadores. Los contratos bajo
+`contracts/` del run son entradas Host, no artefactos Creator. La conducta del
+modo debe aplicar el contrato, no limitarse a mostrarlo: estado
 acotado, recibos de overflow, verificación real, workdir de auditor confinado al
 cwd de sesión, candidata sombra Host de repair e implementer, sin
 commit/merge/push/publicación. Auditor responde al prompt
@@ -1086,13 +1073,12 @@ del router); mapean respectivamente a los roles `auditor`, `continuous-repair`,
 la respuesta debe decir `ABSTAIN` y la causa, no improvisar un nombre. Ningún
 modelo o probabilidad otorga autoridad; el Host aprueba antes de instalar.
 
-Antes de emitir `status: GENERATED`, ejecuta la prevalidación Host read-only:
-```bash
-python3 -B {FRAMEWORK}/scripts/host_validator.py \
-  --generated {run_dir}/generated --run-dir {run_dir}
-```
-Corrige todos los errores de schema, contracts y manifest que reporte; solo
-entonces deja el manifest en estado GENERATED y solicita aceptación.
+Escribe los artefactos propios y deja `generation-manifest.json` con
+`status: GENERATED` y tus dos listas de capacidades. No invoques
+`host_validator.py` sobre el manifest parcial: la prevalidación Host ocurre
+al terminar la sesión, después de inyectar contratos y completar hashes.
+Si el Host devuelve errores concretos, corrige solo los artefactos Creator
+que nombre; no inspecciones la implementación del validador.
 
 ## Invariantes
 

@@ -1,5 +1,16 @@
 # Cambios
 
+## Octavo ensayo Creator: prompt contradictorio corregido — 2026-10-14
+`gen-89d0dc81bb14`, mismo producto ficticio y presupuesto de 1,25 M: salida temprana
+`rc=1` tras **216.019 tokens facturables** y 53,24 s, sin manifest y con solo los doce
+ficheros de modo que el Host había escrito. No es una medida de ahorro por la prosa
+derivada. El journal muestra al modelo señalando una contradicción que introduje: al
+principio del prompt los modos estaban completos e intocables, pero más adelante se le
+pedía vaciar `mode_lifecycle` y sustituir el fence de `SKILL.md` por `{}`. Eliminé esas
+instrucciones obsoletas, la orden de copiar los contratos ya escritos y la prevalidación
+directa de un manifest parcial. Regresiones focalizadas fijan que ninguna de esas
+instrucciones vuelva al prompt. Un ensayo nuevo es necesario para medir el reparto corregido.
+
 ## Creator: la prosa operacional sale del Host, no del turno del modelo — 2026-10-14
 El séptimo ensayo dejó una prueba negativa decisiva: con los modos completos y válidos salvo
 la prosa, el modelo gastó 1.240.199 tokens y escribió **cero** bytes. El mecanismo que faltaba

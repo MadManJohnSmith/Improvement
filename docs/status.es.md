@@ -565,7 +565,22 @@ Medido sobre un fixture Node externo: los tres `mode.json` válidos contra schem
 `SKILL.md` contienen prosa operacional sin marcadores, y los 12 ficheros de modo están en
 disco (**90.641 bytes**) antes de que el modelo abra sesión. El prompt mide 28.615 bytes. Es
 una capacidad mecánica completada con 1125 pruebas de regresión en verde; **no se afirma
-ACTIVE**. Aún no se ha corrido un ensayo real de Creator bajo este nuevo reparto.
+ACTIVE**.
+
+### El octavo ensayo expuso un prompt contradictorio, no un resultado de coste
+
+La primera corrida real con prosa derivada por el Host (`gen-89d0dc81bb14`, mismo producto
+y presupuesto de 1,25 M) terminó tras **216.019 tokens facturables** y 53,24 segundos con
+`rc=1`, sin manifest y con solo los doce ficheros de modo escritos por el Host. El journal y
+stderr muestran al modelo notando expresamente la contradicción: la sección inicial decía
+que los modos estaban completos y no debían reescribirse, mientras secciones posteriores
+decían que `mode_lifecycle` podía faltar y ordenaban sustituir el fence completo de
+`SKILL.md` por un marcador vacío `{}`. Por tanto, este ensayo **no mide** si la prosa
+derivada por Host permite llegar a ACTIVE; mide un defecto del contrato del prompt que
+introduje al evolucionar el andamiaje. Eliminé las instrucciones obsoletas y las regresiones
+ahora exigen que el prompt no pida marcadores vacíos de lifecycle, ficheros de modo parciales
+ni validar directamente un manifest que el Host aún no ha completado. Hace falta otro ensayo
+antes de afirmar una mejora de coste.
 
 Tampoco se midió coste en dinero en este entorno: se declara en tokens (≈1.456.519 tokens en los
 seis turnos con uso medido). El pase es una muestra sobre un producto ficticio, no una campaña
