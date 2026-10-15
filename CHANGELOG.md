@@ -1,5 +1,25 @@
 # Cambios
 
+## Creator: el Host inyecta el `mode-lifecycle` en lugar de que se copie — 2026-10-14
+El último bloque determinista duplicado. El fence `mode_lifecycle` se escribe dos veces por
+modo (`mode.json` y `SKILL.md`): **58.281 de 97.214 bytes, el 59 %** del paquete real
+`gen-5d75bb55eaae`. Es además lo que el validador compara byte a byte.
+- **El cambio.** `inject_lifecycle_contracts` (`scripts/mode_lifecycle.py`), llamado desde
+  `verify_generation_output`, escribe el contrato exacto en `mode.json` y dentro del bloque
+  `json mode-lifecycle` de cada `SKILL.md` antes de calcular los hashes. El Creator solo
+  escribe un marcador de una línea y puede omitir `mode_lifecycle`; el prompt (1.5.0) dejó
+  de pedir la copia. La inyección reemplaza también la composición de cada modo, así que
+  una forma equivocada ya no puede costar la generación: en el paquete real fue lo que
+  tumbó tres modos.
+- **Regresiones.** El marcador vacío se acepta y el validador pasa; un fence ausente o
+  duplicado se rechaza por nombre; el test de handoff usa ahora el manifest post-inyección.
+  La regresión se ancla en el validador real, no en una igualdad interna.
+- **Medido sobre el paquete real:** tres capas fallando (`schema`, `contracts`,
+  `lifecycle`) pasan a **cero** sin reparación manual. **El paquete pesa más**, 97.214 →
+  114.936 bytes, y se declara: las composiciones malformadas del modelo pesaban 2.557
+  bytes y las correctas 17.468. El aumento es el precio de un paquete que valida, no de la
+  inyección. Suite: **1122 OK (11 omitidas)**.
+
 ## Creator: manifest completado por el Host, acotado al contrato de salida — 2026-10-14
 El paquete del cuarto ensayo dejó dos fallos mecánicos, no decisiones: un fichero en
 `generated/` que no llegó a la lista `artifacts` y `license_provenance[0]` sin el campo

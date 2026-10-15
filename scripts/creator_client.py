@@ -31,7 +31,8 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from layout_contract import layout_from_paths
-from mode_lifecycle import (expected_lifecycle, mode_composition,
+from mode_lifecycle import (expected_lifecycle,
+                            inject_lifecycle_contracts, mode_composition,
                             startup_check)
 from onboard import checked
 import workflow_reasoning
@@ -49,7 +50,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.4.0"
+PROMPT_VERSION = "1.5.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -267,6 +268,30 @@ def _deterministic_contracts(run_dir, layout, project_name):
         preset_id = f"{project_name}-{role}"
         contracts[preset_id] = mode_composition(preset_id, role)
     return contracts
+
+
+def inject_deterministic_mode_parts(run_dir, generated):
+    """Write the contract parts the Creator no longer has to compose.
+
+    Complements `materialize_deterministic_contracts`, which feeds the run: this
+    one repairs the package, for the case where the Creator's copy is itself the
+    failure. The real `gen-5d75bb55eaae` wrote all three compositions in the
+    wrong shape and cost itself a generation, and the lifecycle fence is 59% of
+    the package, deterministic, appearing twice per mode. Both are written here
+    from the same Host values the Validator compares against.
+    """
+    run_dir = Path(run_dir)
+    generated = Path(generated)
+    request = _read_json(run_dir / "inputs" / "bootstrap-request.json")
+    layout = layout_from_paths(request["project"], request["workspace"])
+    touched = inject_lifecycle_contracts(generated, layout)
+    for preset in touched:
+        role = json.loads(
+            (generated / "modes" / preset / "mode.json").read_text(
+                encoding="utf-8"))["role"]
+        (generated / "modes" / preset / "agent.cordis.yml").write_text(
+            mode_composition(preset, role), encoding="utf-8")
+    return touched
 
 
 def materialize_deterministic_contracts(run_dir, layout, project_name):
@@ -561,18 +586,19 @@ una generación nueva incluye implementer y prueba aceptación del comportamient
 Cada directorio `generated/modes/<preset-id>/` contiene exactamente `mode.json`,
 `preset.yml`, `agent.cordis.yml` y `SKILL.md`. `mode.json` declara `kind: "mode"`,
 `preset_id` igual al directorio y `role` (`auditor`, `continuous-repair` o
-`implementer`). Cada `agent.cordis.yml` es **copia literal** de
-`contracts/<preset-id>.agent.cordis.yml`, que el Host ya materializó con las siete
-filas operativas exactas —persona con su `config.prefix`, bash, filesystem,
-búsqueda con `config.sampleOverCapGlobResults: false`, proveedor de skills,
-loader y guard `./anti-escalation.mjs`— y en la forma que exige el parser: filas
-`- id:` de nivel superior, no un documento `name:`/`plugins:`. No la reescribas,
-no la reformatees ni la resumas: el Host la compara con la suya. El lifecycle
-estructurado y la persona fijan `escalation_channel: forbidden`: jamás envían
-`sandbox_permissions` ni `justification`, con ningún valor (incluidos
-`workspace-write` y `danger-full-access`), incluso como reintento tras
-denegación o error de schema; cualquiera de esos fallos deja `RETAINED` sin
-reintento. La guía de escalada del runtime no aplica.
+`implementer`), y `mode_lifecycle` puede quedar vacío o ausente: el Host escribe
+el contrato real antes de validar. Cada `agent.cordis.yml` puede escribirse con
+cualquier contenido de relleno —por ejemplo vacío— porque el Host lo reemplaza
+con las siete filas operativas exactas que ya materializó en
+`contracts/<preset-id>.agent.cordis.yml` (persona con su `config.prefix`, bash,
+filesystem, búsqueda con `config.sampleOverCapGlobResults: false`, proveedor de
+skills, loader y guard `./anti-escalation.mjs`). La validación falla si el fichero
+no existe. El lifecycle estructurado y la persona fijan
+`escalation_channel: forbidden`: jamás envían `sandbox_permissions` ni
+`justification`, con ningún valor (incluidos `workspace-write` y
+`danger-full-access`), incluso como reintento tras denegación o error de schema;
+cualquiera de esos fallos deja `RETAINED` sin reintento. La guía de escalada del
+runtime no aplica.
 Los tres presets usan exclusivamente la identidad sibling autoritativa, exacta y
 case-sensitive derivada al generar: cwd esperado por basename `{session_root}`, producto
 `{product_root}`, workspace `{workspace_root}` y estado relativo `{state_root}`. No
@@ -725,15 +751,20 @@ código.
 El Host ya calculó en `contracts/` los tres contratos `mode-lifecycle` exactos
 para este layout: `auditor.mode-lifecycle.json`,
 `continuous-repair.mode-lifecycle.json` e `implementer.mode-lifecycle.json`.
-Para cada rol copia el objeto íntegro del fichero correspondiente, sin
-reconstruirlo ni simplificarlo, en `mode.json` como `mode_lifecycle` y en
-`SKILL.md` dentro de un único bloque `json mode-lifecycle`. El Host compara
-ambos con `expected_lifecycle(role, layout)`; una diferencia es RETAINED.
-No incluyas los ficheros `contracts/` del run en el manifest: no son artefactos
-Creator, sino entradas Host. La conducta del modo debe aplicar el contrato,
-no limitarse a mostrarlo: estado acotado, recibos de overflow, verificación real,
-workdir de auditor confinado al cwd de sesión, candidata sombra Host de repair
-e implementer, sin commit/merge/push/publicación. Auditor responde al prompt
+Escribe el `SKILL.md` de cada modo con **un único** bloque de marcador, tal cual
+y sin contenido propio:
+```json mode-lifecycle
+{{}}
+```
+El Host **escribe el contrato real dentro de ese bloque** antes de validar, y
+hace lo mismo con `mode_lifecycle` dentro de `mode.json`: no transcribas el
+contrato ni lo resumas ni lo copies a mano. Si el bloque falta, está duplicado o
+trae contenido propio, la validación falla. No incluyas los ficheros `contracts/`
+del run en el manifest: no son artefactos Creator, sino entradas Host. La
+conducta del modo debe aplicar el contrato, no limitarse a mostrarlo: estado
+acotado, recibos de overflow, verificación real, workdir de auditor confinado al
+cwd de sesión, candidata sombra Host de repair e implementer, sin
+commit/merge/push/publicación. Auditor responde al prompt
 `Audita completamente este proyecto; no modifiques ni publiques.` y entrega
 handoff persistido. Repair responde a
 `Repara los hallazgos de la auditoría; no publiques.` usando el estado y los
@@ -1427,6 +1458,11 @@ class CreatorSession:
                 raise ValueError(
                     "Creator intentó escribir host-verdict.json (auto-aprobación)"
                 )
+
+        # Then the deterministic parts of the modes are written by the Host, so
+        # the lifecycle contract is not transcribed twice per mode and a
+        # composition-shaped mistake cannot cost the whole generation.
+        inject_deterministic_mode_parts(self.run_dir, gen_dir)
 
         # Then the derived half is recomputed rather than transcribed: artifacts,
         # hashes, provenance and the routing digest are facts the Host can read

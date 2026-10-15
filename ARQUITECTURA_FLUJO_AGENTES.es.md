@@ -75,6 +75,14 @@ operativa completa (`agent.cordis.yml`: siete filas fijas cuyo único valor vari
 prefijo de persona— también lo calcula el Host) y la mitad derivada de
 `generation-manifest.json` (diez de sus doce campos). Esos valores se **materializan en
 `contracts/` del run antes de que el prompt los nombre**, y Creator los copia; el validador
+
+Cuando un valor solo serviría para que se copiara tal cual, el Host da un paso más y lo
+**escribe directamente en el paquete** en lugar de pedir una copia que comparar: el
+contrato de lifecycle exacto entra en `mode.json` y en el fence del `SKILL.md`, y la
+composición reemplaza a la generada, todo antes de calcular los hashes del manifest. En el
+paquete real `gen-5d75bb55eaae` ese contrato duplicado es el 59 % de los bytes
+distribuidos, y que el modelo escribiera las tres composiciones con la forma equivocada fue
+lo que le costó la generación.
 compara la copia byte a byte. Pedir al modelo que transcriba un valor que el Host ya conoce
 es un coste sin autoridad detrás: gasta contexto en reproducir y convierte cada cambio de
 redacción en un riesgo de divergencia. Medido en el ensayo real `gen-5d75bb55eaae`

@@ -70,6 +70,13 @@ role, the central repair/implementation commands, the whole operational composit
 by the Host too) and the derived half of `generation-manifest.json` (ten of its twelve
 fields). Those values are **materialized into `contracts/` of the run before the
 prompt names them**, and Creator copies them; the Validator compares the copy byte for byte.
+
+Where a value would only be copied verbatim, the Host goes one step further and **writes it
+into the package itself** instead of asking for a copy to check: the exact lifecycle
+contract goes into `mode.json` and into the `SKILL.md` fence, and the composition replaces
+the generated one, all before the manifest hashes are computed. In the real package
+`gen-5d75bb55eaae` that duplicated contract is 59% of the shipped bytes, and the model
+writing all three compositions in the wrong shape is what cost it a generation.
 Asking the model to transcribe a value the Host already knows is a cost with no authority
 behind it: it spends context on reproduction and turns every wording change into a
 divergence risk. Measured on the real trial `gen-5d75bb55eaae` (2026-10-14), the lifecycle
