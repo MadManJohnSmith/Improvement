@@ -22,6 +22,18 @@ python3 -B scripts/bootstrap.py install \
   --launch-dsh
 ```
 
+`--project` es opcional en el layout documentado (framework clonado junto al
+proyecto): si se omite, el único checkout git junto al clon del framework es el
+proyecto; cero o varios candidatos fallan cerrado nombrándolos. El mismo
+default sirve para `update`, `stack`, `state` y `uninstall`.
+`--creator-max-tokens` sube el techo de tokens facturables del run Creator
+(default 500000; un run retenido por presupuesto nombra este flag como su
+acción de reintento). Mientras el comando corre, líneas de progreso humanas van
+a stderr — preflight, creación del run, adquisición de DSH, adopción de sesión,
+ticks de supervisión con tokens `usados/techo` — para que un run trabajando no
+sea indistinguible de uno colgado; stdout conserva solo el JSON final e
+`IMPROVEMENT_QUIET=1` silencia todas las líneas.
+
 Qué hace:
 
 1. preflight: descubre el proyecto, verifica DSH/proveedor y prepara un workspace externo limpio (`<Proyecto>-workspace/`);

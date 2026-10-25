@@ -36,6 +36,46 @@ import state_reconcile
 SCHEMA_VERSION = 1
 RUN_DIR_NAME = "creator-runs"
 
+
+def _progress(message):
+    """Human progress line on stderr; stdout stays machine-readable JSON.
+
+    A long install used to print nothing until the final JSON: the operator
+    could not tell a working run from a hung one. ``IMPROVEMENT_QUIET=1``
+    silences every line for callers that only want the JSON.
+    """
+    if os.environ.get("IMPROVEMENT_QUIET"):
+        return
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}",
+          file=sys.stderr, flush=True)
+
+
+def _resolve_project_argument(value, *, framework=FRAMEWORK):
+    """Resolve ``--project``, defaulting to the single sibling checkout.
+
+    The documented layout clones the framework beside the project, so an
+    omitted ``--project`` resolves to the only git checkout next to the
+    framework clone. Zero or several candidates fail closed naming them:
+    a silent guess would audit the wrong tree.
+    """
+    if value:
+        return Path(value).resolve()
+    parent = framework.parent
+    candidates = sorted(
+        p for p in parent.iterdir()
+        if p != framework and p.is_dir() and not p.name.startswith(".")
+        and not p.name.endswith("-workspace") and (p / ".git").exists())
+    if len(candidates) == 1:
+        return candidates[0].resolve()
+    if not candidates:
+        raise ValueError(
+            f"--project omitido y no hay ningún proyecto git junto al "
+            f"framework en {parent}; pasa --project")
+    names = ", ".join(c.name for c in candidates)
+    raise ValueError(
+        f"--project omitido y hay varios proyectos git junto al framework "
+        f"en {parent} ({names}); pasa --project")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -342,6 +382,8 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
     """
     sys.path.insert(0, str(FRAMEWORK / "scripts"))
     import creator_client as cc
+    _progress("install: despachando Creator "
+              "(la supervisión puede durar hasta el presupuesto)")
     try:
         result["creator"] = cc.run_creator(
             run_dir, acquire=True, launch=launch_dsh)
@@ -353,14 +395,24 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
             "message": "Despacho a Creator falló; run recuperable",
         }
     creator_state = result["creator"].get("result")
-    detail = result["creator"].get("message") or result["creator"].get("error")
+    detail = (result["creator"].get("message")
+              or result["creator"].get("reason")
+              or result["creator"].get("error"))
     if detail:
         result["message"] += f"; Creator: {creator_state} ({detail})"
     else:
         result["message"] += f"; Creator: {creator_state}"
+    if (creator_state == "RETAINED"
+            and isinstance(detail, str) and "Límite de tokens" in detail):
+        # A retained-by-budget run names its single actionable retry: a fresh
+        # run with a higher ceiling. The frozen budget of this run is by
+        # design not relaxable on resume.
+        result["message"] += ("; acción: run nuevo con bootstrap.py install "
+                              "--creator-max-tokens <N>")
 
     if finalize_host and creator_state in (
             "GENERATED", "READY_FOR_HOST_REJECTION"):
+        _progress(f"install: Creator {creator_state}; finalización Host")
         workspace = Path(run_dir).parent.parent
         try:
             result["host"] = finalize(
@@ -389,6 +441,7 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     """
     project = checked(project)
     workspace = checked(workspace)
+    _progress(f"install: preflight de {project.name} ({project})")
 
     # Preflight
     pf = preflight(project, workspace)
@@ -436,6 +489,9 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                         "status": status,
                         "message": f"Generación existente en progreso: {status}",
                     }
+                    _progress(
+                        f"install: generación existente "
+                        f"{existing_run.get('generation_id')} en estado {status}")
                     if dispatch_creator and status in ("CREATED", "GENERATING"):
                         # Only these states are resumable by run_creator;
                         # dispatching others would wrongly retain the run.
@@ -530,6 +586,8 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
         },
     }
     _write_json(run_dir / "run.json", run_doc)
+    _progress(f"install: run {gen_id} creado en {run_dir} "
+              f"(techo Creator {run_doc['budget']['max_tokens']} tokens)")
 
     # Library snapshot: selection inputs are frozen per run (provenance)
     library_digest = None
@@ -1339,10 +1397,14 @@ def main():
 
     # install
     p_install = sub.add_parser("install", help="Crear run de generación")
-    p_install.add_argument("--project", required=True,
-                           help="Ruta absoluta al proyecto")
+    p_install.add_argument("--project", default=None,
+                           help="Ruta al proyecto (default: el único checkout "
+                                "git junto al clon del framework)")
     p_install.add_argument("--workspace", default=None,
                            help="Ruta al workspace externo (default: hermano del proyecto)")
+    p_install.add_argument("--creator-max-tokens", type=int, default=None,
+                           help="Techo de tokens facturables del run Creator "
+                                "(default: 500000)")
     p_install.add_argument("--no-dispatch", action="store_true",
                            help="Solo preparar el run; no despachar Creator "
                                 "(la supervisión puede durar hasta el presupuesto)")
@@ -1361,7 +1423,9 @@ def main():
     # stack
     p_stack = sub.add_parser(
         "stack", help="Resolver el plan de verificación contra el stack real")
-    p_stack.add_argument("--project", required=True)
+    p_stack.add_argument("--project", default=None,
+                         help="Ruta al proyecto (default: el único checkout "
+                              "git junto al clon del framework)")
     p_stack.add_argument("--workspace", default=None)
     p_stack.add_argument("--write", action="store_true",
                          help="Escribir .dsh-managed/capability-plan.json")
@@ -1387,13 +1451,17 @@ def main():
 
     # update
     p_update = sub.add_parser("update", help="Regenerar sobre base cambiada")
-    p_update.add_argument("--project", required=True)
+    p_update.add_argument("--project", default=None,
+                          help="Ruta al proyecto (default: el único checkout "
+                               "git junto al clon del framework)")
     p_update.add_argument("--workspace", default=None)
 
     # uninstall
     p_uninstall = sub.add_parser("uninstall",
                                  help="Retirar modos/skills gestionados")
-    p_uninstall.add_argument("--project", required=True)
+    p_uninstall.add_argument("--project", default=None,
+                             help="Ruta al proyecto (default: el único "
+                                  "checkout git junto al clon del framework)")
     p_uninstall.add_argument("--workspace", default=None)
 
     # purge-data
@@ -1464,7 +1532,9 @@ def main():
         "state",
         help="Reconciliar el mode-state con el repositorio real (informe, "
              "re-apuntado de cabeza integrada, retirada de candidata)")
-    p_state.add_argument("--project", required=True)
+    p_state.add_argument("--project", default=None,
+                         help="Ruta al proyecto (default: el único checkout "
+                              "git junto al clon del framework)")
     p_state.add_argument("--workspace", default=None)
     p_state.add_argument("--retire", action="store_true",
                          help="Retirar la candidata INTEGRATED verificada")
@@ -1505,12 +1575,19 @@ def main():
     exit_code = 0
     try:
         if args.command == "install":
-            project = Path(args.project).resolve()
+            project = _resolve_project_argument(args.project)
             workspace = (
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
             )
-            result = install(project, workspace,
+            budget = None
+            if args.creator_max_tokens:
+                budget = {
+                    "max_attempts": 3,
+                    "max_tokens": int(args.creator_max_tokens),
+                    "max_seconds": 1800,
+                }
+            result = install(project, workspace, budget=budget,
                              dispatch_creator=not args.no_dispatch,
                              launch_dsh=args.launch_dsh,
                              finalize_host=not args.no_finalize)
@@ -1535,7 +1612,7 @@ def main():
 
         elif args.command == "stack":
             import stack as stack_plan
-            project = Path(args.project).resolve()
+            project = _resolve_project_argument(args.project)
             workspace = (
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
@@ -1552,7 +1629,7 @@ def main():
             if args.json:
                 result["plan"] = value
         elif args.command == "update":
-            project = Path(args.project).resolve()
+            project = _resolve_project_argument(args.project)
             workspace = (
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
@@ -1560,7 +1637,7 @@ def main():
             result = update(project, workspace)
 
         elif args.command == "uninstall":
-            project = Path(args.project).resolve()
+            project = _resolve_project_argument(args.project)
             workspace = (
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
@@ -1681,7 +1758,7 @@ def main():
                           "summary": metrics.summarize(store, args.kind),
                           "recorded": "lo que no aparece como NO_DISPONIBLE no se registró"}
         elif args.command == "state":
-            project = Path(args.project).resolve()
+            project = _resolve_project_argument(args.project)
             workspace = (
                 Path(args.workspace).resolve() if args.workspace
                 else project.parent / f"{project.name}-workspace"
