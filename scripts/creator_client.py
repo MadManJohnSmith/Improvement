@@ -2240,6 +2240,19 @@ def _bind_resolved_dsh_home(client, home):
     return client
 
 
+def progress(message):
+    """Human progress line on stderr; stdout stays machine-readable JSON.
+
+    Creator supervision can run for minutes with no stdout until the final
+    JSON, which is indistinguishable from a hang for the operator watching
+    the terminal. ``IMPROVEMENT_QUIET=1`` silences every line.
+    """
+    if os.environ.get("IMPROVEMENT_QUIET"):
+        return
+    print(f"[{time.strftime('%H:%M:%S')}] {message}",
+          file=sys.stderr, flush=True)
+
+
 def acquire_dsh_client(*, launch=False, workspace_root=None):
     """Acquire an authenticated, provider-ready DSH client.
 
@@ -2756,10 +2769,19 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
         _fold_observation(state, observation)
         _save_session_state(session.run_dir, state, reason="OBSERVING")
 
+        used = _creator_usage_tokens(state)
+        if used is not None:
+            elapsed = max(0, int(session.timeout_seconds
+                                - (state["deadline"] - now_fn())))
+            progress(f"Creator: {used}/{session.max_tokens} tokens · "
+                     f"{len(state.get('usage_by_seq') or {})} pasos · "
+                     f"{elapsed}s transcurridos")
+
         # Budget first: the limit is a property of this run, not of the
         # current turn, so an exceeded attempt is never ACTIVE or GENERATED.
-        used = _creator_usage_tokens(state)
         if used is not None and used >= session.max_tokens:
+            progress(f"Creator: límite de tokens alcanzado "
+                     f"({used} >= {session.max_tokens}); cancelando sesión")
             _save_session_state(session.run_dir, state,
                                 reason="CANCELLING_TOKEN_BUDGET")
             try:
@@ -2806,6 +2828,7 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
 
         now = now_fn()
         if now >= state["deadline"]:
+            progress("Creator: timeout; cancelando sesión")
             _save_session_state(session.run_dir, state, reason="CANCELLING_TIMEOUT")
             try:
                 client.cancel_session(state["session_id"])
@@ -2836,6 +2859,7 @@ def _await_confirmed_quiescence(session, client, state, reason, *,
                 not state.get("active_jobs")):
             _save_session_state(session.run_dir, state,
                                 reason="CANCELLED_QUIESCENT")
+            progress(f"Creator: sesión cancelada y quiescente — {reason}")
             return session.retain(reason)
         sleep_fn(poll_seconds)
     return _mark_recovery_required(
@@ -2929,6 +2953,7 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
                 client, dsh_origin = acquire_dsh_client(
                     launch=launch, workspace_root=_run_workspace(run_dir).parent)
                 if client is None:
+                    progress(f"Creator: sin DSH utilizable — {dsh_origin}")
                     _save_session_state(run_dir, state, reason="AWAITING_DSH")
                     return {
                         "result": "PREPARED",
@@ -2938,6 +2963,7 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
                         "dsh_origin": dsh_origin,
                         "message": dsh_origin,
                     }
+                progress(f"Creator: DSH adquirido — {dsh_origin}")
 
             if client is not None and getattr(client, "authenticated", False):
                 adopted = _call_create_session(client, run_dir, state["session_id"])
@@ -2945,10 +2971,14 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
                     raise ValueError("DSH devolvió un session_id distinto del persistido")
                 session._session_ref = adopted
                 _save_session_state(run_dir, state, reason="SESSION_ADOPTED")
+                progress(f"Creator: sesión DSH adoptada ({adopted})")
                 # DSH session/prompt deduplicates the stable requestId against
                 # durable and queued user messages, so replay is intentional.
                 _call_send_prompt(client, adopted, prompt_text, state["request_id"])
                 _save_session_state(run_dir, state, reason="PROMPT_ACCEPTED")
+                progress(f"Creator: prompt enviado ({len(prompt_text)} bytes); "
+                         f"supervisando con techo {session.max_tokens} tokens y "
+                         f"{session.timeout_seconds}s de deadline")
 
                 if wait:
                     return _supervise_creator(

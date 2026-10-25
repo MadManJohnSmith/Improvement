@@ -1,5 +1,6 @@
 """Tests del encadenado Host automático: aceptación → activación."""
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import bootstrap
+
+# install() y run_creator emiten progreso humano por stderr por diseño
+# (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
+# llena de líneas de progreso que se leen como fallos.
+os.environ.setdefault("IMPROVEMENT_QUIET", "1")
 
 
 class FinalizeTests(unittest.TestCase):

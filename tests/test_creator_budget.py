@@ -10,6 +10,7 @@ DSH X3 trace, where usage rides on ``assistant/message`` and cache reads are
 billed inside ``totalTokens``.
 """
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import bootstrap
 import creator_client as cc
+
+# install() y run_creator emiten progreso humano por stderr por diseño
+# (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
+# llena de líneas de progreso que se leen como fallos.
+os.environ.setdefault("IMPROVEMENT_QUIET", "1")
 
 
 def usage_event(seq, *, turn=1, inp=100, out=50, cache=0):

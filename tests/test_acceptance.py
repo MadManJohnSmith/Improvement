@@ -1,6 +1,7 @@
 """Regression tests for deterministic, truthful Host acceptance."""
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import acceptance
 import bootstrap
+
+# install() y run_creator emiten progreso humano por stderr por diseño
+# (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
+# llena de líneas de progreso que se leen como fallos.
+os.environ.setdefault("IMPROVEMENT_QUIET", "1")
 from mode_lifecycle import expected_lifecycle, persona_prefix
 
 

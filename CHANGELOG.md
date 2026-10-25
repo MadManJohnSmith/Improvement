@@ -1,5 +1,45 @@
 # Cambios
 
+## Campaña manual sobre Syncify real: UX de install y perilla de presupuesto — 2026-10-25
+
+Primera corrida del flujo completo sobre un clon fresco del Syncify real
+(`~/Documents/Syncify-improvement`, run `gen-c34a3d00cce3`), conducida por el
+operador con la capa de campaña externa. El run acabó `RETAINED` por
+presupuesto — **523.971 tokens facturables frente al techo de 500.000, en 46 s**
+(14 pasos de modelo, 86 % lecturas de caché, 2.834 tokens de salida) — y el
+journal muestra la patología ya conocida: releyó `schemas/modes.schema.json`
+siete veces. Importante para leer esa cifra: el clon corría `74d2c4b` (dev de
+GitHub), **8+ commits atrás del canonical**, con el prompt antiguo de 50.418
+bytes y sin materialización de andamiaje ni prosa del Host; no mide el
+framework vigente. Tres defectos de la corrida quedaron cerrados en el
+canonical:
+
+- **`--project` opcional (D-03).** En el layout documentado (framework clonado
+  junto al proyecto) el default resuelve el único checkout git hermano del
+  clon; cero o varios candidatos fallan cerrado nombrándolos. El mismo default
+  sirve a `update`, `stack`, `state` y `uninstall`.
+- **Progreso humano en stderr (D-02).** `install` no imprimía nada hasta el
+  JSON final: un run trabajando era indistinguible de uno colgado. Ahora hay
+  hitos (preflight, run creado con su techo, DSH adquirido, sesión adoptada,
+  prompt enviado) y ticks de supervisión (`usados/techo` tokens, pasos,
+  segundos) en stderr; stdout conserva solo el JSON e `IMPROVEMENT_QUIET=1`
+  silencia todo.
+- **Perilla `--creator-max-tokens` (D-01).** El techo de 500.000 estaba
+  hardcodeado y `install(..., budget=...)` nunca se exponía. El flag fija el
+  presupuesto del run nuevo, y un RETAINED por presupuesto nombra su acción de
+  reintento en el mensaje compuesto (que ahora también arrastra el `reason`,
+  antes invisible).
+
+Quedó abierto y registrado en la campaña: `--launch-dsh` reutiliza una
+instancia DSH viva del home oficial **sin verificar el overlay** (D-04); esta
+vez no mordió porque Creator no escribió, pero la sesión corrió sin
+`workflow_write` y la fase de modos sí lo necesita. Decisión de diseño
+pendiente del titular.
+
+Suite: **1137 OK (11 omitidas)**, con `tests/test_campaign_ux.py` fijando los
+tres arreglos (default de proyecto, progreso en stderr con silenciamiento, y
+presupuesto por flag con mensaje de reintento).
+
 ## Octavo ensayo Creator: prompt contradictorio corregido — 2026-10-14
 `gen-89d0dc81bb14`, mismo producto ficticio y presupuesto de 1,25 M: salida temprana
 `rc=1` tras **216.019 tokens facturables** y 53,24 s, sin manifest y con solo los doce
