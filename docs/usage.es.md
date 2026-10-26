@@ -34,6 +34,15 @@ ticks de supervisión con tokens `usados/techo` — para que un run trabajando n
 sea indistinguible de uno colgado; stdout conserva solo el JSON final e
 `IMPROVEMENT_QUIET=1` silencia todas las líneas.
 
+`--host-package` produce el paquete de generación con herramientas
+deterministas del Host y **sin turno de Creator**: andamiaje, prosa operacional,
+contratos y manifest salen de código del Host leyendo los hechos del run, y el
+`creator_limit` del manifest declara ese origen — un run de esta vía nunca puede
+leerse como un éxito de Creator, y el gate de Creator sigue midiéndose en la vía
+por defecto. Es el patrón del pase integral 2026-10-10, ahora como flag de
+primera clase; la cadena de aceptación y activación corre igual después del
+paquete.
+
 Qué hace:
 
 1. preflight: descubre el proyecto, verifica DSH/proveedor y prepara un workspace externo limpio (`<Proyecto>-workspace/`);

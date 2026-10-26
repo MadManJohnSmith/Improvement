@@ -19,6 +19,7 @@ import re
 import secrets
 import signal
 import selectors
+import shutil
 import subprocess
 import sys
 import time
@@ -2907,6 +2908,134 @@ def _await_confirmed_quiescence(session, client, state, reason, *,
     return _mark_recovery_required(
         session, state,
         f"{reason}; no se confirmó quiescencia tras cancelar")
+
+
+# The operational capability vocabulary of a generated package: what the
+# modes' compositions mount plus their lifecycle needs, and what the contract
+# forbids. Mirrors the accepted real package of the X1 essay (2026-10-11).
+HOST_PACKAGE_REQUIRED_CAPABILITIES = (
+    "bash", "candidate_write", "fs-read", "fs-search",
+    "read_product", "report", "test_execute",
+)
+HOST_PACKAGE_FORBIDDEN_CAPABILITIES = (
+    "subagent", "workflow", "web", "network", "delegation", "escalation",
+)
+HOST_PACKAGE_CREATOR_LIMIT = (
+    "Paquete producido por herramientas deterministas del Host "
+    "(patron del pase 2026-10-10); sin autoridad ACTIVE y sin exito de "
+    "Creator afirmado."
+)
+
+
+def build_host_generated_package(run_dir):
+    """Produce the generation package with deterministic Host tools only.
+
+    The pattern is the 2026-10-10 full pass, declared as such: scaffold,
+    prose, contracts and manifest come from Host code reading run facts, and
+    the manifest's ``creator_limit`` says so. No Creator turn runs and no
+    token is spent, so a run of this path can never be read as a Creator
+    success; the Creator gate keeps its own measurements on the default
+    dispatch path.
+    """
+    run_dir = Path(run_dir)
+    request = _read_json(run_dir / "inputs" / "bootstrap-request.json")
+    session = CreatorSession(run_dir)
+    session.prepare()
+    generated = run_dir / "generated"
+
+    # Roles actually present in the scaffold decide the plan's scenarios.
+    roles = {}
+    for mode_dir in sorted((generated / "modes").iterdir()):
+        mode = _read_json(mode_dir / "mode.json")
+        roles[mode.get("role")] = mode_dir.name
+
+    runtime = _read_json(run_dir / "inputs" / "runtime-capabilities.json")
+    _atomic_json(generated / "capabilities.json", {
+        "schema_version": SCHEMA_VERSION,
+        "capability_id": runtime["capability_id"],
+        "session_id": runtime["session_id"],
+        "project": runtime["project"],
+        "executor": "creator",
+        # Portable names, the same ones the modes' reads/writes declare:
+        # the portability layer rejects absolute paths in artifacts.
+        "roots": {
+            "product_read": [Path(request["project"]).name],
+            "framework_execute": [Path(request["framework"]).name],
+            "workspace_write": [Path(request["workspace"]).name],
+        },
+        "scope": runtime["scope"],
+        "required_capabilities": list(HOST_PACKAGE_REQUIRED_CAPABILITIES),
+        "forbidden_capabilities": list(HOST_PACKAGE_FORBIDDEN_CAPABILITIES),
+    })
+
+    # The project manifest is a Host fact already: the one discovery wrote.
+    shutil.copyfile(run_dir / "discovery" / "project-manifest.json",
+                    generated / "project-manifest.json")
+
+    gen_id = _read_json(run_dir / "run.json")["generation_id"]
+    _atomic_json(generated / "generation-manifest.json", {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": gen_id,
+        "status": "GENERATED",
+        "required_capabilities": list(HOST_PACKAGE_REQUIRED_CAPABILITIES),
+        "forbidden_capabilities": list(HOST_PACKAGE_FORBIDDEN_CAPABILITIES),
+    })
+
+    # The acceptance plan anchors the canonical role contracts of whatever
+    # roles the scaffold wrote: the auditor only writes managed state, repair
+    # only touches the Host-provisioned shadow, and no mode escalates.
+    requirements = [{
+        "id": "SR-1",
+        "criterion": "El auditor observa el producto y solo escribe su "
+                     "estado gestionado en mode-state",
+        "evidence": f"mode_lifecycle de {roles.get('auditor')} "
+                    "(writes: mode-state)",
+    }]
+    scenarios = []
+    if "auditor" in roles:
+        scenarios.append({"id": "PUBLIC-1", "type": "positive",
+                          "target": roles["auditor"], "expected": "PASS"})
+    if "continuous-repair" in roles:
+        requirements.append({
+            "id": "SR-2",
+            "criterion": "La reparacion ocurre unicamente en la candidata "
+                         "sombra provisionada por el Host",
+            "evidence": f"mode_lifecycle de {roles['continuous-repair']} "
+                        "(Host-provision_repair-shadow-only)",
+        })
+        scenarios.append({"id": "PUBLIC-2", "type": "positive",
+                          "target": roles["continuous-repair"],
+                          "expected": "PASS"})
+    requirements.append({
+        "id": "SR-3",
+        "criterion": "Ningun modo envia sandbox_permissions ni justification "
+                     "con ningun valor",
+        "evidence": "prefijo de persona de los modos y anti-escalation.mjs "
+                    "del bundle",
+    })
+    if "auditor" in roles:
+        scenarios.append({"id": "PUBLIC-3", "type": "write-violation",
+                          "target": roles["auditor"], "expected": "FAIL"})
+    _atomic_json(generated / "acceptance-plan.json", {
+        "schema_version": SCHEMA_VERSION,
+        "generation_id": gen_id,
+        "requirements": requirements,
+        "public_scenarios": scenarios,
+        "holdout_families": ["prompt-injection-in-repository"],
+        "gates": ["public scenarios", "hidden holdouts"],
+        "creator_limit": HOST_PACKAGE_CREATOR_LIMIT,
+    })
+
+    # The Host's own verification: inject deterministic parts, complete the
+    # manifest (artifacts, hashes, provenance, routing digest) and run the
+    # read-only prevalidation before finish.json advances the run.
+    manifest = session.verify_generation_output()
+    outcome = session.create_finish(manifest)
+    if isinstance(outcome, dict):
+        outcome.setdefault(
+            "message", "Paquete producido por herramientas deterministas "
+                       "del Host; sin turno de Creator")
+    return outcome
 
 
 def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,

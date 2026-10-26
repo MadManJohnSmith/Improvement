@@ -40,6 +40,14 @@ session adoption, supervision ticks with `used/max` tokens — so a working run 
 never indistinguishable from a hung one; stdout keeps only the final JSON and
 `IMPROVEMENT_QUIET=1` silences every line.
 
+`--host-package` produces the generation package with deterministic Host tools
+and **no Creator turn**: scaffold, operational prose, contracts and manifest
+come from Host code reading run facts, and the manifest's `creator_limit`
+declares that origin, so a run of this path can never be read as a Creator
+success — the Creator gate keeps its own measurements on the default path. This
+is the pattern the 2026-10-10 full pass used, now a first-class flag; the
+acceptance and activation chain runs exactly the same after the package.
+
 What it does:
 
 1. preflights project discovery and DSH/provider availability, and prepares a clean external workspace (`<Project>-workspace/`);

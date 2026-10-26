@@ -1,5 +1,25 @@
 # Cambios
 
+## `install --host-package`: los modos con un comando, sin turno de Creator — 2026-10-25
+
+El operador de la campaña pidió lo que la beta promete: correr un comando y
+obtener los modos. Con el gate de Creator abierto (nueve mediciones sin
+`ACTIVE`), eso exigía un script externo de campaña; ahora es un flag de
+primera clase. `build_host_generated_package` (`scripts/creator_client.py`)
+produce el paquete completo con herramientas deterministas del Host —
+andamiaje y prosa vía `prepare()`, capabilities con roots portables (los
+mismos nombres relativos de los `mode.json`), project-manifest del discovery,
+manifest con las dos listas, y acceptance-plan anclado a los roles que el
+andamiaje escribió de verdad — y lo pasa por la misma verificación Host
+(`verify_generation_output` + `create_finish`). El `creator_limit` del plan
+declara el origen, así que **un run de esta vía nunca puede leerse como un
+éxito de Creator**; el gate sigue midiéndose en la vía por defecto. La cadena
+posterior (aceptación con evaluador, publicación de presets, `ACTIVE`) es la
+misma y corre encadenada. Aprendizaje integrado de la iteración de campaña: la
+primera versión del paquete usó rutas absolutas en `capabilities.json` y la
+capa de portabilidad la rechazó — la regresión fija roots portables. Suite:
+**1150 OK (11 omitidas)**.
+
 ## D-06 y D-07 de la campaña Syncify: el workspace es memoria y la cancelación no enmascara causas — 2026-10-25
 
 El tercer intento real (`gen-7df8fb95ba62`, código vigente: prompt de 27.670 bytes con
