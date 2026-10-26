@@ -588,7 +588,20 @@ class Transaction:
                     f"  name: {Transaction._yaml_scalar(skill_root.parent / 'anti-escalation.mjs')}",
                 ])
             else:
-                result.extend(row["lines"])
+                for line in row["lines"]:
+                    if line.startswith("  name: "):
+                        # The bundle patch is the boundary DSH's strict YAML
+                        # parser evaluates, and a plain scalar starting with
+                        # the reserved indicator '@' is invalid there
+                        # (campaign D-08: installBundle rejected every
+                        # preset until the names were quoted). Quote every
+                        # plugin name regardless of the source file's form,
+                        # so an already-generated mode is publishable too.
+                        # Single quotes, like DSH's own profile patches.
+                        result.append(
+                            "  name: '" + row["name"] + "'")
+                    else:
+                        result.append(line)
         return result
 
     def _bundle_skills(self, generated, modes, bundle):
@@ -710,8 +723,22 @@ class Transaction:
             if application == "restart-required":
                 return {"result": "RESTART_REQUIRED", "preset_ids": preset_ids}
             if application != "applied":
+                # The RPC carries the DSH-side diagnostic (pnpm output, YAML
+                # errors); without it the operator only sees 'failed' and the
+                # real cause stays on the server (campaign D-09). The
+                # actionable lines live at the end of the diagnostic.
+                diagnostic = None
+                if isinstance(outcome, dict):
+                    error = outcome.get("error")
+                    if isinstance(error, dict):
+                        diagnostic = error.get("diagnostic")
+                detail = ""
+                if isinstance(diagnostic, str) and diagnostic.strip():
+                    tail = " ".join(diagnostic.split())[-500:]
+                    detail = f"; diagnóstico DSH: …{tail}"
                 raise TransactionError(
-                    f"pluginManager/installBundle no aplicó el bundle: {application!r}")
+                    "pluginManager/installBundle no aplicó el bundle: "
+                    f"{application!r}{detail}")
 
         try:
             roster = self._roster_items(self.client.list_agent_presets())

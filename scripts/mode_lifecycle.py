@@ -848,14 +848,17 @@ def mode_composition(preset_id, role=None):
     """
     lines = [
         "- id: persona",
-        "  name: @deepseek-ai/dsh-persona",
+        # Quoted like DSH's own profile patches: a plain scalar starting
+        # with the reserved indicator '@' is invalid YAML for the strict
+        # parser that evaluates the published bundle (campaign D-08).
+        "  name: '@deepseek-ai/dsh-persona'",
         "  config:",
         "    prefix: " + json.dumps(persona_prefix(preset_id, role),
                                    ensure_ascii=False),
     ]
     for plugin_id, name, config in MODE_COMPOSITION_PLUGINS:
         lines.append(f"- id: {plugin_id}")
-        lines.append(f"  name: {name}")
+        lines.append(f"  name: '{name}'")
         for row in config or ():
             lines.append("  config:")
             lines.append(f"    {row}")

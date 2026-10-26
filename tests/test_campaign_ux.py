@@ -384,5 +384,60 @@ class CancelKeepsPrimaryReason(unittest.TestCase):
         self.assertIn("cola de cancelación sin usage medible", reason)
 
 
+class FinalizationFailureReportsLiveInstance(unittest.TestCase):
+    """D-10: a failed finalization names the DSH instance it leaves behind.
+
+    The framework-launched instance survives a failed finalize (the run is
+    recoverable and a retry reuses it), and the campaign operator's own
+    `dsh web` then died on EADDRINUSE with no way to know who held the port.
+    """
+
+    def test_failure_message_names_the_live_dsh_instance(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        project = root / "Syncify"
+        project.mkdir()
+        (project / "main.py").write_text("print('ok')\n")
+        workspace = root / "Syncify-workspace"
+        with contextlib.redirect_stderr(io.StringIO()):
+            run_dir = Path(bootstrap.install(
+                project, workspace, dispatch_creator=False)["run_dir"])
+        result = {"generation_id": "gen-x", "message": "Run gen-x creado"}
+
+        with unittest.mock.patch.object(
+                bootstrap, "finalize", side_effect=ValueError("boom")), \
+             unittest.mock.patch.object(
+                 cc, "_port_listener_pid", return_value=(4242, "node dsh")):
+            bootstrap._chain_host_finalize(result, run_dir, launch_dsh=False)
+
+        self.assertEqual(result["host"]["result"], "FINALIZATION_FAILED")
+        self.assertIn("PID 4242", result["host"]["message"])
+        self.assertIn("127.0.0.1:3080", result["message"])
+        self.assertIn("reutiliza", result["message"])
+
+    def test_failure_message_without_instance_stays_clean(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        project = root / "Syncify"
+        project.mkdir()
+        (project / "main.py").write_text("print('ok')\n")
+        workspace = root / "Syncify-workspace"
+        with contextlib.redirect_stderr(io.StringIO()):
+            run_dir = Path(bootstrap.install(
+                project, workspace, dispatch_creator=False)["run_dir"])
+        result = {"generation_id": "gen-x", "message": "Run gen-x creado"}
+
+        with unittest.mock.patch.object(
+                bootstrap, "finalize", side_effect=ValueError("boom")), \
+             unittest.mock.patch.object(
+                 cc, "_port_listener_pid", return_value=(None, None)):
+            bootstrap._chain_host_finalize(result, run_dir, launch_dsh=False)
+
+        self.assertEqual(result["host"]["result"], "FINALIZATION_FAILED")
+        self.assertNotIn("instancia DSH", result["host"]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()
