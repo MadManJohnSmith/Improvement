@@ -2882,8 +2882,18 @@ def _await_confirmed_quiescence(session, client, state, reason, *,
                                 cancel_deadline, poll_seconds, now_fn, sleep_fn):
     """Retain only once DSH confirms the session is fully quiescent."""
     while now_fn() <= cancel_deadline:
-        observation = _observe_creator(client, state)
-        _fold_observation(state, observation)
+        try:
+            observation = _observe_creator(client, state)
+            _fold_observation(state, observation)
+        except CreatorUsageAmbiguous as exc:
+            # Cancelling mid-step truncates the in-flight assistant message,
+            # which DSH flushes without usage. The account folded so far
+            # stands, the run is being retained for ``reason`` regardless, and
+            # losing that primary cause to the cancellation artifact would
+            # hide the one actionable message (campaign D-07: a budget-exceed
+            # cancel surfaced as "coste real desconocido").
+            return session.retain(
+                f"{reason}; cola de cancelación sin usage medible ({exc})")
         _save_session_state(session.run_dir, state,
                             reason="WAITING_FOR_QUIESCENCE")
         if (not state.get("running") and

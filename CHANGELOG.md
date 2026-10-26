@@ -1,5 +1,32 @@
 # Cambios
 
+## D-06 y D-07 de la campaña Syncify: el workspace es memoria y la cancelación no enmascara causas — 2026-10-25
+
+El tercer intento real (`gen-7df8fb95ba62`, código vigente: prompt de 27.670 bytes con
+andamiaje y prosa del Host) produjo la **novena medición del gate de Creator y la primera
+sobre un repositorio real con el código vigente**: 29 tool calls, 16 pasos, 92 s,
+**531.771 tokens facturables y cero escrituras** — el modelo inspeccionó el andamiaje que
+el Host le entregó (los dos resultados más grandes son los `cat` de los tres `mode.json` y
+`SKILL.md`) y leyó schemas del framework sin escribir jamás sus decisiones. La patología
+del séptimo ensayo se reproduce sobre repo real. Dos defectos de la misma corrida quedan
+cerrados:
+
+- **D-07 · la cola de cancelación sin usage enmascara la causa.** Al cancelar por
+  presupuesto, DSH emite el assistant/message truncado sin usage; el fold rechazaba la
+  cuenta entera y el RETAINED decía «coste real desconocido» en lugar de la causa ya
+  medida (531.771 ≥ 500.000). `_await_confirmed_quiescence` conserva ahora el reason
+  primario y anota la cola sin medir; la ambigüedad genuina fuera de cancelación sigue
+  siendo fatal. Regresión: `CancelKeepsPrimaryReason`.
+- **D-06 · reintentar borrando el workspace.** El operador borró
+  `<Proyecto>-workspace/` antes de cada reintento (tres veces, medido en la papelera): ningún
+  run fue reanudado y toda la evidencia acabó en la basura, incluido el run recuperable que
+  se quería reintentar. `docs/usage.md` y `usage.es.md` declaran ahora que reintentar nunca
+  significa borrar el workspace — re-correr `install` reanuda los runs `CREATED`/`GENERATING`
+  y el workspace es la memoria del flujo, no su caché. La evidencia de los tres runs
+  borrados quedó recuperada en el directorio externo de campaña.
+
+Suite: **1144 OK (11 omitidas)**.
+
 ## D-05: el chequeo de home DSH acepta el layout de 0.2.1 — 2026-10-25
 
 El re-run de la campaña con el clon sincronizado (`gen-4f6e9fd18808`) quedó

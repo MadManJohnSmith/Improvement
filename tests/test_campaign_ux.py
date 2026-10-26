@@ -312,5 +312,77 @@ class DshHomeEvidence(unittest.TestCase):
         self.assertIsNone(self._marker("readme.txt", "otra-cosa.json"))
 
 
+class CancelKeepsPrimaryReason(unittest.TestCase):
+    """D-07: a cancel-time usage-less message must not mask the real cause.
+
+    Run ``gen-7df8fb95ba62`` (campaign 2026-10-25) exceeded its budget, the
+    supervisor cancelled the session, and DSH flushed the in-flight assistant
+    message without usage. The fold refused the account and the run was
+    retained as "coste real desconocido" — hiding the actionable budget
+    cause that was already measured (531771 >= 500000).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.project = self.root / "project"
+        self.project.mkdir()
+        (self.project / "main.py").write_text("print('ok')\n")
+        self.run_dir = Path(
+            bootstrap.install(self.project, self.root / "workspace")["run_dir"])
+
+    def test_budget_reason_survives_a_usage_less_cancel_tail(self):
+        session = cc.CreatorSession(self.run_dir, max_tokens=100)
+        state, _ = cc._load_or_create_session_state(
+            self.run_dir, session.prepare(),
+            json.loads((self.run_dir / "run.json").read_text()),
+            now_fn=lambda: 1000.0)
+        calls = {"n": 0}
+
+        def fake_observe(client, st):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # Before the cancel: a clean account already over the ceiling.
+                return {"cursor": 1, "running": True, "children": [],
+                        "jobs": [],
+                        "events": [
+                            {"seq": 1, "type": "assistant/message",
+                             "data": {"turn": 1, "step": 1,
+                                      "usage": {"inputTokens": 60,
+                                                "outputTokens": 10,
+                                                "cacheReadTokens": 50,
+                                                "totalTokens": 120}}}]}
+            # After the cancel: DSH flushes the truncated in-flight step,
+            # whose assistant/message carries no usage key at all.
+            return {"cursor": 3, "running": False, "children": [], "jobs": [],
+                    "events": [
+                        {"seq": 2, "type": "assistant/message",
+                         "data": {"turn": 1, "step": 2}},
+                        {"seq": 3, "type": "turn/end",
+                         "data": {"turn": 1,
+                                  "reason": {"kind": "aborted",
+                                             "reason": {"kind": "user"}}}},
+                    ]}
+
+        class FakeClient:
+            def cancel_session(self, session_id):
+                pass
+
+        err = io.StringIO()
+        self.addCleanup(_restore_progress, _progress_on())
+        with contextlib.redirect_stderr(err):
+            with unittest.mock.patch.object(cc, "_observe_creator", fake_observe):
+                outcome = cc._supervise_creator(
+                    session, FakeClient(), state,
+                    now_fn=lambda: 1000.0, sleep_fn=lambda s: None)
+        self.assertEqual(outcome["result"], "RETAINED")
+        reason = outcome["reason"]
+        # The primary, actionable cause leads; the unmeasurable tail is a
+        # note, never a replacement.
+        self.assertIn("Límite de tokens Creator excedido: 120 >= 100", reason)
+        self.assertIn("cola de cancelación sin usage medible", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

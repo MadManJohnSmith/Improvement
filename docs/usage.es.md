@@ -56,6 +56,8 @@ CREATED → GENERATING → GENERATED → VALIDATING → BACKED_UP → STAGED →
 
 Sin sesión DSH autenticada el run queda `CREATED`/`PREPARED` recuperable; nunca en un estado silencioso. Una escritura denegada o un conflicto de esquema durante la generación es un hallazgo que se reporta, nunca un motivo de escalada de permisos: el workspace del run es escribible en el modo vigente y el Creator no envía nunca `sandbox_permissions` ni `justification`.
 
+**Reintentar nunca significa borrar el workspace.** Re-correr `install` sobre un run reanudable (`CREATED`/`GENERATING`) reanuda su despacho, y los runs conservados como evidencia nunca estorban: solo se crea un run nuevo cuando no existe uno reanudable. Borrar `<Proyecto>-workspace/` para «empezar limpio» destruye el historial de runs y su evidencia — medido en la campaña de Syncify, donde cada borrado manual del workspace tiró también el run recuperable que el operador quería reintentar. El workspace es la memoria del flujo, no su caché.
+
 ### Operación de los modos generados
 
 Con `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` activos, la operación es por mensajes breves en el proyecto:
