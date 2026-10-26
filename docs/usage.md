@@ -78,6 +78,13 @@ silently stranded. A denied write or schema conflict during generation is a find
 not a reason to escalate permissions: the run workspace is writable in the current mode, and
 Creator never sends `sandbox_permissions` or `justification`.
 
+**Retrying never means deleting the workspace.** Re-running `install` over a resumable run
+(`CREATED`/`GENERATING`) resumes its dispatch, and runs kept for evidence are never in the way:
+a new run is created only when no resumable one exists. Deleting `<Project>-workspace/` to
+"start clean" destroys the run history and its evidence — measured on the Syncify campaign,
+where every manual workspace deletion also threw away the recoverable run the operator meant
+to retry. The workspace is the flow's memory, not its cache.
+
 ### How the generated modes behave
 
 With `<Project>-auditor` and `<Project>-continuous-repair` active, use brief messages in the project:
