@@ -373,6 +373,28 @@ def _check_dsh():
 # ---------------------------------------------------------------------------
 
 
+def _chain_host_finalize(result, run_dir, launch_dsh):
+    """Run the Host-side acceptance/activation chain after a package exists."""
+    workspace = Path(run_dir).parent.parent
+    try:
+        result["host"] = finalize(
+            workspace, generation_id=result.get("generation_id"),
+            launch_dsh=launch_dsh)
+    except Exception as e:
+        result["host"] = {
+            "result": "FINALIZATION_FAILED",
+            "generation_id": result.get("generation_id"),
+            "error": str(e),
+            "message": "Finalización Host falló; run recuperable",
+        }
+    host_state = result["host"].get("result")
+    host_detail = (result["host"].get("message")
+                   or result["host"].get("error"))
+    result["message"] += f"; Host: {host_state}"
+    if host_detail:
+        result["message"] += f" ({host_detail})"
+
+
 def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
     """Dispatch Creator, then let deterministic Host code accept and activate.
 
@@ -413,27 +435,46 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
     if finalize_host and creator_state in (
             "GENERATED", "READY_FOR_HOST_REJECTION"):
         _progress(f"install: Creator {creator_state}; finalización Host")
-        workspace = Path(run_dir).parent.parent
-        try:
-            result["host"] = finalize(
-                workspace, generation_id=result.get("generation_id"),
-                launch_dsh=launch_dsh)
-        except Exception as e:
-            result["host"] = {
-                "result": "FINALIZATION_FAILED",
-                "generation_id": result.get("generation_id"),
-                "error": str(e),
-                "message": "Finalización Host falló; run recuperable",
-            }
-        host_state = result["host"].get("result")
-        host_detail = result["host"].get("message") or result["host"].get("error")
-        result["message"] += f"; Host: {host_state}"
-        if host_detail:
-            result["message"] += f" ({host_detail})"
+        _chain_host_finalize(result, run_dir, launch_dsh)
+
+
+def _dispatch_host_package_chain(result, run_dir, launch_dsh,
+                                 finalize_host=True):
+    """Build the package with deterministic Host tools, then finalize.
+
+    No Creator session runs and no token is spent: the scaffold, prose,
+    contracts and manifest come from Host code reading run facts, and the
+    manifest's ``creator_limit`` declares that origin so no run of this path
+    can be read as a Creator success. The Creator gate keeps being measured
+    by the default dispatch path.
+    """
+    sys.path.insert(0, str(FRAMEWORK / "scripts"))
+    import creator_client as cc
+    _progress("install: paquete determinista del Host (sin turno de Creator)")
+    try:
+        result["host_package"] = cc.build_host_generated_package(run_dir)
+    except Exception as e:
+        result["host_package"] = {
+            "result": "PREPARED",
+            "generation_id": result.get("generation_id"),
+            "error": str(e),
+            "message": "Paquete del Host falló; run recuperable",
+        }
+    package_state = result["host_package"].get("result")
+    detail = (result["host_package"].get("message")
+              or result["host_package"].get("error"))
+    if detail:
+        result["message"] += f"; Paquete-Host: {package_state} ({detail})"
+    else:
+        result["message"] += f"; Paquete-Host: {package_state}"
+
+    if finalize_host and package_state == "GENERATED":
+        _progress("install: finalización Host (aceptación y activación)")
+        _chain_host_finalize(result, run_dir, launch_dsh)
 
 
 def install(project, workspace, *, budget=None, dispatch_creator=False,
-            launch_dsh=False, finalize_host=True):
+            launch_dsh=False, finalize_host=True, host_package=False):
     """Create a new generation run from preflight through Creator package.
 
     Idempotent: if an identical run already exists, returns its reference.
@@ -495,8 +536,12 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
                     if dispatch_creator and status in ("CREATED", "GENERATING"):
                         # Only these states are resumable by run_creator;
                         # dispatching others would wrongly retain the run.
-                        _dispatch_creator_chain(
-                            result, run_path, launch_dsh, finalize_host)
+                        if host_package:
+                            _dispatch_host_package_chain(
+                                result, run_path, launch_dsh, finalize_host)
+                        else:
+                            _dispatch_creator_chain(
+                                result, run_path, launch_dsh, finalize_host)
                     elif finalize_host and status in (
                             "GENERATED", "READY_FOR_INSTALL"):
                         # Reanudar la finalización Host sin re-despachar:
@@ -735,8 +780,12 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     }
 
     if dispatch_creator:
-        _dispatch_creator_chain(
-            result, run_dir, launch_dsh, finalize_host)
+        if host_package:
+            _dispatch_host_package_chain(
+                result, run_dir, launch_dsh, finalize_host)
+        else:
+            _dispatch_creator_chain(
+                result, run_dir, launch_dsh, finalize_host)
     return result
 
 
@@ -1410,6 +1459,11 @@ def main():
                                 "(la supervisión puede durar hasta el presupuesto)")
     p_install.add_argument("--launch-dsh", action="store_true",
                            help="Arrancar 'dsh web' como hijo si no hay sesión autenticada")
+    p_install.add_argument("--host-package", action="store_true",
+                           help="Producir el paquete con herramientas "
+                                "deterministas del Host, sin turno de "
+                                "Creator (declarado así en el manifest); "
+                                "encadena aceptación y activación igualmente")
     p_install.add_argument("--no-finalize", action="store_true",
                            help="No encadenar aceptación Host ni activación tras Creator")
 
@@ -1590,7 +1644,8 @@ def main():
             result = install(project, workspace, budget=budget,
                              dispatch_creator=not args.no_dispatch,
                              launch_dsh=args.launch_dsh,
-                             finalize_host=not args.no_finalize)
+                             finalize_host=not args.no_finalize,
+                             host_package=args.host_package)
 
         elif args.command == "accept":
             result = accept(Path(args.workspace).resolve(),
