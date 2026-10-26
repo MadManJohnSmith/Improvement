@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -774,6 +775,70 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(failure.exception.code, 1)
         self.assertIn("no coincide con --dsh-home", stderr.getvalue())
         self.assertFalse((self.workspace / ".dsh-managed").exists())
+
+
+    def test_product_mode_composition_quotes_plugin_names(self):
+        """D-08: the canonical composition quotes plugin names.
+
+        DSH's strict YAML parser rejects a plain scalar starting with the
+        reserved indicator '@'. The real campaign reached installBundle with
+        unquoted names and every preset was rejected, while these fixtures
+        always wrote the quoted form — a fixture/product divergence.
+        """
+        from mode_lifecycle import mode_composition as product_composition
+        text = product_composition("project-auditor")
+        self.assertNotIn("name: @deepseek-ai/", text)
+        self.assertIn("name: '@deepseek-ai/dsh-persona'", text)
+        self.assertIn("name: '@deepseek-ai/dsh-tool-bash'", text)
+        self.assertIn("name: './anti-escalation.mjs'", text)
+
+    def test_bundle_patch_quotes_names_from_a_legacy_composition(self):
+        """D-08 boundary: an unquoted agent.cordis.yml still publishes quoted.
+
+        The bundle patch is what DSH parses, so the boundary quotes every
+        plugin name regardless of the source file's form: a generation made
+        before the canonical fix stays publishable.
+        """
+        legacy = self._package(self.root / "generated-legacy")
+        for mode in sorted((legacy / "modes").iterdir()):
+            path = mode / "agent.cordis.yml"
+            path.write_text(re.sub(
+                r"name: '(@deepseek-ai/[^']+)'", r"name: \1",
+                path.read_text()))
+        result = self.install(generated=legacy, generation="gen-legacy")
+        self.assertEqual(result["result"], "ACTIVE")
+        receipt = json.loads((self.workspace / ".dsh-managed" /
+                              "published-presets.json").read_text())
+        patch = (Path(receipt["bundle_path"]) /
+                 "cordis.patch.yml").read_text()
+        self.assertNotIn("name: @deepseek-ai/", patch)
+        self.assertEqual(patch.count("name: '@deepseek-ai/dsh-persona'"), 2)
+        self.assertEqual(patch.count("name: '@deepseek-ai/dsh-tool-bash'"), 2)
+
+    def test_install_bundle_failure_surfaces_the_dsh_diagnostic(self):
+        """D-09: a failed installBundle reports why, not just 'failed'.
+
+        The RPC response carries the DSH-side diagnostic (pnpm output, YAML
+        errors); discarding it left the campaign operator with a bare
+        'failed' while the server log named the exact parse error.
+        """
+        class FailingClient(Client):
+            def install_bundle(self, path):
+                super().install_bundle(path)
+                return {"value": {
+                    "application": "failed",
+                    "error": {
+                        "code": "operation-error",
+                        "diagnostic": (
+                            "Already up to date\n\ndsh: installation "
+                            "rejected: failed to parse overlay "
+                            "cordis.patch.yml: YAMLException: bad "
+                            "indentation of a mapping entry")}}}
+        with self.assertRaises(tx.TransactionError) as ctx:
+            self.install(client=FailingClient())
+        message = str(ctx.exception)
+        self.assertIn("diagnóstico DSH", message)
+        self.assertIn("YAMLException", message)
 
 
 if __name__ == "__main__":

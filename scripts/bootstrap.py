@@ -381,11 +381,28 @@ def _chain_host_finalize(result, run_dir, launch_dsh):
             workspace, generation_id=result.get("generation_id"),
             launch_dsh=launch_dsh)
     except Exception as e:
+        # A framework-launched DSH instance survives a failed finalization
+        # (the run is recoverable and a retry reuses it). Naming it prevents
+        # the operator's own `dsh web` from failing on a port held by a
+        # process they cannot see (campaign D-10).
+        instance_note = ""
+        try:
+            sys.path.insert(0, str(FRAMEWORK / "scripts"))
+            import creator_client as cc
+            pid, _line = cc._port_listener_pid(3080)
+            if pid is not None:
+                instance_note = (
+                    " · instancia DSH propia sigue activa en 127.0.0.1:3080 "
+                    f"(PID {pid}); un reintento la reutiliza, ciérrala si no "
+                    "la quieres")
+        except Exception:
+            pass
         result["host"] = {
             "result": "FINALIZATION_FAILED",
             "generation_id": result.get("generation_id"),
             "error": str(e),
-            "message": "Finalización Host falló; run recuperable",
+            "message": ("Finalización Host falló; run recuperable"
+                        + instance_note),
         }
     host_state = result["host"].get("result")
     host_detail = (result["host"].get("message")

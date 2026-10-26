@@ -1,5 +1,38 @@
 # Cambios
 
+## D-08/D-09/D-10: la publicación de presets sobre DSH 0.2.1, rota y sin diagnóstico — 2026-10-25
+
+El primer intento real de activación (`gen-b5b6bd215c9a`) llegó hasta el último
+paso: **la aceptación pasó** (`host-verdict: READY_FOR_INSTALL`, evaluador real
+sobre 0.2.1) y la publicación murió en `pluginManager/installBundle` con un
+lacónico `'failed'`. La causa completa estaba en el RPC y el código la
+descartaba: el parser estricto de YAML de DSH rechaza un escalar plano que
+empieza con el indicador reservado `@`, y el patch del bundle llevaba
+`name: @deepseek-ai/dsh-persona` sin citar. La suite no lo vio venir por una
+divergencia fixture/producto: los fixtures de `test_transaction.py` siempre
+escribieron los nombres citados mientras `mode_composition` los emitía sin
+citar — la regresión validaba su propio fixture (la enfermedad E15/E19 otra
+vez).
+
+- **D-08 · nombres citados en los dos extremos.** `mode_composition`
+  (`scripts/mode_lifecycle.py`) emite ahora `name: '@deepseek-ai/…'` con la
+  convención de los parches propios de DSH, y `_composition_with_skill_root`
+  (`scripts/transaction.py`) cita todo `name:` al re-emitir hacia el bundle:
+  la frontera donde vive el parser estricto, de modo que una generación ya
+  producida con la forma vieja también es publicable. Regresiones: la forma
+  canónica citada y la publicación de una composición legacy.
+- **D-09 · el diagnóstico del RPC llega al operador.** El
+  `TransactionError` de un `installBundle` fallido arrastra ahora la cola del
+  diagnóstico de DSH (pnpm, errores de YAML); el campaign operator vio
+  `'failed'` mientras el servidor decía exactamente qué línea de YAML reventaba.
+- **D-10 · la instancia que queda viva se nombra.** Una finalización fallida
+  deja la instancia DSH lanzada por el framework (el run es recuperable y el
+  reintento la reutiliza), y el `dsh web` del operador moría con `EADDRINUSE`
+  sin saber quién ocupaba el puerto. El mensaje de fallo reporta ahora puerto
+  y PID, y que un reintento la reutiliza.
+
+Suite: **1155 OK (11 omitidas)**.
+
 ## `install --host-package`: los modos con un comando, sin turno de Creator — 2026-10-25
 
 El operador de la campaña pidió lo que la beta promete: correr un comando y
