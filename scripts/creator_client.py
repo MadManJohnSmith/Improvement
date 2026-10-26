@@ -2253,6 +2253,38 @@ def progress(message):
           file=sys.stderr, flush=True)
 
 
+def _dsh_home_evidence(home):
+    """Name the artifact that proves ``home`` is a DSH home, or ``None``.
+
+    DSH 0.2.0 carried ``settings.yaml`` (or ``settings.yaml.imported`` after a
+    runtime migration); the 0.2.1 layout moved configuration into
+    ``profiles/<name>/cordis*.yml`` and credentials into ``.credentials.yaml``
+    — the same cookie this launch path just authenticated with. A home
+    holding any of those is a DSH home; a directory holding none is not, and
+    the launch refuses it instead of publishing presets against a home DSH
+    never used. Measured on a real 0.2.1-rc.2 home (campaign D-05): rejecting
+    it for lacking settings.yaml stranded the run PREPARED with the DSH
+    process already launched and authenticated.
+    """
+    home = Path(home)
+    for name in ("settings.yaml", "settings.yaml.imported",
+                 ".credentials.yaml"):
+        if (home / name).is_file():
+            return name
+    profiles = home / "profiles"
+    try:
+        entries = sorted(profiles.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        for marker in ("cordis.yml", "cordis.patch.yml"):
+            if (entry / marker).is_file():
+                return f"profiles/{entry.name}/{marker}"
+    return None
+
+
 def acquire_dsh_client(*, launch=False, workspace_root=None):
     """Acquire an authenticated, provider-ready DSH client.
 
@@ -2337,12 +2369,12 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
                 _terminate_process(process)
                 return None, (f"DSH no quedó autenticado tras el arranque: "
                               f"{cookie_error}; {exchange_error}")
-        home_evidence = ((home / "settings.yaml").is_file()
-                         or (home / "settings.yaml.imported").is_file())
-        if not home_evidence:
+        evidence = _dsh_home_evidence(home)
+        if evidence is None:
             _terminate_process(process)
             return None, (f"el home lanzado {home} no parece de DSH "
-                          "(sin settings.yaml ni settings.yaml.imported); "
+                          "(sin settings.yaml, settings.yaml.imported, "
+                          ".credentials.yaml ni profiles/*/cordis*.yml); "
                           "define DSH_HOME o configura ~/.dsh")
         status = dsh_provider_status(home)
         if not status["ok"] and os.environ.get("DSH_PROVIDER_STRICT"):
