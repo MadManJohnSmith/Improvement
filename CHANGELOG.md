@@ -1,5 +1,22 @@
 # Cambios
 
+## D-05: el chequeo de home DSH acepta el layout de 0.2.1 — 2026-10-25
+
+El re-run de la campaña con el clon sincronizado (`gen-4f6e9fd18808`) quedó
+`PREPARED` a los 5 s y sin gastar tokens: el framework lanzó su `dsh web`, la
+autenticó con la cookie HMAC del home… y lo rechazó porque DSH 0.2.1-rc.2 no
+crea `settings.yaml` — la configuración (proveedor incluido) vive en
+`profiles/<name>/cordis.patch.yml` y las credenciales en `.credentials.yaml`.
+El chequeo se escribió contra 0.2.0-rc.2 y era el riesgo registrado antes de
+empezar la campaña. `_dsh_home_evidence` (`scripts/creator_client.py`) acepta
+ahora los marcadores de ambos layouts — `settings.yaml`,
+`settings.yaml.imported`, `.credentials.yaml` y `profiles/*/cordis*.yml` — y
+el mensaje de rechazo nombra los cuatro. `dsh_provider_status` sigue leyendo
+settings.yaml y en 0.2.1 produce un aviso no bloqueante; la resolución real
+del proveedor la hace el perfil del runtime. Regresión:
+`tests/test_campaign_ux.py::DshHomeEvidence` (6 casos). Suite: **1143 OK
+(11 omitidas)**.
+
 ## Campaña manual sobre Syncify real: UX de install y perilla de presupuesto — 2026-10-25
 
 Primera corrida del flujo completo sobre un clon fresco del Syncify real

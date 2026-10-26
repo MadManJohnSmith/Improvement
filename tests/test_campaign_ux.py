@@ -263,5 +263,54 @@ class BudgetKnob(unittest.TestCase):
         self.assertNotIn("--creator-max-tokens", result["message"])
 
 
+class DshHomeEvidence(unittest.TestCase):
+    """D-05: a DSH 0.2.1 home is a DSH home even without settings.yaml.
+
+    The launch path used to demand settings.yaml/settings.yaml.imported and
+    rejected the real 0.2.1-rc.2 home — configuration lives in
+    ``profiles/web/cordis.patch.yml`` and credentials in ``.credentials.yaml``
+    — stranding run ``gen-4f6e9fd18808`` PREPARED with DSH already launched
+    and authenticated (campaign 2026-10-25).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / "dsh-home"
+
+    def _marker(self, *paths):
+        self.home.mkdir(parents=True, exist_ok=True)
+        for rel in paths:
+            p = self.home / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("# marker\n")
+        return cc._dsh_home_evidence(self.home)
+
+    def test_legacy_settings_yaml_is_evidence(self):
+        self.assertEqual(self._marker("settings.yaml"), "settings.yaml")
+
+    def test_legacy_imported_settings_is_evidence(self):
+        self.assertEqual(self._marker("settings.yaml.imported"),
+                         "settings.yaml.imported")
+
+    def test_dsh_021_credentials_are_evidence(self):
+        # The campaign case: a 0.2.1 home carries no settings.yaml at all.
+        self.assertEqual(self._marker(".credentials.yaml", ".anonymous-user-id"),
+                         ".credentials.yaml")
+
+    def test_dsh_021_profile_patch_is_evidence(self):
+        marker = self._marker("profiles/web/cordis.yml",
+                              "profiles/web/cordis.patch.yml",
+                              "profiles/web/package.json")
+        self.assertEqual(marker, "profiles/web/cordis.yml")
+
+    def test_empty_home_is_not_evidence(self):
+        self.home.mkdir(parents=True)
+        self.assertIsNone(cc._dsh_home_evidence(self.home))
+
+    def test_unrelated_files_are_not_evidence(self):
+        self.assertIsNone(self._marker("readme.txt", "otra-cosa.json"))
+
+
 if __name__ == "__main__":
     unittest.main()
