@@ -17,3 +17,17 @@ El mantenedor guía ensayos con DSH Standard, evalúa evidencia real de las sesi
 Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimos. No repetir toda la arquitectura ni exigir aprobación por cada subpaso ya autorizado. No afirmar autonomía, carga de skills o aislamiento a partir de un prompt o un estado declarativo.
 
 Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas externas, actualizar estado/documentación si corresponde, revisar lo que se versionará y dejar el árbol limpio tras un commit autorizado. Si hay trabajo ajeno, no descartarlo ni incluirlo para aparentar limpieza; señalarlo. La autorización del usuario cubre commits locales del flujo; no cambios de producto ni publicación remota.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues (`MadManJohnSmith/Improvement`) using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles mapped 1:1 to default label names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`GLOSSARY.md` at the repository root and ADRs in `docs/adr/`). See `docs/agents/domain.md`.
