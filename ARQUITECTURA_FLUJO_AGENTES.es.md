@@ -9,7 +9,7 @@
 **Propósito:** definir el flujo final distribuible en el que un usuario configura DSH una vez, clona el framework y ejecuta un bootstrap único que coordina Creator, validación Host, backups, aceptación automática, activación y rollback de modos y skills específicos del proyecto.
 **Jerarquía:** subordinada a `AGENTS.md`; `PLAN_IMPLEMENTACION.md` registra el progreso comprobado y `docs/status.md` separa hechos de destino.
 **Antecedentes:** la arquitectura v2.4 y los planes de cierre permanecen en Git; los presets operativos de Syncify/RehabWeb son fixtures de referencia, no defaults distribuibles. Se adaptan patrones del repositorio público `jsmastery-pro/skills` en el commit observado `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (MIT, 2026-08-07).
-**Cómo se mantiene:** los hitos C/D/E/F/G/M/P/U tienen su estado derivado y su evidencia en `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` sigue siendo el índice de progreso y `docs/status.md` el estado comprobado vigente. `skills/dsh-maintenance-session/SKILL.md` recoge el procedimiento verificado para preparar una sesión DSH real como usuario final.
+**Cómo se mantiene:** los hitos C/D/E/F/G/M/P/U tienen su estado derivado y su evidencia en `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` sigue siendo el índice de progreso y `docs/status.md` el estado comprobado vigente. `skills/dsh-maintenance-session/SKILL.md` recoge el procedimiento verificado para preparar una sesión DSH real como usuario final. Para el mantenimiento del repositorio, la configuración de agente por repositorio en `docs/agents/` se mantiene con `/setup-matt-pocock-skills`; la elección de skill o flujo se enruta con `/ask-matt`.
 
 ---
 

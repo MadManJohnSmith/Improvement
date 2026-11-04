@@ -1,5 +1,21 @@
 # Cambios
 
+## Gobernanza de skills de agente — 2026-11-03
+
+La documentación hace explícito qué comando mantiene la configuración por repositorio y
+cuál elige el skill o flujo, sin cambiar el diseño del framework ni el contenido
+distribuible:
+
+- **Setup.** `AGENTS.md` y los tres documentos de `docs/agents/` declaran que
+  `/setup-matt-pocock-skills` mantiene el issue tracker, las etiquetas de triaje y los
+  documentos de dominio, mediante invocación manual.
+- **Router.** La elección de skill o flujo se delega en `/ask-matt`, que enruta sobre
+  las skills instaladas; la documentación no duplica un catálogo.
+- **Alcance.** Se alinean el índice de documentación de `README.md`/`README.es.md` y las
+  cabeceras de ambas arquitecturas.
+
+Comprobación: `python3 -B -m unittest tests.test_architecture_consistency -v` en verde.
+
 ## Doc drift determinista y gobernado por el Harness — 2026-11-03
 
 La documentación se obsoletiza en silencio mientras el código evoluciona, y las

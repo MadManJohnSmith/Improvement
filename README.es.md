@@ -453,6 +453,7 @@ produce.
 - [Estado comprobado](docs/status.es.md)
 - [Progreso de hitos, una página](docs/progreso-agentico.es.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Skills de agente y reglas del repositorio](AGENTS.md) — para mantenedores: el issue tracker, las etiquetas de triaje y los documentos de dominio que asumen las skills de ingeniería; se configuran con `/setup-matt-pocock-skills` y la elección de skill o flujo se enruta con `/ask-matt`
 - [Planes de implementación](docs/plans/README.es.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
 - [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.es.md) (publicada el 2026-09-30)

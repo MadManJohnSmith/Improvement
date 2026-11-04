@@ -1,5 +1,7 @@
 # Issue tracker: GitHub
 
+Maintained with `/setup-matt-pocock-skills` (manual invocation). To choose the skill or flow that consumes this configuration, use `/ask-matt`.
+
 Issues and specs for this repo live as GitHub issues in `MadManJohnSmith/Improvement`. Use the `gh` CLI for all operations.
 
 ## Conventions

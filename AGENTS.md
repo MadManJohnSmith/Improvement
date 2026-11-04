@@ -20,6 +20,8 @@ Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas 
 
 ## Agent skills
 
+Las tres secciones siguientes son la configuración por repositorio que asumen las skills de ingeniería. La mantiene el mantenedor con `/setup-matt-pocock-skills` (invocación manual, no un paso que el agente decida por su cuenta); para elegir qué skill o flujo aplica a un encargo, el mantenedor usa `/ask-matt`, que enruta sobre las skills instaladas. No mantengas aquí un catálogo de skills en paralelo al router.
+
 ### Issue tracker
 
 Issues and specs are tracked in GitHub Issues (`MadManJohnSmith/Improvement`) using the `gh` CLI. See `docs/agents/issue-tracker.md`.

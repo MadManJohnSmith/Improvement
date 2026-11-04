@@ -457,6 +457,7 @@ already produces.
 - [Verified status](docs/status.md)
 - [Milestone progress, one page](docs/progreso-agentico.md) — every C/D/E/F/G/M/P/U milestone with its derived state and its evidence
 - [Normative architecture](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Agent skills and repository rules](AGENTS.md) — for maintainers: the issue tracker, triage labels and domain docs the engineering skills assume, configured with `/setup-matt-pocock-skills`; skill and flow selection is routed with `/ask-matt`
 - [Implementation plans](docs/plans/README.md) · [Launch plan](docs/plans/10-lanzamiento-publico.md)
 - [Changes](CHANGELOG.md) · [Third-party attributions](THIRD_PARTY_NOTICES.md)
 - [v0.1.0 beta notes](docs/plans/11-notas-beta-v0.1.0.md) (published 2026-09-30)

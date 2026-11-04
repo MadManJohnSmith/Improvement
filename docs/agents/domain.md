@@ -1,5 +1,7 @@
 # Domain Docs
 
+Maintained with `/setup-matt-pocock-skills` (manual invocation). To choose the skill or flow that consumes this configuration, use `/ask-matt`.
+
 How the engineering skills consume this repo's domain documentation when exploring the codebase.
 
 ## Before exploring, read these
