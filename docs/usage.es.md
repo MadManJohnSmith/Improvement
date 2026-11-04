@@ -56,6 +56,18 @@ El usuario no copia prompts, JSON, rutas, recibos ni escenarios de aceptación.
 
 Otros subcomandos: `accept` (solo lo invoca Creator), `verify-acceptance` y `finalize` (etapas de aceptación Host), `update` (regeneración por cambio material), `uninstall` y `purge-data`. Repetir `install` sobre un run reanudable reanuda el despacho; sobre un run propiedad del Host lo informa sin re-despachar.
 
+### Deriva documental: `bootstrap.py drift`
+
+Los contratos documentales se obsolecían en silencio mientras el código evoluciona. El motor determinista (`scripts/drift.py`, solo librería estándar, sin red ni LLM) compara lo que cada documento afirma — hashes de contrato de símbolos exportados, rutas citadas y bloques anclados `type-equiv` / `public-api` — contra el producto, y escribe el veredicto en `<workspace>/drift/source-drift.json` con su línea base en `<workspace>/drift/doc-baseline.json`:
+
+```bash
+python3 -B scripts/bootstrap.py drift --project /ruta/al/proyecto
+```
+
+`--from <rev>` y `--to <rev>` fijan el rango evaluado (`--to WORKTREE` lee el árbol de trabajo; sin `--from` la base es la línea base anclada). `--dry-run` previsualiza sin escribir, `--json` imprime el reporte completo y `--repin` re-ancla `doc-baseline.json` tras verificación del Host — autoridad del Host, nunca de un agente. Veredictos: `CURRENT` y `NON_GOVERNING_CHANGE` están limpios (espacios, comentarios, docstrings, churn de cuerpo privado o bajo umbral); `CONTRACT_DRIFT`, `STALE_REFERENCE` y `SOURCE_DRIFT` exigen sincronizar documentación. `update` consulta el mismo motor: cuando el diff entre la base de la generación activa y el árbol de trabajo es enteramente limpio, devuelve `NO_OP` sin corrida de Creator.
+
+La CLI del propio motor expone la misma costura a los gates de `workflow.py`: `scripts/drift.py check --project <repo> [--workspace <ws>] [--from <rev>] [--to <rev>] [--dry-run] [--json]` sale 0 si está limpio y 1 si hay deriva, de modo que un paso `gate` puede tomarlo como veredicto determinista. `init-baseline` ancla la primera línea base; `repin` la re-ancla tras verificación.
+
 ### Estados de run
 
 ```text

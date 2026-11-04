@@ -37,6 +37,7 @@ shape they do not model is skipped, never guessed. Missing a symbol delays a
 verdict; inventing one fabricates it.
 """
 
+import argparse
 import ast
 import difflib
 import hashlib
@@ -47,6 +48,7 @@ import os
 import posixpath
 import re
 import subprocess
+import sys
 import tokenize
 from pathlib import Path
 
@@ -1075,7 +1077,10 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
             live_units = extract_semantic_tokens(path, source)
             previous = base_symbols.get(doc, {}).get(path)
             previous_public = previous["public"] if previous else {}
-            previous_private = previous["private"] if previous else {}
+            # A file absent from the base (or a baseline, which stores public
+            # symbols only) has no private ground to diff against: its
+            # private symbols are newly discovered, not changed.
+            previous_private = previous["private"] if previous else None
 
             for name, signature in sorted(live.items()):
                 digest = _sha256(signature)
@@ -1317,3 +1322,88 @@ def _detail(problems):
 def _dumps(document):
     return json.dumps(document, sort_keys=True, indent=2,
                       ensure_ascii=False) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# CLI: the same seam, invocable. A workflow gate step can run `check` as its
+# deterministic verdict: exit 0 = clean (only CURRENT/NON_GOVERNING_CHANGE),
+# exit 1 = drift found, exit 2 = refused input. No network, no LLM, ever.
+# ---------------------------------------------------------------------------
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Motor determinista de deriva documental (ADR 0001/0002)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_check = sub.add_parser(
+        "check", help="Evaluar la deriva documental entre dos revisiones")
+    p_check.add_argument("--project", required=True,
+                         help="Ruta al repositorio del producto evaluado")
+    p_check.add_argument("--workspace", default=None,
+                         help="Workspace externo que contiene drift/ "
+                              "(default: sin estado en disco)")
+    p_check.add_argument("--from", dest="from_rev", default=None,
+                         help="Revisión base (default: la línea base anclada; "
+                              "sin base solo se verifican referencias)")
+    p_check.add_argument("--to", default="HEAD",
+                         help="Revisión objetivo (default: HEAD; 'WORKTREE' "
+                              "lee el árbol de trabajo)")
+    p_check.add_argument("--dry-run", action="store_true",
+                         help="No escribir source-drift.json")
+    p_check.add_argument("--json", action="store_true",
+                         help="Imprimir el reporte completo en JSON")
+
+    for name, help_text in (
+            ("init-baseline",
+             "Anclar la primera línea base de contratos del proyecto"),
+            ("repin",
+             "Re-anclar doc-baseline.json tras verificación del Host")):
+        p_pin = sub.add_parser(name, help=help_text)
+        p_pin.add_argument("--project", required=True,
+                           help="Ruta al repositorio del producto evaluado")
+        p_pin.add_argument("--workspace", required=True,
+                           help="Workspace externo donde vive drift/")
+        p_pin.add_argument("--to", default="HEAD",
+                           help="Revisión a anclar (default: HEAD)")
+
+    args = parser.parse_args(argv)
+    config = {"repo_root": str(Path(args.project).resolve())}
+    workspace = getattr(args, "workspace", None)
+    if workspace:
+        config["workspace"] = str(Path(workspace).resolve())
+
+    try:
+        if args.command == "check":
+            report = evaluate(config, base_rev=args.from_rev,
+                              target_rev=args.to, dry_run=args.dry_run)
+            found = any(entry["status"] not in ("CURRENT", "NON_GOVERNING_CHANGE")
+                        for entry in report["entries"])
+            if args.json:
+                print(_dumps(report), end="")
+            else:
+                for entry in report["entries"]:
+                    print("%s %s" % (entry["status"], entry["path"]))
+                print("verdict: %s" % ("DRIFT" if found else "CLEAN"))
+            return 1 if found else 0
+
+        baseline = collect_baseline(config, target_rev=args.to)
+        if args.command == "init-baseline" \
+                and load_baseline(config["workspace"]) is not None:
+            print("doc-baseline.json ya existe; repin es la re-ancla",
+                  file=sys.stderr)
+            return 2
+        pin_baseline(config["workspace"], baseline)
+        print("%s %s (base %s, %d símbolos en %d documentos)" % (
+            "anclada" if args.command == "init-baseline" else "re-anclada",
+            baseline_path(config["workspace"]), baseline["base_rev"],
+            sum(len(doc["symbols"]) for doc in baseline["documents"].values()),
+            len(baseline["documents"])))
+        return 0
+    except DriftError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

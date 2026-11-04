@@ -7,6 +7,7 @@ surface is exercised later, at the bootstrap integration round.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import drift  # noqa: E402
 import generation_contracts as gc  # noqa: E402
+
+# shutil.which('python3') y no sys.executable: en este host sys.executable es
+# el AppImage de ZCode (convención de test_metrics.py y test_workflow_executor).
+PYTHON = shutil.which("python3")
 
 
 TOOL_V1 = '''\
@@ -537,6 +542,90 @@ class DriftEngineTests(unittest.TestCase):
 def hashlib_sha(path):
     import hashlib
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class DriftCliTests(unittest.TestCase):
+    """The CLI is the same seam with an exit code a workflow gate can trust:
+
+    0 = clean, 1 = drift found, 2 = refused input.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "product"
+        self.workspace = Path(tmp.name) / "workspace"
+        self.repo.mkdir()
+        subprocess.run(["git", "-C", str(self.repo), "init", "-q"],
+                       check=True, capture_output=True)
+        (self.repo / "src").mkdir()
+        (self.repo / "src" / "tool.py").write_text(TOOL_V1, encoding="utf-8")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "api.md").write_text(API_DOC, encoding="utf-8")
+        self._commit("base")
+
+    def _commit(self, message):
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"],
+                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "-c", "user.name=Tester",
+             "-c", "user.email=t@example.test", "commit", "-q", "-m", message],
+            check=True, capture_output=True)
+
+    def _run(self, *args):
+        return subprocess.run(
+            [PYTHON, "-B", str(ROOT / "scripts" / "drift.py"), *args],
+            capture_output=True, text=True, check=False)
+
+    def test_check_clean_exits_zero_and_json_validates(self):
+        proc = self._run("check", "--project", str(self.repo),
+                         "--to", "WORKTREE", "--dry-run", "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(proc.stdout)
+        gc.validate("drift", report)
+        self.assertEqual(report["entries"][0]["status"], "CURRENT")
+
+    def test_check_exit_one_and_writes_the_report(self):
+        (self.repo / "src" / "tool.py").write_text(TOOL_PARAM_DRIFT,
+                                                   encoding="utf-8")
+        proc = self._run("check", "--project", str(self.repo),
+                         "--workspace", str(self.workspace),
+                         "--from", "HEAD", "--to", "WORKTREE")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("CONTRACT_DRIFT docs/api.md", proc.stdout)
+        self.assertTrue(drift.report_path(str(self.workspace)).is_file())
+
+    def test_check_dry_run_writes_nothing(self):
+        (self.repo / "src" / "tool.py").write_text(TOOL_PARAM_DRIFT,
+                                                   encoding="utf-8")
+        proc = self._run("check", "--project", str(self.repo),
+                         "--workspace", str(self.workspace),
+                         "--from", "HEAD", "--to", "WORKTREE", "--dry-run")
+        self.assertEqual(proc.returncode, 1)
+        self.assertFalse(drift.report_path(str(self.workspace)).exists())
+
+    def test_init_baseline_once_and_repin_after_drift(self):
+        proc = self._run("init-baseline", "--project", str(self.repo),
+                         "--workspace", str(self.workspace))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        proc = self._run("init-baseline", "--project", str(self.repo),
+                         "--workspace", str(self.workspace))
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("repin", proc.stderr)
+        (self.repo / "src" / "tool.py").write_text(TOOL_PARAM_DRIFT,
+                                                   encoding="utf-8")
+        self._commit("drift")
+        proc = self._run("repin", "--project", str(self.repo),
+                         "--workspace", str(self.workspace))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        # After the re-anchor, the same revision evaluates clean.
+        proc = self._run("check", "--project", str(self.repo),
+                         "--workspace", str(self.workspace), "--to", "HEAD")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    def test_refused_input_exits_two(self):
+        proc = self._run("check", "--project", str(self.repo / "missing"))
+        self.assertEqual(proc.returncode, 2)
 
 
 if __name__ == "__main__":

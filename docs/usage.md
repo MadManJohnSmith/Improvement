@@ -70,6 +70,36 @@ acceptance stages), `update` (regeneration on a material change), `uninstall` an
 Repeating `install` on a resumable run resumes the dispatch; on a Host-owned run it reports it
 without re-dispatching.
 
+### Document drift: `bootstrap.py drift`
+
+Documented contracts rot silently while code evolves. The deterministic engine
+(`scripts/drift.py`, stdlib-only, no network and no LLM) compares each
+document's claims — contract hashes of exported symbols, cited paths and
+pinned `type-equiv` / `public-api` blocks — against the product, and writes the
+verdict to `<workspace>/drift/source-drift.json` with its baseline at
+`<workspace>/drift/doc-baseline.json`:
+
+```bash
+python3 -B scripts/bootstrap.py drift --project /path/to/project
+```
+
+`--from <rev>` and `--to <rev>` pin the evaluated range (`--to WORKTREE` reads
+the working tree; without `--from` the pinned baseline is the base).
+`--dry-run` previews without writing, `--json` prints the full report, and
+`--repin` re-anchors `doc-baseline.json` after Host verification — Host
+authority, never an agent's. Verdicts: `CURRENT` and `NON_GOVERNING_CHANGE`
+are clean (whitespace, comments, docstrings, private or sub-threshold body
+churn); `CONTRACT_DRIFT`, `STALE_REFERENCE` and `SOURCE_DRIFT` demand a
+document sync. `update` consults the same engine: when the diff between the
+active generation's base and the working tree is entirely clean, it returns
+`NO_OP` without a Creator run.
+
+The engine's own CLI exposes the same seam to `workflow.py` gates:
+`scripts/drift.py check --project <repo> [--workspace <ws>] [--from <rev>]
+[--to <rev>] [--dry-run] [--json]` exits 0 when clean and 1 when drift is
+found, so a `gate` step can take it as a deterministic verdict. `init-baseline`
+pins the first baseline; `repin` re-anchors it after verification.
+
 The command orchestrates generation (Creator), Host prevalidation, transactional activation
 (bundle, presets, capability plan, campaign plan), acceptance, and — if any step fails —
 restoring the previous generation. Nothing reaches your repository without a verified stage.
