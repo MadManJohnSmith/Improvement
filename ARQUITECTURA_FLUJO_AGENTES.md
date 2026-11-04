@@ -44,7 +44,7 @@ The result of the incorporation will be:
 <Project>-implementer (optional third role; two-role generations remain valid)
 + project-justified specific skills
 ```
-Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Deployment for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
+Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Implementer for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
 
 ### 1.1 What is preserved from the current architecture
 
@@ -202,7 +202,7 @@ Host manages activation of the framework modes, but the promotion/integration of
 | Creator | Analyze project; generate candidate package; create specific skills; invoke `bootstrap accept`; correct mechanical errors within limits | Install directly; modify validators; lower controls; declare itself `ACCEPTED` |
 | Host | Validate schema/capabilities/hashes; budget; backup; transactional installation; acceptance; activation/rollback | Delegate authority to the model; accept declarative manifestos as permission |
 | Auditor generated | Read scope; inventory; persist bounded queue/evidence/handoff before closing | Modify product; publish; expand roots; respond without a durable handoff |
-| Repair generated | Auto-provision a sibling candidate from a simple prompt; repair/test/commit there; persist verification | Write canonical checkout; request derivable path; merge/push/publish; integrate without mandate |
+| Repair generated | Edit a Host-provisioned shadow candidate under the workspace from a simple prompt; repair/test there; persist verification | Commit without another explicit user prompt; write canonical checkout; request derivable path; merge/push/publish; integrate without mandate |
 | QA | Review the exact candidate; run the criteria; accept/reject | Be the same author under a different label |
 | Follow-up auditor | Semantically re-audit the accepted candidate | Be replaced by prior QA |
 
@@ -211,6 +211,46 @@ The main boundary is:
 Creator generates and requests acceptance
 Host validates, installs and decides mechanical state
 ```
+
+### 3.1 Scope charter: standing prohibitions and delegated responsibilities
+
+The framework's standing never-dos, each with the mechanism that enforces it (restated once
+here so the charter is readable in one place; the governing sections remain the authority):
+
+- Never reads, copies or asks for provider credentials: the provider gate inspects structure
+  and variable names only, never values.
+- The modes never send `sandbox_permissions`/`justification` with any value; a denial or
+  schema error is `RETAINED` without retry, alternative value or approval (anti-escalation
+  contract, first-party row `./anti-escalation.mjs`).
+- No external acquisition during bootstrap or accept: no npx/marketplace/downloads, no
+  web/MCP search, no service connections; DSH itself is never downloaded or installed by the
+  framework.
+- No delegation/subagent/workflow/web/plugin-manager row in any generated composition; the
+  user workflow enters through `bootstrap workflow run`, which never launches `dsh web`.
+- Creator only emits `GENERATED`: it never installs, modifies validators or controls, changes
+  routing or capabilities, or writes active destinations.
+- The generated modes never write the canonical checkout and never merge, push or publish; a
+  commit requires another explicit user prompt; the Implementer never invents a `finding_id`.
+- `REPAIRING → ACCEPTED` is a prohibited transition; an actor never invokes itself; terminal
+  states do not reopen; budgets only tighten; at most two correction attempts per unit.
+- No universal presets or generic MVP skills are distributed; fixtures are never installed as
+  defaults nor presented as the final experience.
+- Without evidence there is no PASS: `UNVERIFIED` is never inferred, an `abstain` blocks like
+  a `reject`, unrecorded cost is `NO_DISPONIBLE`, and the unknown stays unknown.
+
+Responsibilities deliberately left to the harness or the operator — the framework must not
+absorb them:
+
+| Responsibility | Owner |
+|---|---|
+| Configure the DSH provider and credentials (once) | user |
+| Sandbox confinement (`workspace-write`) | harness (DSH) |
+| Apply the candidate patch, commit, push, remote publication | operator |
+| Retiring shadow candidates and legacy worktrees (`state --retire` abstains) | operator, manual |
+| Provisioning missing capabilities (the resolver only names them) | operator, outside the product |
+| Owner-only native approvals (bootstrap pauses and resumes) | user |
+| Orchestrating maintenance sessions of the flow itself | maintainer's harness |
+
 ---
 
 ## 4. Distributable content of the repository
@@ -487,7 +527,7 @@ The manifest covers all files. Unmanifested file, incorrect hash, symlink, path 
 - require `generation-manifest.json` and `finish.json`;
 - Creator executes `bootstrap.py accept` upon completion.
 
-Launch (`--launch-dsh`) owns the lifecycle: detects and stops previous DSH instances (cmdline classifier that recognizes registry and npx binaries), resolves port ownership via `ss` without killing foreign processes, starts non-interactive `dsh web` (`npx -y`, null stdin, output captured with redacted tokens) by applying the `cordis-patch.yml` overlay that loads the framework plugin: fix upstream denial of writes with `sandbox_permissions` equal to the current mode in `workflow_write`, remove escalation fields from tools schemas and save bash escalation. The provider gate resolves the first usable provider of the DSH settings (structure and variable names, never key values): a missing key is a logged warning, not a lock, because the environment is not the only source of DSH keys; `DSH_PROVIDER_STRICT=1` restores the hard stop. The versioned prompt prohibits all use of `sandbox_permissions`/`justification` and relieves that prohibition to any delegated session — the runtime automatically rejects approvals in delegated sessions and they do not see the Creator prompt.
+Launch (`--launch-dsh`) owns the lifecycle: detects and stops previous DSH instances (cmdline classifier that recognizes registry and npx binaries), resolves port ownership via `ss` without killing foreign processes, starts non-interactive `dsh web` (`npx -y`, null stdin, output captured with redacted tokens) by applying the `cordis-patch.yml` overlay that loads the framework plugin: fix upstream denial of writes with `sandbox_permissions` equal to the current mode in `workflow_write`, remove escalation fields from tools schemas and save bash escalation. The provider gate resolves the first usable provider of the DSH settings (structure and variable names, never key values): a missing key is a logged warning, not a lock, because the environment is not the only source of DSH keys; `DSH_PROVIDER_STRICT=1` restores the hard stop. The versioned prompt prohibits all use of `sandbox_permissions`/`justification` and extends that prohibition to any delegated session — the runtime automatically rejects approvals in delegated sessions and they do not see the Creator prompt.
 
 ### B4 — `accept` invoked by Creator
 
@@ -629,7 +669,7 @@ Sequence:
 1. Complete validation in immutable staging.
 2. Change and collision plan.
 3. Backup and verification.
-4. Construction of sibling candidate tree.
+4. Construction of the shadow candidate repository with its own `.git` under the workspace.
 5. Discovery/loading against the candidate tree.
 6. Mechanical smoke.
 7. Functional acceptance.

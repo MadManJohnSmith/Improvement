@@ -218,7 +218,7 @@ Host gestiona activación de los modos del framework, pero la promoción/integra
 | Creator | Analizar proyecto; generar paquete candidato; crear skills específicas; invocar `bootstrap accept`; corregir errores mecánicos dentro de límites | Instalar directamente; modificar validadores; rebajar controles; declararse ACCEPTED |
 | Host | Validar schema/capabilities/hashes; presupuesto; backup; instalación transaccional; aceptación; activación/rollback | Delegar autoridad al modelo; aceptar manifiestos declarativos como permiso |
 | Auditor generado | Leer alcance; inventariar; persistir cola/evidencia/handoff acotados antes del cierre | Modificar producto; publicar; ampliar roots; responder sin handoff durable |
-| Reparación generada | Autoprovisionar candidato sibling desde un prompt simple; reparar/probar/commitear allí; persistir verificación | Escribir checkout canónico; pedir path derivable; merge/push/publicar; integrar sin mandato |
+| Reparación generada | Editar una candidata sombra provisionada por el Host bajo el workspace desde un prompt simple; reparar/probar allí; persistir verificación | Commitear sin otro prompt explícito del usuario; escribir checkout canónico; pedir path derivable; merge/push/publicar; integrar sin mandato |
 | QA | Revisar candidato exacto; ejecutar criterios; aceptar/rechazar | Ser el mismo autor presentado con otra etiqueta |
 | Auditor posterior | Reauditar semánticamente candidato aceptado | Sustituirse por la QA previa |
 
@@ -228,6 +228,48 @@ La frontera principal es:
 Creator genera y solicita aceptación
 Host valida, instala y decide estado mecánico
 ```
+
+### 3.1 Carta de alcance: prohibiciones permanentes y responsabilidades delegadas
+
+Los «jamás» permanentes del framework, cada uno con el mecanismo que lo aplica (se enuncian
+una vez aquí para que la carta se lea en un solo sitio; las secciones que los gobiernan
+siguen siendo la autoridad):
+
+- Jamás lee, copia ni pide credenciales de proveedor: la puerta de proveedor solo inspecciona
+  estructura y nombres de variable, jamás valores.
+- Los modos jamás envían `sandbox_permissions`/`justification` con ningún valor; una
+  denegación o error de schema queda `RETAINED` sin reintento, valor alternativo ni
+  aprobación (contrato anti-escalada, fila first-party `./anti-escalation.mjs`).
+- Sin adquisición externa durante bootstrap o aceptación: nada de npx/marketplace/descargas,
+  ni búsqueda web/MCP, ni conexión a servicios; DSH mismo jamás se descarga ni instala por
+  iniciativa del framework.
+- Ninguna fila de delegación/subagente/workflow/web/plugin-manager en las composiciones; el
+  flujo del usuario entra por `bootstrap workflow run`, que nunca lanza `dsh web`.
+- Creator solo emite `GENERATED`: nunca instala, ni modifica validadores o controles, ni
+  cambia routing o capacidades, ni escribe destinos activos.
+- Los modos generados jamás escriben el checkout canónico y jamás mergean, push o publican;
+  un commit requiere otro prompt explícito del usuario; el Implementador nunca inventa un
+  `finding_id`.
+- `REPAIRING → ACCEPTED` es una transición prohibida; un actor jamás se auto-invoca; los
+  estados terminales no se reabren; los presupuestos solo aprietan; máximo dos intentos de
+  corrección por unidad.
+- No se distribuyen presets universales ni skills MVP genéricas; los fixtures jamás se
+  instalan como default ni se presentan como experiencia final.
+- Sin evidencia no hay PASS: `UNVERIFIED` nunca se infiere, un `abstain` bloquea como un
+  `reject`, el coste no registrado es `NO_DISPONIBLE` y lo desconocido queda desconocido.
+
+Responsabilidades dejadas deliberadamente al harness o al operador — el framework no debe
+absorberlas:
+
+| Responsabilidad | Dueño |
+|---|---|
+| Configurar el proveedor y credenciales de DSH (una vez) | usuario |
+| Confinamiento sandbox (`workspace-write`) | harness (DSH) |
+| Aplicar el patch de la candidata, commit, push, publicación remota | operador |
+| Retiro de candidatas sombra y worktrees legacy (`state --retire` abstiene) | operador, manual |
+| Provisión de capacidades faltantes (el resolutor solo las nombra) | operador, fuera del producto |
+| Aprobaciones nativas exclusivas del owner (bootstrap pausa y reanuda) | usuario |
+| Orquestar las sesiones de mantenimiento del propio flujo | harness del mantenedor |
 
 ---
 
@@ -511,7 +553,7 @@ El manifest cubre todos los archivos. Archivo no manifestado, hash incorrecto, s
 - exigir `generation-manifest.json` y `finish.json`;
 - Creator ejecuta `bootstrap.py accept` al terminar.
 
-El lanzamiento (`--launch-dsh`) es dueño del ciclo de vida: detecta y detiene instancias DSH previas (clasificador de cmdline que reconoce registry y binarios npx), resuelve la propiedad del puerto vía `ss` sin matar procesos ajenos, arranca `dsh web` no interactivo (`npx -y`, stdin nulo, salida capturada con tokens redactados) aplicando el overlay `cordis-patch.yml` que carga el plugin del framework: corrige la denegación upstream de escrituras con `sandbox_permissions` igual al modo vigente en `workflow_write`, retira los campos de escalada de los schemas de tools y guarda la escalada de bash. La puerta de proveedor resuelve el primer proveedor utilizable del settings de DSH (estructura y nombres de variable, jamás valores de llaves): una llave ausente es un aviso registrado, no un bloqueo, porque el entorno no es la única fuente de llaves de DSH; `DSH_PROVIDER_STRICT=1` restaura la parada dura. El prompt versionado prohíbe todo uso de `sandbox_permissions`/`justification` y releva esa prohibición a cualquier sesión delegada — el runtime rechaza automáticamente las aprobaciones en sesiones delegadas y estas no ven el prompt del Creator.
+El lanzamiento (`--launch-dsh`) es dueño del ciclo de vida: detecta y detiene instancias DSH previas (clasificador de cmdline que reconoce registry y binarios npx), resuelve la propiedad del puerto vía `ss` sin matar procesos ajenos, arranca `dsh web` no interactivo (`npx -y`, stdin nulo, salida capturada con tokens redactados) aplicando el overlay `cordis-patch.yml` que carga el plugin del framework: corrige la denegación upstream de escrituras con `sandbox_permissions` igual al modo vigente en `workflow_write`, retira los campos de escalada de los schemas de tools y guarda la escalada de bash. La puerta de proveedor resuelve el primer proveedor utilizable del settings de DSH (estructura y nombres de variable, jamás valores de llaves): una llave ausente es un aviso registrado, no un bloqueo, porque el entorno no es la única fuente de llaves de DSH; `DSH_PROVIDER_STRICT=1` restaura la parada dura. El prompt versionado prohíbe todo uso de `sandbox_permissions`/`justification` y extiende esa prohibición a toda sesión delegada — el runtime rechaza automáticamente las aprobaciones en sesiones delegadas y estas no ven el prompt del Creator.
 
 ### B4 — `accept` invocado por Creator
 
@@ -657,7 +699,7 @@ Secuencia:
 1. Validación completa en staging inmutable.
 2. Plan de cambios y collisions.
 3. Backup y verificación.
-4. Construcción de árbol candidato hermano.
+4. Construcción del repositorio sombra de candidata con `.git` propio bajo el workspace.
 5. Descubrimiento/carga contra el árbol candidato.
 6. Smoke mecánico.
 7. Aceptación funcional.

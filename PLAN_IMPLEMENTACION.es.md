@@ -1,7 +1,7 @@
 # Plan de implementación y progreso · [English canonical](PLAN_IMPLEMENTACION.md)
 
-**Estado:** C0–C7, P1–P11 y las unidades de endurecimiento de los pilotos conservan verificación con evidencia recuperable; el trabajo abierto está en «Deuda declarada», en las puertas G0–G6 del [plan de lanzamiento](docs/plans/10-lanzamiento-publico.md) y en la deuda X1–X3 que abrió el pase sobre DSH real del 2026-10-10.
-**Actualización:** 2026-10-10
+**Estado:** C0–C7, P1–P11 y las unidades de endurecimiento de los pilotos conservan verificación con evidencia recuperable; las puertas G0–G7 del lanzamiento cerraron el 2026-09-30. El trabajo abierto es el gate de Creator post-presupuesto (siete corridas medidas, ninguna ACTIVE), el corpus gate contra un modo real (X3), la aceptación operativa de U6 y U4/U5, que requieren autorización del titular.
+**Actualización:** 2026-11-04
 **Fuente arquitectónica:** [ARQUITECTURA_FLUJO_AGENTES.md](ARQUITECTURA_FLUJO_AGENTES.md) v3.0
 
 Este archivo es el único índice de progreso. Conserva tres niveles:
@@ -167,9 +167,9 @@ comando y artefacto, está en [docs/status.md](docs/status.md).
 
 | ID | Unidad | Criterio de cierre |
 |---|---|---|
-| X1 | Candidata de reparación sin `worktree` del producto | Provisiona la candidata como repositorio sombra creado por el Host bajo el workspace, con `.git` propio, verificado contra DSH real y sin escribir en el `.git` del producto. Hoy solo `kind=implement` lo hace. |
-| X2 | `dsh web` servible, o Creator sin él | El perfil web del home de campaña arranca de verdad (con `node_modules` presentes) y el Creator persiste el paquete, o el camino Creator se demuestra por una vía que no dependa del servidor web. Sin uno de los dos, C2 no se revalida. |
-| X3 | Corpus gate contra un modo real | El gate corre sus 55 casos sobre un modo real de una sesión DSH real; hoy se abstiene nombrándolo. |
+| X1 | Candidata de reparación sin `worktree` del producto | Provisiona la candidata como repositorio sombra creado por el Host bajo el workspace, con `.git` propio, verificado contra DSH real y sin escribir en el `.git` del producto. **CERRADO 2026-10-11**: ejercitado bajo un preset real en dos turnos — provisión Host, `PROVISIONED → DIRTY` con digest y rutas, entrypoint del producto 3/3 contra la sombra, producto canónico intacto (`docs/status.md`, fila Durable Handoff). Residuo: el ciclo completo en un turno sobre un repositorio real. |
+| X2 | `dsh web` servible, o Creator sin él | El perfil web del home de campaña arranca de verdad (con `node_modules` presentes) y el Creator persiste el paquete, o el camino Creator se demuestra por una vía que no dependa del servidor web. **CERRADO tal como enunciado 2026-10-10**: `dsh web` arranca en `0.2.0-rc.2` (la parada anterior fue un home copiado con `node_modules` vacío); el hueco real es el adaptador evaluador Host, seguido en X3. |
+| X3 | Corpus gate contra un modo real | El gate corre sus 55 casos sobre un modo real de una sesión DSH real; hoy se abstiene nombrando la pieza que falta. **PENDIENTE (2026-11-04)**: el adaptador debe verificar layout por caso, skill efectiva y — desde el 2026-11-03 — una llamada y resultado correctos de la herramienta skill en el mismo turno antes de `session/create` (`docs/status.md`, párrafo del gate de Creator). |
 
 ## Reglas de actualización
 

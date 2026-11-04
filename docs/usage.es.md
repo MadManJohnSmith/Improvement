@@ -180,7 +180,8 @@ Un fichero de observaciones por escenario, `{"scenarios": {"SC-107": "PASS", ...
 —aquí no se ejecuta nada, porque correr escenarios contra un agente necesita el runtime. El gate acepta el
 candidato solo si el holdout mejora **estrictamente**, lo rechaza si pierde en la partición de entrenamiento aunque
 el holdout suba, y se abstiene —no acepta, no rechaza— si el slice de validación no es disjunto o no hay
-observaciones. El reparto sale del digest del `scenario_id`, así que es el mismo en cada corrida y un cambio no
+observaciones. (El gate ligado de abajo es más estricto: allí un `abstain` bloquea igual que un
+`reject`.) El reparto sale del digest del `scenario_id`, así que es el mismo en cada corrida y un cambio no
 puede elegir a qué escenarios le toca juzgarlo.
 ### Cuando una sesión se parte en dos: qué se sabe al arrancar
 `mode-state` son cinco ficheros, y reemplazarlos son cinco escrituras. Una caída entre dos dejaba

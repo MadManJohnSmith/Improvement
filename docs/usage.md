@@ -239,7 +239,8 @@ produced by a real run; this command does not execute scenarios, because running
 an agent needs the runtime. The gate accepts a candidate only when holdout improves
 **strictly**, rejects it if the training partition regresses even when holdout improves, and
 abstains — neither accepts nor rejects — if the validation slice is not disjoint or there are
-no observations. Partitioning derives from the `scenario_id` digest, so it is identical on
+no observations. (The bound gate below is stricter: there an `abstain` blocks like a
+`reject`.) Partitioning derives from the `scenario_id` digest, so it is identical on
 every run and a change cannot choose which scenarios judge it.
 
 ### When a session splits in two: what is known at startup

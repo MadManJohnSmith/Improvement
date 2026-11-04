@@ -1,5 +1,46 @@
 # Cambios
 
+## Entendido del framework: carta de alcance, conciliación y registro de veredictos — 2026-11-04
+
+La documentación había acumulado contradicciones internas y rastros de sesiones externas
+sin decisión registrada. Misión de conciliación ratificada por el mantenedor en modo
+remoto; el informe completo vive en el espacio externo de conciliación.
+
+- **Carta de alcance (§3.1)** en ambas arquitecturas: los «jamás» permanentes con el
+  mecanismo que los aplica y la tabla de responsabilidades delegadas al harness o al
+  operador, como vista compacta sin duplicar las secciones gobernantes.
+- **C1–C6**, contradicciones verificadas en fuente: la tabla de confianza ya no concede a
+  Repair el commit que la sección de ciclo niega (el commit pasa a la columna prohibido con
+  su condición); el residuo «sibling candidate» se sustituye por la sombra Host en los dos
+  sitios que lo conservaban; el rol inexistente «Deployment» pasa a «Implementer» (solo EN;
+  el ES ya lo decía); «relieves/lifts/releva esa prohibición» a sesiones delegadas se
+  reescribe como «extiende» en arquitectura y status en ambos idiomas — el contexto lo
+  decía: la prohibición se propaga a las sesiones delegadas, no se levanta; el glosario ya
+  no dice que el plugin «despacha automáticamente» la sincronización (despacha una
+  propuesta: sync propone, accept evalúa, instalación autorizada reemplaza); una nota
+  distingue la semántica de abstención del gate suelto (inconclusa) de la del ligado
+  (bloquea como reject).
+- **Registro de fuentes**: ingestadas las 18 entradas de la campaña de auditoría de repos
+  del 2026-10-09 (tabla §8 del informe externo), con la revisión verificada contra el HEAD
+  de cada clon — 12 coinciden con el sha del informe, 6 se fijan desde el clon con nota.
+  El registro pasa de 50 a 68 fuentes y estrena sus dos primeras `REJECTED` (OpenManus:
+  sin mecanismo; NanoJev: envoltorio). AGPL (odysseus, CUSTOS-CORE) se registra como
+  licencia abierta con el techo de reciprocidad en la decisión, no como propietaria.
+- **Paquete mecánico de documentación**: cabecera de `PLAN_IMPLEMENTACION` (G0–G7 cerrados
+  el 2026-09-30; el gate de Creator post-presupuesto como abierto mayor) y filas
+  X1/X2/X3 con estado y fecha en ambos idiomas; `progreso-agentico` al 2026-11-04 con las
+  citas de línea rotas sustituidas por referencias por sección; cifra de suite de `status`
+  re-medida en ambos idiomas (1188 OK: 1 omitida con módulo el 2026-11-04, 11 sin módulo
+  el 2026-11-03).
+- **Fuera del árbol**: las tres skills del repo que duplicaban la capa usuario
+  (`deep-module-design`, `seam-first-testing`, `diagnosis-feedback-loop`) se relocalizaron
+  al espacio de conciliación externo con la decisión registrada;
+  `evidence-gated-eval` y `agentic-code-hygiene` quedan a decisión separada.
+
+Comprobación: suite completa en verde con y sin módulo DSH externo (1188 pruebas; 1 y 11
+omitidas), `tests.test_architecture_consistency` en verde, registro validado contra su
+schema (68 fuentes).
+
 ## Gobernanza de skills de agente — 2026-11-03
 
 La documentación hace explícito qué comando mantiene la configuración por repositorio y

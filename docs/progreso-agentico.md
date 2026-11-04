@@ -1,6 +1,6 @@
 # Improvement agentic progress — single page view · [Spanish translation](progreso-agentico.es.md)
 
-**Updated:** 2026-10-11 (state derived from external trials, without asserting that the local modifications are integrated).
+**Updated:** 2026-11-04 (state derived from external trials and the 2026-11-03 status).
 
 **What is this document:** a single reading of the status of **all** milestones
 C/D/E/F/G/M/P/U and B0–B4, with the state derived from the cited evidence and not from the
@@ -12,7 +12,7 @@ is its joint view, so that no identifier is left to be hunted for.
 - `HECHO` — `PLAN_IMPLEMENTACION.md:17`: a proven output and gate, with recoverable evidence.
 - `PARCIAL` / `DECIDIDO` / `DECLINADO` / `RETENIDO` / `PENDIENTE` / `BLOQUEADO` — vocabulary of `PLAN_IMPLEMENTACION.md:18-21`. `RETENIDO` is a preserved candidate, not accepted, and is not `DECLINADO`.
 - `IMPLEMENTED_NOT_VERIFIED` / `EN CURSO` — vocabulary of `docs/status.md:4`.
-- `RETIRADO` — what `docs/status.md:28-34` calls “Validity removals”.
+- `RETIRADO` — what the Validity removals section of `docs/status.md` declares.
 
 **How to read the columns.** *Derived state* is what the cited evidence supports
 today. *HUS* distinguishes milestones whose past is reused via Git (`git show`) from those that
@@ -117,12 +117,14 @@ of the framework.
 | G6 | Tag and notes | HECHO 2026-09-30 (owner authorization) | live | `docs/plans/11-notas-beta-v0.1.0.md` |
 | G7 | Verification against real stack | FACT 2026-09-29 (26 of 30 stacks without campaign) | live | `docs/plans/10-lanzamiento-publico.md:37` |
 G7 keeps the limit its row requires to be published as a limit: **26 of 30 stacks
-They are still declared without campaign** (`docs/status.md:250`), not as a guarantee.
+are still declared without campaign** (the `stack_coverage` table of
+`docs/status.md`), not as a guarantee.
 
 ## M1–M9 · MVP v2.4 core closure (RETIRADO from tree — past reused)
 
-`docs/status.md:28-34` declares the elimination of these plans in force; `CHANGELOG.md:786`
-records that commit `c8aed51` deleted the three historical documents. **No row is
+The Validity removals section of `docs/status.md` declares the elimination of these
+plans in force; `CHANGELOG.md` records that commit `c8aed51` deleted the three
+historical documents. **No row is
 current work**: reading them as backlog would invent an obligation.
 
 | ID | What was it | Derived state | HUS | Access |
@@ -154,7 +156,7 @@ They carry their own “HISTORICAL CONTENT — DO NOT RUN” warning.
 | P8 | Mode installation as DSH presets | HECHO | live | `PLAN_IMPLEMENTACION.md:59` |
 | P9 | Operational gate and real skills route | HECHO | live | `PLAN_IMPLEMENTACION.md:60` |
 | P10 | Tardis pilot (Syncify) with real DSH | HECHO | live | `PLAN_IMPLEMENTACION.md:61` |
-| P11 | Holdout gate for the library | IMPLEMENTED_NOT_VERIFIED | live | `docs/status.md:130` |
+| P11 | Holdout gate for the library | IMPLEMENTED_NOT_VERIFIED | live | `docs/status.md` (Hardening after C7) |
 
 **P11 is the limit it serves not to soften:** the bound gate exists and decides
 on verified observations, but **no library changes have gone through it
@@ -185,17 +187,17 @@ era. The two documents are readable only by Git (`c8aed51`).
 ## U1–U6 · Workflow executor on the Host and default campaign
 
 `U` is the only family that `PLAN_IMPLEMENTACION.md` **does not** carry as a row: its
-status section lives at `docs/status.md:132-157` and its design at
-`ARQUITECTURA_FLUJO_AGENTES.md:290-300`.
+status section lives at `docs/status.md` (§ Workflow executor on the Host (U1–U3) and
+default campaign (U6)) and its design at `ARQUITECTURA_FLUJO_AGENTES.md` (§ U1–U6).
 
 | ID | Unit | Derived state | HUS | Evidence |
 |---|---|---|---|---|
-| U1 | Plan executor without DSH | HECHO what is proven; pure Host | live | `docs/status.md:136`; `scripts/workflow.py`; `tests/test_workflow_executor.py` |
-| U2 | Bootstrap entry and abstention | HECHO what is proven | live | `docs/status.md:137`; `tests/test_workflow_bootstrap.py` |
-| U3 | Step `ask` with fake client | HECHO with fake client, not real DSH | live | `docs/status.md:138`; `tests/test_workflow_ask.py` |
-| U4 | Distribution Bundle | PENDING · not executed (requires authorization) | live | `CHANGELOG.md:9`, `:25` |
-| U5 | Skill-doctrine in `library/` | PENDING · not executed (gate with real session) | live | `ARQUITECTURA_FLUJO_AGENTES.md:294` |
-| U6 | Defect audit and repair campaign | IMPLEMENTED_NOT_VERIFIED · without operational acceptance | live | `docs/status.md:4`, `:142`, `:156` |
+| U1 | Plan executor without DSH | HECHO what is proven; pure Host | live | `docs/status.md` (U1); `scripts/workflow.py`; `tests/test_workflow_executor.py` |
+| U2 | Bootstrap entry and abstention | HECHO what is proven | live | `docs/status.md` (U2); `tests/test_workflow_bootstrap.py` |
+| U3 | Step `ask` with fake client | HECHO with fake client, not real DSH | live | `docs/status.md` (U3); `tests/test_workflow_ask.py` |
+| U4 | Distribution Bundle | PENDING · not executed (requires authorization) | live | `docs/status.md` (What does not exist yet) |
+| U5 | Skill-doctrine in `library/` | PENDING · not executed (gate with real session) | live | `ARQUITECTURA_FLUJO_AGENTES.md` (§ U5) |
+| U6 | Defect audit and repair campaign | IMPLEMENTED_NOT_VERIFIED · without operational acceptance | live | `docs/status.md` (header and U6 section) |
 
 **U6 has moved somewhat, and it matters to be exact.** On 2026-10-10 the workflow
 showed, with real DSH, `FAIL → reparación → PASS` in two separate and verified runs
@@ -210,7 +212,7 @@ campaign does not close out the rules for a real repository.
 |---|---|---|---|
 | X1 | Repair candidate without `worktree` of the product | REAL HOST/SHADOW AND PRESET TESTED; entire cycle EXERCISED IN TWO TURNS | In `x1-live`, a fictional product and headless DSH exercised Host provision out of mode, `PROVISIONED → DIRTY`, diff verified, tests 3/3 and exact resume; The product was left intact. The corrected `bwrap` wrapper denied writes to the product, but headless did not compose the preset (0 calls to `skill`) and two turns totalled 386,441 tokens versus 250k. In `x1-preset-real`, DSH web resolved the actual preset and loaded its skill, with a read-only boundary around the Host shadow; with a ceiling of 120,000, the supervisor stopped the execution **before editing** due to a prediction of exceeding it (104,372 measured, 129,898 projected; in a later round 97,973 measured, 127,227 projected). **With a ceiling of 200,000, it did manage to edit**: 11 steps and 180,107 billable tokens, the shadow was left dirty with the canonical defect repaired (`Math.round(valor)` → `Math.round(valor * 100) / 100`, and the VAT-inclusive total rounded over an already rounded rate), the tests (3/3, executed by the operator from outside) passed against the shadow and the canonical product was left intact; the turn stopped on projection (180,107 measured, 208,828 projected) before the second dirty claim and the closure `DIRTY`. The final stretch was closed in a later turn, with the commands published as files verified by digest: the mode recorded `DIRTY` with digest and paths, persisted `work-items.json` and executed the entrypoint (3/3). The two stretches of the cycle were exercised, in separate turns. External tests: `x1-live/RESULTADO.md` and `x1-preset-real/RESULTADO.md` |
 | X2 | Web server and evaluation transport | BOOT PROVEN; HOST EVALUATOR ABSENT | `dsh web` did boot on `0.2.0-rc.2`; the failure of the previous pass was the copied home with empty `profiles/web/node_modules/`, not a current blocker of the starter. **There is no** `evaluator` endpoint in that version: the gate uses the actual sessions API (`session/create` + `session/prompt` + `session/page`), but the CLI does not have a supported Host evaluator adapter that checks the per-case `cwd` and the effective skill before creating the session (`scripts/skill_gate_run.py:604-608`). This is distinct from the Creator generating or the corpus targeting |
-| X3 | Creator and corpus gate against a real mode | PRE-BUDGET CREATOR ACTIVE; CORPUS NOT_COVERED | With a model-facing headless overlay, Creator generated a manifest `GENERATED` with 19 artifacts and `bootstrap accept`, and the Host activated it `ACTIVE` (external test `ensayo-x3-actualizado.md`). **This ran before the Creator budget fix**; it does not accredit post-budget generation. At `corpus-fixed`, the corrected frontmatter allowed `skills/list` with 4 real skills `modelInvocable` and `skill`, and one of the 55 cases (`SC-123`) was dispatched. The gate gave `NOT_COVERED`: the compiled case pointed to the **skill** `source-driven-development`, not the mode `fixture-auditor` that was shipped, and the mode required a CWD layout (`ensayo-x3/fixture/workspace`) that the gate did not give it (it ran at `case-workspaces/SC-123`), so `__IMPROVEMENT_LAYOUT_OK__` was never emitted, the mode narrated `RETAINED` without `workflow_write` and `result.json` was never written. The gate did not invent PASS. External tests: `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md` |
+| X3 | Creator and corpus gate against a real mode | PRE-BUDGET CREATOR ACTIVE; CORPUS NOT_COVERED | With a model-facing headless overlay, Creator generated a manifest `GENERATED` with 19 artifacts and `bootstrap accept`, and the Host activated it `ACTIVE` (external test `ensayo-x3-actualizado.md`). **This ran before the Creator budget fix**; it does not accredit post-budget generation. At `corpus-fixed`, the corrected frontmatter allowed `skills/list` with 4 real skills `modelInvocable` and `skill`, and one of the 55 cases (`SC-123`) was dispatched. The gate gave `NOT_COVERED`: the compiled case pointed to the **skill** `source-driven-development`, not the mode `fixture-auditor` that was shipped, and the mode required a CWD layout (`ensayo-x3/fixture/workspace`) that the gate did not give it (it ran at `case-workspaces/SC-123`), so `__IMPROVEMENT_LAYOUT_OK__` was never emitted, the mode narrated `RETAINED` without `workflow_write` and `result.json` was never written. The gate did not invent PASS. External tests: `corpus-fixed/RESULTADO.md`, `x3-corpus-live/RESULTADO.md`. Seven post-budget Creator trials (2026-10-14, same product and budget) all ended `RETAINED` with no `ACTIVE` generation; the Creator gate remains open (`docs/status.md`) |
 
 ## How to get to the evidence
 
