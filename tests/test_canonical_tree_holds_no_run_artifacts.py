@@ -43,6 +43,9 @@ RUN_ARTIFACTS = {
     # dir externo <workspace>-workflow/<run_id>/, nunca en este árbol.
     "journal.jsonl", "plan.json", "manifest.json", "auditoria.json",
     "reparar.json", "veredicto.json",
+    # Estado del motor de deriva documental (scripts/drift.py): vive en
+    # <workspace>/drift/ del proyecto evaluado, nunca en este árbol.
+    "doc-baseline.json", "source-drift.json",
 }
 # Whole directories a run creates, relative to whatever root it ran in.
 RUN_DIRECTORIES = {
