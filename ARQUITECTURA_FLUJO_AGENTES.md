@@ -1282,6 +1282,8 @@ drift/source-drift.json
 drift/installed-drift.json
 drift/update-plan.json
 ```
+**Deterministic implementation (2026-11-03).** `scripts/drift.py` turns this vocabulary into a pure engine (ADR 0001/0002). `evaluate(config, base_rev, target_rev)` pins the normalized public signature of every symbol a document tracks (`Contract Hash`, with `symbol_diff` on breakage) and verifies cited paths and pinned `type-equiv`/`public-api` blocks (`STALE_REFERENCE`). When the signature is intact, semantic body tokens feed `body_churn_ratio`, a 64-component MinHash over 3-shingles and the Shannon entropy of the dispersion across the tracked subsystem: over threshold is `SOURCE_DRIFT`, beneath it is `NON_GOVERNING_CHANGE`, silence is `CURRENT`. State lives in `<workspace>/drift/doc-baseline.json` and `source-drift.json`, outside the product and this tree. `bootstrap.py update` returns `NO_OP` when the diff against the active generation's base is only clean; `bootstrap.py drift` and `scripts/drift.py check` expose the seam, and a `workflow.py` gate step runs it without network or LLM. The DSH overlay plugin `doc-drift.mjs` governs the close of a turn: silent re-pin when clean, blocked closure with a scoped directive and write confinement on drift, fail-closed when the engine cannot be evaluated.
+
 `sync` proposes; `accept` evaluates; authorized installation replaces.
 
 ---

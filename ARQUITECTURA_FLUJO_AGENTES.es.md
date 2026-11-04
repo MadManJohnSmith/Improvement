@@ -1352,6 +1352,8 @@ drift/installed-drift.json
 drift/update-plan.json
 ```
 
+**Implementación determinista (2026-11-03).** `scripts/drift.py` convierte este vocabulario en un motor puro (ADR 0001/0002). `evaluate(config, base_rev, target_rev)` ancla la firma pública normalizada de cada símbolo que un documento rastrea (`Contract Hash`, con `symbol_diff` al romperse) y verifica rutas citadas y bloques anclados `type-equiv`/`public-api` (`STALE_REFERENCE`). Con la firma intacta, los tokens semánticos del cuerpo alimentan `body_churn_ratio`, un MinHash de 64 componentes sobre 3-shingles y la entropía de Shannon de la dispersión entre el subsistema rastreado: por encima del umbral es `SOURCE_DRIFT`, por debajo `NON_GOVERNING_CHANGE`, el silencio es `CURRENT`. El estado vive en `<workspace>/drift/doc-baseline.json` y `source-drift.json`, fuera del producto y de este árbol. `bootstrap.py update` devuelve `NO_OP` cuando el diff contra la base de la generación activa es enteramente limpio; `bootstrap.py drift` y `scripts/drift.py check` exponen la costura, y un paso `gate` de `workflow.py` lo ejecuta sin red ni LLM. El plugin del overlay DSH `doc-drift.mjs` gobierna el cierre del turno: re-ancla en silencio si todo está limpio, bloquea el cierre con una directiva acotada y confinamiento de escritura ante deriva, y falla cerrado cuando el motor no puede evaluarse.
+
 `sync` propone; `accept` evalúa; instalación autorizada reemplaza.
 
 ---

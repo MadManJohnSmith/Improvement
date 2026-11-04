@@ -1,5 +1,38 @@
 # Cambios
 
+## Doc drift determinista y gobernado por el Harness — 2026-11-03
+
+La documentación se obsoletiza en silencio mientras el código evoluciona, y las
+comprobaciones existentes (SHA-256 de archivos completos, commit `HEAD`) no
+distinguían un reformateo de una ruptura de contrato. Se incorpora el
+subsistema de deriva documental como motor determinista y plugin de cierre de
+turno:
+
+- **Motor `scripts/drift.py`.** Costura única `evaluate(config, base_rev,
+  target_rev)`; sin reloj ni `mtime`. Filtro 1: `Contract Hash` de firmas
+  públicas normalizadas con extractores stdlib (Python `ast`; TS/JS/Rust/Go
+  léxicos) y verificación de referencias y bloques anclados
+  (`CONTRACT_DRIFT`, `STALE_REFERENCE` con `symbol_diff`). Filtro 2:
+  `body_churn_ratio` (difflib), `body_lsh` (MinHash de 64 componentes sobre
+  3-shingles) y entropía de Shannon con piso de 20 tokens (`SOURCE_DRIFT`,
+  `NON_GOVERNING_CHANGE`, `CURRENT`). Estado externo en `<workspace>/drift/`.
+- **Contrato.** `schemas/drift.schema.json` y `validate_drift` admiten
+  `tracked_symbols`, `metrics` y `thresholds` sin romper compatibilidad;
+  `RUN_ARTIFACTS` cubre `doc-baseline.json` y `source-drift.json`.
+- **Integración.** `bootstrap.py drift` (check/init-baseline/repin y
+  `--repin`), `update` con `NO_OP` cuando la deriva es no gobernante, y un
+  paso `gate` de `workflow.py` que ejecuta `drift.py check` como veredicto
+  determinista sin red ni LLM.
+- **Plugin DSH.** `scripts/dsh-plugins/doc-drift.mjs` (ADR 0002) montado en
+  el overlay: re-ancla silencioso, bloqueo con directiva acotada y
+  confinamiento de escritura, fail-closed ante motor irresoluble;
+  `verify-doc-drift.mjs` lo cubre offline con el motor real.
+- **Gobernanza.** `docs/agents/` (issue tracker, triage y dominio),
+  `GLOSSARY.md` y los ADR 0001/0002.
+
+Suite: 1188 pruebas en verde (11 omitidas sin el módulo DSH externo; medida el
+2026-11-03).
+
 ## D-08/D-09/D-10: la publicación de presets sobre DSH 0.2.1, rota y sin diagnóstico — 2026-10-25
 
 El primer intento real de activación (`gen-b5b6bd215c9a`) llegó hasta el último
