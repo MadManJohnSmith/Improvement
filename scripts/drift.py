@@ -17,10 +17,20 @@ extractor with a string/comment state machine and brace balancing. Reference
 checking is baseline-independent: a path or pinned block a document cites must
 resolve in the target tree, whatever the baseline says (ADR 0002).
 
+Filter 2 judges behaviour beneath an unchanged signature. Semantic body
+tokens — whitespace-insensitive by construction, so a mass re-indent scores
+zero — feed the normalized churn ratio (`difflib`, rounded to 4 decimals), a
+64-component MinHash over 3-shingles, and the Shannon entropy of the change
+dispersion across the subsystem a document tracks. Over a threshold or
+dispersed wide enough, that is `SOURCE_DRIFT`; beneath them but nonzero,
+`NON_GOVERNING_CHANGE`; silent, `CURRENT`.
+
 State lives in `<workspace>/drift/`, never inside the product tree and never
 inside this canonical tree (`tests/test_canonical_tree_holds_no_run_artifacts.py`
 enforces the latter by name). `doc-baseline.json` is written only through
 `pin_baseline`, atomically; `repin` is Host/Harness authority, not an agent's.
+The baseline stores each tracked symbol's body tokens so churn works against a
+pinned baseline without re-reading the base revision.
 
 The lexical extractors are deliberately best-effort (ADR 0001): a declaration
 shape they do not model is skipped, never guessed. Missing a symbol delays a
@@ -28,12 +38,16 @@ verdict; inventing one fabricates it.
 """
 
 import ast
+import difflib
 import hashlib
+import io
 import json
+import math
 import os
 import posixpath
 import re
 import subprocess
+import tokenize
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -43,6 +57,8 @@ DEFAULT_THRESHOLDS = {
     "entropy_limit": 2.5,
     "min_entropy_tokens": 20,
 }
+
+LSH_COMPONENTS = 64
 
 # Directories that are never product content: framework infrastructure or
 # run-artifact homes the canonical-tree guard names. Mirrors the product's
@@ -65,9 +81,6 @@ CONFIG_KEYS = {
     "repo_root", "workspace", "docs", "thresholds", "rules",
     "generation_id", "accepted_generation",
 }
-
-WORST_STATUS_ORDER = ["CURRENT", "NON_GOVERNING_CHANGE", "SOURCE_DRIFT",
-                      "STALE_REFERENCE", "CONTRACT_DRIFT"]
 
 
 class DriftError(ValueError):
@@ -237,7 +250,7 @@ def _python_symbols(source):
     """symbol_id -> normalized signature for one Python module."""
     try:
         tree = ast.parse(source)
-    except SyntaxError:
+    except (SyntaxError, ValueError):
         return {}
     exported = _python_all_names(tree)
 
@@ -270,6 +283,107 @@ def _python_symbols(source):
                 symbols[node.target.id] = "%s: %s" % (
                     node.target.id, ast.unparse(node.annotation))
     return symbols
+
+
+# --------------------------------------------------------------------------
+# Filter 2 tokenization: semantic body tokens, immune to re-indentation.
+# --------------------------------------------------------------------------
+
+
+_DROP_TOKEN_TYPES = frozenset({
+    tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+    tokenize.DEDENT, tokenize.ENDMARKER,
+})
+_FSTRING_TOKEN_TYPES = frozenset({
+    getattr(tokenize, "FSTRING_START", -1),
+    getattr(tokenize, "FSTRING_MIDDLE", -2),
+    getattr(tokenize, "FSTRING_END", -3),
+})
+
+
+def _string_bucket(text):
+    body = text
+    if len(body) >= 2 and body[0] == body[-1] and body[0] in "'\"":
+        body = body[1:-1]
+    return "s" if len(body) <= 24 else "S"
+
+
+def _python_body_tokens(text):
+    """Semantic tokens of a function segment: comments, whitespace,
+    docstrings and trivial literals collapsed; everything else literal."""
+    try:
+        stripped = "\n".join(line.strip() for line in text.split("\n"))
+        tokens = []
+        for token in tokenize.generate_tokens(io.StringIO(stripped).readline):
+            if token.type in _DROP_TOKEN_TYPES:
+                continue
+            if token.type == tokenize.STRING:
+                tokens.append(_string_bucket(token.string))
+            elif token.type == tokenize.NUMBER:
+                tokens.append("n")
+            elif token.type in _FSTRING_TOKEN_TYPES:
+                tokens.append("s")
+            else:
+                tokens.append(token.string)
+        return tokens
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return []
+
+
+def _python_docstring_range(node):
+    first = node.body[0] if node.body else None
+    if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
+        return first.lineno, first.end_lineno
+    return None
+
+
+def _python_semantic_tokens(source):
+    """symbol_id -> {"public": bool, "tokens": [...]} for functions/methods."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    exported = _python_all_names(tree)
+    lines = source.split("\n")
+
+    def body_tokens(node):
+        start = node.lineno - 1
+        end = node.end_lineno
+        docstring = _python_docstring_range(node)
+        segments = []
+        if docstring:
+            if docstring[0] - 1 > start:
+                segments.append((start, docstring[0] - 1))
+            if end > docstring[1]:
+                segments.append((docstring[1], end))
+        else:
+            segments.append((start, end))
+        text = "\n".join(
+            "\n".join(lines[a:b]) for a, b in segments if b > a)
+        return _python_body_tokens(text)
+
+    def public(name):
+        return not name.startswith("_") or name in exported
+
+    units = {}
+
+    def collect(node, qualified, is_public):
+        units[qualified] = {
+            "public": is_public,
+            "tokens": body_tokens(node),
+        }
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            collect(node, node.name, public(node.name))
+        elif isinstance(node, ast.ClassDef):
+            class_public = public(node.name)
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    collect(child, "%s.%s" % (node.name, child.name),
+                            class_public and public(child.name))
+    return units
 
 
 # --------------------------------------------------------------------------
@@ -355,9 +469,10 @@ def _strip_lexical(text, ext):
         # A Rust apostrophe is usually a lifetime, not a char literal; only
         # a well-formed 'c' or '\\n' is a literal, anything else is code.
         if ext == "rs" and char == "'":
-            if _CHAR_LITERAL.match(text, index):
+            match = _CHAR_LITERAL.match(text, index)
+            if match:
                 out.append('"S"')
-                index = _CHAR_LITERAL.match(text, index).end()
+                index = match.end()
                 continue
             out.append(char)
             index += 1
@@ -400,6 +515,12 @@ def _match_balanced(text, start):
     return None
 
 
+def _statement_end(text, start):
+    candidates = [index for index in (text.find(";", start),
+                                      text.find("\n", start)) if index != -1]
+    return min(candidates) if candidates else len(text)
+
+
 _DECL_EXPORT = r"(export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?"
 _DECL_RE = {
     "ts": re.compile(
@@ -408,7 +529,7 @@ _DECL_RE = {
         r"|type\s+([A-Za-z_$][\w$]*)\s*[={;]"
         r"|const\s+([A-Za-z_$][\w$]*))" % _DECL_EXPORT),
     "rs": re.compile(
-        r"(?m)^[ \t]*pub\s+(?:\([^)]*\)\s+)?"
+        r"(?m)^[ \t]*(pub\s+)?(?:\([^)]*\)\s+)?"
         r"(?:(?:async\s+)?fn\s+([A-Za-z_][\w]*)"
         r"|(struct|enum|trait|type|union)\s+([A-Za-z_][\w]*))"),
     "go": re.compile(
@@ -427,24 +548,29 @@ _SNIPPET_LANGS = {
 }
 
 
-def _lexical_symbols(source, ext):
-    """symbol_id -> normalized signature; best-effort over comment-free text."""
+def _lexical_scan(source, ext):
+    """(public signatures, semantic units) over comment-free text.
+
+    `units` maps symbol_id -> (body_text, is_public) and covers private
+    declarations too: Filter 2 needs their churn even though Filter 1 never
+    pins them.
+    """
     stripped = _strip_lexical(source, ext)
     pattern = _DECL_RE[ext]
     symbols = {}
+    units = {}
     for match in pattern.finditer(stripped):
         if ext in _TS_EXTS:
-            if not match.group(1):
-                continue  # a declaration is public here only through `export`
-            _ts_symbol(stripped, match, symbols)
+            _ts_symbol(stripped, match, symbols, units)
         elif ext == "rs":
-            _rust_symbol(stripped, match, symbols)
+            _rust_symbol(stripped, match, symbols, units)
         else:
-            _go_symbol(stripped, match, symbols)
-    return symbols
+            _go_symbol(stripped, match, symbols, units)
+    return symbols, units
 
 
-def _ts_symbol(stripped, match, symbols):
+def _ts_symbol(stripped, match, symbols, units):
+    is_public = bool(match.group(1))
     fn_name, type_kw, type_name = match.group(2), match.group(3), match.group(4)
     alias_name, const_name = match.group(5), match.group(6)
     if fn_name or type_kw == "class":
@@ -454,35 +580,51 @@ def _ts_symbol(stripped, match, symbols):
         close = _match_balanced(stripped, body_open)
         if close is None:
             return
-        symbols[fn_name or type_name] = _normalize_ws(
-            stripped[match.start():body_open]) + " {}"
+        signature = _normalize_ws(stripped[match.start():body_open]) + " {}"
+        # A class's methods carry their own units; the stripped shell is not
+        # a body. An interface's or enum's body is its contract.
+        body = "" if type_kw == "class" else stripped[body_open + 1:close]
+        name = fn_name or type_name
+        if is_public:
+            symbols[name] = signature
+        units[name] = (body, is_public)
     elif type_kw in ("interface", "enum"):
-        # A type's body is its contract: keep it, comments already gone.
         body_open = _find_body(stripped, match.end())
         if body_open is None:
             return
         close = _match_balanced(stripped, body_open)
         if close is None:
             return
-        symbols[type_name] = _normalize_ws(stripped[match.start():close + 1])
+        if is_public:
+            symbols[type_name] = _normalize_ws(
+                stripped[match.start():close + 1])
+        units[type_name] = (stripped[body_open + 1:close], is_public)
     elif alias_name:
         body_open = _find_body(stripped, match.end())
         if body_open is None:
             end = _statement_end(stripped, match.end())
-            symbols[alias_name] = _normalize_ws(stripped[match.start():end])
-        else:
-            close = _match_balanced(stripped, body_open)
-            if close is None:
-                return
+            if is_public:
+                symbols[alias_name] = _normalize_ws(
+                    stripped[match.start():end])
+            units[alias_name] = ("", is_public)
+            return
+        close = _match_balanced(stripped, body_open)
+        if close is None:
+            return
+        if is_public:
             symbols[alias_name] = _normalize_ws(
                 stripped[match.start():close + 1])
+        units[alias_name] = (stripped[body_open + 1:close], is_public)
     elif const_name:
         # The binding name is the contract; the initializer is implementation.
-        symbols[const_name] = "export const %s" % const_name
+        if is_public:
+            symbols[const_name] = "export const %s" % const_name
+        units[const_name] = ("", is_public)
 
 
-def _rust_symbol(stripped, match, symbols):
-    fn_name, type_kw, type_name = match.group(1), match.group(2), match.group(3)
+def _rust_symbol(stripped, match, symbols, units):
+    is_public = bool(match.group(1))
+    fn_name, type_kw, type_name = match.group(2), match.group(3), match.group(4)
     if fn_name:
         body_open = _find_body(stripped, match.end())
         if body_open is None:
@@ -490,51 +632,67 @@ def _rust_symbol(stripped, match, symbols):
         close = _match_balanced(stripped, body_open)
         if close is None:
             return
-        symbols[fn_name] = _normalize_ws(
-            stripped[match.start():body_open]) + " {}"
+        if is_public:
+            symbols[fn_name] = _normalize_ws(
+                stripped[match.start():body_open]) + " {}"
+        units[fn_name] = (stripped[body_open + 1:close], is_public)
     else:
         body_open = _find_body(stripped, match.end())
         if body_open is None:
             end = _statement_end(stripped, match.end())
-            symbols[type_name] = _normalize_ws(stripped[match.start():end])
+            if is_public:
+                symbols[type_name] = _normalize_ws(
+                    stripped[match.start():end])
+            units[type_name] = ("", is_public)
             return
         close = _match_balanced(stripped, body_open)
         if close is None:
             return
-        symbols[type_name] = _normalize_ws(stripped[match.start():close + 1])
+        if is_public:
+            symbols[type_name] = _normalize_ws(
+                stripped[match.start():close + 1])
+        units[type_name] = (stripped[body_open + 1:close], is_public)
 
 
-def _go_symbol(stripped, match, symbols):
+def _go_symbol(stripped, match, symbols, units):
     func_name, type_name, type_kw = match.group(1), match.group(2), match.group(3)
     if func_name:
-        if func_name[:1].isupper():
-            body_open = _find_body(stripped, match.end())
-            if body_open is None:
-                return
-            close = _match_balanced(stripped, body_open)
-            if close is None:
-                return
-            header = _normalize_ws(stripped[match.start():body_open])
+        is_public = func_name[:1].isupper()
+        body_open = _find_body(stripped, match.end())
+        if body_open is None:
+            return
+        close = _match_balanced(stripped, body_open)
+        if close is None:
+            return
+        header = _normalize_ws(stripped[match.start():body_open])
+        if is_public:
             receiver = re.search(
                 r"func\s+\([^)]*?([A-Za-z_][\w]*)\s*\)", header)
             symbol_id = ("%s.%s" % (receiver.group(1), func_name)
                          if receiver else func_name)
             symbols[symbol_id] = header + " {}"
+        units[func_name] = (stripped[body_open + 1:close], is_public)
         return
-    if type_name[:1].isupper():
-        body_open = _find_body(stripped, match.end())
-        if body_open is None:
-            return
-        close = _match_balanced(stripped, body_open)
-        if close is None:
-            return
+    is_public = type_name[:1].isupper()
+    body_open = _find_body(stripped, match.end())
+    if body_open is None:
+        return
+    close = _match_balanced(stripped, body_open)
+    if close is None:
+        return
+    if is_public:
         symbols[type_name] = _normalize_ws(stripped[match.start():close + 1])
+    units[type_name] = (stripped[body_open + 1:close], is_public)
 
 
-def _statement_end(text, start):
-    candidates = [index for index in (text.find(";", start),
-                                      text.find("\n", start)) if index != -1]
-    return min(candidates) if candidates else len(text)
+def _lexical_symbols(source, ext):
+    """symbol_id -> normalized signature; public declarations only."""
+    symbols, _ = _lexical_scan(source, ext)
+    return symbols
+
+
+def _lexical_body_tokens(body):
+    return re.findall(r"\w+|[^\w\s]", body)
 
 
 def extract_symbols(path, source):
@@ -545,6 +703,70 @@ def extract_symbols(path, source):
     if ext in _DECL_RE:
         return _lexical_symbols(source, ext)
     return {}
+
+
+def extract_semantic_tokens(path, source):
+    """symbol_id -> {"public": bool, "tokens": [...]} for one source file."""
+    ext = os.path.splitext(path)[1].lstrip(".")
+    if ext == "py":
+        return _python_semantic_tokens(source)
+    if ext in _DECL_RE:
+        _, units = _lexical_scan(source, ext)
+        return {
+            name: {"public": is_public, "tokens": _lexical_body_tokens(body)}
+            for name, (body, is_public) in units.items()}
+    return {}
+
+
+# --------------------------------------------------------------------------
+# Filter 2 math: churn, MinHash and Shannon entropy.
+# --------------------------------------------------------------------------
+
+
+def _token_delta(base_tokens, target_tokens):
+    """Count of changed semantic token positions between two bodies."""
+    matcher = difflib.SequenceMatcher(
+        None, base_tokens, target_tokens, autojunk=False)
+    return sum(max(a2 - a1, b2 - b1)
+               for tag, a1, a2, b1, b2 in matcher.get_opcodes()
+               if tag != "equal")
+
+
+def _minhash(tokens):
+    """64-component MinHash over 3-shingles, or None below three tokens."""
+    shingles = {" ".join(tokens[index:index + 3])
+                for index in range(len(tokens) - 2)}
+    if not shingles:
+        return None
+    return [
+        min(int.from_bytes(
+            hashlib.sha256(("%d:%s" % (k, shingle)).encode("utf-8"))
+            .digest()[:8], "big")
+            for shingle in shingles)
+        for k in range(LSH_COMPONENTS)
+    ]
+
+
+def _lsh_hex(signature):
+    return "".join("%016x" % value for value in signature)
+
+
+def _lsh_divergence(base_signature, target_signature):
+    if base_signature is None or target_signature is None:
+        return 0.0
+    matches = sum(1 for base, target in zip(base_signature, target_signature)
+                  if base == target)
+    return round(1.0 - matches / float(LSH_COMPONENTS), 4)
+
+
+def _entropy(deltas):
+    """Shannon entropy H(P) over the per-element changed-token counts."""
+    positive = [delta for delta in deltas if delta > 0]
+    total = sum(positive)
+    if total == 0:
+        return 0.0
+    return round(-sum((delta / total) * math.log2(delta / total)
+                      for delta in positive), 4)
 
 
 # --------------------------------------------------------------------------
@@ -691,7 +913,7 @@ def write_report(workspace, report):
 
 
 def collect_baseline(config, *, target_rev="HEAD"):
-    """Freeze the per-symbol contract hashes of the target tree."""
+    """Freeze the per-symbol contract hashes, signatures and body tokens."""
     config = _prepare_config(config)
     tree = _target_tree(config["repo_root"], target_rev)
     thresholds = _thresholds(config)
@@ -707,12 +929,20 @@ def collect_baseline(config, *, target_rev="HEAD"):
             source = tree.read(path)
             if source is None:
                 continue
-            for name, signature in sorted(extract_symbols(path, source).items()):
-                symbols.append({
+            signatures = extract_symbols(path, source)
+            units = extract_semantic_tokens(path, source)
+            for name, signature in sorted(signatures.items()):
+                tokens = units.get(name, {}).get("tokens", [])
+                entry = {
                     "symbol_id": "%s::%s" % (path, name),
                     "contract_hash": _sha256(signature),
                     "signature": signature,
-                })
+                    "tokens": tokens,
+                }
+                lsh = _minhash(tokens)
+                if lsh is not None:
+                    entry["body_lsh"] = _lsh_hex(lsh)
+                symbols.append(entry)
         if symbols:
             documents[doc] = {"thresholds": thresholds, "symbols": symbols}
     return {
@@ -832,22 +1062,30 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
 
         problems = {"contract": [], "stale": []}
         symbol_records = []
+        public_stats = []
+        private_changed = []
 
         for tracked_entry in tracked:
             path = tracked_entry["path"]
             if not tree.has(path):
                 problems["stale"].append(path)
                 continue
-            live = extract_symbols(path, tree.read(path))
-            previous = base_symbols.get(doc, {}).get(path, {})
+            source = tree.read(path)
+            live = extract_symbols(path, source)
+            live_units = extract_semantic_tokens(path, source)
+            previous = base_symbols.get(doc, {}).get(path)
+            previous_public = previous["public"] if previous else {}
+            previous_private = previous["private"] if previous else {}
+
             for name, signature in sorted(live.items()):
                 digest = _sha256(signature)
                 record = {
                     "symbol_id": "%s::%s" % (path, name),
                     "contract_hash": digest,
                 }
-                if name in previous:
-                    old_hash, old_signature = previous[name]
+                if name in previous_public:
+                    old_hash, old_signature, old_tokens = \
+                        previous_public[name]
                     if old_hash != digest:
                         problems["contract"].append({
                             "symbol": record["symbol_id"],
@@ -856,14 +1094,44 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
                         })
                         record["symbol_diff"] = {
                             "before": old_signature, "after": signature}
+                    elif old_tokens is not None:
+                        live_tokens = live_units.get(name, {}).get(
+                            "tokens", [])
+                        churn = round(
+                            1.0 - difflib.SequenceMatcher(
+                                None, old_tokens, live_tokens,
+                                autojunk=False).ratio(), 4)
+                        delta = _token_delta(old_tokens, live_tokens)
+                        divergence = _lsh_divergence(
+                            _minhash(old_tokens), _minhash(live_tokens))
+                        record["body_churn_ratio"] = churn
+                        live_lsh = _minhash(live_tokens)
+                        if live_lsh is not None:
+                            record["body_lsh"] = _lsh_hex(live_lsh)
+                        public_stats.append((churn, divergence, delta))
                 symbol_records.append(record)
-            for name in sorted(set(previous) - set(live)):
-                old_hash, old_signature = previous[name]
+            for name in sorted(set(previous_public) - set(live)):
+                old_hash, old_signature, _ = previous_public[name]
                 problems["contract"].append({
                     "symbol": "%s::%s" % (path, name),
                     "before": old_signature,
                     "after": None,
                 })
+
+            # Private bodies are nobody's contract, but their churn is the
+            # difference between CURRENT and NON_GOVERNING_CHANGE. The
+            # baseline stores none, so a pinned baseline cannot see it; a
+            # base revision can.
+            if previous_private is not None:
+                for name, unit in sorted(live_units.items()):
+                    if unit["public"]:
+                        continue
+                    old_tokens = previous_private.get(name)
+                    if old_tokens is None:
+                        if unit["tokens"]:
+                            private_changed.append("%s::%s" % (path, name))
+                    elif _token_delta(old_tokens, unit["tokens"]) > 0:
+                        private_changed.append("%s::%s" % (path, name))
 
         for block in parsed["pinned"]:
             _check_pinned_block(block, tree, problems)
@@ -879,13 +1147,22 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
             if not _resolve_ref(doc, ref, tree):
                 problems["stale"].append(ref)
 
-        status = _verdict(problems)
-        entry = {"path": doc, "status": status, "source": "doc-drift"}
+        entry = {"path": doc, "source": "doc-drift"}
+        if problems["contract"]:
+            entry["status"] = "CONTRACT_DRIFT"
+            entry["action"] = "update"
+        elif problems["stale"]:
+            entry["status"] = "STALE_REFERENCE"
+            entry["action"] = "update"
+        else:
+            entry["status"] = _behaviour_verdict(
+                public_stats, private_changed, thresholds)
+            if entry["status"] == "SOURCE_DRIFT":
+                entry["action"] = "update"
+            entry["metrics"] = _metrics(public_stats)
         detail = _detail(problems)
         if detail:
             entry["detail"] = detail
-        if status in ("CONTRACT_DRIFT", "STALE_REFERENCE"):
-            entry["action"] = "update"
         if symbol_records:
             entry["tracked_symbols"] = sorted(
                 symbol_records, key=lambda record: record["symbol_id"])
@@ -907,6 +1184,34 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
     if not dry_run and config.get("workspace"):
         write_report(config["workspace"], report)
     return report
+
+
+def _behaviour_verdict(public_stats, private_changed, thresholds):
+    """The disjunctive SOURCE_DRIFT rule with its minimum-token floor."""
+    limit = thresholds["body_churn_ratio"]
+    over_threshold = any(
+        churn > limit or divergence > limit
+        for churn, divergence, _ in public_stats)
+    deltas = [delta for _, _, delta in public_stats]
+    total_delta = sum(deltas)
+    entropy = _entropy(deltas)
+    if over_threshold or (total_delta >= thresholds["min_entropy_tokens"]
+                          and entropy > thresholds["entropy_limit"]):
+        return "SOURCE_DRIFT"
+    if total_delta > 0 or private_changed:
+        return "NON_GOVERNING_CHANGE"
+    return "CURRENT"
+
+
+def _metrics(public_stats):
+    return {
+        "max_body_churn_ratio": round(
+            max([churn for churn, _, _ in public_stats], default=0.0), 4),
+        "shannon_entropy": _entropy(
+            [delta for _, _, delta in public_stats]),
+        "total_semantic_delta_tokens": sum(
+            delta for _, _, delta in public_stats),
+    }
 
 
 def _check_pinned_block(block, tree, problems):
@@ -940,7 +1245,12 @@ def _check_pinned_block(block, tree, problems):
 
 
 def _base_symbols(config, base_rev, target_tree):
-    """doc -> path -> symbol -> (contract_hash, signature) from the base."""
+    """doc -> path -> {"public": {...}, "private": {...}} from the base.
+
+    `public` maps name -> (contract_hash, signature, body tokens or None);
+    `private` maps name -> body tokens, or is None when the base is a pinned
+    baseline, which stores public symbols only.
+    """
     base = {}
     repo_root = config["repo_root"]
     if base_rev is not None:
@@ -956,10 +1266,18 @@ def _base_symbols(config, base_rev, target_tree):
                 source = base_tree.read(path)
                 if source is None:
                     continue
+                signatures = extract_symbols(path, source)
+                units = extract_semantic_tokens(path, source)
                 base.setdefault(doc, {})[path] = {
-                    name: (_sha256(signature), signature)
-                    for name, signature in
-                    extract_symbols(path, source).items()}
+                    "public": {
+                        name: (_sha256(signatures[name]), signatures[name],
+                               units.get(name, {}).get("tokens", []))
+                        for name in signatures},
+                    "private": {
+                        name: unit["tokens"]
+                        for name, unit in units.items()
+                        if not unit["public"]},
+                }
         return base
     baseline = None
     if config.get("workspace"):
@@ -969,8 +1287,10 @@ def _base_symbols(config, base_rev, target_tree):
             base[doc] = {}
             for symbol in document.get("symbols", []):
                 path, _, name = symbol["symbol_id"].partition("::")
-                base[doc].setdefault(path, {})[name] = (
-                    symbol["contract_hash"], symbol.get("signature", ""))
+                base[doc].setdefault(path, {"public": {}, "private": None})
+                base[doc][path]["public"][name] = (
+                    symbol["contract_hash"], symbol.get("signature", ""),
+                    symbol.get("tokens"))
     return base
 
 
@@ -981,14 +1301,6 @@ def _base_label(config, base_rev, repo_root):
     if config.get("workspace") and load_baseline(config["workspace"]):
         return "baseline-manifest"
     return ""
-
-
-def _verdict(problems):
-    if problems["contract"]:
-        return "CONTRACT_DRIFT"
-    if problems["stale"]:
-        return "STALE_REFERENCE"
-    return "CURRENT"
 
 
 def _detail(problems):
