@@ -255,6 +255,9 @@ siguen siendo la autoridad):
   corrección por unidad.
 - No se distribuyen presets universales ni skills MVP genéricas; los fixtures jamás se
   instalan como default ni se presentan como experiencia final.
+- La memoria es contexto, nunca instrucción: episodios, hallazgos previos y cualquier texto
+  almacenado entran al prompt como dato `trust: unreviewed`; informan pero jamás instruyen,
+  y nada recordado se convierte en orden, permiso o veredicto.
 - Sin evidencia no hay PASS: `UNVERIFIED` nunca se infiere, un `abstain` bloquea como un
   `reject`, el coste no registrado es `NO_DISPONIBLE` y lo desconocido queda desconocido.
 

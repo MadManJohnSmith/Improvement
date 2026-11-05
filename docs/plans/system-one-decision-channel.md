@@ -113,3 +113,48 @@ is plan data, not a hidden constant.
 - **Two sizes (`min`/`pro`) by campaign stage**, like reasoning effort by stage today.
 - **Loop detection:** if the same defect returns after N approaches, the channel stops
   classifying: the ledger marks it (`MAX_PER_SIGNATURE = 3`, `scripts/episodes.py`).
+
+## Contract annex (2026-11-05): what Phases 1-2 must declare (design, not built)
+
+Ratified from the 2026-11-04/05 source mining (70 fichas; see the external conciliation
+workspace). Contract details only: this annex implements no phase.
+
+- **Three-state gate with threshold echo.** Every gated proposal reports `passed`,
+  `abstained` or `unevaluated` and echoes the applied threshold. A boolean cannot express
+  "the gate ran but had no usable number".
+- **Per-bucket thresholds with reachability validation.** The threshold is a map keyed by
+  question shape (`type:option_count`) with a `default`; validation rejects keys no answer
+  can produce — a bucket the caller believes gated and is not.
+- **Probability provenance is mandatory.** Every confidence value declares its origin:
+  `logits` (direct read) or `declared` (the model reported a number as text/JSON). Only
+  `logits` may calibrate; `declared` never authorizes anything. A compatible transport can
+  deliver numbers that look like probabilities and are not.
+- **No JSON repair, no decoding loop.** Phase 1 admits only numbers read directly per
+  option; a transport that parses text or repairs JSON is `declared` by definition and gates
+  on nothing.
+- **Per-choice threshold calibrated on our own trajectories; in-loop bar.** Thresholds are
+  fitted per choice on this framework's own trajectories, never on public benchmarks. The
+  acceptance bar is in-loop task success, not isolated-question accuracy: the most accurate
+  isolated model solved only 69.5% of agent tasks, and uncalibrated delegation of tool
+  choices cost -19.0 success points (JevAgentHarness). Conservative cut fitting (+1
+  pseudo-error; fall back to "always abstain") is the default algorithm until measured
+  otherwise.
+- **Pre-registration and coverage-at-error.** The acceptance bar is committed before
+  measuring; reports carry `coverage-at-error` with a versioned metric policy and the
+  in-sample warning; retired gates stay in the ledger with their reason and past verdicts
+  untouched.
+- **Contrast families and group-aware splits.** Authoring adds five contrast variants per
+  scenario (no-evidence, verdict-inverting counterfactual, paraphrase, distractor), holdout
+  buckets by `group_id` (not scenario), the oracle is verified blind with opaquely ordered
+  ids, and the corpus declares its coverage plan with a near-duplicate veto across splits.
+- **Evidence vocabulary.** A receipt is not a post-state: a reported success is never a
+  verification. Calibration evidence is reported as PRESENT/MISSING/INSUFFICIENT/UNKNOWN/
+  INCOMPARABLE, with INCOMPARABLE only on a digest conflict.
+- **Resolved-decision certificates (design note for the workflow executor, not built).**
+  Reusing a decision with closed arguments requires guards over observed receipts and emits
+  a certificate binding the plan/journal slice hash, step id, predecessor receipt, exact
+  arguments, tool receipt and the omitted dispatch id. The certificate proves execution and
+  the absence of the call, never correctness or counterfactual cost; the source's negative
+  results (AIME +28% cost, 5/10 regressions) are part of the evidence.
+
+The governing rule is unchanged: the channel proposes; the Host verifies and may revoke.

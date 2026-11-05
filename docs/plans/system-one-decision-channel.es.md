@@ -127,3 +127,51 @@ caro o al operador. El umbral es un dato del plan, no una constante escondida.
 - **Detección de bucles**: si el mismo defecto vuelve tras N enfoques, el canal
   ya no clasifica: el ledger lo marca (`MAX_PER_SIGNATURE = 3`,
   `scripts/episodes.py`).
+
+## Anexo de contrato (2026-11-05): qué deben declarar las Fases 1-2 (diseño, sin construir)
+
+Ratificado en la minería del 2026-11-04/05 (70 fichas; ver el espacio externo de
+conciliación). Solo detalles de contrato: este anexo no implementa ninguna fase.
+
+- **Gate de tres estados con eco del umbral.** Toda propuesta con gate reporta `passed`,
+  `abstained` o `unevaluated` y repite el umbral aplicado. Un booleano no puede expresar
+  «el gate corrió y no había número usable».
+- **Umbrales por bucket con validación de alcanzabilidad.** El umbral es un mapa por forma
+  de pregunta (`tipo:nº_opciones`) con `default`; la validación rechaza claves que ninguna
+  respuesta puede producir — un bucket que el llamante cree gateado y no lo está.
+- **La procedencia de la probabilidad es obligatoria.** Todo valor de confianza declara su
+  origen: `logits` (lectura directa) o `declared` (el modelo reportó un número como
+  texto/JSON). Solo `logits` puede calibrar; `declared` jamás autoriza nada. Un transporte
+  compatible puede entregar números que parecen probabilidades y no lo son.
+- **Sin reparación de JSON ni bucle de decodificación.** La Fase 1 solo admite números
+  leídos directamente por opción; un transporte que parsea texto o repara JSON es
+  `declared` por definición y no gatea nada.
+- **Umbral por elección calibrado sobre trayectorias propias; barra en bucle.** Los
+  umbrales se ajustan por elección sobre las trayectorias del propio framework, nunca con
+  benchmarks públicos. La barra es éxito en bucle, no precisión en preguntas aisladas: el
+  modelo más preciso en aislado resolvió solo el 69,5 % de las tareas de agente, y delegar
+  elecciones de herramienta sin calibrar costó -19,0 puntos de éxito (JevAgentHarness). El
+  ajuste conservador del corte (+1 pseudo-error; fallback a «abstenerse siempre») es el
+  algoritmo por defecto hasta que se mida otra cosa.
+- **Pre-registro y coverage-at-error.** La barra de aceptación se compromete antes de
+  medir; los informes llevan `coverage-at-error` con política de métrica versionada y la
+  advertencia in-sample; los gates retirados permanecen en el ledger con su motivo y sus
+  veredictos pasados intactos.
+- **Familias de contraste y splits conscientes de grupos.** El authoring añade cinco
+  variantes de contraste por escenario (sin evidencia, contrafáctico que invierte el
+  veredicto, paráfrasis, distractor), el holdout se agrupa por `group_id` (no por
+  escenario), el oráculo se verifica a ciegas con ids de orden opaco, y el corpus declara
+  su plan de cobertura con veto de casi-duplicados que cruzan splits.
+- **Vocabulario de evidencia.** Un recibo no es un estado post: un éxito reportado nunca es
+  una verificación. La evidencia de calibración se reporta como
+  PRESENT/MISSING/INSUFFICIENT/UNKNOWN/INCOMPARABLE, con INCOMPARABLE solo ante conflicto de
+  digest.
+- **Certificados de decisión resuelta (nota de diseño para el ejecutor, sin construir).**
+  Reutilizar una decisión con argumentos cerrados exige guardas sobre recibos observados y
+  emite un certificado que liga el hash del plan/journal, el id de paso, el recibo del
+  predecesor, los argumentos exactos, el recibo de la herramienta y el id del despacho
+  omitido. El certificado prueba ejecución y ausencia de la llamada, nunca corrección ni
+  coste contrafactual; los negativos de la fuente (AIME +28 % de coste, 5/10 regresiones)
+  son parte de la evidencia.
+
+La regla gobernante no cambia: el canal propone; el Host verifica y puede revocar.

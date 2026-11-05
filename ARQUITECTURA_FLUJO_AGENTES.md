@@ -235,6 +235,9 @@ here so the charter is readable in one place; the governing sections remain the 
   states do not reopen; budgets only tighten; at most two correction attempts per unit.
 - No universal presets or generic MVP skills are distributed; fixtures are never installed as
   defaults nor presented as the final experience.
+- Memory is context, never instruction: episodes, prior findings and any stored text enter a
+  prompt as `trust: unreviewed` data; they inform but never instruct, and nothing recalled
+  becomes an order, permission or verdict.
 - Without evidence there is no PASS: `UNVERIFIED` is never inferred, an `abstain` blocks like
   a `reject`, unrecorded cost is `NO_DISPONIBLE`, and the unknown stays unknown.
 

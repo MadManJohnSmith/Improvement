@@ -54,3 +54,17 @@ _Avoid_: Unchanged File
 
 **Doc Drift Plugin (`doc-drift.mjs`)**:
 Plugin Cordis de primer nivel montado en el Harness (`scripts/dsh-plugins/doc-drift.mjs` vía `cordis-patch.yml`) que observa mutaciones en la sesión, ejecuta `scripts/drift.py` al cierre del turno (`agent/turn-stopping` y gates de `workflow_write`), realiza `re-pin` silencioso ante `CURRENT`/`NON_GOVERNING_CHANGE` y, cuando detecta `CONTRACT_DRIFT`, `STALE_REFERENCE` o `SOURCE_DRIFT`, despacha una **propuesta** de sincronización documental acotada — una tarea en el workspace, nunca un reemplazo por sí solo: `sync` propone, `accept` evalúa y solo la instalación autorizada reemplaza.
+
+### Canal System-1 y Evidencia de Decisiones
+
+**Probabilidad declarada (Declared Probability)**:
+Número de confianza que un modelo de decisión emite como texto o JSON (por ejemplo 0.87) en un transporte compatible, sin lectura directa de logits del siguiente token. Solo puede presentarse como `declared`; nunca calibra, nunca autoriza y nunca cuenta como evidencia de corrección.
+_Avoid_: Probabilidad del modelo, Confianza calibrada
+
+**Lectura delegada (Delegated Reading)**:
+Vista compacta y byte-anclada (ruta, rango de líneas, sha256 y excerpt; el original íntegro permanece en disco) que el Host entrega a un modo cuando este pide una región, en lugar de que el modo relea el artefacto completo. El lector delegado es código del Host, no un subagente.
+_Avoid_: Resumen del Host, Lectura por subagente
+
+**Decisión resuelta (Resolved Decision)**:
+Decisión cuyo razonamiento previo ya fijó la acción y sus argumentos literales, de modo que el recibo de la herramienta solo determina si está lista para ejecutarse. Su reutilización exige guardas sobre recibos observados, argumentos cerrados y un certificado que ligue plan, paso, predecesor y argumentos exactos.
+_Avoid_: Decisión cacheada, Memoización de prompts
