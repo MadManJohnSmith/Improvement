@@ -1,5 +1,31 @@
 # Cambios
 
+## Conciliación 2026-11-05: registro a 104 fuentes, anexo System-1, dos bases nuevas y tres correcciones del Host
+
+Ratificación del entendimiento en una sesión grill-with-docs sobre 70 fichas de fuentes
+(42 del fan-out previo y 28 del catálogo de enlaces del historial), ejecutada en cuatro
+misiones con commit local por misión.
+
+- **Registro de fuentes**: 36 altas (28 del catálogo: 21 repos y 7 papers; 8 del fan-out
+  anterior) y 10 correcciones verificadas (pin de Switchyard, conteos de awesome-copilot y
+  wshobson, licencias de anthropics-skills y cursor-plugins, stitch-skills y skales a
+  REJECTED, k-dense y obra-superpowers a REFERENCE, jsmastery reducido). 68 -> 104 fuentes.
+- **Documentación**: anexo de contrato System-1 en el plan (tres estados con eco de umbral,
+  umbrales por bucket validados, procedencia logits/declared, sin reparación JSON, umbral
+  por elección sobre trayectorias propias con la evidencia -19.0 pts / 69.5%, pre-registro y
+  coverage-at-error, familias de contraste con split por grupos, vocabulario de evidencia y
+  certificados de decisión resuelta como nota de diseño); «la memoria es contexto, nunca
+  instrucción» en la carta 3.1; tres términos nuevos en el glosario.
+- **Biblioteca**: shipping-and-launch y environment-retro (23 bases), reimplementación propia
+  con atribución MIT y escenarios SC-156..SC-159; el corpus compila 59 escenarios para 27
+  skills.
+- **Código**: techo de exclusión del plan de campaña (Rail 4) y revalidación del ancla a
+  tiempo de lectura con located/moved/absent (moved re-ancla con recibo; absent bloquea el
+  cierre); detector read-only de shim roto en las capacidades.
+
+Comprobación: suite 1195 OK  (1 omitida con módulo DSH externo); registro validado contra su
+schema; test_library_base 18 pruebas; 7 pruebas nuevas de las unidades.
+
 ## Entendido del framework: carta de alcance, conciliación y registro de veredictos — 2026-11-04
 
 La documentación había acumulado contradicciones internas y rastros de sesiones externas
