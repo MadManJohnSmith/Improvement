@@ -7,14 +7,14 @@ entrega vistas compactas y byte-ancladas en lugar de que el modo relea artefacto
 completos, atacando la clase de coste medida (79 % de cache reads).
 
 - **`scripts/read_view.py`**: lector delegado stdlib con contrato ratificado — ruta
-  relativa, sha256 del archivo completo, rango de líneas, total y excerpt exacto; el
+  relativa, sha256 del archivo completo, rango de líneas, total y excerpt exacto (slice exacto, LF/CRLF preservados); el
   original permanece en disco. Rechaza rutas fuera del producto, archivos no regulares,
   binarios, rangos inválidos y vistas por encima de la cota. CLI con exit 0/2 y error
   con nombre por stderr.
 - **`tests/test_read_view.py`**: 11 pruebas en los dos seams confirmados (función pura y
-  CLI), incluidas las negativas de contrato.
+  CLI), incluidas las negativas de contrato (CRLF, vacío, NUL y escape por symlink).
 
-Suite: 1206 pruebas en verde (1 omitida con módulo DSH externo). El cableado del lector
+Suite: 1210 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él). El cableado del lector
 en el andamiaje del modo es una unidad separada, para no tocar el prompt del Creator a
 mitad de campaña.
 
@@ -41,7 +41,7 @@ misiones con commit local por misión.
   tiempo de lectura con located/moved/absent (moved re-ancla con recibo; absent bloquea el
   cierre); detector read-only de shim roto en las capacidades.
 
-Comprobación: suite 1195 OK  (1 omitida con módulo DSH externo); registro validado contra su
+Comprobación: suite 1210 OK (11 omitidas sin el módulo DSH externo; 1 con él); registro validado contra su
 schema; test_library_base 18 pruebas; 7 pruebas nuevas de las unidades.
 
 ## Entendido del framework: carta de alcance, conciliación y registro de veredictos — 2026-11-04

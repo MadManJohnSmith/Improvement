@@ -44,23 +44,33 @@ def build(root, relative, *, start=None, end=None, max_chars=DEFAULT_MAX_CHARS):
         text = raw.decode('utf-8')
     except UnicodeDecodeError as error:
         raise ValueError('Archivo binario: no se delega su lectura') from error
-    lines = text.splitlines()
+    if '\x00' in text:
+        raise ValueError('Archivo binario: no se delega su lectura')
+    # Exact slice: split on LF only, keep CR and other separators inside lines,
+    # and drop only the trailing terminator that ends the file.
+    lines = text.split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
     total = len(lines)
-    if start is None:
-        start = 1
-    if end is None:
-        end = total
-    for value in (start, end):
-        if not isinstance(value, int) or isinstance(value, bool):
-            raise ValueError('Rango inválido')
-    if start < 1 or end < start or end > total:
-        raise ValueError('Rango fuera del archivo')
-    excerpt = '\n'.join(lines[start - 1:end])
-    if max_chars is not None:
-        if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 1:
-            raise ValueError('Cota inválida')
-        if len(excerpt) > max_chars:
-            raise ValueError('Vista por encima de la cota; pide un rango menor')
+    if total == 0:
+        if start not in (None, 1) or end not in (None, 0):
+            raise ValueError('Rango fuera del archivo')
+        start, end = 0, 0
+    else:
+        if start is None:
+            start = 1
+        if end is None:
+            end = total
+        for value in (start, end):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError('Rango inválido')
+        if start < 1 or end < start or end > total:
+            raise ValueError('Rango fuera del archivo')
+    if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars < 1:
+        raise ValueError('Cota inválida')
+    excerpt = '\n'.join(lines[start - 1:end]) if total else ''
+    if len(excerpt) > max_chars:
+        raise ValueError('Vista por encima de la cota; pide un rango menor')
     return {
         'path': relative,
         'sha256': hashlib.sha256(raw).hexdigest(),

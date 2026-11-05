@@ -68,6 +68,36 @@ class BuildViewTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'cota'):
             read_view.build(self.root, 'docs/spec.md', max_chars=5)
 
+    def test_crlf_excerpt_is_byte_exact(self):
+        (self.root / 'win.txt').write_bytes(b'uno\r\ndos\r\n')
+        view = read_view.build(self.root, 'win.txt', start=1, end=1)
+        self.assertEqual(view['excerpt'], 'uno\r')
+        self.assertEqual(view['total_lines'], 2)
+
+    def test_empty_file_has_an_empty_view(self):
+        (self.root / 'empty.txt').write_bytes(b'')
+        view = read_view.build(self.root, 'empty.txt')
+        self.assertEqual((view['start'], view['end'], view['total_lines']), (0, 0, 0))
+        self.assertEqual(view['excerpt'], '')
+
+    def test_utf8_with_nul_is_refused(self):
+        (self.root / 'elf.bin').write_bytes(b'\x7fELF\x00rest')
+        with self.assertRaises(ValueError):
+            read_view.build(self.root, 'elf.bin')
+
+    def test_symlink_escape_is_refused(self):
+        import shutil
+        outside = Path(tempfile.mkdtemp(prefix='read-view-out-'))
+        self.addCleanup(shutil.rmtree, outside, True)
+        (outside / 'secret.txt').write_text('no')
+        try:
+            (self.root / 'link.txt').symlink_to(outside / 'secret.txt')
+        except OSError:
+            # No symlinks on this platform: the escape vector cannot exist.
+            return
+        with self.assertRaises(ValueError):
+            read_view.build(self.root, 'link.txt')
+
     def test_bad_bounds_are_refused(self):
         with self.assertRaises(ValueError):
             read_view.build(self.root, 'docs/spec.md', start=0)
