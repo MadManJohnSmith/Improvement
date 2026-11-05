@@ -1,5 +1,23 @@
 # Cambios
 
+## Lectura delegada del Host — 2026-11-05
+
+Primera unidad del mecanismo ratificado para el gate de Creator (SoL-Pi): el Host
+entrega vistas compactas y byte-ancladas en lugar de que el modo relea artefactos
+completos, atacando la clase de coste medida (79 % de cache reads).
+
+- **`scripts/read_view.py`**: lector delegado stdlib con contrato ratificado — ruta
+  relativa, sha256 del archivo completo, rango de líneas, total y excerpt exacto; el
+  original permanece en disco. Rechaza rutas fuera del producto, archivos no regulares,
+  binarios, rangos inválidos y vistas por encima de la cota. CLI con exit 0/2 y error
+  con nombre por stderr.
+- **`tests/test_read_view.py`**: 11 pruebas en los dos seams confirmados (función pura y
+  CLI), incluidas las negativas de contrato.
+
+Suite: 1206 pruebas en verde (1 omitida con módulo DSH externo). El cableado del lector
+en el andamiaje del modo es una unidad separada, para no tocar el prompt del Creator a
+mitad de campaña.
+
 ## Conciliación 2026-11-05: registro a 104 fuentes, anexo System-1, dos bases nuevas y tres correcciones del Host
 
 Ratificación del entendimiento en una sesión grill-with-docs sobre 70 fichas de fuentes
