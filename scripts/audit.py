@@ -23,6 +23,7 @@ CYCLE_STATES = {'PLANNED', 'AUDITING', 'AUDIT_COMPLETE', 'REPAIRING', 'QA_PENDIN
 # letting the hole become permanent by never being looked at again.
 EXCLUSION_FIELDS = frozenset(
     {'kind', 'reason', 'owner', 'receipt', 'expires_at'})
+CAMPAIGN_MANIFEST = '.dsh-managed/campaign/manifest.json'
 _DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 
@@ -59,7 +60,7 @@ def _relative_name(raw):
     return path
 
 
-def _exclusion(value, now):
+def _exclusion(value, now, ceiling=None):
     if isinstance(value, str):
         if not value.strip():
             raise ValueError('Exclusión sin justificación')
@@ -78,10 +79,74 @@ def _exclusion(value, now):
         raise ValueError('Fecha de exclusión inválida') from error
     if deadline < now:
         raise ValueError('Exclusión expirada: requiere nueva autorización')
+    if ceiling is not None and deadline > ceiling:
+        raise ValueError('Exclusión posterior al techo de campaña')
     return dict(value)
 
 
-def inventory(root, exclusions=None, *, today=None):
+def campaign_ceiling(root):
+    """Techo de exclusión fijado por el manifiesto de campaña; ausente, no hay techo."""
+    manifest = Path(root) / CAMPAIGN_MANIFEST
+    if not manifest.is_file():
+        return None
+    try:
+        value = read(manifest)
+    except (OSError, ValueError) as error:
+        raise ValueError('Manifiesto de campaña ilegible') from error
+    if not isinstance(value, dict):
+        raise ValueError('Manifiesto de campaña ilegible')
+    raw = value.get('exclusion_ceiling')
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not _DATE_PATTERN.fullmatch(raw):
+        raise ValueError('Techo de exclusión inválido')
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError('Techo de exclusión inválido') from error
+
+
+def _anchor_needle(evidence):
+    if not isinstance(evidence, dict):
+        return None
+    path, excerpt = evidence.get('path'), evidence.get('excerpt')
+    if not isinstance(path, str) or not isinstance(excerpt, str) or not excerpt.strip():
+        return None
+    return path, excerpt
+
+
+def anchor_status(root, evidence):
+    """Revalida a tiempo de lectura: 'located', 'moved' (nueva línea) o 'absent'."""
+    parsed = _anchor_needle(evidence)
+    if parsed is None:
+        return None, None
+    relative, excerpt = parsed
+    try:
+        target = checked(root / _relative_name(relative))
+        target.resolve().relative_to(root.resolve())
+        if not target.is_file():
+            return 'absent', None
+        text = target.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError, ValueError):
+        return 'absent', None
+    lines = [line.rstrip() for line in text.splitlines()]
+    needle = [line.rstrip() for line in excerpt.splitlines() if line.strip()]
+    if not needle:
+        return None, None
+    hits = [index + 1 for index in range(len(lines) - len(needle) + 1)
+            if lines[index:index + len(needle)] == needle]
+    if len(hits) == 1:
+        return 'located', hits[0]
+    if len(hits) > 1:
+        return 'absent', None
+    joined = '\n'.join(lines)
+    staged = excerpt.rstrip()
+    if joined.count(staged) == 1:
+        return 'moved', joined.count('\n', 0, joined.index(staged)) + 1
+    return 'absent', None
+
+
+def inventory(root, exclusions=None, *, today=None, ceiling=None):
     """Snapshot regular files without reading explicitly excluded subtrees."""
     root = checked(root).resolve()
     if not root.is_dir():
@@ -93,10 +158,14 @@ def inventory(root, exclusions=None, *, today=None):
     now = today or date.today()
     if not isinstance(now, date):
         raise ValueError('today debe ser una fecha')
+    if ceiling is None:
+        ceiling = campaign_ceiling(root)
+    elif not isinstance(ceiling, date):
+        raise ValueError('Techo de exclusión inválido')
     checked_exclusions = {}
     for name, reason in exclusions.items():
         _relative_name(name)
-        checked_exclusions[name] = _exclusion(reason, now)
+        checked_exclusions[name] = _exclusion(reason, now, ceiling)
     files, excluded = {}, {}
 
     def visit(directory):
@@ -125,7 +194,7 @@ def inventory(root, exclusions=None, *, today=None):
     return {'version': 1, 'files': files, 'exclusions': excluded}
 
 
-def validate_coverage(root, owners, snapshot, *, today=None):
+def validate_coverage(root, owners, snapshot, *, today=None, ceiling=None):
     if snapshot is None:
         return {'status': 'UNVERIFIED', 'coverage_gaps': ['INVENTORY_MISSING']}
     if (not isinstance(snapshot, dict) or snapshot.get('version') != 1
@@ -143,7 +212,7 @@ def validate_coverage(root, owners, snapshot, *, today=None):
         # equality check below would call the auditor's own file stale.
         exclusions[name] = (entry['reason'] if set(entry) == {'kind', 'reason'}
                             else {k: entry[k] for k in entry if k != 'kind'})
-    current = inventory(root, exclusions, today=today)
+    current = inventory(root, exclusions, today=today, ceiling=ceiling)
     if current != snapshot:
         raise ValueError('Inventario obsoleto o alterado')
     if set(owners) - set(current['files']):
@@ -253,6 +322,25 @@ def consolidate(root, cycle_id, base_revision, units, findings, snapshot=None, *
         else:
             unique[key]['status'] = 'DUPLICATE'
     active = [v for v in unique.values() if v.get('status') == 'READY_FOR_REPAIR']
+    reanchored = []
+    for finding in unique.values():
+        evidence = finding.get('evidence')
+        anchor, line = anchor_status(root, evidence)
+        if anchor is None:
+            continue
+        evidence = dict(evidence)
+        if anchor == 'absent':
+            raise ValueError(
+                'Ancla ausente para %s: requiere re-verificación'
+                % finding['fingerprint'])
+        line_changed = anchor == 'moved' or evidence.get('line') != line
+        if line_changed:
+            reanchored.append({'fingerprint': finding['fingerprint'],
+                               'from': evidence.get('line'), 'to': line})
+            evidence['line'] = line
+            evidence['located'] = True
+        finding['anchor_status'] = 'moved' if line_changed else 'located'
+        finding['evidence'] = evidence
     if coverage['status'] != 'PARTITION_VERIFIED' or coverage['pending_units']:
         status = 'UNVERIFIED'
     else:
@@ -267,6 +355,7 @@ def consolidate(root, cycle_id, base_revision, units, findings, snapshot=None, *
         'units': units,
         'findings': list(unique.values()),
         'repair_queue': active,
+        'reanchored': reanchored,
     }
 
 

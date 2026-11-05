@@ -30,6 +30,7 @@ import sys
 
 from pathlib import Path
 
+import audit
 import state_reconcile
 import stack as capability_plan
 
@@ -50,6 +51,14 @@ MANIFEST_RELATIVE = '.dsh-managed/campaign/manifest.json'
 
 class CampaignBlocked(Exception):
     """Falta una pieza para pronunciarse; el gate sale con BLOCKED."""
+
+
+def exclusion_ceiling(workspace):
+    """Techo de exclusión del manifiesto de campaña; audit.py lo hace cumplir."""
+    try:
+        return audit.campaign_ceiling(Path(workspace))
+    except ValueError as error:
+        raise CampaignBlocked('manifiesto de campaña: ' + str(error)) from error
 
 
 def _canonical(value):
@@ -240,6 +249,7 @@ def preflight(workspace):
     preset_ids = manifest.get('preset_ids')
     if not isinstance(preset_ids, list) or not preset_ids:
         raise CampaignBlocked('el manifiesto no declara preset_ids')
+    ceiling = exclusion_ceiling(workspace)
     try:
         import creator_client
         import workflow
@@ -262,7 +272,8 @@ def preflight(workspace):
         raise CampaignBlocked('plan de capacidades sin stacks verificables')
     if gaps:
         raise CampaignBlocked('stacks no verificables: ' + json.dumps(gaps, ensure_ascii=False))
-    return EXIT_PASS, {'fase': 'preflight', 'verdict': 'PASS', 'preset_ids': preset_ids}
+    return EXIT_PASS, {'fase': 'preflight', 'verdict': 'PASS', 'preset_ids': preset_ids,
+                       'exclusion_ceiling': ceiling.isoformat() if ceiling else None}
 
 
 def main(argv=None):
