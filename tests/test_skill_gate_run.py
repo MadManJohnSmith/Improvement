@@ -369,7 +369,7 @@ class SkillGateRunTest(unittest.TestCase):
                               {"verdict": "PASS", "evidence": "e"}
                               for case in self.corpus["cases"]})
         self._run(client)
-        self.assertEqual(len(client.prompts), 55)
+        self.assertEqual(len(client.prompts), 59)
         for _, prompt in client.prompts:
             sent = json.loads(prompt)["case"]
             original = source[sent["case_id"]]
@@ -393,7 +393,7 @@ class SkillGateRunTest(unittest.TestCase):
             grouped[case["type"]][expected] += 1
         correct = sum(max(counts.values()) for counts in grouped.values())
         self.assertGreaterEqual(correct, 35)
-        self.assertEqual(len(self.corpus["cases"]), 55)
+        self.assertEqual(len(self.corpus["cases"]), 59)
         self.assertTrue(all("type" not in skill_gate_run._case_scenario(case)
                             for case in self.corpus["cases"]))
 

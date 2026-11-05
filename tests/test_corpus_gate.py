@@ -45,7 +45,7 @@ class ExecutableCorpusTest(unittest.TestCase):
 
     def test_every_library_scenario_compiles_into_a_bounded_case(self):
         source = corpus_compiler._source_records(LIBRARY)
-        self.assertEqual(len(source), 55)
+        self.assertEqual(len(source), 59)
         self.assertEqual(len(self.corpus["cases"]), len(source))
         self.assertEqual({c["case_id"] for c in self.corpus["cases"]},
                          {r["scenario_id"] for _, r in source})

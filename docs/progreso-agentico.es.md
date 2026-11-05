@@ -164,7 +164,7 @@ llevan su propia advertencia de «CONTENIDO HISTÓRICO — NO EJECUTAR».
 
 **P11 es el límite que más conviene no suavizar:** el gate ligado existe y decide
 sobre observaciones verificadas, pero **ningún cambio de biblioteca ha pasado por él
-con evidencia de un agente real**. Los 55 casos comprueban 25 skills, no los modos;
+con evidencia de un agente real**. Los 59 casos comprueban 27 skills, no los modos;
 el CLI del runner se abstiene antes de crear sesión al faltar un evaluador Host
 compatible por caso. La abstención del pase del 2026-10-10 y el `NOT_COVERED` de SC-123
 son evidencia de dos límites distintos, no scores de mejora.

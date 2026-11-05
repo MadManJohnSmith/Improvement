@@ -160,7 +160,7 @@ They carry their own “HISTORICAL CONTENT — DO NOT RUN” warning.
 
 **P11 is the limit it serves not to soften:** the bound gate exists and decides
 on verified observations, but **no library changes have gone through it
-with evidence of a real agent**. The 55 cases test 25 skills, not the modes;
+with evidence of a real agent**. The 59 cases test 27 skills, not the modes;
 runner CLI stops before creating session due to missing Host evaluator
 the pass abstained before `session/create`, there being no compatible Host evaluator adapter
 per case. The abstention of the 2026-10-10 pass and the `NOT_COVERED` of SC-123

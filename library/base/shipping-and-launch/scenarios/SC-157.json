@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-157",
+  "type": "negative",
+  "description": "Una propuesta de salida sin plan de rollback declarado queda BLOCKED aunque la suite esté verde.",
+  "input": {
+    "skill": "shipping-and-launch",
+    "task": "proponer la salida de un cambio verificado a producción",
+    "rollback_plan_declared": false,
+    "rollout_stages_with_signals": 0,
+    "error_budget_available": true
+  },
+  "expected": {
+    "verdict": "BLOCKED",
+    "evidence_type": "blocked_reason",
+    "description": "La salida no se propone: falta el plan de rollback declarado, que la skill no puede inventar."
+  },
+  "sr_links": [],
+  "target_skill": "shipping-and-launch"
+}
