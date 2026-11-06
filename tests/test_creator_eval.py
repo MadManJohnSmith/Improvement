@@ -339,8 +339,9 @@ class CreatorEvalCompressedTest(unittest.TestCase):
                                "--report", str(compressed / "report.json")])
         first = json.loads((plain / "report.json").read_text(encoding="utf-8"))
         second = json.loads((compressed / "report.json").read_text(encoding="utf-8"))
-        self.assertEqual(first["verdict"], second["verdict"])
-        self.assertEqual(first["counts"], second["counts"])
+        for key in ("verdict", "reason", "counts", "descriptive", "evidence",
+                    "unknown_types", "malformed_events", "seq_checked"):
+            self.assertEqual(first[key], second[key], key)
         self.assertEqual(second["journal_file"], "journal.jsonl.zstd")
 
     def test_a_missing_decompressor_is_named(self):
@@ -355,6 +356,39 @@ class CreatorEvalCompressedTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("zstd-ausente-xyz", errors.getvalue())
 
+    def test_cli_accepts_the_session_journal_name(self):
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        case = Path(tempfile.mkdtemp(prefix="creator-eval-session-"))
+        self.addCleanup(shutil.rmtree, case, True)
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        facts = _run(events)
+        (case / "facts.json").write_text(json.dumps(facts), encoding="utf-8")
+        (case / "criteria.json").write_text(json.dumps(_criteria()),
+                                            encoding="utf-8")
+        journal = case / "journal.jsonl"
+        journal.write_text("".join(json.dumps(event) + "\n" for event in events),
+                           encoding="utf-8")
+        target = case / "session.v4.jsonl.zstd"
+        subprocess.run(["zstd", "-q", "-o", str(target), str(journal)], check=True)
+        journal.unlink()
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(case / "report.json")])
+        self.assertEqual(code, 0)
+        report = json.loads((case / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["journal_file"], "session.v4.jsonl.zstd")
+
+    def test_cli_refuses_a_report_without_digests(self):
+        case = self._case()
+        report_path = case / "report.json"
+        report_path.write_text('{"verdict": "PASS"}', encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(report_path)])
+        self.assertEqual(code, 2)
+        self.assertIn("ilegible", errors.getvalue())
+
     def test_two_journal_files_are_ambiguous(self):
         if not shutil.which("zstd"):
             self.skipTest("zstd no disponible")
@@ -365,3 +399,90 @@ class CreatorEvalCompressedTest(unittest.TestCase):
                                       "--report", str(case / "report.json")])
         self.assertEqual(code, 2)
         self.assertIn("journal", errors.getvalue())
+
+class CreatorEvalReviewTest(unittest.TestCase):
+    def test_a_reader_call_does_not_exempt_a_compound_read(self):
+        """The exemption is the bounded path, not the whole bash call."""
+        events = [_call(0, "bash", {"command":
+                  "python3 -B scripts/read_view.py --root . --path a; "
+                  "cat schemas/modes.schema.json"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["counts"]["schema_reads"],
+                         {"modes.schema.json": 1})
+        self.assertEqual(report["verdict"], "FAIL_MECHANISM")
+
+    def test_an_unbounded_view_counts_as_a_full_read(self):
+        """Without a range the reader returns the whole file, so it counts."""
+        events = [_call(0, "bash", {"command":
+                  "python3 -B scripts/read_view.py --root . "
+                  "--path schemas/modes.schema.json"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["counts"]["schema_reads"],
+                         {"modes.schema.json": 1})
+
+
+    def test_the_read_tool_may_name_its_target_file_path(self):
+        events = [_call(0, "read",
+                        {"file_path": "/framework/schemas/skills.schema.json"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["counts"]["schema_reads"],
+                         {"skills.schema.json": 1})
+
+    def test_written_content_is_not_a_read(self):
+        events = [_call(0, "write", {"path": "notes.md",
+                  "content": "no leas schemas/skills.schema.json"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["verdict"], "PASS")
+
+    def test_a_non_integer_last_seq_abstains(self):
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        report = creator_eval.grade(
+            _run(events, journal_last_seq="9"), events, _criteria())
+        self.assertEqual(report["verdict"], "ABSTAIN")
+        self.assertIn("last_seq", report["reason"])
+
+    def test_a_boolean_is_not_a_count(self):
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        report = creator_eval.grade(
+            _run(events, journal_event_count=True), events, _criteria())
+        self.assertEqual(report["verdict"], "ABSTAIN")
+
+    def test_unparseable_arguments_abstain(self):
+        events = [{"type": "tool/call", "seq": 0,
+                   "data": {"name": "read", "arguments": "{not json"}}]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["verdict"], "ABSTAIN")
+        self.assertIn("malformado", report["reason"])
+
+    def test_a_frame_without_type_abstains(self):
+        events = [{"seq": 0, "data": {}}]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["verdict"], "ABSTAIN")
+
+    def test_unknown_types_are_counted(self):
+        events = [_call(0, "read", {"path": "product/src/main.py"}),
+                  {"type": "future/frame", "seq": 1, "data": {}},
+                  {"type": "future/frame", "seq": 2, "data": {}}]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["unknown_types"], {"future/frame": 2})
+
+    def test_schema_read_events_name_the_seq(self):
+        events = [_call(0, "read", {"path": "product/src/main.py"}),
+                  _call(5, "read",
+                        {"path": "/framework/schemas/modes.schema.json"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(report["counts"]["schema_read_events"],
+                         {"modes.schema.json": [5]})
+
+    def test_tool_counts_are_sorted(self):
+        events = [_call(0, "bash", {"command": "ls"}),
+                  _call(1, "read", {"path": "product/src/main.py"})]
+        report = creator_eval.grade(_run(events), events, _criteria())
+        self.assertEqual(list(report["counts"]["tool_calls"]), ["bash", "read"])
+
+    def test_abstain_precedes_a_completion_failure(self):
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        report = creator_eval.grade(
+            _run(events, manifest_present=False, journal_event_count=9),
+            events, _criteria())
+        self.assertEqual(report["verdict"], "ABSTAIN")

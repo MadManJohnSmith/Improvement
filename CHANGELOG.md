@@ -1,5 +1,30 @@
 # Cambios
 
+## Revisión del evaluador: el lector no exime una lectura compuesta — 2026-11-05
+
+La revisión en dos ejes encontró dos defectos altos y varios medios; corregidos
+con regresiones.
+
+- **Exención del lector**: antes bastaba que una llamada bash mencionara
+  `read_view.py` para no contar ninguna lectura de schema de esa llamada. Ahora
+  se exime solo su `--path` cuando la misma invocación pide un rango; una vista
+  sin `--start/--end` cuenta como lectura completa, y un comando compuesto
+  (`read_view ...; cat schema`) también.
+- **Superficies de lectura**: cuentan el `read` del journal (con `path` o
+  `file_path`) y los tokens de `bash`; el contenido que se escribe ya no cuenta.
+- **Integridad**: `event_count` y `last_seq` deben ser enteros (un booleano no
+  es un conteo); argumentos no parseables y frames sin tipo abstienen; el
+  informe nombra el seq que sostiene cada lectura (`schema_read_events`).
+- **Hashes y escritura**: cada digest cubre exactamente los bytes calificados
+  (el journal comprimido se descomprime desde esos bytes) y el informe se
+  escribe con reemplazo atómico; un informe sin `digests` se rechaza.
+- **Nombre del journal**: se acepta `session.v4.jsonl.zstd` además de
+  `journal.jsonl(.zstd)`; dos journals en el mismo caso son ambiguos.
+- **Control re-graduado**: A y B siguen en FAIL_COMPLETION; A lee modes/skills
+  en los seq 43/48, B en 169/174.
+
+Suite: 1254 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Evaluador de Creator: journal comprimido y control real — 2026-11-05
 
 Tercera rebanada (ticket 09, spec #7): el evaluador acepta la evidencia tal como
