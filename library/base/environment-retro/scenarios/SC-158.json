@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-158",
+  "type": "positive",
+  "description": "Un fallo mecánico repetido en dos sesiones produce un check automático propuesto con el test que falla sin él.",
+  "input": {
+    "skill": "environment-retro",
+    "task": "cerrar una unidad con fallos y proponer cambios del entorno",
+    "mechanical_failure_occurrences": 2,
+    "anchored_to_persisted_evidence": true,
+    "proposed_check_has_failing_test": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "env_change_record",
+    "description": "El fallo queda clasificado como mecánico y el check propuesto llega con su verificación; el producto no se toca."
+  },
+  "sr_links": [],
+  "target_skill": "environment-retro"
+}

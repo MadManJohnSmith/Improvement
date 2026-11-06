@@ -198,6 +198,33 @@ def _golden_drift():
     }
 
 
+def _golden_drift_extended():
+    doc = _golden_drift()
+    doc["entries"][0]["tracked_symbols"] = [
+        {
+            "symbol_id": "scripts/audit.py::inventory",
+            "contract_hash": "a" * 64,
+            "body_lsh": "b" * 64,
+            "body_churn_ratio": 0.12,
+            "symbol_diff": {
+                "before": "def inventory(root)",
+                "after": "def inventory(root, *, today=None)",
+            },
+        },
+    ]
+    doc["entries"][0]["metrics"] = {
+        "max_body_churn_ratio": 0.12,
+        "shannon_entropy": 1.585,
+        "total_semantic_delta_tokens": 42,
+    }
+    doc["entries"][0]["thresholds"] = {
+        "body_churn_ratio": 0.35,
+        "entropy_limit": 2.5,
+        "min_entropy_tokens": 20,
+    }
+    return doc
+
+
 def _golden_backup():
     return {
         "schema_version": 1,
@@ -565,6 +592,27 @@ class TestPositiveCorpus(unittest.TestCase):
         for s in gc.DRIFT_STATUSES:
             doc = _golden_drift()
             doc["entries"][0]["status"] = s
+            gc.validate("drift", doc)
+
+    def test_drift_extended_entry_with_tracked_symbols_validates(self):
+        gc.validate("drift", _golden_drift_extended())
+
+    def test_drift_rejects_non_sha256_contract_hash(self):
+        doc = _golden_drift_extended()
+        doc["entries"][0]["tracked_symbols"][0]["contract_hash"] = "a1b2c3"
+        with self.assertRaises(gc.ContractError):
+            gc.validate("drift", doc)
+
+    def test_drift_rejects_unknown_tracked_symbol_field(self):
+        doc = _golden_drift_extended()
+        doc["entries"][0]["tracked_symbols"][0]["mtime"] = 17
+        with self.assertRaises(gc.ContractError):
+            gc.validate("drift", doc)
+
+    def test_drift_rejects_incomplete_thresholds(self):
+        doc = _golden_drift_extended()
+        del doc["entries"][0]["thresholds"]["entropy_limit"]
+        with self.assertRaises(gc.ContractError):
             gc.validate("drift", doc)
 
     def test_backup_golden(self):

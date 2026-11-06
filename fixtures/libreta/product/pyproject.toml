@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libreta"
+version = "0.1.0"
+description = "Libreta de notas de línea de órdenes, solo biblioteca estándar"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[project.scripts]
+libreta = "libreta.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

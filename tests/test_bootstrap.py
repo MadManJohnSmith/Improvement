@@ -10,6 +10,7 @@ producto y configuración global sin cambios; errores dejan checkpoint RETAINED.
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -521,6 +522,103 @@ class TestUpdate(_BootstrapTestBase):
 
         result = bs.update(self.project, self.workspace)
         self.assertEqual(result["result"], "NO_OP")
+
+
+# ===========================================================================
+# Doc-drift gate: update consulta el motor determinista antes de regenerar
+# ===========================================================================
+
+_TOOL_V1 = (
+    "def public_fn(a: int) -> bool:\n"
+    "    return a > 0\n"
+    "\n"
+    "def _helper(value):\n"
+    "    total = value\n"
+    "    return total\n")
+
+_TOOL_PRIVATE_REWRITE = _TOOL_V1.replace(
+    "def _helper(value):\n    total = value\n    return total\n",
+    "def _helper(value):\n    pieces = [value + step for step in range(4)]\n"
+    "    return sum(pieces) % 97\n")
+
+_TOOL_PARAM_DRIFT = _TOOL_V1.replace(
+    "def public_fn(a: int) -> bool:", "def public_fn(a: int, b: int) -> bool:")
+
+_API_DOC = (
+    "<!-- drift:track path=\"src/tool.py\" symbols=\"public_fn\" -->\n")
+
+
+class TestDriftGate(_BootstrapTestBase):
+    """update devuelve NO_OP cuando la deriva respecto a la base activa es
+    toda no gobernante, y regenera cuando un contrato se rompe."""
+
+    def _git(self, *args):
+        subprocess.run(["git", "-C", str(self.project), *args],
+                       check=True, capture_output=True, text=True)
+
+    def _git_project(self):
+        self._git("init", "-q")
+        (self.project / "docs").mkdir()
+        (self.project / "src" / "tool.py").write_text(_TOOL_V1, encoding="utf-8")
+        (self.project / "docs" / "api.md").write_text(_API_DOC, encoding="utf-8")
+        self._git("add", "-A")
+        self._git("-c", "user.name=Tester", "-c", "user.email=t@example.test",
+                  "commit", "-q", "-m", "base")
+
+    def _activate(self):
+        r1 = bs.install(self.project, self.workspace)
+        run_dir = Path(r1["run_dir"])
+        run_doc = json.loads((run_dir / "run.json").read_text())
+        run_doc["status"] = "ACTIVE"
+        (run_dir / "run.json").unlink()
+        bs._write_json(run_dir / "run.json", run_doc)
+        return run_doc
+
+    def test_non_governing_change_is_no_op_with_report_evidence(self):
+        self._git_project()
+        self._activate()
+        (self.project / "src" / "tool.py").write_text(_TOOL_PRIVATE_REWRITE,
+                                                      encoding="utf-8")
+        self._git("add", "-A")
+        self._git("-c", "user.name=Tester", "-c", "user.email=t@example.test",
+                  "commit", "-q", "-m", "rewritten private helper")
+        result = bs.update(self.project, self.workspace)
+        self.assertEqual(result["result"], "NO_OP")
+        self.assertIn("no gobernante", result["message"])
+        report = json.loads(
+            (self.workspace / "drift" / "source-drift.json").read_text())
+        self.assertEqual(report["entries"][0]["status"], "NON_GOVERNING_CHANGE")
+
+    def test_governing_change_still_regenerates(self):
+        self._git_project()
+        self._activate()
+        (self.project / "src" / "tool.py").write_text(_TOOL_PARAM_DRIFT,
+                                                      encoding="utf-8")
+        self._git("add", "-A")
+        self._git("-c", "user.name=Tester", "-c", "user.email=t@example.test",
+                  "commit", "-q", "-m", "changed public contract")
+        result = bs.update(self.project, self.workspace)
+        self.assertNotEqual(result["result"], "NO_OP")
+
+    def test_drift_command_verdicts_and_repins(self):
+        self._git_project()
+        self.workspace.mkdir()
+        clean = bs.drift_command(self.project, self.workspace,
+                                 from_rev="HEAD", to="WORKTREE", dry_run=True)
+        self.assertEqual(clean["result"], "CLEAN")
+        (self.project / "src" / "tool.py").write_text(_TOOL_PARAM_DRIFT,
+                                                      encoding="utf-8")
+        drifted = bs.drift_command(self.project, self.workspace,
+                                   from_rev="HEAD", to="WORKTREE",
+                                   dry_run=True)
+        self.assertEqual(drifted["result"], "DRIFT")
+        repinned = bs.drift_command(self.project, self.workspace, repin=True)
+        self.assertEqual(repinned["result"], "REPINNED")
+        self.assertTrue(
+            (self.workspace / "drift" / "doc-baseline.json").is_file())
+        after = bs.drift_command(self.project, self.workspace, to="HEAD",
+                                 dry_run=True)
+        self.assertEqual(after["result"], "CLEAN")
 
 
 # ===========================================================================

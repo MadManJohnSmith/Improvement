@@ -503,6 +503,56 @@
         "source": "addyosmani-agent-skills",
         "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
       }
+    },
+    {
+      "name": "shipping-and-launch",
+      "purpose": "Preparar una salida verificable con plan de rollback declarado, rollout por etapas con señales y error budget, sin ejecutar el despliegue.",
+      "applicability": "Cambios acabados y verificados que salen del workspace a un entorno donde un fallo tiene coste real.",
+      "invariants": [
+        "Sin plan de rollback declarado no existe propuesta de salida",
+        "El rollout avanza solo con señales declaradas; señal ausente es hold",
+        "Error budget agotado impide avanzar",
+        "El registro nombra la candidata exacta",
+        "La skill no despliega: propone y el operador ejecuta"
+      ],
+      "limits": [
+        "No ejecuta despliegues, migraciones ni cambios de infraestructura",
+        "Sin evidencia del entorno de salida, RETAINED"
+      ],
+      "scenarios": [
+        "SC-156",
+        "SC-157"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "addyosmani-agent-skills",
+        "commit": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39"
+      }
+    },
+    {
+      "name": "environment-retro",
+      "purpose": "Convertir fallos observados de una sesión en cambios del entorno: check automático para fallos mecánicos, standard para judgement calls y hallazgo para guardrails ausentes.",
+      "applicability": "Cierre de una unidad con fallos y evidencia de sesión persistida.",
+      "invariants": [
+        "Fallo mecánico produce una propuesta de check automático",
+        "Judgement call produce un standard, no un check",
+        "Guardrail ausente se registra como hallazgo",
+        "El retro jamás edita el producto",
+        "Cada propuesta está anclada a evidencia de sesión persistida"
+      ],
+      "limits": [
+        "No reescribe código, tests ni estado del producto",
+        "Sin evidencia de sesión persistida no hay retro: RETAINED"
+      ],
+      "scenarios": [
+        "SC-158",
+        "SC-159"
+      ],
+      "provenance": {
+        "license": "MIT (upstream); reimplemented for this framework",
+        "source": "mattpocock-skills",
+        "commit": "49dd158d1076134a641b33efb035946536778336"
+      }
     }
   ],
   "catalog_patterns": [

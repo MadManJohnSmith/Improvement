@@ -1,0 +1,307 @@
+# Evaluación remota del Creator contra el fixture de producto (issues #15
+# y #16, spec #11). Solo workflow_dispatch: nunca en push, pull_request ni
+# horario, porque cada corrida gasta tokens de un proveedor real. El
+# veredicto informa el merge sin bloquearlo mecánicamente; el caso, la
+# fila del roster y el log viajan como artefactos, y el workflow no
+# commitea nada. El contrato lo mantiene tests/test_workflow_remote_eval.py.
+name: Evaluación remota de Creator
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt_version:
+        description: >-
+          Versión del prompt del Creator que se evalúa; por defecto, la del
+          checkout (PROMPT_VERSION en scripts/creator_client.py)
+        required: false
+        default: '1.11.0'
+        type: string
+      model:
+        description: 'Identificador del modelo que recibe el proveedor (id de la API)'
+        required: true
+        type: string
+      provider_base_url:
+        description: 'URL base pública del proveedor (https; sin localhost)'
+        required: true
+        type: string
+      budget:
+        description: 'Techo de tokens facturables del run Creator'
+        required: false
+        default: '500000'
+        type: string
+      context_window:
+        description: 'Ventana de contexto declarada al perfil para el modelo elegido'
+        required: false
+        default: '262144'
+        type: string
+      max_tokens:
+        description: 'Techo de salida declarado al perfil para el modelo elegido'
+        required: false
+        default: '65536'
+        type: string
+      fixture:
+        description: 'Fixture de producto bajo fixtures/ (su directorio product/)'
+        required: false
+        default: 'libreta'
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: Evaluación remota del Creator
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      # Todo lo efímero vive fuera del checkout y fuera de cualquier
+      # repositorio: bootstrap exige un workspace externo al framework y al
+      # proyecto, y el home de DSH es un home local del runner, nunca el
+      # home por defecto del usuario (docs/setup-dsh.md).
+      EVAL_ROOT: ${{ runner.temp }}/creator-eval
+      CASE_DIR: ${{ runner.temp }}/creator-eval/case
+      PROJECT_DIR: ${{ runner.temp }}/creator-eval/project
+      WORKSPACE_DIR: ${{ runner.temp }}/creator-eval/workspace
+      RUN_LOG: ${{ runner.temp }}/creator-eval/run.log
+      ROSTER_ROW: ${{ runner.temp }}/creator-eval/roster-row.json
+      DSH_HOME: ${{ runner.temp }}/creator-eval/dsh-home
+      PROMPT_VERSION: ${{ inputs.prompt_version }}
+      MODEL: ${{ inputs.model }}
+      PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
+      BUDGET: ${{ inputs.budget }}
+      CONTEXT_WINDOW: ${{ inputs.context_window }}
+      MAX_TOKENS: ${{ inputs.max_tokens }}
+      FIXTURE: ${{ inputs.fixture }}
+    steps:
+      - name: Abrir el log del run
+        run: |
+          mkdir -p "$EVAL_ROOT"
+          {
+            echo "== evaluación remota del Creator =="
+            echo "prompt_version: $PROMPT_VERSION"
+            echo "model: $MODEL"
+            echo "fixture: $FIXTURE"
+            echo "budget: $BUDGET"
+          } > "$RUN_LOG"
+
+      - name: Checkout del framework
+        uses: actions/checkout@v4
+
+      - name: Python de la suite
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Node para DSH
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Descompresor de journals
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+
+      - name: Preflight cerrado antes de gastar tokens
+        env:
+          DSH_PROVIDER_API_KEY: ${{ secrets.DSH_PROVIDER_API_KEY }}
+        run: |
+          fail() {
+            echo "preflight: $1" | tee -a "$RUN_LOG" >&2
+            exit 1
+          }
+          [ -d "fixtures/$FIXTURE/product" ] ||
+            fail "falta el fixture fixtures/$FIXTURE/product"
+          [ -f "eval/profile-dsh.patch.yml" ] ||
+            fail "falta la plantilla del perfil eval/profile-dsh.patch.yml"
+          [ -f "eval/criteria-remote-creator.json" ] ||
+            fail "falta el criterio eval/criteria-remote-creator.json"
+          case "$PROVIDER_BASE_URL" in https://*) ;;
+            *) fail "provider_base_url debe ser una URL pública https" ;;
+          esac
+          case "$BUDGET" in ''|*[!0-9]*)
+            fail "budget debe ser un entero (techo de tokens)" ;;
+          esac
+          case "$CONTEXT_WINDOW" in ''|*[!0-9]*)
+            fail "context_window debe ser un entero (ventana de contexto del modelo)" ;;
+          esac
+          case "$MAX_TOKENS" in ''|*[!0-9]*)
+            fail "max_tokens debe ser un entero (techo de salida del modelo)" ;;
+          esac
+          [ -n "$DSH_PROVIDER_API_KEY" ] ||
+            fail "el secreto DSH_PROVIDER_API_KEY está vacío"
+          command -v zstd >/dev/null ||
+            fail "falta el descompresor zstd"
+          command -v node >/dev/null ||
+            fail "falta node para lanzar DSH"
+
+      - name: Render del perfil DSH desde la plantilla
+        run: |
+          PROFILE_DIR="$DSH_HOME/profiles/web"
+          mkdir -p "$PROFILE_DIR"
+          # Receta de eval/README.md: la plantilla se copia como
+          # cordis.patch.yml del bundle del perfil y se sustituyen sus
+          # marcadores. La clave no la sustituye nadie: apiKeyEnv nombra la
+          # variable de entorno cuyo valor exporta el runner desde el
+          # secreto del repositorio antes de lanzar DSH. El nombre interno
+          # del proveedor se deriva del host público de la URL base.
+          PROVIDER="$(printf '%s' "$PROVIDER_BASE_URL" |
+            sed -E 's#^https://([^/:]+).*$#\1#' |
+            sed -E 's/[^A-Za-z0-9]+/-/g; s/^-+//; s/-+$//')"
+          if [ -z "$PROVIDER" ]; then
+            echo "render: no se pudo derivar el nombre del proveedor de la URL base" |
+              tee -a "$RUN_LOG" >&2
+            exit 1
+          fi
+          python3 - "$PROFILE_DIR" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          profile = Path(sys.argv[1])
+          # Forma medida de un perfil DSH 0.2.1: package.json con los
+          # bundles del perfil, cordis.yml vacio (el arbol se compone por
+          # parches) y el parche renderizado como cordis.patch.yml.
+          (profile / "package.json").write_text(json.dumps({
+              "name": "dsh-profile-web",
+              "private": True,
+              "dependencies": {},
+              "dsh": {"profile": {"bundles": [
+                  "@deepseek-ai/dsh-base",
+                  "@deepseek-ai/dsh-web-app",
+              ]}},
+          }, indent=2) + "\n", encoding="utf-8")
+          (profile / "cordis.yml").write_text(
+              "# Raiz del perfil de DSH: lista de entradas vacia; el arbol\n"
+              "# se compone con los bundles del package.json y los parches.\n"
+              "[]\n", encoding="utf-8")
+          PY
+          sed -e "s|@DSH_PROFILE_PROVIDER@|$PROVIDER|g" \
+              -e "s|@DSH_PROFILE_BASE_URL@|$PROVIDER_BASE_URL|g" \
+              -e "s|@DSH_PROFILE_MODEL@|$MODEL|g" \
+              -e "s|@DSH_PROFILE_CONTEXT_WINDOW@|$CONTEXT_WINDOW|g" \
+              -e "s|@DSH_PROFILE_MAX_TOKENS@|$MAX_TOKENS|g" \
+            eval/profile-dsh.patch.yml > "$PROFILE_DIR/cordis.patch.yml"
+          if grep -q '@DSH_PROFILE_' "$PROFILE_DIR/cordis.patch.yml"; then
+            echo "render: quedaron marcadores sin sustituir en el perfil" |
+              tee -a "$RUN_LOG" >&2
+            exit 1
+          fi
+
+      - name: Fixture como proyecto Git
+        run: |
+          rm -rf "$PROJECT_DIR"
+          mkdir -p "$PROJECT_DIR"
+          # product/ es la raíz del producto a auditar; FIXTURE.md y
+          # project-manifest.json son el embalaje y quedan fuera.
+          cp -R "fixtures/$FIXTURE/product/." "$PROJECT_DIR/"
+          git -C "$PROJECT_DIR" init -b main
+          # Commit determinista: autor, fechas y mensaje fijos. El sha1 del
+          # commit (y con él root_identity, el sha256 del sha1 que bootstrap
+          # registra en run.json) depende del momento y del autor: sin esta
+          # fijación varía en cada corrida y la identidad del run no es
+          # comparable entre corridas. Las fechas marcan la mecanización del
+          # commit, no el momento real; el contenido del árbol manda.
+          export GIT_AUTHOR_NAME="CI"
+          export GIT_AUTHOR_EMAIL="ci@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="CI"
+          export GIT_COMMITTER_EMAIL="ci@users.noreply.github.com"
+          export GIT_AUTHOR_DATE="2026-01-01T00:00:00+00:00"
+          export GIT_COMMITTER_DATE="2026-01-01T00:00:00+00:00"
+          git -C "$PROJECT_DIR" add -A
+          git -C "$PROJECT_DIR" commit -m "fixture $FIXTURE para la evaluación remota"
+
+      - name: Preparar el run del Creator
+        run: |
+          # bootstrap exige workspace externo al framework y al proyecto:
+          # todo vive bajo runner.temp. --no-dispatch deja la supervisión
+          # al paso siguiente; run.json registra root_identity y budget.
+          python3 scripts/bootstrap.py install \
+            --project "$PROJECT_DIR" \
+            --workspace "$WORKSPACE_DIR" \
+            --creator-max-tokens "$BUDGET" \
+            --no-dispatch > "$EVAL_ROOT/install.json" 2>> "$RUN_LOG"
+          RUN_DIR="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["run_dir"])' "$EVAL_ROOT/install.json")"
+          echo "run preparado: $RUN_DIR" | tee -a "$RUN_LOG"
+          echo "run_dir=$RUN_DIR" >> "$GITHUB_ENV"
+
+      - name: Despachar el Creator
+        env:
+          DSH_PROVIDER_API_KEY: ${{ secrets.DSH_PROVIDER_API_KEY }}
+        run: |
+          # RETAINED no es un fallo del workflow: main() de creator_client
+          # sale con 1 cuando el veredicto es RETAINED y la evaluación
+          # sigue sobre ese run. Un exit 1 sin veredicto sí es un fallo
+          # (un crash de python también sale con 1), así que la
+          # continuidad exige ver el veredicto en el log del run.
+          set +e
+          python3 scripts/creator_client.py \
+            --run-dir "$RUN_DIR" --launch-dsh 2>&1 | tee -a "$RUN_LOG"
+          code="${PIPESTATUS[0]}"
+          echo "creator exit: $code" | tee -a "$RUN_LOG"
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$code" -eq 1 ] &&
+             grep -q '"result": "RETAINED"' "$RUN_LOG"; then
+            echo "run RETAINED: la evaluación continúa" | tee -a "$RUN_LOG"
+            exit 0
+          fi
+          exit "$code"
+
+      - name: Construir el caso y calificar
+        run: |
+          # El constructor deriva los hechos del run terminado (modelo,
+          # uso, journal bajo el home de DSH del runner) y el evaluador
+          # califica con el criterio versionado; el reporte cae dentro del
+          # caso por defecto. --project-root deja en los hechos el digest
+          # de árbol del producto, comparable con el registrado en el
+          # project-manifest.json del fixture. El veredicto (PASS, FAIL_*,
+          # ABSTAIN) queda en report.json: informa el merge sin bloquearlo
+          # mecánicamente; solo un fallo cerrado del constructor o del
+          # evaluador (exit 2) falla el paso.
+          python3 scripts/creator_eval.py \
+            --from-run "$RUN_DIR" \
+            --criteria eval/criteria-remote-creator.json \
+            --dsh-home "$DSH_HOME" \
+            --project-root "$PROJECT_DIR" \
+            --case "$CASE_DIR" 2>&1 | tee -a "$RUN_LOG"
+
+      - name: Derivar la fila del roster
+        run: |
+          # La fila del roster sale del caso evaluado como proyección
+          # cerrada (sin secretos) y viaja como artefacto propio, junto al
+          # caso y al journal que referencia (#16). Versionar el roster
+          # sigue siendo una decisión del mantenedor: el workflow no
+          # commitea ni modifica nada.
+          python3 scripts/creator_roster.py \
+            --case "$CASE_DIR" \
+            --out "$ROSTER_ROW" 2>&1 | tee -a "$RUN_LOG"
+
+      - name: Publicar el caso evaluado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-eval-case
+          path: ${{ env.CASE_DIR }}
+          if-no-files-found: ignore
+
+      - name: Publicar la fila del roster
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-eval-roster-row
+          path: ${{ env.ROSTER_ROW }}
+          if-no-files-found: ignore
+
+      - name: Publicar el log del run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-eval-run-log
+          path: ${{ env.RUN_LOG }}
+

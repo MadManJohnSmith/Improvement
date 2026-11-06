@@ -177,6 +177,17 @@ def _git_info(repo_path):
         return {"revision": None, "clean": None, "branch": None}
 
 
+def _is_sha256_hex(value):
+    return bool(value) and len(value) == 64 \
+        and all(c in "0123456789abcdef" for c in value.lower())
+
+
+def _is_git_revision(value):
+    """A raw git object name: sha1 (40) or a sha256-object-format repo (64)."""
+    return bool(value) and 40 <= len(value) <= 64 \
+        and all(c in "0123456789abcdef" for c in value.lower())
+
+
 def _root_identity(project, project_git):
     """Base identity used by install and update consistently.
 
@@ -185,7 +196,7 @@ def _root_identity(project, project_git):
     and update must derive it the same way or drift detection breaks.
     """
     rev = (project_git or {}).get("revision")
-    if rev and len(rev) == 64 and all(c in "0123456789abcdef" for c in rev.lower()):
+    if _is_sha256_hex(rev):
         return rev.lower()
     if rev:
         return _digest_bytes(rev.encode("utf-8"))
@@ -1276,6 +1287,7 @@ def update(project, workspace):
     # Find active generation
     runs_dir = workspace / RUN_DIR_NAME
     active_run = None
+    active_run_path = None
     in_progress_run = None
     if runs_dir.is_dir():
         for run_path in sorted(runs_dir.iterdir()):
@@ -1284,6 +1296,7 @@ def update(project, workspace):
                 status = run_doc.get("status")
                 if status == "ACTIVE":
                     active_run = run_doc
+                    active_run_path = run_path
                 elif status in ("CREATED", "DISCOVERING", "DESIGNING",
                                 "GENERATING", "GENERATED", "VALIDATING",
                                 "BACKED_UP", "STAGED", "ACCEPTING",
@@ -1314,8 +1327,87 @@ def update(project, workspace):
             "message": "Misma base; no-op",
         }
 
+    # Doc-drift gate: the identity changed, but when the diff against the
+    # generation's base revision is only cosmetic or non-governing, a Creator
+    # run would spend budget rewriting documents nobody invalidated. The raw
+    # revision lives in the run's project manifest (root_identity is a
+    # digest, not a git object), and only a git revision is judgeable; with
+    # governed documents present and a clean verdict, this is a no-op and
+    # the report is evidence.
+    base_revision = None
+    if active_run_path is not None:
+        manifest = active_run_path / "discovery" / "project-manifest.json"
+        if manifest.is_file():
+            base_revision = _read_json(manifest).get("base_revision")
+    if _is_git_revision(base_revision):
+        import drift as drift_engine
+        verdict = drift_engine.evaluate(
+            {"repo_root": str(project), "workspace": str(workspace)},
+            base_rev=base_revision, target_rev="WORKTREE")
+        entries = verdict.get("entries", [])
+        if entries and all(
+                entry["status"] in ("CURRENT", "NON_GOVERNING_CHANGE")
+                for entry in entries):
+            return {
+                "result": "NO_OP",
+                "generation_id": active_run.get("generation_id"),
+                "message": "Deriva no gobernante respecto a la base activa; no-op",
+            }
+
     # Create new run for update
     return install(project, workspace)
+
+
+# ---------------------------------------------------------------------------
+# drift subcommand
+# ---------------------------------------------------------------------------
+
+
+def drift_command(project, workspace, *, from_rev=None, to="HEAD",
+                  dry_run=False, repin=False, as_json=False):
+    """Evaluate document drift through the deterministic seam, and re-anchor
+    the baseline when the Host asks for it (--repin)."""
+    project = checked(project)
+    workspace = checked(workspace)
+    import drift as drift_engine
+
+    if repin:
+        config = {"repo_root": str(project), "workspace": str(workspace)}
+        baseline = drift_engine.collect_baseline(config, target_rev=to)
+        if dry_run:
+            return {
+                "result": "REPIN_PREVIEW",
+                "base_rev": baseline["base_rev"],
+                "documents": sorted(baseline["documents"]),
+                "path": str(drift_engine.baseline_path(str(workspace))),
+            }
+        drift_engine.pin_baseline(str(workspace), baseline)
+        return {
+            "result": "REPINNED",
+            "base_rev": baseline["base_rev"],
+            "path": str(drift_engine.baseline_path(str(workspace))),
+            "documents": sorted(baseline["documents"]),
+        }
+
+    config = {"repo_root": str(project), "workspace": str(workspace)}
+    report = drift_engine.evaluate(config, base_rev=from_rev, target_rev=to,
+                                   dry_run=dry_run)
+    clean = all(entry["status"] in ("CURRENT", "NON_GOVERNING_CHANGE")
+                for entry in report["entries"])
+    result = {
+        "result": "CLEAN" if clean else "DRIFT",
+        "comparison_points": report["comparison_points"],
+        "entries": [
+            {key: entry[key] for key in ("path", "status", "action")
+             if key in entry}
+            for entry in report["entries"]
+        ],
+    }
+    if not dry_run:
+        result["report_path"] = str(drift_engine.report_path(str(workspace)))
+    if as_json:
+        result["report"] = report
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1527,6 +1619,28 @@ def main():
                                "git junto al clon del framework)")
     p_update.add_argument("--workspace", default=None)
 
+    # drift
+    p_drift = sub.add_parser(
+        "drift", help="Evaluar la deriva documental del proyecto "
+                      "(determinista, sin red ni LLM)")
+    p_drift.add_argument("--project", default=None,
+                         help="Ruta al proyecto (default: el único checkout "
+                              "git junto al clon del framework)")
+    p_drift.add_argument("--workspace", default=None,
+                         help="Ruta al workspace externo (default: hermano del proyecto)")
+    p_drift.add_argument("--from", dest="from_rev", default=None,
+                         help="Revisión base (default: la línea base anclada "
+                              "en <workspace>/drift/)")
+    p_drift.add_argument("--to", default="HEAD",
+                         help="Revisión objetivo (default: HEAD)")
+    p_drift.add_argument("--dry-run", action="store_true",
+                         help="Previsualizar el reporte sin escribirlo")
+    p_drift.add_argument("--repin", action="store_true",
+                         help="Re-anclar doc-baseline.json tras verificación "
+                              "(autoridad del Host)")
+    p_drift.add_argument("--json", action="store_true",
+                         help="Incluir el reporte completo en la salida")
+
     # uninstall
     p_uninstall = sub.add_parser("uninstall",
                                  help="Retirar modos/skills gestionados")
@@ -1707,6 +1821,16 @@ def main():
                 else project.parent / f"{project.name}-workspace"
             )
             result = update(project, workspace)
+
+        elif args.command == "drift":
+            project = _resolve_project_argument(args.project)
+            workspace = (
+                Path(args.workspace).resolve() if args.workspace
+                else project.parent / f"{project.name}-workspace"
+            )
+            result = drift_command(
+                project, workspace, from_rev=args.from_rev, to=args.to,
+                dry_run=args.dry_run, repin=args.repin, as_json=args.json)
 
         elif args.command == "uninstall":
             project = _resolve_project_argument(args.project)

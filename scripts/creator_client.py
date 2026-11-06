@@ -51,7 +51,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.8.0"
+PROMPT_VERSION = "1.11.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -60,6 +60,65 @@ PROMPT_TYPES = (
     "repair_retained",
     "skill_lifecycle",
 )
+
+# Escenarios que no redactan modos: el Host ya materializó los tres. La forma
+# exacta sustituye a la lectura de `modes.schema.json` (702 líneas) y del
+# esquema de skills (233), no la amplía.
+LEAN_PROMPT_TYPES = ("initial_onboarding", "skill_lifecycle")
+
+# Vocabulario cerrado de un contrato de skill (`schemas/skills.schema.json`,
+# `routing.capability_set`). No son las capacidades operativas del paquete
+# (`fs-read`, `fs-search`, `bash`): esas viven en `generated/capabilities.json`
+# y no se aceptan en un contrato de skill.
+SKILL_CONTRACT_CAPABILITIES = (
+    "read_product", "candidate_write", "test_execute", "report",
+)
+
+SKILL_CONTRACT_EXAMPLE = {
+    "schema_version": 1,
+    "kind": "skill",
+    "name": "<name>",
+    "motive": "<motivo recurrente observado>",
+    "domain": ["<dominio>"],
+    "reuse_source": "base-library",
+    "reuse_reference": "<entrada exacta de la biblioteca>",
+    "inputs": ["<entrada>"],
+    "outputs": ["<salida>"],
+    "required_capabilities": ["read_product", "report"],
+    "forbidden_capabilities": ["network"],
+    "files": [{"path": "skills/<name>/SKILL.md", "type": "entrypoint"}],
+    "behavior_test": "<prueba ejecutable que observa la conducta>",
+    "provenance": {"license": "MIT", "source": "<ruta o URL de la fuente>"},
+}
+
+
+def _contract_rule(prompt_type):
+    """Return the exact contract shape this scenario is allowed to author."""
+    if prompt_type in LEAN_PROMPT_TYPES:
+        return (
+            "Forma exacta del contrato de skill (`contracts/<name>.skill.json`):\n\n"
+            "```json\n"
+            + json.dumps(SKILL_CONTRACT_EXAMPLE, ensure_ascii=False, indent=2)
+            + "\n```\n\n"
+            "`required_capabilities` y `routing.capability_set` solo admiten "
+            "estos valores del roster aprobado: `read_product`, "
+            "`candidate_write`, `test_execute`, `report`. No uses "
+            "identificadores de filesystem (`fs-read`, `fs-search`, `bash`): "
+            "el contrato de skill no los acepta. `routing.modes` usa `auditor`, "
+            "`reparador` o `implementador`.\n\n"
+            "Los tres modos de este escenario ya los escribió el Host: no redactes "
+            "un contrato de modo ni consultes su schema. La forma cubre los "
+            "campos obligatorios; si la prevalidación Host nombra un campo que no "
+            f"aparece, consulta `{FRAMEWORK}/schemas/skills.schema.json` una sola vez."
+        )
+    return (
+        "Todo contrato nuevo de modo/skill debe cumplir su schema y llevar "
+        "discriminador explícito: `kind: \"mode\"` para "
+        "`schemas/modes.schema.json`, o `kind: \"skill\"` para "
+        "`schemas/skills.schema.json`. `kind` es opcional únicamente para "
+        "preservar contratos schema v1 previos; no lo omitas en salidas nuevas "
+        "ni infieras variantes por campos como `motive`."
+    )
 
 CREATOR_INTERNAL_CAPABILITIES = [
     "project-discovery",
@@ -740,9 +799,11 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     session_root = layout["session_root"]
     product_root = layout["product_root"]
     workspace_root = layout["workspace_root"]
+    framework_root = Path(request["framework"]).name
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
+    contract_rule = _contract_rule(prompt_type)
 
     header = f"""# Creator Generation Request — {project_name}
 
@@ -754,6 +815,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Session cwd (expected common-parent basename):** `{session_root}`
 **Product directory (exact basename):** `{product_root}`
 **Workspace directory (exact basename):** `{workspace_root}`
+**Framework directory (exact basename):** `{framework_root}`
 **Mode-state path from their common parent (exact):** `{state_root}`
 **Base revision:** {base_rev}
 
@@ -792,10 +854,18 @@ Reglas concretas de economía, derivadas de ensayos reales de este run:
   No necesitas leerlos para copiarlos: céntrate en requisitos, escenarios,
   capacidades y skills específicas. Releerlos o reimprimirlos en bash para
   "inspeccionarlos" vuelve a gastar el contexto que ahorró el andamiaje.
-- Los schemas grandes (`schemas/modes.schema.json`, `schemas/skills.schema.json`)
-  se leen **una sola vez cada uno** y ya: su lectura repetida es el mayor gasto
+- Un schema se lee **una sola vez** y ya: su lectura repetida es el mayor gasto
   medido de la generación. Cuando un error de la prevalidación Host nombre el
   campo, corrige el archivo y revalida: no releas el schema entero de nuevo.
+  Si la forma exacta ya está en este prompt, no leas el schema que la respalda.
+- Para un archivo del framework que no quepa holgado en el contexto (un schema
+  grande, un contrato o una fuente de más de ~200 líneas), no lo leas completo:
+  pide una vista acotada al lector del Host, que devuelve ruta, sha256 del archivo
+  completo, rango, total de líneas y el excerpt exacto:
+  `python3 -B {FRAMEWORK}/scripts/read_view.py --root {FRAMEWORK} --path <ruta relativa> --start <N> --end <M>`
+  El original permanece en disco y la vista es lo que entra en contexto; si el
+  rango no basta, pide el siguiente con `--start`/`--end`, nunca pegues el
+  archivo entero ni reimprimas lo que ya tienes.
 - No construyas paquetes de sondeo (`probe-generated`, `mode.json` vacío, manifest
   mínimo) para tantear al validador: cada sondeo devuelve el informe completo y se
   paga dos veces. Escribe el paquete real en `generated/` y validalo.
@@ -1057,11 +1127,8 @@ campos requeridos `schema_version,scenario_id,type,description,input,expected,sr
 `description`). Los campos opcionales de escenario son `target_mode`,
 `target_skill`, `holdout_family`, `verification_state`.
 
-Todo contrato nuevo de modo/skill debe cumplir su schema y llevar discriminador
-explícito: `kind: "mode"` para `schemas/modes.schema.json`, o `kind: "skill"`
-para `schemas/skills.schema.json`. `kind` es opcional únicamente para preservar
-contratos schema v1 previos; no lo omitas en salidas nuevas ni infieras variantes
-por campos como `motive`.
+{contract_rule}
+
 En `generation-manifest.json`, todo archivo cuyo basename sea `SKILL.md` debe
 usar artifact `type: "skill-entrypoint"`. Si una skill declara `routing`,
 Creator asocia nombre exacto de `skills/<name>/SKILL.md` con acciones/modos,
@@ -1109,7 +1176,11 @@ que nombre; no inspecciones la implementación del validador.
 10. `generated/capabilities.json.required_capabilities` debe cubrir la unión de
     capacidades requeridas por los modos generados. Reparación gestionada requiere
     `candidate_write`, nunca `product_write` ni escritura canónica. Ninguna
-    capacidad requerida puede aparecer en `forbidden_capabilities`
+    capacidad requerida puede aparecer en `forbidden_capabilities`. `roots` usa
+    los basenames exactos del layout — `product_read: ["{product_root}"]`,
+    `framework_execute: ["{framework_root}"]`,
+    `workspace_write: ["{workspace_root}"]` — y ningún artefacto generado
+    contiene rutas absolutas (`/home/`, `/Users/`, `C:\\Users`).
 
 ## Al finalizar
 
@@ -1929,6 +2000,23 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
 
 DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
 
+
+def dsh_home_candidates():
+    """The homes a DSH client may already live in, env DSH_HOME first.
+
+    The order is the acquisition policy, in one place: the environment wins,
+    then the standard candidates. ``acquire_dsh_client`` probes them in this
+    order, and callers that only need the path (journal discovery in
+    creator_case) reuse it instead of re-deriving the policy.
+    """
+    candidates = []
+    env_home = os.environ.get("DSH_HOME")
+    if env_home:
+        candidates.append(Path(env_home).expanduser())
+    candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+    return candidates
+
+
 # Seconds the launch path polls the durable cookie before falling back to
 # the single-use console token: the web server may print its URL before the
 # RPC listener accepts connections.
@@ -2298,11 +2386,7 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
     provider check gates the result. Without a ready session the run
     stops with the concrete missing piece. Fail-closed.
     """
-    candidates = []
-    env_home = os.environ.get("DSH_HOME")
-    if env_home:
-        candidates.append(Path(env_home).expanduser())
-    candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+    candidates = dsh_home_candidates()
 
     if launch:
         launch_home = _official_dsh_home()

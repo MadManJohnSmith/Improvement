@@ -497,6 +497,27 @@ def _flutter_ready(path):
     return (root / 'bin' / 'cache' / 'dart-sdk').is_dir()
 
 
+def _shebang_unrunnable(path):
+    """A resolved binary whose #! interpreter is gone cannot run; checked without executing."""
+    try:
+        with open(path, 'rb') as stream:
+            head = stream.read(256)
+    except OSError:
+        return False
+    if not head.startswith(b'#!'):
+        return False
+    first = head.split(b'\n', 1)[0][2:].strip().decode('utf-8', 'replace')
+    parts = first.split()
+    if not parts:
+        return False
+    interpreter = parts[0]
+    if Path(interpreter).name == 'env' and len(parts) > 1:
+        return shutil.which(parts[1]) is None
+    if not os.path.isabs(interpreter):
+        return False
+    return not os.path.exists(interpreter)
+
+
 DECLARATION_FILE = "improvement-verification.json"
 
 
@@ -565,6 +586,16 @@ def _capability_status(needs, *, path_env=None, home=None, workspace=None,
             if candidate.is_file() and not (binary == 'flutter'
                                             and not _flutter_ready(candidate)):
                 resolved = str(candidate)
+        if resolved and _shebang_unrunnable(resolved):
+            hint = PROVISION_HINTS.get(binary) or {}
+            entry = {'capability': binary, 'status': 'unrunnable', 'path': resolved}
+            for key in ('what', 'check'):
+                if hint.get(key):
+                    entry[key] = hint[key]
+            if hint.get('step'):
+                entry['provision_step'] = hint['step']
+            status.append(entry)
+            continue
         if resolved:
             # Unresolved by the default PATH means an SDK the user installed
             # somewhere of their own: outside the sandbox's writable root, and

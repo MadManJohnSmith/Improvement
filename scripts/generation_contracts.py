@@ -649,6 +649,33 @@ def validate_handoff(doc):
                  f"{schema}.attempt must be >= 1")
 
 
+def _validate_tracked_symbol(symbol, prefix):
+    """One pinned public symbol inside a drift entry."""
+    _require_type(symbol, dict, prefix)
+    _require_fields(symbol, ["symbol_id", "contract_hash"], prefix)
+    _reject_unknown(
+        symbol,
+        ["symbol_id", "contract_hash", "body_lsh", "body_churn_ratio",
+         "symbol_diff"],
+        prefix)
+    _require(_is_nonempty_str(symbol["symbol_id"]), f"{prefix}.symbol_id")
+    _require(_is_sha256(symbol["contract_hash"]), f"{prefix}.contract_hash")
+    if "body_lsh" in symbol:
+        _require(_is_nonempty_str(symbol["body_lsh"]), f"{prefix}.body_lsh")
+    if "body_churn_ratio" in symbol:
+        ratio = symbol["body_churn_ratio"]
+        _require(isinstance(ratio, (int, float)) and 0 <= ratio <= 1,
+                 f"{prefix}.body_churn_ratio must be within [0, 1]")
+    if "symbol_diff" in symbol:
+        diff = symbol["symbol_diff"]
+        _require_type(diff, dict, f"{prefix}.symbol_diff")
+        _require_fields(diff, ["before", "after"], f"{prefix}.symbol_diff")
+        _reject_unknown(diff, ["before", "after"], f"{prefix}.symbol_diff")
+        for side in ("before", "after"):
+            _require(diff[side] is None or isinstance(diff[side], str),
+                     f"{prefix}.symbol_diff.{side} must be a string or null")
+
+
 def validate_drift(doc):
     """Validate a drift analysis document."""
     schema = "drift"
@@ -675,11 +702,52 @@ def validate_drift(doc):
         prefix = f"{schema}.entries[{i}]"
         _require_type(e, dict, prefix)
         _require_fields(e, ["path", "status", "source"], prefix)
-        _reject_unknown(e, ["path", "status", "source", "detail", "action"],
+        _reject_unknown(e, ["path", "status", "source", "detail", "action",
+                            "tracked_symbols", "metrics", "thresholds"],
                         prefix)
         _require_enum(e["status"], DRIFT_STATUSES, f"{prefix}.status")
         if "action" in e:
             _require_enum(e["action"], DRIFT_ACTIONS, f"{prefix}.action")
+        if "tracked_symbols" in e:
+            _require_type(e["tracked_symbols"], list, f"{prefix}.tracked_symbols")
+            for j, symbol in enumerate(e["tracked_symbols"]):
+                _validate_tracked_symbol(
+                    symbol, f"{prefix}.tracked_symbols[{j}]")
+        if "metrics" in e:
+            metrics = e["metrics"]
+            _require_type(metrics, dict, f"{prefix}.metrics")
+            _reject_unknown(metrics, ["max_body_churn_ratio", "shannon_entropy",
+                                      "total_semantic_delta_tokens"],
+                            f"{prefix}.metrics")
+            for key in ("max_body_churn_ratio", "shannon_entropy"):
+                if key in metrics:
+                    _require(isinstance(metrics[key], (int, float))
+                             and metrics[key] >= 0,
+                             f"{prefix}.metrics.{key} must be a number >= 0")
+            if "total_semantic_delta_tokens" in metrics:
+                _require(isinstance(metrics["total_semantic_delta_tokens"], int)
+                         and metrics["total_semantic_delta_tokens"] >= 0,
+                         f"{prefix}.metrics.total_semantic_delta_tokens")
+        if "thresholds" in e:
+            thresholds = e["thresholds"]
+            _require_type(thresholds, dict, f"{prefix}.thresholds")
+            _require_fields(thresholds,
+                            ["body_churn_ratio", "entropy_limit",
+                             "min_entropy_tokens"],
+                            f"{prefix}.thresholds")
+            _reject_unknown(thresholds,
+                            ["body_churn_ratio", "entropy_limit",
+                             "min_entropy_tokens"],
+                            f"{prefix}.thresholds")
+            ratio = thresholds["body_churn_ratio"]
+            _require(isinstance(ratio, (int, float)) and 0 <= ratio <= 1,
+                     f"{prefix}.thresholds.body_churn_ratio within [0, 1]")
+            _require(isinstance(thresholds["entropy_limit"], (int, float))
+                     and thresholds["entropy_limit"] >= 0,
+                     f"{prefix}.thresholds.entropy_limit >= 0")
+            _require(isinstance(thresholds["min_entropy_tokens"], int)
+                     and thresholds["min_entropy_tokens"] >= 1,
+                     f"{prefix}.thresholds.min_entropy_tokens >= 1")
 
 
 def validate_backup(doc):

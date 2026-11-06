@@ -84,7 +84,7 @@ estructura que sobrevive a los ciclos:
 ## De dónde salen los modos
 
 Los modos no salen de una plantilla vacía: se componen en cada generación desde una
-**biblioteca de skills** con procedencia registrada. La base son 21 skills inmutables —
+**biblioteca de skills** con procedencia registrada. La base son 23 skills inmutables —
 desarrollo dirigido por tests, depuración sistemática, endurecimiento de seguridad,
 revisión de código, escritura de planes…— reimplementadas con atribución MIT. Encima, 4
 patrones especializados que solo se activan ante señales observadas en tu proyecto:
@@ -101,7 +101,7 @@ biblioteca congelado con su digest al instalar: lo que tu modo reutiliza es exac
 lo que el digest firmó, no una versión deslizada después. Es el flujo que generó los
 modos de RehabWeb, LoboApp y del propio framework.
 
-**Cambiar la biblioteca exige evidencia, no opiniones.** Los 55 casos apuntan a 25
+**Cambiar la biblioteca exige evidencia, no opiniones.** Los 59 casos apuntan a 27
 skills, no a los modos generados auditor o reparador. El oráculo de veredictos pertenece
 al Host: ni el texto libre de un modo ni un clasificador puntúan esos casos. Existen
 `compile-corpus` y el gate de holdout ligado, pero hoy el CLI `skill-gate-run` **se
@@ -135,7 +135,7 @@ publicación solo por tu decisión. [Procedimiento del operador](docs/usage.es.m
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.es.png)
 
 *Ciclo operativo conceptual. El cierre del aprendizaje aún no es operativo: las
-observaciones de las campañas no puntúan automáticamente el corpus de 25 skills. Es un
+observaciones de las campañas no puntúan automáticamente el corpus de 27 skills. Es un
 diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscuro en la
 [versión interactiva](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.es.html) (controles de la interfaz compartida en inglés).*
 
@@ -152,7 +152,7 @@ diagrama explorable: cada relación se puede trazar y el tema cambia claro/oscur
 | Plan de capacidades | El inventario de los comandos reales de test y análisis de tu proyecto, firmado al instalar. |
 | RETAINED | Un turno retenido: terminó con un resultado legible y sin salirse del contrato. |
 | VERIFIED / RESOLVED | El trabajo verificado y los defectos cerrados, cada uno con su evidencia. |
-| Biblioteca base | Las 21 skills base inmutables desde las que se componen los modos, con escenarios ejecutables y fuentes registradas. |
+| Biblioteca base | Las 23 skills base inmutables desde las que se componen los modos, con escenarios ejecutables y fuentes registradas. |
 | Ancla de evidencia | El fragmento literal de código que fija la ubicación de un hallazgo; la herramienta la calcula y rechaza lo que no puede colocar. |
 | Gate de holdout | La decisión ligada sobre observaciones completas y verificadas de los casos; hoy el runner por defecto se abstiene por falta de un adaptador evaluador Host compatible. |
 
@@ -297,7 +297,7 @@ silenciosa de registros en el preflight, corregida con regresión. La segunda au
 la memoria encontró que el registro de defectos ya cerrados **se escribía y nadie lo
 leía**: la documentación decía que el auditor lo consultaba y ningún camino del producto
 lo hacía, así que el mismo defecto volvía cada sesión. Ahora la consulta es mecánica y
-`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1155 pruebas en verde** (11 omitidas sin el módulo DSH externo; medida el 2026-10-25).
+`bootstrap.py state` cuenta las repeticiones. Suite del framework: **1289 pruebas en verde** (11 omitidas sin el módulo DSH externo; medida el 2026-11-06).
 
 ### La más reciente: los modos conducidos por una sesión DSH real (2026-10-10)
 
@@ -426,7 +426,7 @@ persistido, la reparación verificada en una candidata externa y la abstención 
 autoridad, todo conducido por una **sesión DSH real** el 2026-10-10.
 Licencia Apache-2.0 y etiqueta `v0.1.0-beta` ya publicadas. Lo que queda para la versión
 estable está en el [plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md), y lo que
-esa pasada no pudo probar —Creator end-to-end, el corpus de 25 skills contra un modo real,
+esa pasada no pudo probar —Creator end-to-end, el corpus de 27 skills contra un modo real,
 una corrida Creator íntegra con la sombra provisionada por el Host— queda dicho como tal en el
 [estado comprobado](docs/status.es.md), siempre como historia con su fecha.
 
@@ -453,6 +453,7 @@ produce.
 - [Estado comprobado](docs/status.es.md)
 - [Progreso de hitos, una página](docs/progreso-agentico.es.md) — todos los hitos C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Skills de agente y reglas del repositorio](AGENTS.md) — para mantenedores: el issue tracker, las etiquetas de triaje y los documentos de dominio que asumen las skills de ingeniería; se configuran con `/setup-matt-pocock-skills` y la elección de skill o flujo se enruta con `/ask-matt`
 - [Planes de implementación](docs/plans/README.es.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.md)
 - [Notas de la beta v0.1.0](docs/plans/11-notas-beta-v0.1.0.es.md) (publicada el 2026-09-30)

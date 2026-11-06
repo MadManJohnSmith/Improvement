@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "Libreta",
+  "root_identity": "85cd1e8890419103ba4cee86f44c5607528b4f58bdef6dfceb037fd9527af56e",
+  "base_revision": "rev-libreta-fixture-001",
+  "inventory": {
+    "total_files": 6,
+    "total_bytes": 6993,
+    "languages": [
+      "python"
+    ],
+    "areas": [
+      {
+        "name": "src",
+        "path": "src/",
+        "file_count": 3,
+        "description": "Módulo de la libreta"
+      },
+      {
+        "name": "tests",
+        "path": "tests/",
+        "file_count": 1,
+        "description": "Pruebas del producto"
+      }
+    ]
+  },
+  "authority": {
+    "holder": "user",
+    "source": "fixture-declared"
+  }
+}

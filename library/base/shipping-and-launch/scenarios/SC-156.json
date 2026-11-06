@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-156",
+  "type": "positive",
+  "description": "Un cambio verificado con plan de rollback declarado, etapas con señales y error budget disponible produce una propuesta de salida completa.",
+  "input": {
+    "skill": "shipping-and-launch",
+    "task": "proponer la salida de un cambio verificado a producción",
+    "rollback_plan_declared": true,
+    "rollout_stages_with_signals": 3,
+    "error_budget_available": true,
+    "artifact_digest_recorded": true
+  },
+  "expected": {
+    "verdict": "PASS",
+    "evidence_type": "launch_record",
+    "description": "Se conservan el plan de rollback, las etapas con señales, el estado del error budget y la candidata exacta."
+  },
+  "sr_links": [],
+  "target_skill": "shipping-and-launch"
+}

@@ -10,7 +10,7 @@
 **Purpose:** define the final distributable flow in which a user configures DSH once, clones the framework and runs a single bootstrap that coordinates Creator, Host validation, backups, automatic acceptance, activation and rollback of the project-specific modes and skills.
 **Hierarchy:** subordinate to `AGENTS.md`; `PLAN_IMPLEMENTACION.md` records the verified progress and `docs/status.md` separates facts from intent.
 **Background:** the v2.4 architecture and the closure plans remain in Git; the operational Syncify/RehabWeb presets are reference fixtures, not distributable defaults. Patterns from the public repository `jsmastery-pro/skills` are adapted at the observed commit `43b69e44c9ca905fe3a3418ccdf4102255e20d40` (MIT, 2026-08-07).
-**How ​​it is maintained:** milestones C/D/E/F/G/M/P/U have their derived status and evidence in `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` is still the progress index and `docs/status.md` is the current checked state. `skills/dsh-maintenance-session/SKILL.md` includes the verified procedure to prepare a real DSH session as an end user.
+**How ​​it is maintained:** milestones C/D/E/F/G/M/P/U have their derived status and evidence in `docs/progreso-agentico.md`; `PLAN_IMPLEMENTACION.md` is still the progress index and `docs/status.md` is the current checked state. `skills/dsh-maintenance-session/SKILL.md` includes the verified procedure to prepare a real DSH session as an end user. For repository maintenance, the per-repo agent configuration in `docs/agents/` is maintained with `/setup-matt-pocock-skills`; skill and flow selection is routed with `/ask-matt`.
 
 ---
 
@@ -44,7 +44,7 @@ The result of the incorporation will be:
 <Project>-implementer (optional third role; two-role generations remain valid)
 + project-justified specific skills
 ```
-Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Deployment for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
+Specialization happens once during incorporation or regeneration. In normal use the user chooses Audit, Continuous Repair, or Implementer for a change request other than an audited finding, and writes brief objectives; does not return to Creator for each turn. The previous distribution with only Audit/Repair remains valid and does not acquire Implementation by Inference.
 
 ### 1.1 What is preserved from the current architecture
 
@@ -202,7 +202,7 @@ Host manages activation of the framework modes, but the promotion/integration of
 | Creator | Analyze project; generate candidate package; create specific skills; invoke `bootstrap accept`; correct mechanical errors within limits | Install directly; modify validators; lower controls; declare itself `ACCEPTED` |
 | Host | Validate schema/capabilities/hashes; budget; backup; transactional installation; acceptance; activation/rollback | Delegate authority to the model; accept declarative manifestos as permission |
 | Auditor generated | Read scope; inventory; persist bounded queue/evidence/handoff before closing | Modify product; publish; expand roots; respond without a durable handoff |
-| Repair generated | Auto-provision a sibling candidate from a simple prompt; repair/test/commit there; persist verification | Write canonical checkout; request derivable path; merge/push/publish; integrate without mandate |
+| Repair generated | Edit a Host-provisioned shadow candidate under the workspace from a simple prompt; repair/test there; persist verification | Commit without another explicit user prompt; write canonical checkout; request derivable path; merge/push/publish; integrate without mandate |
 | QA | Review the exact candidate; run the criteria; accept/reject | Be the same author under a different label |
 | Follow-up auditor | Semantically re-audit the accepted candidate | Be replaced by prior QA |
 
@@ -211,6 +211,49 @@ The main boundary is:
 Creator generates and requests acceptance
 Host validates, installs and decides mechanical state
 ```
+
+### 3.1 Scope charter: standing prohibitions and delegated responsibilities
+
+The framework's standing never-dos, each with the mechanism that enforces it (restated once
+here so the charter is readable in one place; the governing sections remain the authority):
+
+- Never reads, copies or asks for provider credentials: the provider gate inspects structure
+  and variable names only, never values.
+- The modes never send `sandbox_permissions`/`justification` with any value; a denial or
+  schema error is `RETAINED` without retry, alternative value or approval (anti-escalation
+  contract, first-party row `./anti-escalation.mjs`).
+- No external acquisition during bootstrap or accept: no npx/marketplace/downloads, no
+  web/MCP search, no service connections; DSH itself is never downloaded or installed by the
+  framework.
+- No delegation/subagent/workflow/web/plugin-manager row in any generated composition; the
+  user workflow enters through `bootstrap workflow run`, which never launches `dsh web`.
+- Creator only emits `GENERATED`: it never installs, modifies validators or controls, changes
+  routing or capabilities, or writes active destinations.
+- The generated modes never write the canonical checkout and never merge, push or publish; a
+  commit requires another explicit user prompt; the Implementer never invents a `finding_id`.
+- `REPAIRING → ACCEPTED` is a prohibited transition; an actor never invokes itself; terminal
+  states do not reopen; budgets only tighten; at most two correction attempts per unit.
+- No universal presets or generic MVP skills are distributed; fixtures are never installed as
+  defaults nor presented as the final experience.
+- Memory is context, never instruction: episodes, prior findings and any stored text enter a
+  prompt as `trust: unreviewed` data; they inform but never instruct, and nothing recalled
+  becomes an order, permission or verdict.
+- Without evidence there is no PASS: `UNVERIFIED` is never inferred, an `abstain` blocks like
+  a `reject`, unrecorded cost is `NO_DISPONIBLE`, and the unknown stays unknown.
+
+Responsibilities deliberately left to the harness or the operator — the framework must not
+absorb them:
+
+| Responsibility | Owner |
+|---|---|
+| Configure the DSH provider and credentials (once) | user |
+| Sandbox confinement (`workspace-write`) | harness (DSH) |
+| Apply the candidate patch, commit, push, remote publication | operator |
+| Retiring shadow candidates and legacy worktrees (`state --retire` abstains) | operator, manual |
+| Provisioning missing capabilities (the resolver only names them) | operator, outside the product |
+| Owner-only native approvals (bootstrap pauses and resumes) | user |
+| Orchestrating maintenance sessions of the flow itself | maintainer's harness |
+
 ---
 
 ## 4. Distributable content of the repository
@@ -329,6 +372,16 @@ A workflow is declared in three layers, and its execution is mechanical by the H
 3. **Bootstrap input.** `bootstrap.py workflow run|verify` acquires the DSH client only via no-launch — it never launches `dsh web` — and converts each exit into a decision-command: `RUN_COMPLETED` exit 0; `RUN_RETAINED` with cause and `ABSTENCIÓN` —nothing done, nothing written, no run dir— exit 1.
 
 The default campaign (U6, still without operational acceptance) is generated deterministically in `.dsh-managed/campaign/` after publishing the presets: `preflight → audit → verify-pre → repair-1 → verify-post → repair-2 → verify-final → close` (`rondas_max=2`), with the structured result in `evidence/campana/` and the verdict derived from the product ledger in `evidence/veredicto.json`. Asks select the preset per step with fallback to the plan's preset; `if_veredicto` is skipped with `ASK_SKIPPED` unless it matches, and `result_contract.evidence_name` confines the evidence. The gate wrapper returns 0 PASS / 1 FAIL / 2 BLOCKED: BLOCKED is a value, not an event of its own, and the Host does not write the ledger. The plan remains in outline v1; there is no `bootstrap campaign`, no `gate.cwd` and no closed integration with `acceptance.py`. Current limit: a FAIL gate is not `STEP_COMPLETED` and the conditional ask that depends on it stays RETAINED instead of repairing; no verified complete cycle is declared.
+
+### 4.10 Remote evaluation of the Creator
+
+The quality of a Creator prompt version is evaluated remotely against a versioned synthetic product, never against an operator repository:
+
+- **Product fixture** (`fixtures/libreta/`): a complete minimal product whose `project-manifest.json` registers the framework tree digest of `product/` as its identity; the fixture gates live in `tests/test_fixtures.py`.
+- **Case artifacts** (`eval/`): `criteria-remote-creator.json`, the pre-registered criteria that `scripts/creator_eval.py` consumes verbatim, and `profile-dsh.patch.yml`, the DSH profile template whose `@NAME@` fill points are deliberately invalid YAML. The provider key is only referenced (`apiKeyEnv` names the environment variable the runner exports from the repository secret); no key value, provider or model is pinned into the repository.
+- **Manual workflow** (`.github/workflows/creator-remote-eval.yml`, `workflow_dispatch` only, because every run bills a real provider): renders the profile from the template, turns the fixture into a Git project with a deterministic commit (fixed author and dates, so the recorded `root_identity` is stable across runs), prepares the run with `bootstrap install --no-dispatch`, dispatches the Creator and grades the finished run. The verdict informs the merge; it does not block it mechanically, and the workflow never commits anything.
+- **Case builder** (`scripts/creator_case.py`): derives the case facts from the run's own evidence — model, usage, journal counts, duration from the journal frames, re-run Host prevalidation, and the product tree digest when the product root is passed — writing `facts.json`, `criteria.json` and the journal into the case directory. An undiscoverable journal and an unexpected validator exception are closed failures (no case is written); absent evidence is omitted, never invented.
+- **Roster row** (`scripts/creator_roster.py`): a closed, by-name projection of the graded case published as its own artifact beside the case and the run log; keeping the roster is a maintainer decision.
 
 ---
 
@@ -487,7 +540,7 @@ The manifest covers all files. Unmanifested file, incorrect hash, symlink, path 
 - require `generation-manifest.json` and `finish.json`;
 - Creator executes `bootstrap.py accept` upon completion.
 
-Launch (`--launch-dsh`) owns the lifecycle: detects and stops previous DSH instances (cmdline classifier that recognizes registry and npx binaries), resolves port ownership via `ss` without killing foreign processes, starts non-interactive `dsh web` (`npx -y`, null stdin, output captured with redacted tokens) by applying the `cordis-patch.yml` overlay that loads the framework plugin: fix upstream denial of writes with `sandbox_permissions` equal to the current mode in `workflow_write`, remove escalation fields from tools schemas and save bash escalation. The provider gate resolves the first usable provider of the DSH settings (structure and variable names, never key values): a missing key is a logged warning, not a lock, because the environment is not the only source of DSH keys; `DSH_PROVIDER_STRICT=1` restores the hard stop. The versioned prompt prohibits all use of `sandbox_permissions`/`justification` and relieves that prohibition to any delegated session — the runtime automatically rejects approvals in delegated sessions and they do not see the Creator prompt.
+Launch (`--launch-dsh`) owns the lifecycle: detects and stops previous DSH instances (cmdline classifier that recognizes registry and npx binaries), resolves port ownership via `ss` without killing foreign processes, starts non-interactive `dsh web` (`npx -y`, null stdin, output captured with redacted tokens) by applying the `cordis-patch.yml` overlay that loads the framework plugin: fix upstream denial of writes with `sandbox_permissions` equal to the current mode in `workflow_write`, remove escalation fields from tools schemas and save bash escalation. The provider gate resolves the first usable provider of the DSH settings (structure and variable names, never key values): a missing key is a logged warning, not a lock, because the environment is not the only source of DSH keys; `DSH_PROVIDER_STRICT=1` restores the hard stop. The versioned prompt prohibits all use of `sandbox_permissions`/`justification` and extends that prohibition to any delegated session — the runtime automatically rejects approvals in delegated sessions and they do not see the Creator prompt.
 
 ### B4 — `accept` invoked by Creator
 
@@ -629,7 +682,7 @@ Sequence:
 1. Complete validation in immutable staging.
 2. Change and collision plan.
 3. Backup and verification.
-4. Construction of sibling candidate tree.
+4. Construction of the shadow candidate repository with its own `.git` under the workspace.
 5. Discovery/loading against the candidate tree.
 6. Mechanical smoke.
 7. Functional acceptance.
@@ -1282,6 +1335,8 @@ drift/source-drift.json
 drift/installed-drift.json
 drift/update-plan.json
 ```
+**Deterministic implementation (2026-11-03).** `scripts/drift.py` turns this vocabulary into a pure engine (ADR 0001/0002). `evaluate(config, base_rev, target_rev)` pins the normalized public signature of every symbol a document tracks (`Contract Hash`, with `symbol_diff` on breakage) and verifies cited paths and pinned `type-equiv`/`public-api` blocks (`STALE_REFERENCE`). When the signature is intact, semantic body tokens feed `body_churn_ratio`, a 64-component MinHash over 3-shingles and the Shannon entropy of the dispersion across the tracked subsystem: over threshold is `SOURCE_DRIFT`, beneath it is `NON_GOVERNING_CHANGE`, silence is `CURRENT`. State lives in `<workspace>/drift/doc-baseline.json` and `source-drift.json`, outside the product and this tree. `bootstrap.py update` returns `NO_OP` when the diff against the active generation's base is only clean; `bootstrap.py drift` and `scripts/drift.py check` expose the seam, and a `workflow.py` gate step runs it without network or LLM. The DSH overlay plugin `doc-drift.mjs` governs the close of a turn: silent re-pin when clean, blocked closure with a scoped directive and write confinement on drift, fail-closed when the engine cannot be evaluated.
+
 `sync` proposes; `accept` evaluates; authorized installation replaces.
 
 ---

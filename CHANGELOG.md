@@ -1,5 +1,503 @@
 # Cambios
 
+## eval-remota: arreglo de revisión — 2026-11-06
+
+El code-review del spec #11 (sobre los tickets #12–#16) encontró tres
+defectos del eje spec y cuatro del eje estándares; corregidos con
+regresiones.
+
+- **Identidad comparable del producto**: `root_identity` en run.json es el
+  sha256 del sha1 del commit del producto, que en CI varía por corrida y
+  nunca iguala el digest registrado en
+  `fixtures/libreta/project-manifest.json`. Ahora `creator_case` deriva
+  `product_tree_digest` con la convención del framework
+  (`acceptance_reviewer.tree_digest`) cuando recibe la raíz del producto
+  (`--project-root`, que pasa el workflow); sin raíz el campo se omite,
+  nunca se inventa. El workflow fija autor y fechas del commit del fixture
+  (commit determinista): `root_identity` estable entre corridas. La fila
+  del roster publica la columna nueva.
+- **Duración**: `elapsed_seconds` se deriva del journal (intervalo entre el
+  primer y el último frame con `time`, excluido el encabezado;
+  `creator_eval.frame_span_seconds`) y se omite sin evidencia.
+- **Prevalidación**: una excepción inesperada del validador Host aborta la
+  derivación como fallo cerrado (exit 2, sin caso) en lugar de puntuarse
+  como `prevalidation_passed=False` (infraestructura no es fallo del
+  prompt); el `ValueError` del validador (paquete ausente o ilegible)
+  sigue siendo prevalidación no superada, el veredicto del caso real
+  1.11.0.
+- **Estándares**: la regex `LITERAL_KEY` vive en
+  `tests/support_config_contract.py`; la política del home de DSH se
+  reutiliza de `creator_client` (`dsh_home_candidates`); los compartidos
+  de `creator_eval` pasan a API pública (`read_json`, `require_dict`,
+  `require_criteria`, `is_int`, `frame_count`, `read_events`,
+  `write_report`) y los predicados "registrado u omitir" se unifican en
+  `text_or_none`/`int_or_none`; el comentario de `resolve_dsh_home` se
+  mueve a su función.
+- **Documentación**: sección 4.10 de la arquitectura, estado comprobado y
+  glosario (constructor de caso, caso de evaluación, fila del roster,
+  plantilla de perfil DSH).
+
+Suite: 1289 pruebas en verde.
+
+## Fila del roster publicada como artefacto — 2026-11-06
+
+La evaluación remota no dejaba historia del mantenedor: el caso calificado
+quedaba como artefacto efímero y el roster seguía siendo transcripción
+manual (issue #16, spec #11).
+
+- **`scripts/creator_roster.py`** (nuevo): proyección cerrada por nombre
+  del caso evaluado (facts.json + report.json + el journal que el
+  evaluador calificó) a la fila del roster con las columnas del spec; lo
+  que el caso no registró se omite, ningún campo de más pasa, y el CLI
+  falla cerrado sin reporte o sin el journal referenciado.
+- **Workflow**: paso de derivación tras calificar y artefacto propio
+  `creator-eval-roster-row` con la misma condición de publicación que el
+  caso; versionar el roster sigue siendo decisión del mantenedor y el
+  workflow no commitea nada.
+- **Regresiones**: `tests/test_creator_roster.py` (caso sintético sin
+  datos reales: columnas exactas, filtrado de campos privados, fallo
+  cerrado) y `tests/test_workflow_remote_eval.py` (tres artefactos, único
+  commit del fixture).
+
+Suite: 1289 pruebas en verde.
+
+## Workflow manual de evaluación remota del Creator — 2026-11-06
+
+La evaluación dependía de la máquina del mantenedor: sin workflow,
+ninguna corrida remota era repetible por otro runner (issue #15,
+spec #11).
+
+- **`.github/workflows/creator-remote-eval.yml`** (nuevo, `workflow_dispatch`
+  solo: cada corrida gasta tokens de un proveedor real): preflight cerrado
+  antes del primer token (fixture, plantilla, criterio, URL pública,
+  secreto y zstd), render del perfil DSH desde la plantilla versionada,
+  fixture convertido en proyecto Git, run preparado con `bootstrap install
+  --no-dispatch`, despacho de `creator_client` con continuidad RETAINED
+  (exit 1 con veredicto visto continúa; un crash también sale 1) y caso
+  construido y calificado con `creator_eval --from-run`.
+- El veredicto informa el merge sin bloquearlo mecánicamente; solo un
+  fallo cerrado del constructor o del evaluador (exit 2) falla el paso.
+- **Regresiones**: `tests/test_workflow_remote_eval.py` — contrato de
+  textos y regex sin PyYAML y sin ejecutar el workflow: disparo manual
+  exclusivo, entradas sin proveedor por defecto, preflight antes del
+  despacho, render con marcadores cerrados, clave nunca impresa, sin
+  `localhost` en la configuración del proveedor, orden
+  fixture/run/despacho/evaluación y artefactos.
+
+Suite: 1289 pruebas en verde.
+
+## Fixture de producto libreta con identidad fijada — 2026-11-06
+
+La evaluación remota necesitaba un producto de entrada repetible y
+saneado (issue #13, spec #11).
+
+- **`fixtures/libreta/`** (nuevo): producto sintético completo (CLI de
+  libreta de notas: `src/`, `tests/`, `pyproject.toml`) con su
+  `project-manifest.json`; no lleva golden manifest, así que la puerta de
+  `tests/test_fixtures.py` se divide por clase declarada de fixture y los
+  manifests (syncify, rehabweb) conservan todos sus gates intactos.
+- La identidad registrada es el digest de árbol de `product/` con la
+  convención del framework, verificada y estable ante mtimes y copias.
+- Saneamiento ampliado a datos personales (correos y direcciones
+  postales) para todo `fixtures/`.
+
+Suite: 1289 pruebas en verde.
+
+## Constructor del caso desde el run terminado — 2026-11-06
+
+El evaluador exigía hechos transcritos a mano desde los documentos del run
+y el journal de la sesión: un caso no era reproducible sin ese trabajo
+manual (issue #12, spec #11).
+
+- **`scripts/creator_case.py`** (nuevo) y modo `--from-run` de
+  `scripts/creator_eval.py`: deriva los hechos del run (modelo desde el
+  request/header del journal, uso, pasos, motivo de parada y cursor de
+  creator-session.json, manifiesto y prevalidación re-ejecutados con
+  `host_validator`, conteos recalculados del journal con las reglas del
+  evaluador), descubre el journal escaneando `sessions/*/<sessionId>/` sin
+  reconstruir el slug, escribe el caso y lo califica con `evaluate_case`,
+  cuyo núcleo no cambia.
+- El journal indescubrible es un fallo cerrado (sin caso); la
+  inconsistencia entre hechos y journal la detecta grade() como ABSTAIN.
+- Verificado contra el caso real treatment-1.11.0: cada campo derivado
+  coincide con los hechos transcritos a mano y el veredicto se repite.
+
+Suite: 1289 pruebas en verde.
+
+## eval: criterio versionado y plantilla de perfil DSH — 2026-11-06
+
+El caso remoto de Creator dependía de ficheros escritos a mano en la máquina
+del mantenedor: el criterio pre-registrado y el perfil de DSH no existían en
+el repositorio, así que ningún otro runner podía repetir la evaluación
+(issues #11/#14).
+
+- **`eval/criteria-remote-creator.json`**: el criterio del caso con `id`
+  estable (`remote-creator-v1`), las lecturas prohibidas de los schemas de
+  modos y skills, manifiesto y prevalidación requeridos; lo consume
+  `creator_eval.require_criteria` sin cambios en el núcleo de veredicto.
+- **`eval/profile-dsh.patch.yml`**: plantilla del patch de perfil de DSH
+  0.2.1 (formato `cordis.patch.yml`) con puntos de relleno `@NOMBRE@`
+  deliberadamente YAML inválido; el workflow los sustituye (receta en
+  `eval/README.md`). La clave solo se referencia por `apiKeyEnv`
+  (`DSH_PROVIDER_API_KEY`); sin clave literal, sin `localhost`, sin
+  proveedor ni modelo fijados; canal `api: openai-responses`.
+- **Regresiones**: `tests/test_eval_config.py` — el criterio pasa la puerta
+  real del evaluador con sus campos exactos y una copia debilitada la
+  rechaza; la plantilla exige referencias a variables de entorno, URL base
+  solo por marcador, ninguna clave literal y ningún host local.
+
+Suite: 1289 pruebas en verde.
+
+## Prompt 1.11.0: capacidades del contrato y raíces portables — 2026-11-06
+
+La evaluación del prompt 1.10.0 (run gen-2522adbd026d) mostró dos defectos de la
+forma inlineada: el ejemplo usaba `required_capabilities: ["fs-read"]` —un
+identificador operativo del paquete, fuera del enum del contrato de skill— y el
+paquete generado escribió raíces absolutas en `capabilities.json`, rechazadas
+por la capa de portabilidad.
+
+- **`creator_client.py`**: `SKILL_CONTRACT_CAPABILITIES` fija el vocabulario del
+  contrato (`read_product`, `candidate_write`, `test_execute`, `report`); el
+  ejemplo usa un subconjunto válido y la regla lean prohíbe identificadores de
+  filesystem y nombra `routing.capability_set`/`routing.modes`.
+- **Raíces portables**: el prompt declara los basenames exactos de producto,
+  framework y workspace para `capabilities.json.roots` y prohíbe rutas
+  absolutas en cualquier artefacto generado.
+- **Versión**: `PROMPT_VERSION` 1.10.0 → 1.11.0.
+- **Regresiones**: el ejemplo inlineado no usa `fs-read`; el vocabulario
+  coincide con el enum de `skills.schema.json` y con `skill_router.CAPABILITIES`;
+  el prompt publica las tres raíces portables.
+
+Suite: 1257 pruebas en verde.
+
+## El hook de doc-drift descartaba el resultado de las herramientas — 2026-11-06
+
+Con el adaptador `openai-responses` de DSH, el hook `tools/post-execute` de
+`doc-drift.mjs` recibía el resultado de la herramienta como tercer argumento y
+lo descartaba (`return undefined`) porque no había `next`; el núcleo leía
+`result.kind` sobre `undefined` y toda llamada de herramienta fallaba con
+`Cannot read properties of undefined (reading 'kind')`. Con Chat Completions el
+waterfall sí pasa `next` y el defecto no se manifestaba.
+
+- **`doc-drift.mjs`**: sin `next`, el hook devuelve el resultado recibido.
+- **`verify-doc-drift.mjs`**: comprueba que un post-execute sin waterfall
+  preserva el mismo objeto.
+- Detectado al probar `openrouter/stealth/crouton-alpha` por `/v1/responses`
+  (ese adaptador evita el sobre cifrado del streaming de Chat Completions).
+
+Suite: 1255 pruebas en verde.
+
+## Tope de rounds del run, no de la invocación — 2026-11-05
+
+La reanudación rearmaba el tope de reintentos de un gate: con `rounds: 3`, un run
+retenido por `gate-rounds-exhausted` volvía a ejecutar el gate tres veces en el
+siguiente proceso aunque el journal ya registraba tres rechazos. El conteo de
+fase (`max_rounds`) sí se reconstruía del journal; el del paso no.
+
+- **`workflow.py`**: `_replay` cuenta los `GATE_REJECTED` por paso y
+  `_run_gate_attempts` arranca de ese conteo. Un paso agotado recibe un solo
+  intento de sonda al reanudar y vuelve a retenerse si falla; si la sonda pasa,
+  completa. Así el tope pertenece al run (el `run_id` deriva del plan y cambiar
+  `rounds` cambia de run) sin cerrar la vía de reparación del entorno.
+- **Regresión**: `test_reanudacion_conserva_el_tope_de_rounds` — tres rechazos,
+  reanudación fallida con un único intento 4, y `RUN_COMPLETED` tras reparar.
+- **Estado y README**: U1 declara el alcance del tope en ambos idiomas; el
+  recuento publicado de la suite pasa a 1255.
+
+Suite: 1255 pruebas en verde.
+
+## Retrospectiva global y adaptación del entorno — 2026-11-05
+
+Retrospectiva sobre las 3.252 sesiones locales de ZCode (136.565 llamadas de
+herramienta, 2.720 errores). La masa de errores no está en el flujo: rutas
+inventadas (~900), llamadas con esquema inválido (610), higiene de edición (384)
+y subagentes cancelados o inactivos (66). De las rutas, ~136 son de proyectos de
+código; el resto es trabajo de medios.
+
+- **`CODING_STANDARDS.md`** (nuevo): reglas de revisión derivadas de esos
+  conteos — edición anclada, rutas verificadas, parámetros exactos, subagentes
+  acotados, suite proporcionada, reescrituras seguras, proyecto de prueba y
+  remoto verificado.
+- **`AGENTS.md`**: la autorización de commits locales se enuncia una sola vez
+  (estaba al final y convivía con la regla de push); el turno no se cierra con un
+  plan; puntero al archivo de estándares.
+- **`grilling` (global)**: cada ronda usa `AskUserQuestion`, una pregunta por
+  llamada, recomendación primero; reintento único y vuelta a prosa si falla.
+- **No aplicado**: los arreglos de esquema y concurrencia son del harness, no del
+  repo; las rutas de medios no son dominio del framework.
+
+Suite: 1254 pruebas en verde.
+
+## Revisión del evaluador: el lector no exime una lectura compuesta — 2026-11-05
+
+La revisión en dos ejes encontró dos defectos altos y varios medios; corregidos
+con regresiones.
+
+- **Exención del lector**: antes bastaba que una llamada bash mencionara
+  `read_view.py` para no contar ninguna lectura de schema de esa llamada. Ahora
+  se exime solo su `--path` cuando la misma invocación pide un rango; una vista
+  sin `--start/--end` cuenta como lectura completa, y un comando compuesto
+  (`read_view ...; cat schema`) también.
+- **Superficies de lectura**: cuentan el `read` del journal (con `path` o
+  `file_path`) y los tokens de `bash`; el contenido que se escribe ya no cuenta.
+- **Integridad**: `event_count` y `last_seq` deben ser enteros (un booleano no
+  es un conteo); argumentos no parseables y frames sin tipo abstienen; el
+  informe nombra el seq que sostiene cada lectura (`schema_read_events`).
+- **Hashes y escritura**: cada digest cubre exactamente los bytes calificados
+  (el journal comprimido se descomprime desde esos bytes) y el informe se
+  escribe con reemplazo atómico; un informe sin `digests` se rechaza.
+- **Nombre del journal**: se acepta `session.v4.jsonl.zstd` además de
+  `journal.jsonl(.zstd)`; dos journals en el mismo caso son ambiguos.
+- **Control re-graduado**: A y B siguen en FAIL_COMPLETION; A lee modes/skills
+  en los seq 43/48, B en 169/174.
+
+Suite: 1254 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Evaluador de Creator: journal comprimido y control real — 2026-11-05
+
+Tercera rebanada (ticket 09, spec #7): el evaluador acepta la evidencia tal como
+se retuvo y se validó contra los dos journals históricos.
+
+- **`scripts/creator_eval.py`**: lee `journal.jsonl.zstd` con el descompresor del
+  sistema y nombra su ausencia; rechaza tener los dos journals a la vez; el
+  informe registra `journal_file` y `seq_checked`. El encabezado `session` no
+  cuenta como frame (los hechos históricos lo excluyen) y un `journal_last_seq`
+  ausente no abstiene; un valor presente que no coincide sí.
+- **`tests/test_creator_eval.py`**: 5 pruebas nuevas, incluida la equivalencia
+  comprimido/plano, el descompresor ausente y el encabezado que no cuenta.
+- **Control real, fuera del repo**: `creator-eval-2026-11-05/CONTROL.md`. A y B
+  dan FAIL_COMPLETION por manifest ausente; B leyó los dos schemas dos y una vez,
+  lecturas que el grep manual no había visto.
+
+Suite: 1240 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Evaluador de Creator: CLI y retención del caso — 2026-11-05
+
+Segunda rebanada (ticket 08, spec #7): el evaluador deja de ser solo una función
+y se puede correr sobre un directorio de caso.
+
+- **`scripts/creator_eval.py`**: `evaluate_case` y CLI con `--case`, `--report` y
+  `--overwrite`. El informe lleva veredicto, evidencia, conteos y sha256 de
+  hechos, criterios y journal; un veredicto cerrado sale 0 y solo la entrada
+  inválida sale 2 con el error nombrado; un informe existente con otros digests
+  no se sobrescribe sin `--overwrite`.
+- **`tests/test_creator_eval.py`**: 6 pruebas de CLI sobre casos temporales,
+  incluidos los digests, ABSTAIN como veredicto cerrado, la entrada ausente y la
+  reescritura idéntica.
+
+Suite: 1235 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Evaluador de Creator: núcleo de veredicto — 2026-11-05
+
+Primera rebanada del ticket 07 (spec #7): decidir una corrida deja de depender
+de leer el journal a mano. `creator_eval.grade` recibe hechos, eventos y el caso
+pre-registrado y devuelve un veredicto cerrado —PASS, FAIL_MECHANISM,
+FAIL_COMPLETION o ABSTAIN— con la evidencia de cada criterio.
+
+- **`scripts/creator_eval.py`**: función pura, sin E/S ni red. ABSTAIN precede a
+  cualquier veredicto (modelo, identidad, journal malformado, sin llamadas,
+  conteo/seq que no concuerdan); FAIL_COMPLETION por manifest o prevalidación;
+  FAIL_MECHANISM por lectura completa de un schema del caso; PASS si no hay
+  ninguna. Una vista del lector delegado no cuenta como lectura completa.
+- **`tests/test_creator_eval.py`**: 15 pruebas con journals sintéticos, incluida
+  la frontera de nombre (`my_modes.schema.json` no cuenta) y la determinación
+  byte a byte del informe.
+
+Suite: 1229 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Formas exactas en el prompt: el Creator no lee schemas que no redacta — 2026-11-05
+
+`initial_onboarding` y `skill_lifecycle` no escriben modos —los materializa el
+Host— pero el prompt les anunciaba `modes.schema.json` (702 líneas) y
+`skills.schema.json` (233) como lecturas esperadas. La viñeta de economía ya no
+los nombra; en esos dos escenarios la forma exacta del contrato de skill se
+inlinea y se valida con `generation_contracts.validate_skill_contract`, así que
+el ejemplo no puede derivar en un documento que la aceptación rechazaría. Los
+tres escenarios que sí pueden reescribir modos conservan la ruta completa y el
+discriminador `kind`.
+
+- **`scripts/creator_client.py`**: `LEAN_PROMPT_TYPES`, `SKILL_CONTRACT_EXAMPLE` y
+  `_contract_rule(prompt_type)`; `PROMPT_VERSION` 1.9.0 → 1.10.0.
+- **`tests/test_creator_and_validator.py`**: dos pruebas en el seam del prompt —
+  la forma inline pasa el validador y cubre las 12 claves obligatorias; los tipos
+  que escriben modos conservan schema y `kind`.
+- **`docs/status.md`/`.es.md`**: la regla del lector queda fechada en la versión
+  vigente del prompt.
+
+Suite: 1214 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Cableado del lector en el prompt del Creator — 2026-11-05
+
+Tres decisiones cerradas antes de tocar código: el destinatario es el Creator
+(no los modos), la superficie es la regla de economía de lectura que el Host ya
+deriva en el prompt, y el alcance es advisory — el script impone la forma de la
+vista, el Host no cambia su contrato de aceptación.
+
+- **`scripts/creator_client.py`**: regla nueva con el comando literal
+  `python3 -B <FRAMEWORK>/scripts/read_view.py --root <FRAMEWORK> --path ... --start/--end`
+  para archivos del framework que no quepan holgados; `PROMPT_VERSION` 1.8.0 → 1.9.0.
+- **`tests/test_creator_and_validator.py`**: la regla llega a los cinco tipos de
+  prompt con el comando absoluto y las cotas.
+- **`docs/status.md`/`.es.md`**: el lector pasa de "sin cablear" a cableado en el
+  prompt del Creator, sin evidencia de uso ni de ahorro todavía.
+
+Suite: 1212 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Retrospectiva de la sesión — 2026-11-05
+
+La cifra del corpus se publicaba como 55 escenarios en documentos vivos mientras
+`library/` compilaba 59: el cambio de biblioteca actualizó el golden de
+`test_corpus_gate` y las tablas de estado, pero no `docs/usage.md`/`.es.md` ni la
+sección D11 de ambos `docs/status`. La prueba nueva recorre README y los
+documentos de estado/uso y nombra el archivo que publica una cifra que ya no
+compila; una cifra anterior sigue permitida si el párrafo dice que pertenece a
+un momento anterior.
+
+- **`docs/usage.md`/`.es.md` y D11 de `docs/status.md`/`.es.md`**: 55 → 59 excepto
+  donde la frase describe el estado de D11, ahora marcado con "at that point" /
+  "en ese punto".
+- **`tests/test_architecture_consistency.py`**: `test_the_published_corpus_count_is_the_one_that_compiles`,
+  junto a la prueba equivalente para la suite.
+- **`.gitignore`**: `/.agents/` ignorado como `.zcode/`, porque es configuración
+  local del agente y no contenido del flujo; un `git add -A` lo coló en un commit
+  que hubo que enmendar.
+
+Suite: 1211 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
+## Lectura delegada del Host — 2026-11-05
+
+Primera unidad del mecanismo ratificado para el gate de Creator (SoL-Pi): el Host
+entrega vistas compactas y byte-ancladas en lugar de que el modo relea artefactos
+completos, atacando la clase de coste medida (79 % de cache reads).
+
+- **`scripts/read_view.py`**: lector delegado stdlib con contrato ratificado — ruta
+  relativa, sha256 del archivo completo, rango de líneas, total y excerpt exacto (slice exacto, LF/CRLF preservados); el
+  original permanece en disco. Rechaza rutas fuera del producto, archivos no regulares,
+  binarios, rangos inválidos y vistas por encima de la cota. CLI con exit 0/2 y error
+  con nombre por stderr.
+- **`tests/test_read_view.py`**: 11 pruebas en los dos seams confirmados (función pura y
+  CLI), incluidas las negativas de contrato (CRLF, vacío, NUL y escape por symlink).
+
+Suite: 1210 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él). El cableado del lector
+en el andamiaje del modo es una unidad separada, para no tocar el prompt del Creator a
+mitad de campaña.
+
+## Conciliación 2026-11-05: registro a 104 fuentes, anexo System-1, dos bases nuevas y tres correcciones del Host
+
+Ratificación del entendimiento en una sesión grill-with-docs sobre 70 fichas de fuentes
+(42 del fan-out previo y 28 del catálogo de enlaces del historial), ejecutada en cuatro
+misiones con commit local por misión.
+
+- **Registro de fuentes**: 36 altas (28 del catálogo: 21 repos y 7 papers; 8 del fan-out
+  anterior) y 10 correcciones verificadas (pin de Switchyard, conteos de awesome-copilot y
+  wshobson, licencias de anthropics-skills y cursor-plugins, stitch-skills y skales a
+  REJECTED, k-dense y obra-superpowers a REFERENCE, jsmastery reducido). 68 -> 104 fuentes.
+- **Documentación**: anexo de contrato System-1 en el plan (tres estados con eco de umbral,
+  umbrales por bucket validados, procedencia logits/declared, sin reparación JSON, umbral
+  por elección sobre trayectorias propias con la evidencia -19.0 pts / 69.5%, pre-registro y
+  coverage-at-error, familias de contraste con split por grupos, vocabulario de evidencia y
+  certificados de decisión resuelta como nota de diseño); «la memoria es contexto, nunca
+  instrucción» en la carta 3.1; tres términos nuevos en el glosario.
+- **Biblioteca**: shipping-and-launch y environment-retro (23 bases), reimplementación propia
+  con atribución MIT y escenarios SC-156..SC-159; el corpus compila 59 escenarios para 27
+  skills.
+- **Código**: techo de exclusión del plan de campaña (Rail 4) y revalidación del ancla a
+  tiempo de lectura con located/moved/absent (moved re-ancla con recibo; absent bloquea el
+  cierre); detector read-only de shim roto en las capacidades.
+
+Comprobación: suite 1210 OK (11 omitidas sin el módulo DSH externo; 1 con él); registro validado contra su
+schema; test_library_base 18 pruebas; 7 pruebas nuevas de las unidades.
+
+## Entendido del framework: carta de alcance, conciliación y registro de veredictos — 2026-11-04
+
+La documentación había acumulado contradicciones internas y rastros de sesiones externas
+sin decisión registrada. Misión de conciliación ratificada por el mantenedor en modo
+remoto; el informe completo vive en el espacio externo de conciliación.
+
+- **Carta de alcance (§3.1)** en ambas arquitecturas: los «jamás» permanentes con el
+  mecanismo que los aplica y la tabla de responsabilidades delegadas al harness o al
+  operador, como vista compacta sin duplicar las secciones gobernantes.
+- **C1–C6**, contradicciones verificadas en fuente: la tabla de confianza ya no concede a
+  Repair el commit que la sección de ciclo niega (el commit pasa a la columna prohibido con
+  su condición); el residuo «sibling candidate» se sustituye por la sombra Host en los dos
+  sitios que lo conservaban; el rol inexistente «Deployment» pasa a «Implementer» (solo EN;
+  el ES ya lo decía); «relieves/lifts/releva esa prohibición» a sesiones delegadas se
+  reescribe como «extiende» en arquitectura y status en ambos idiomas — el contexto lo
+  decía: la prohibición se propaga a las sesiones delegadas, no se levanta; el glosario ya
+  no dice que el plugin «despacha automáticamente» la sincronización (despacha una
+  propuesta: sync propone, accept evalúa, instalación autorizada reemplaza); una nota
+  distingue la semántica de abstención del gate suelto (inconclusa) de la del ligado
+  (bloquea como reject).
+- **Registro de fuentes**: ingestadas las 18 entradas de la campaña de auditoría de repos
+  del 2026-10-09 (tabla §8 del informe externo), con la revisión verificada contra el HEAD
+  de cada clon — 12 coinciden con el sha del informe, 6 se fijan desde el clon con nota.
+  El registro pasa de 50 a 68 fuentes y estrena sus dos primeras `REJECTED` (OpenManus:
+  sin mecanismo; NanoJev: envoltorio). AGPL (odysseus, CUSTOS-CORE) se registra como
+  licencia abierta con el techo de reciprocidad en la decisión, no como propietaria.
+- **Paquete mecánico de documentación**: cabecera de `PLAN_IMPLEMENTACION` (G0–G7 cerrados
+  el 2026-09-30; el gate de Creator post-presupuesto como abierto mayor) y filas
+  X1/X2/X3 con estado y fecha en ambos idiomas; `progreso-agentico` al 2026-11-04 con las
+  citas de línea rotas sustituidas por referencias por sección; cifra de suite de `status`
+  re-medida en ambos idiomas (1188 OK: 1 omitida con módulo el 2026-11-04, 11 sin módulo
+  el 2026-11-03).
+- **Fuera del árbol**: las tres skills del repo que duplicaban la capa usuario
+  (`deep-module-design`, `seam-first-testing`, `diagnosis-feedback-loop`) se relocalizaron
+  al espacio de conciliación externo con la decisión registrada;
+  `evidence-gated-eval` y `agentic-code-hygiene` quedan a decisión separada.
+
+Comprobación: suite completa en verde con y sin módulo DSH externo (1188 pruebas; 1 y 11
+omitidas), `tests.test_architecture_consistency` en verde, registro validado contra su
+schema (68 fuentes).
+
+## Gobernanza de skills de agente — 2026-11-03
+
+La documentación hace explícito qué comando mantiene la configuración por repositorio y
+cuál elige el skill o flujo, sin cambiar el diseño del framework ni el contenido
+distribuible:
+
+- **Setup.** `AGENTS.md` y los tres documentos de `docs/agents/` declaran que
+  `/setup-matt-pocock-skills` mantiene el issue tracker, las etiquetas de triaje y los
+  documentos de dominio, mediante invocación manual.
+- **Router.** La elección de skill o flujo se delega en `/ask-matt`, que enruta sobre
+  las skills instaladas; la documentación no duplica un catálogo.
+- **Alcance.** Se alinean el índice de documentación de `README.md`/`README.es.md` y las
+  cabeceras de ambas arquitecturas.
+
+Comprobación: `python3 -B -m unittest tests.test_architecture_consistency -v` en verde.
+
+## Doc drift determinista y gobernado por el Harness — 2026-11-03
+
+La documentación se obsoletiza en silencio mientras el código evoluciona, y las
+comprobaciones existentes (SHA-256 de archivos completos, commit `HEAD`) no
+distinguían un reformateo de una ruptura de contrato. Se incorpora el
+subsistema de deriva documental como motor determinista y plugin de cierre de
+turno:
+
+- **Motor `scripts/drift.py`.** Costura única `evaluate(config, base_rev,
+  target_rev)`; sin reloj ni `mtime`. Filtro 1: `Contract Hash` de firmas
+  públicas normalizadas con extractores stdlib (Python `ast`; TS/JS/Rust/Go
+  léxicos) y verificación de referencias y bloques anclados
+  (`CONTRACT_DRIFT`, `STALE_REFERENCE` con `symbol_diff`). Filtro 2:
+  `body_churn_ratio` (difflib), `body_lsh` (MinHash de 64 componentes sobre
+  3-shingles) y entropía de Shannon con piso de 20 tokens (`SOURCE_DRIFT`,
+  `NON_GOVERNING_CHANGE`, `CURRENT`). Estado externo en `<workspace>/drift/`.
+- **Contrato.** `schemas/drift.schema.json` y `validate_drift` admiten
+  `tracked_symbols`, `metrics` y `thresholds` sin romper compatibilidad;
+  `RUN_ARTIFACTS` cubre `doc-baseline.json` y `source-drift.json`.
+- **Integración.** `bootstrap.py drift` (check/init-baseline/repin y
+  `--repin`), `update` con `NO_OP` cuando la deriva es no gobernante, y un
+  paso `gate` de `workflow.py` que ejecuta `drift.py check` como veredicto
+  determinista sin red ni LLM.
+- **Plugin DSH.** `scripts/dsh-plugins/doc-drift.mjs` (ADR 0002) montado en
+  el overlay: re-ancla silencioso, bloqueo con directiva acotada y
+  confinamiento de escritura, fail-closed ante motor irresoluble;
+  `verify-doc-drift.mjs` lo cubre offline con el motor real.
+- **Gobernanza.** `docs/agents/` (issue tracker, triage y dominio),
+  `GLOSSARY.md` y los ADR 0001/0002.
+
+Suite: 1188 pruebas en verde (11 omitidas sin el módulo DSH externo; medida el
+2026-11-03).
+
 ## D-08/D-09/D-10: la publicación de presets sobre DSH 0.2.1, rota y sin diagnóstico — 2026-10-25
 
 El primer intento real de activación (`gen-b5b6bd215c9a`) llegó hasta el último

@@ -8,7 +8,7 @@ Este repositorio contiene el flujo distribuible, no el workspace de un proyecto 
 - Alojar proyectos desechables, perfiles de proyectos reales, informes de sesiones, logs, capturas, candidatos, salidas y cachés fuera del repositorio, en un directorio hermano de pruebas o temporal explícito. No basta con ignorarlos en Git.
 - No instalar dependencias, copiar runtimes, crear worktrees de prueba ni generar bytecode dentro de este árbol para un ensayo. Usar destinos externos; Python con `-B` cuando corresponda. Las misiones operativas no pueden editar este árbol canónico para adaptar sus propias instrucciones; las propuestas se devuelven o se aplican en una misión de mantenimiento separada.
 - No incluir credenciales, datos personales, auditorías privadas ni rutas locales del mantenedor en archivos publicables. No seguir enlaces para modificar recursos ajenos.
-- No publicar ni hacer push sin autorización del destino. Revisar el diff y los archivos preparados antes de cada commit.
+- No publicar ni hacer push sin autorización del destino. Los commits locales del flujo están autorizados; revisar el diff y los archivos preparados antes de cada commit. Las reglas de revisión viven en `CODING_STANDARDS.md`; el revisor las aplica, el implementador no las necesita.
 
 ## Desarrollo y evaluación
 
@@ -16,4 +16,22 @@ El mantenedor guía ensayos con DSH Standard, evalúa evidencia real de las sesi
 
 Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimos. No repetir toda la arquitectura ni exigir aprobación por cada subpaso ya autorizado. No afirmar autonomía, carga de skills o aislamiento a partir de un prompt o un estado declarativo.
 
-Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas externas, actualizar estado/documentación si corresponde, revisar lo que se versionará y dejar el árbol limpio tras un commit autorizado. Si hay trabajo ajeno, no descartarlo ni incluirlo para aparentar limpieza; señalarlo. La autorización del usuario cubre commits locales del flujo; no cambios de producto ni publicación remota.
+Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas externas, actualizar estado/documentación si corresponde, revisar lo que se versionará y dejar el árbol limpio tras un commit autorizado. Si hay trabajo ajeno, no descartarlo ni incluirlo para aparentar limpieza; señalarlo.
+
+No cerrar el turno con un plan o una promesa: ejecutar el siguiente paso. Devolver el control solo ante un bloqueo real o una decisión que solo el usuario pueda tomar.
+
+## Agent skills
+
+Las tres secciones siguientes son la configuración por repositorio que asumen las skills de ingeniería. La mantiene el mantenedor con `/setup-matt-pocock-skills` (invocación manual, no un paso que el agente decida por su cuenta); para elegir qué skill o flujo aplica a un encargo, el mantenedor usa `/ask-matt`, que enruta sobre las skills instaladas. No mantengas aquí un catálogo de skills en paralelo al router.
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues (`MadManJohnSmith/Improvement`) using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles mapped 1:1 to default label names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`GLOSSARY.md` at the repository root and ADRs in `docs/adr/`). See `docs/agents/domain.md`.

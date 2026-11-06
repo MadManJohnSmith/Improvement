@@ -98,7 +98,7 @@ with its digest at install time: what your mode reuses is exactly what the diges
 not a version that drifted afterwards. This is the flow that generated the modes of
 RehabWeb, LoboApp, and the framework itself.
 
-**Library changes need evidence, not opinions.** The 55 cases target 25 skills, not
+**Library changes need evidence, not opinions.** The 59 cases target 27 skills, not
 the generated auditor or repairer modes. The Host owns their expected verdicts; a mode's
 free-form answer or a classifier cannot score them. `compile-corpus` and the bound
 holdout gate exist, but the CLI `skill-gate-run` currently **ABSTAINS before creating a
@@ -148,7 +148,7 @@ every relationship can be traced, and the theme switches light/dark, in the
 | Capability plan | The inventory of your project's real test and analysis commands, signed at install. |
 | RETAINED | A retained turn: it ended with a readable result and without stepping outside the contract. |
 | VERIFIED / RESOLVED | The verified work and the closed defects, each with its evidence. |
-| Skills library | The 21 immutable base skills the modes are composed from, with executable scenarios and recorded sources. |
+| Skills library | The 23 immutable base skills the modes are composed from, with executable scenarios and recorded sources. |
 | Evidence anchor | The literal code snippet that pins where a finding lives; the tool computes the location and rejects what it cannot place. |
 | Holdout gate | The bound decision on complete, verified case observations; the default runner currently abstains without a compatible Host evaluator adapter. |
 
@@ -295,7 +295,7 @@ that the register of already-closed defects **was written and nobody read it**: 
 documentation said the auditor consulted it and no product path did, so the same defect
 came back every session. Now the consultation is mechanical and `bootstrap.py state`
 counts the repeats.
-Framework suite: **1155 tests green** (11 skipped without the external DSH module; measured 2026-10-25).
+Framework suite: **1289 tests green** (11 skipped without the external DSH module; measured 2026-11-06).
 
 ### The most recent one: the modes driven by a real DSH session (2026-10-10)
 
@@ -457,6 +457,7 @@ already produces.
 - [Verified status](docs/status.md)
 - [Milestone progress, one page](docs/progreso-agentico.md) — every C/D/E/F/G/M/P/U milestone with its derived state and its evidence
 - [Normative architecture](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Agent skills and repository rules](AGENTS.md) — for maintainers: the issue tracker, triage labels and domain docs the engineering skills assume, configured with `/setup-matt-pocock-skills`; skill and flow selection is routed with `/ask-matt`
 - [Implementation plans](docs/plans/README.md) · [Launch plan](docs/plans/10-lanzamiento-publico.md)
 - [Changes](CHANGELOG.md) · [Third-party attributions](THIRD_PARTY_NOTICES.md)
 - [v0.1.0 beta notes](docs/plans/11-notas-beta-v0.1.0.md) (published 2026-09-30)

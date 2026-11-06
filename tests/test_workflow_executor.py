@@ -250,6 +250,41 @@ class WorkflowExecutorTests(unittest.TestCase):
 
     # -- gate FAIL con retry: GATE_REJECTED x N + ROUND_CAP_REACHED + RUN_RETAINED
 
+    # -- gate de deriva documental: scripts/drift.py como veredicto
+    #    determinista, sin red y sin LLM.
+
+    def test_gate_doc_drift_ejecuta_el_motor_determinista(self):
+        project = self.workspace
+        (project / 'src').mkdir()
+        (project / 'src' / 'tool.py').write_text(
+            'def public_fn(a: int) -> bool:\n    return a > 0\n')
+        (project / 'docs').mkdir()
+        (project / 'docs' / 'api.md').write_text(
+            '<!-- drift:track path="src/tool.py" symbols="public_fn" -->\n')
+        for args in (['init', '-q'], ['add', '-A'],
+                     ['-c', 'user.name=t', '-c', 'user.email=t@t',
+                      'commit', '-q', '-m', 'base']):
+            subprocess.run(['git', '-C', str(project), *args], check=True,
+                           capture_output=True)
+        command = [PYTHON, '-B', str(REPO_ROOT / 'scripts' / 'drift.py'),
+                   'check', '--project', str(project), '--from', 'HEAD',
+                   '--to', 'WORKTREE', '--dry-run', '--json']
+
+        outcome = run_plan(self.write_plan([self.gate('drift-gate', command)]))
+        self.assertEqual(outcome['result'], 'COMPLETED')
+        kinds = self.kinds(outcome['run_dir'])
+        self.assertIn('STEP_COMPLETED', kinds)
+
+        (project / 'src' / 'tool.py').write_text(
+            'def public_fn(a: int, b: int) -> bool:\n    return a > 0\n')
+        # Plan distinto: el run_id se deriva del contenido verbatim, y
+        # reejecutar el mismo plan reanuda el mismo run por replay.
+        outcome = run_plan(self.write_plan(
+            [self.gate('drift-gate', command)],
+            filename='drift.json', name='prueba-drift-roto'))
+        self.assertEqual(outcome['result'], 'RETAINED')
+        self.assertEqual(outcome['cause'], 'gate-abort:drift-gate')
+
     def test_gate_fail_con_rounds_agota_y_retina(self):
         plan_path = self.write_plan([self.gate('g1', ['false'], action='retry', rounds=3)])
         outcome = run_plan(plan_path)
@@ -280,6 +315,31 @@ class WorkflowExecutorTests(unittest.TestCase):
         emitted = json.loads(proc.stderr)
         self.assertEqual(emitted['result'], 'RETAINED')
         self.assertEqual(emitted['cause'], 'gate-rounds-exhausted:g1')
+
+    def test_reanudacion_conserva_el_tope_de_rounds(self):
+        flag = self.tmp / 'bandera'
+        plan_path = self.write_plan(
+            [self.gate('g1', ['test', '-f', str(flag)], action='retry', rounds=3)])
+        first = run_plan(plan_path)
+        self.assertEqual(first['result'], 'RETAINED')
+        self.assertEqual(first['cause'], 'gate-rounds-exhausted:g1')
+
+        # La reanudación sondea una vez: el tope ya agotado no se rearma.
+        second = run_plan(plan_path)
+        self.assertEqual(second['result'], 'RETAINED')
+        self.assertEqual(second['cause'], 'gate-rounds-exhausted:g1')
+        payloads = read_journal(second['run_dir'])
+        starts = [e['payload']['attempt'] for e in payloads
+                  if e['kind'] == 'STEP_STARTED']
+        self.assertEqual(starts, [1, 2, 3, 4])
+        self.assertEqual([e['kind'] for e in payloads].count('GATE_REJECTED'), 4)
+
+        # Con el entorno reparado, la sonda pasa y el run completa.
+        flag.write_text('')
+        third = run_plan(plan_path)
+        self.assertEqual(third['result'], 'COMPLETED')
+        kinds = [e['kind'] for e in read_journal(third['run_dir'])]
+        self.assertEqual(kinds.count('STEP_COMPLETED'), 1)
 
     # -- comando inexistente y exit >= 2: IMPOSSIBLE -> RETAINED
 

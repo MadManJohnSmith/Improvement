@@ -45,7 +45,7 @@ class ExecutableCorpusTest(unittest.TestCase):
 
     def test_every_library_scenario_compiles_into_a_bounded_case(self):
         source = corpus_compiler._source_records(LIBRARY)
-        self.assertEqual(len(source), 55)
+        self.assertEqual(len(source), 59)
         self.assertEqual(len(self.corpus["cases"]), len(source))
         self.assertEqual({c["case_id"] for c in self.corpus["cases"]},
                          {r["scenario_id"] for _, r in source})
@@ -647,18 +647,23 @@ class DshHeadlessCompositionRegression(unittest.TestCase):
         self.assertEqual(command[:5], ["npx", "-y", "@deepseek-ai/dsh",
                                        "--profile", "headless"])
 
-    def test_the_headless_overlay_row_resolves_to_the_workflow_write_plugin(self):
-        """A row that pointed anywhere else would boot without the tool."""
+    def test_the_headless_overlay_row_resolves_to_reviewed_plugins(self):
+        """A row that pointed anywhere else would boot without the tools."""
         overlay = creator_client.DSH_PLUGIN_PATCH.read_text(encoding="utf-8")
         rows = [line.strip() for line in overlay.splitlines()
                 if line.strip().startswith("- ")]
-        # The overlay is an `insert` row carrying exactly one plugin. A second
-        # row would be a second overlay that nobody reviewed.
-        self.assertEqual(rows, ["- insert:", "- name: ./workflow-write.mjs"],
-                         f"overlay con filas inesperadas: {rows}")
-        plugin = creator_client.DSH_PLUGIN_PATCH.parent / "workflow-write.mjs"
-        self.assertTrue(plugin.is_file(),
-                        "la fila del overlay no resuelve a un plugin real")
+        # The overlay is one `insert` row carrying exactly two reviewed
+        # plugins: the M7 write correction and the ADR 0002 doc-drift
+        # governor. A row nobody reviewed would boot an unreviewed plugin.
+        self.assertEqual(
+            rows,
+            ["- insert:", "- name: ./workflow-write.mjs",
+             "- name: ./doc-drift.mjs"],
+            f"overlay con filas inesperadas: {rows}")
+        for name in ("workflow-write.mjs", "doc-drift.mjs"):
+            plugin = creator_client.DSH_PLUGIN_PATCH.parent / name
+            self.assertTrue(plugin.is_file(),
+                            f"la fila del overrlay no resuelve a {name}")
 
     def test_the_overlay_registers_the_tool_the_framework_promises(self):
         """The tool name in the source is the one the framework's instructions

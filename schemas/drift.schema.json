@@ -99,6 +99,85 @@
             "remove"
           ],
           "description": "Recommended action. Default is none."
+        },
+        "tracked_symbols": {
+          "type": "array",
+          "description": "Public symbols this document pins, with their contract hashes.",
+          "items": {
+            "type": "object",
+            "required": ["symbol_id", "contract_hash"],
+            "additionalProperties": false,
+            "properties": {
+              "symbol_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "path::symbol qualified identity of the pinned symbol."
+              },
+              "contract_hash": {
+                "type": "string",
+                "minLength": 1,
+                "description": "SHA-256 over the normalized public signature."
+              },
+              "body_lsh": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Deterministic MinHash signature over body 3-shingles."
+              },
+              "body_churn_ratio": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "symbol_diff": {
+                "type": "object",
+                "required": ["before", "after"],
+                "additionalProperties": false,
+                "properties": {
+                  "before": { "type": ["string", "null"] },
+                  "after": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_body_churn_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "shannon_entropy": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total_semantic_delta_tokens": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "thresholds": {
+          "type": "object",
+          "required": ["body_churn_ratio", "entropy_limit", "min_entropy_tokens"],
+          "additionalProperties": false,
+          "properties": {
+            "body_churn_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "entropy_limit": {
+              "type": "number",
+              "minimum": 0
+            },
+            "min_entropy_tokens": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         }
       }
     }

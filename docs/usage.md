@@ -70,6 +70,36 @@ acceptance stages), `update` (regeneration on a material change), `uninstall` an
 Repeating `install` on a resumable run resumes the dispatch; on a Host-owned run it reports it
 without re-dispatching.
 
+### Document drift: `bootstrap.py drift`
+
+Documented contracts rot silently while code evolves. The deterministic engine
+(`scripts/drift.py`, stdlib-only, no network and no LLM) compares each
+document's claims — contract hashes of exported symbols, cited paths and
+pinned `type-equiv` / `public-api` blocks — against the product, and writes the
+verdict to `<workspace>/drift/source-drift.json` with its baseline at
+`<workspace>/drift/doc-baseline.json`:
+
+```bash
+python3 -B scripts/bootstrap.py drift --project /path/to/project
+```
+
+`--from <rev>` and `--to <rev>` pin the evaluated range (`--to WORKTREE` reads
+the working tree; without `--from` the pinned baseline is the base).
+`--dry-run` previews without writing, `--json` prints the full report, and
+`--repin` re-anchors `doc-baseline.json` after Host verification — Host
+authority, never an agent's. Verdicts: `CURRENT` and `NON_GOVERNING_CHANGE`
+are clean (whitespace, comments, docstrings, private or sub-threshold body
+churn); `CONTRACT_DRIFT`, `STALE_REFERENCE` and `SOURCE_DRIFT` demand a
+document sync. `update` consults the same engine: when the diff between the
+active generation's base and the working tree is entirely clean, it returns
+`NO_OP` without a Creator run.
+
+The engine's own CLI exposes the same seam to `workflow.py` gates:
+`scripts/drift.py check --project <repo> [--workspace <ws>] [--from <rev>]
+[--to <rev>] [--dry-run] [--json]` exits 0 when clean and 1 when drift is
+found, so a `gate` step can take it as a deterministic verdict. `init-baseline`
+pins the first baseline; `repin` re-anchors it after verification.
+
 The command orchestrates generation (Creator), Host prevalidation, transactional activation
 (bundle, presets, capability plan, campaign plan), acceptance, and — if any step fails —
 restoring the previous generation. Nothing reaches your repository without a verified stage.
@@ -209,7 +239,8 @@ produced by a real run; this command does not execute scenarios, because running
 an agent needs the runtime. The gate accepts a candidate only when holdout improves
 **strictly**, rejects it if the training partition regresses even when holdout improves, and
 abstains — neither accepts nor rejects — if the validation slice is not disjoint or there are
-no observations. Partitioning derives from the `scenario_id` digest, so it is identical on
+no observations. (The bound gate below is stricter: there an `abstain` blocks like a
+`reject`.) Partitioning derives from the `scenario_id` digest, so it is identical on
 every run and a change cannot choose which scenarios judge it.
 
 ### When a session splits in two: what is known at startup
@@ -268,7 +299,7 @@ python3 -B scripts/bootstrap.py bound-skill-gate --corpus /external/path/corpus.
   --baseline-digest <sha256> --candidate-digest <sha256> --report /external/path/report.json
 ```
 
-`compile-corpus` turns the 55 scenarios in `library/` into executable cases: `task`, fixture
+`compile-corpus` turns the 59 scenarios in `library/` into executable cases: `task`, fixture
 and `evaluated_claim`, with `target` pointing at the skill. **The expected verdict does not
 travel in the public case** —it is derived in the Host and used only when the recalculated
 `corpus_digest` matches the declared one, so a corpus edited after compiling is rejected

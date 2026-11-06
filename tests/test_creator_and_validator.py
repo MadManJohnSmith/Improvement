@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import bootstrap
 import creator_client as cc
 import generation_contracts as gc
+import skill_router
 
 # install() y run_creator emiten progreso humano por stderr por diseño
 # (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
@@ -1350,8 +1351,6 @@ class CreatorTests(Base):
         for value in gc.SCENARIO_TYPES | gc.SCENARIO_VERDICTS | gc.HOLDOUT_FAMILIES:
             self.assertIn(f"`{value}`", prompt)
         self.assertIn("schema_version,scenario_id,type,description,input,expected,sr_links", prompt)
-        self.assertIn('`kind: "mode"`', prompt)
-        self.assertIn('`kind: "skill"`', prompt)
         self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("`escalation_channel: forbidden`", prompt)
@@ -1662,6 +1661,106 @@ class CreatorTests(Base):
             )
             self.assertIn('`description: "<texto>"`', prompt, ptype)
             self.assertIn("Nested mappings are not allowed", prompt, ptype)
+
+    def test_every_prompt_points_at_the_delegated_reader_for_large_files(self):
+        """A full schema is billed again as a cache read on every later turn.
+
+        The measured 79 % of cache reads is context re-sent, not new input, so
+        the lever is what the Creator puts in the window: a bounded view keeps
+        the original on disk. The command has to be literal and absolute, or
+        the Creator has to reconstruct a path the run already knows.
+        """
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        proj_manifest = {"base_revision": "rev-test"}
+        idx = {"entries": []}
+        command = (f"python3 -B {cc.FRAMEWORK}/scripts/read_view.py "
+                   f"--root {cc.FRAMEWORK} --path")
+        for ptype in cc.PROMPT_TYPES:
+            prompt = cc.build_creator_prompt(
+                self.run_dir, run_doc, proj_manifest, idx,
+                prompt_type=ptype,
+                context={"reason": "test retention", "skill_name": "test-skill"},
+            )
+            with self.subTest(prompt_type=ptype):
+                self.assertIn(command, prompt)
+                self.assertIn("--start", prompt)
+                self.assertIn("--end", prompt)
+                self.assertIn("sha256", prompt)
+
+    def _prompt_for(self, prompt_type):
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        return cc.build_creator_prompt(
+            self.run_dir, run_doc, {"base_revision": "rev-test"},
+            {"entries": []}, prompt_type=prompt_type,
+            context={"reason": "test retention", "skill_name": "test-skill"})
+
+    def test_lean_prompt_types_inline_a_valid_skill_contract(self):
+        """A schema the Creator never needs is 233 lines of avoidable context.
+
+        `initial_onboarding` and `skill_lifecycle` write skills and the
+        acceptance plan; the three modes are Host-materialized. The shape is
+        inlined instead of pointing at `skills.schema.json`, and it is checked
+        by the same Host validator so the example cannot drift into a document
+        that would be rejected at acceptance.
+        """
+        schema = json.loads((ROOT / "schemas" / "skills.schema.json").read_text())
+        for prompt_type in ("initial_onboarding", "skill_lifecycle"):
+            prompt = self._prompt_for(prompt_type)
+            with self.subTest(prompt_type=prompt_type):
+                marker = "Forma exacta del contrato de skill"
+                self.assertIn(marker, prompt)
+                tail = prompt.split(marker, 1)[1]
+                block = tail.split("```json", 1)[1].split("```", 1)[0]
+                doc = json.loads(block)
+                gc.validate_skill_contract(doc)
+                self.assertEqual(set(schema["required"]) - set(doc), set())
+                self.assertNotIn("modes.schema.json", prompt)
+                self.assertNotIn("fs-read", block)
+                self.assertNotIn("fs-read", doc["required_capabilities"])
+                self.assertLessEqual(
+                    set(doc["required_capabilities"]),
+                    set(cc.SKILL_CONTRACT_CAPABILITIES))
+                for capability in cc.SKILL_CONTRACT_CAPABILITIES:
+                    self.assertIn(f"`{capability}`", prompt)
+
+    def test_skill_contract_capabilities_match_the_schema_and_router(self):
+        schema = json.loads(
+            (ROOT / "schemas" / "skills.schema.json").read_text())
+        enum = schema["properties"]["routing"]["properties"][
+            "capability_set"]["items"]["enum"]
+        self.assertEqual(set(cc.SKILL_CONTRACT_CAPABILITIES), set(enum))
+        self.assertEqual(set(cc.SKILL_CONTRACT_CAPABILITIES),
+                         set(skill_router.CAPABILITIES))
+
+    def test_prompt_declares_portable_capability_roots(self):
+        request = json.loads(
+            (self.run_dir / "inputs" / "bootstrap-request.json").read_text())
+        prompt = self._prompt_for("initial_onboarding")
+        for role, key in (("product_read", "project"),
+                          ("framework_execute", "framework"),
+                          ("workspace_write", "workspace")):
+            name = Path(request[key]).name
+            self.assertIn(f'{role}: ["{name}"]', prompt)
+        self.assertIn("rutas absolutas", prompt)
+        self.assertIn("/home/", prompt)
+
+
+    def test_mode_writing_prompt_types_keep_the_full_schema_path(self):
+        """The three scenarios that can rewrite modes keep the escape hatch.
+
+        Closing the schema path everywhere would make the cheap path the only
+        path even when the Creator must inspect a mode contract the Host did
+        not materialize for that change.
+        """
+        for prompt_type in ("material_change_regeneration", "framework_update",
+                            "repair_retained"):
+            prompt = self._prompt_for(prompt_type)
+            with self.subTest(prompt_type=prompt_type):
+                self.assertIn("modes.schema.json", prompt)
+                self.assertIn("skills.schema.json", prompt)
+                self.assertIn('`kind: "mode"`', prompt)
+                self.assertIn('`kind: "skill"`', prompt)
+                self.assertNotIn("Forma exacta del contrato de skill", prompt)
 
 
 def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",

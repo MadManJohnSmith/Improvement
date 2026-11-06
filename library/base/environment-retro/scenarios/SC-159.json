@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "SC-159",
+  "type": "negative",
+  "description": "Un retro que reescribe el producto o inventa fallos no evidenciados no se acepta.",
+  "input": {
+    "skill": "environment-retro",
+    "task": "cerrar una unidad con fallos y proponer cambios del entorno",
+    "edits_product_code": true,
+    "invented_failures": 1,
+    "anchored_to_persisted_evidence": false
+  },
+  "expected": {
+    "verdict": "FAIL",
+    "evidence_type": "violation_record",
+    "description": "El retro editó el producto y declaró fallos sin evidencia: viola las invariantes de la skill."
+  },
+  "sr_links": [],
+  "target_skill": "environment-retro"
+}
