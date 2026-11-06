@@ -1,5 +1,27 @@
 # Cambios
 
+## Retrospectiva global y adaptación del entorno — 2026-11-06
+
+Retrospectiva sobre las 3.252 sesiones locales de ZCode (136.565 llamadas de
+herramienta, 2.720 errores). La masa de errores no está en el flujo: rutas
+inventadas (~900), llamadas con esquema inválido (610), higiene de edición (384)
+y subagentes cancelados o inactivos (66). De las rutas, ~136 son de proyectos de
+código; el resto es trabajo de medios.
+
+- **`CODING_STANDARDS.md`** (nuevo): reglas de revisión derivadas de esos
+  conteos — edición anclada, rutas verificadas, parámetros exactos, subagentes
+  acotados, suite proporcionada, reescrituras seguras, proyecto de prueba y
+  remoto verificado.
+- **`AGENTS.md`**: la autorización de commits locales se enuncia una sola vez
+  (estaba al final y convivía con la regla de push); el turno no se cierra con un
+  plan; puntero al archivo de estándares.
+- **`grilling` (global)**: cada ronda usa `AskUserQuestion`, una pregunta por
+  llamada, recomendación primero; reintento único y vuelta a prosa si falla.
+- **No aplicado**: los arreglos de esquema y concurrencia son del harness, no del
+  repo; las rutas de medios no son dominio del framework.
+
+Suite: 1254 pruebas en verde.
+
 ## Revisión del evaluador: el lector no exime una lectura compuesta — 2026-11-05
 
 La revisión en dos ejes encontró dos defectos altos y varios medios; corregidos
