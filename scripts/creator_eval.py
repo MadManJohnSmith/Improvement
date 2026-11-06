@@ -436,12 +436,39 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="creator_eval.py",
         description="Califica una corrida de Creator y retiene el informe con digests.")
-    parser.add_argument("--case", required=True)
-    parser.add_argument("--report", required=True)
+    parser.add_argument("--case", required=True,
+                        help="Caso a calificar, o caso a construir con --from-run")
+    parser.add_argument("--report",
+                        help="Informe a retener; por defecto <case>/report.json "
+                             "en modo --from-run")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--from-run", metavar="RUN_DIR", default=None,
+                        help="Run terminado del Creator: deriva los hechos, "
+                             "escribe el caso y lo califica")
+    parser.add_argument("--criteria",
+                        help="Criterios pre-registrados del caso "
+                             "(obligatorio con --from-run)")
+    parser.add_argument("--dsh-home",
+                        help="Home de DSH donde descubrir el journal "
+                             "(por defecto DSH_HOME o los candidatos estándar)")
     args = parser.parse_args(argv)
     try:
-        evaluate_case(args.case, args.report, overwrite=args.overwrite)
+        if args.from_run:
+            if not args.criteria:
+                raise ValueError("--criteria es obligatorio con --from-run")
+            # Importe perezoso: la derivación arrastra el validador del Host
+            # y el cliente Creator, que el modo de calificación pura no usa.
+            import creator_case
+            criteria, _ = _read_json(Path(args.criteria))
+            case_dir = Path(args.case)
+            creator_case.build_case(args.from_run, case_dir, criteria,
+                                    dsh_home=args.dsh_home)
+            report = Path(args.report) if args.report else case_dir / "report.json"
+            evaluate_case(case_dir, report, overwrite=args.overwrite)
+        else:
+            if not args.report:
+                raise ValueError("--report es obligatorio")
+            evaluate_case(args.case, args.report, overwrite=args.overwrite)
     except (OSError, ValueError) as error:
         print(f"creator_eval: {error}", file=sys.stderr)
         return 2
