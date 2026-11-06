@@ -1,5 +1,29 @@
 # Cambios
 
+## eval: criterio versionado y plantilla de perfil DSH — 2026-11-06
+
+El caso remoto de Creator dependía de ficheros escritos a mano en la máquina
+del mantenedor: el criterio pre-registrado y el perfil de DSH no existían en
+el repositorio, así que ningún otro runner podía repetir la evaluación
+(issues #11/#14).
+
+- **`eval/criteria-remote-creator.json`**: el criterio del caso con `id`
+  estable (`remote-creator-v1`), las lecturas prohibidas de los schemas de
+  modos y skills, manifiesto y prevalidación requeridos; lo consume
+  `creator_eval._require_criteria` sin cambios en el núcleo de veredicto.
+- **`eval/profile-dsh.patch.yml`**: plantilla del patch de perfil de DSH
+  0.2.1 (formato `cordis.patch.yml`) con puntos de relleno `@NOMBRE@`
+  deliberadamente YAML inválido; el workflow los sustituye (receta en
+  `eval/README.md`). La clave solo se referencia por `apiKeyEnv`
+  (`DSH_PROVIDER_API_KEY`); sin clave literal, sin `localhost`, sin
+  proveedor ni modelo fijados; canal `api: openai-responses`.
+- **Regresiones**: `tests/test_eval_config.py` — el criterio pasa la puerta
+  real del evaluador con sus campos exactos y una copia debilitada la
+  rechaza; la plantilla exige referencias a variables de entorno, URL base
+  solo por marcador, ninguna clave literal y ningún host local.
+
+Suite: 1262 pruebas en verde.
+
 ## Prompt 1.11.0: capacidades del contrato y raíces portables — 2026-11-06
 
 La evaluación del prompt 1.10.0 (run gen-2522adbd026d) mostró dos defectos de la
