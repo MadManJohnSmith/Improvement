@@ -1,5 +1,22 @@
 # Cambios
 
+## El hook de doc-drift descartaba el resultado de las herramientas — 2026-11-06
+
+Con el adaptador `openai-responses` de DSH, el hook `tools/post-execute` de
+`doc-drift.mjs` recibía el resultado de la herramienta como tercer argumento y
+lo descartaba (`return undefined`) porque no había `next`; el núcleo leía
+`result.kind` sobre `undefined` y toda llamada de herramienta fallaba con
+`Cannot read properties of undefined (reading 'kind')`. Con Chat Completions el
+waterfall sí pasa `next` y el defecto no se manifestaba.
+
+- **`doc-drift.mjs`**: sin `next`, el hook devuelve el resultado recibido.
+- **`verify-doc-drift.mjs`**: comprueba que un post-execute sin waterfall
+  preserva el mismo objeto.
+- Detectado al probar `openrouter/stealth/crouton-alpha` por `/v1/responses`
+  (ese adaptador evita el sobre cifrado del streaming de Chat Completions).
+
+Suite: 1255 pruebas en verde.
+
 ## Tope de rounds del run, no de la invocación — 2026-11-05
 
 La reanudación rearmaba el tope de reintentos de un gate: con `rounds: 3`, un run

@@ -131,6 +131,14 @@ for (const hook of ['fs/observed', 'tools/post-execute', 'fs/write-intent',
   check(`hook registrado: ${hook}`, ctx.handlers.has(hook));
 }
 
+// Un adaptador que no pasa `next` (p. ej. openai-responses) entrega el
+// resultado como tercer argumento; el hook debe devolverlo, no descartarlo.
+const preservedResult = { kind: 'foreground', stdout: { text: 'hola' } };
+const preserved = await ctx.handlers.get('tools/post-execute')(
+  { name: 'bash' }, {}, preservedResult);
+check('post-execute sin next preserva el resultado',
+      preserved === preservedResult);
+
 const baselinePath = join(workspace, 'drift', 'doc-baseline.json');
 const reportPath = join(workspace, 'drift', 'source-drift.json');
 

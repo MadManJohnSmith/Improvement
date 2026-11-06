@@ -202,10 +202,12 @@ export function apply(ctx, config = {}) {
   // Observation accumulation: every mutation the session performs is
   // provenance for the next verdict, never a reason to skip evaluation.
   ctx.on?.('fs/observed', (target) => { note(target); });
-  ctx.on?.('tools/post-execute', async (_tool, args, _result, next) => {
+  ctx.on?.('tools/post-execute', async (_tool, args, result, next) => {
     note(args?.file_path ?? args?.path);
     if (typeof next === 'function') return next();
-    return undefined;
+    // Sin waterfall (adaptador no-completions) el hook no puede descartar
+    // el resultado: el núcleo lee campos del objeto devuelto.
+    return result;
   });
 
   // Confinement: while a sync step is open, only the affected documents are
