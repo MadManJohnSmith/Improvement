@@ -31,17 +31,21 @@ ROOT_IDENTITY = "c" * 64
 
 
 def _events():
-    """A synthetic DSH journal: header, one request, one turn, one tool call."""
+    """A synthetic DSH journal: header, one request, one turn, one tool call.
+
+    Los frames con ``seq`` llevan ``time`` en ms de época: el intervalo del
+    primero al último es la duración que el constructor deriva (1.34 s aquí).
+    """
     return [
         {"type": "session", "version": 4, "id": SESSION_ID, "createdAt": 1,
          "cwd": "/tmp/producto", "isSeeded": False},
-        {"type": "request/header", "seq": 0, "time": 2,
+        {"type": "request/header", "seq": 0, "time": 1000,
          "data": {"header": {"config": {"provider": "proveedor-prueba",
                                         "model": "modelo-prueba",
                                         "maxTokens": 1000},
                              "adapterDefaults": {}, "tools": []}}},
-        {"type": "turn/start", "seq": 1, "data": {"turn": 1}},
-        {"type": "tool/call", "seq": 2,
+        {"type": "turn/start", "seq": 1, "time": 1500, "data": {"turn": 1}},
+        {"type": "tool/call", "seq": 2, "time": 2342,
          "data": {"name": "read",
                   "arguments": json.dumps({"path": "product/src/main.py"})}},
     ]
@@ -195,6 +199,7 @@ class CreatorCaseFromRunTest(unittest.TestCase):
         self.assertEqual(facts["stop_reason"], "TERMINAL_QUIESCENT")
         self.assertIs(facts["terminal_turn"], True)
         self.assertEqual(facts["turns_started"], 1)
+        self.assertEqual(facts["elapsed_seconds"], 1.34)
         self.assertEqual(facts["journal_event_count"], 3)
         self.assertEqual(facts["journal_last_seq"], 2)
         self.assertIs(facts["manifest_present"], True)
@@ -260,6 +265,82 @@ class CreatorCaseFromRunTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn(SESSION_ID, errors)
         self.assertFalse(case.exists())
+
+    def test_from_run_derives_the_comparable_product_digest_when_given_the_root(self):
+        """--project-root yields the tree digest the fixture manifest registered.
+
+        La root_identity de run.json es el sha256 del sha1 del commit del
+        producto y en CI varía por corrida; el valor comparable con el
+        registrado en project-manifest.json es el digest de árbol del
+        producto en la convención del framework. Con la raíz del fixture
+        (una copia basta: el digest no sigue ni mtimes ni metadatos) los
+        hechos llevan el digest registrado; sin raíz el campo se omite, que
+        no se inventa identidad.
+        """
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        registered = json.loads(
+            (ROOT / "fixtures" / "libreta" / "project-manifest.json")
+            .read_text(encoding="utf-8"))["root_identity"]
+        product = self.tmp / "producto"
+        shutil.copytree(ROOT / "fixtures" / "libreta" / "product", product)
+        run_dir = self._write_run()
+        home = self._write_dsh_home()
+        with unittest.mock.patch.object(
+                creator_case, "validate_package",
+                return_value=self._stub_report(True)):
+            code, errors, case = self._from_run(
+                run_dir, home, extra=["--project-root", str(product)])
+        self.assertEqual(code, 0, errors)
+        facts = json.loads((case / "facts.json").read_text(encoding="utf-8"))
+        self.assertEqual(facts["product_tree_digest"], registered)
+
+        without = self.tmp / "caso-sin-raiz"
+        with unittest.mock.patch.object(
+                creator_case, "validate_package",
+                return_value=self._stub_report(True)):
+            code, errors, case = self._from_run(run_dir, home, case=without)
+        self.assertEqual(code, 0, errors)
+        facts = json.loads((case / "facts.json").read_text(encoding="utf-8"))
+        self.assertNotIn("product_tree_digest", facts)
+
+    def test_from_run_fails_closed_when_the_validator_breaks(self):
+        """An unexpected validator exception is infrastructure: exit 2, no case.
+
+        Colapsar el fallo del validador en prevalidation_passed=False
+        puntuaría un problema de infraestructura como un defecto del prompt
+        evaluado. La derivación aborta como fallo cerrado (exit 2, ningún
+        caso escrito); solo un veredicto definitivo del validador produce
+        True/False, y un run sin paquete sigue siendo prevalidación no
+        superada, el veredicto del caso real.
+        """
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        run_dir = self._write_run()
+        home = self._write_dsh_home()
+        case = self.tmp / "caso"
+
+        def broken(generated, run_dir=None):
+            raise RuntimeError("infraestructura del validador rota")
+
+        with unittest.mock.patch.object(creator_case, "validate_package",
+                                        broken):
+            code, errors, case = self._from_run(run_dir, home, case=case)
+        self.assertEqual(code, 2)
+        self.assertIn("prevalidación Host falló de forma inesperada", errors)
+        self.assertFalse(case.exists())
+
+    def test_derive_facts_omits_the_duration_without_timestamped_frames(self):
+        """No frame with ``time``, no duration: omitted, never zero."""
+        run_dir = self._write_run()
+        events = []
+        for event in _events():
+            event.pop("time", None)
+            events.append(event)
+        facts = creator_case.derive_facts(
+            run_dir, events, _session(),
+            validate=lambda *args, **kwargs: self._stub_report(True))
+        self.assertNotIn("elapsed_seconds", facts)
 
     def test_from_run_resolves_the_dsh_home_from_the_environment(self):
         """Without the flag the home follows the same order as the client."""

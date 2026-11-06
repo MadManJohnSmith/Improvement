@@ -25,18 +25,19 @@ GEN_ID = "gen-sintetico"
 ROOT_IDENTITY = "c" * 64
 
 # Las columnas del spec: la generación, la revisión del framework, la
-# versión de prompt, el modelo, la identidad del producto, el presupuesto,
-# el uso, los pasos, las llamadas de herramienta, las lecturas de schema,
-# las llamadas al lector, el manifiesto, la prevalidación, el veredicto,
-# el motivo, la parada, la duración y los eventos del journal; el journal
-# referenciado cierra la fila y viaja como artefacto aparte (#11).
+# versión de prompt, el modelo, la identidad del producto y su digest de
+# árbol comparable, el presupuesto, el uso, los pasos, las llamadas de
+# herramienta, las lecturas de schema, las llamadas al lector, el
+# manifiesto, la prevalidación, el veredicto, el motivo, la parada, la
+# duración y los eventos del journal; el journal referenciado cierra la
+# fila y viaja como artefacto aparte (#11).
 COLUMNS = frozenset({
     "generation_id", "framework_revision", "prompt_version", "model",
-    "root_identity", "budget_tokens", "usage_tokens", "input_tokens",
-    "cache_read_tokens", "output_tokens", "steps", "tool_calls",
-    "schema_reads", "reader_calls", "manifest", "prevalidation_passed",
-    "verdict", "reason", "stop_reason", "elapsed_seconds", "journal_events",
-    "journal",
+    "root_identity", "product_tree_digest", "budget_tokens", "usage_tokens",
+    "input_tokens", "cache_read_tokens", "output_tokens", "steps",
+    "tool_calls", "schema_reads", "reader_calls", "manifest",
+    "prevalidation_passed", "verdict", "reason", "stop_reason",
+    "elapsed_seconds", "journal_events", "journal",
 })
 
 
@@ -45,6 +46,7 @@ def _facts():
     return {
         "generation_id": GEN_ID,
         "project": {"name": "product", "root_identity": ROOT_IDENTITY},
+        "product_tree_digest": "d" * 64,
         "framework_revision": "revision-sintetica",
         "budget": {"max_attempts": 3, "max_tokens": 500000, "max_seconds": 600},
         "prompt_version": "9.9.9",
@@ -58,6 +60,7 @@ def _facts():
         "terminal_turn": True,
         "journal_last_seq": 2,
         "turns_started": 1,
+        "elapsed_seconds": 212.92,
         "journal_event_count": 3,
         "manifest_present": True,
         "prevalidation_passed": True,
@@ -150,6 +153,7 @@ class CreatorRosterRowTest(unittest.TestCase):
         self.assertEqual(row["prompt_version"], "9.9.9")
         self.assertEqual(row["model"], "proveedor-prueba/modelo-prueba")
         self.assertEqual(row["root_identity"], ROOT_IDENTITY)
+        self.assertEqual(row["product_tree_digest"], "d" * 64)
         self.assertEqual(row["budget_tokens"], 500000)
         self.assertEqual(row["usage_tokens"], 1000)
         self.assertEqual(row["input_tokens"], 200)
@@ -164,11 +168,28 @@ class CreatorRosterRowTest(unittest.TestCase):
         self.assertEqual(row["verdict"], "PASS")
         self.assertEqual(row["reason"], "criterios cumplidos")
         self.assertEqual(row["stop_reason"], "TERMINAL_QUIESCENT")
+        self.assertEqual(row["elapsed_seconds"], 212.92)
         self.assertEqual(row["journal_events"], 3)
         self.assertEqual(row["journal"], "journal.jsonl")
-        # La duración no estaba en los hechos del caso: se omite, no se
-        # inventa un cero.
-        self.assertNotIn("elapsed_seconds", row)
+
+    def test_the_row_omits_the_product_digest_the_case_did_not_record(self):
+        """Sin digest comparable en los hechos, la columna no aparece.
+
+        El digest de árbol del producto solo existe cuando la derivación
+        recibió la raíz; un caso derivado sin ella no lleva el campo y la
+        fila lo omite: rellenar la identidad del producto con un supuesto
+        sería inventar evidencia.
+        """
+        case = self._write_case(
+            name="sin-digest",
+            facts={key: value for key, value in _facts().items()
+                   if key != "product_tree_digest"})
+        out = self.tmp / "fila-sin-digest.json"
+        code, errors = self._derive(case, out)
+        self.assertEqual(code, 0, errors)
+        row = json.loads(out.read_text(encoding="utf-8"))
+        self.assertNotIn("product_tree_digest", row)
+        self.assertIn("root_identity", row)
 
     def test_an_unknowable_case_fails_closed_without_writing_a_row(self):
         """No graded case, no journal: exit 2 and nothing on disk.

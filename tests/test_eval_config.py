@@ -2,7 +2,7 @@
 
 `eval/` publica los dos artefactos de configuración del caso remoto: el
 criterio que `scripts/creator_eval.py` consume (el mismo triple que
-`_require_criteria` exigía a los casos escritos a mano, más el `id` que llega
+`require_criteria` exigía a los casos escritos a mano, más el `id` que llega
 al reporte) y la plantilla del perfil de DSH que el workflow rellena desde
 variables y secretos. Esta prueba es su contrato: si el criterio deja de ser
 consumible o la plantilla fija una clave, un proveedor o una máquina local,
@@ -17,8 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "eval"
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import creator_eval
+from support_config_contract import LITERAL_KEY
 
 
 CRITERIA_PATH = EVAL / "criteria-remote-creator.json"
@@ -34,10 +36,6 @@ MARKERS = {
     "DSH_PROFILE_CONTEXT_WINDOW",
     "DSH_PROFILE_MAX_TOKENS",
 }
-# What a literal credential looks like in text. apiKeyEnv names a variable;
-# only a value would match these.
-LITERAL_KEY = re.compile(
-    r"\bsk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{8,}|[A-Za-z0-9]{32,}")
 LOCAL_HOST = re.compile(r"localhost|127\.0\.0\.1")
 # Provider and model identity of the observed runs; the template must not
 # carry it, the workflow brings its own.
@@ -48,12 +46,12 @@ class VersionedCriteriaTest(unittest.TestCase):
     def test_the_versioned_criteria_passes_the_evaluator_contract(self):
         """The pre-registered case is consumable without changing the verdict core.
 
-        `_require_criteria` is the gate the evaluator and the case builder
+        `require_criteria` is the gate the evaluator and the case builder
         actually run: the versioned file must enter it as written, with the
         stable case id landing in the report and no field the core ignores.
         """
         document = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))
-        accepted = creator_eval._require_criteria(document)
+        accepted = creator_eval.require_criteria(document)
         self.assertEqual(document["id"], "remote-creator-v1")
         self.assertEqual(document["forbidden_schema_reads"],
                          ["modes.schema.json", "skills.schema.json"])
@@ -67,7 +65,7 @@ class VersionedCriteriaTest(unittest.TestCase):
     def test_the_evaluator_contract_rejects_a_weakened_criterion(self):
         """Non-vacuity: the gate is real, so a broken case cannot slip through.
 
-        The versioned file is only pinned if `_require_criteria` still
+        The versioned file is only pinned if `require_criteria` still
         disagrees with documents that violate it; a gate that accepted
         anything would make the previous test decoration.
         """
@@ -75,10 +73,10 @@ class VersionedCriteriaTest(unittest.TestCase):
         missing = {key: value for key, value in document.items()
                    if key != "require_manifest"}
         with self.assertRaises(ValueError):
-            creator_eval._require_criteria(missing)
+            creator_eval.require_criteria(missing)
         mistyped = dict(document, require_manifest="true")
         with self.assertRaises(ValueError):
-            creator_eval._require_criteria(mistyped)
+            creator_eval.require_criteria(mistyped)
 
 
 class ProfileTemplateTest(unittest.TestCase):

@@ -2000,6 +2000,23 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
 
 DSH_HOME_CANDIDATES = ("~/.dsh", "~/.deepseek", "~/.config/dsh")
 
+
+def dsh_home_candidates():
+    """The homes a DSH client may already live in, env DSH_HOME first.
+
+    The order is the acquisition policy, in one place: the environment wins,
+    then the standard candidates. ``acquire_dsh_client`` probes them in this
+    order, and callers that only need the path (journal discovery in
+    creator_case) reuse it instead of re-deriving the policy.
+    """
+    candidates = []
+    env_home = os.environ.get("DSH_HOME")
+    if env_home:
+        candidates.append(Path(env_home).expanduser())
+    candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+    return candidates
+
+
 # Seconds the launch path polls the durable cookie before falling back to
 # the single-use console token: the web server may print its URL before the
 # RPC listener accepts connections.
@@ -2369,11 +2386,7 @@ def acquire_dsh_client(*, launch=False, workspace_root=None):
     provider check gates the result. Without a ready session the run
     stops with the concrete missing piece. Fail-closed.
     """
-    candidates = []
-    env_home = os.environ.get("DSH_HOME")
-    if env_home:
-        candidates.append(Path(env_home).expanduser())
-    candidates += [Path(p).expanduser() for p in DSH_HOME_CANDIDATES]
+    candidates = dsh_home_candidates()
 
     if launch:
         launch_home = _official_dsh_home()

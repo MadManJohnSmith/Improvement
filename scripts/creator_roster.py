@@ -2,8 +2,10 @@
 
 Dado un directorio de caso (facts.json + report.json + el journal que el
 evaluador calificó), proyecta la fila del roster con las columnas cerradas
-del spec (#11, #16). La fila es una proyección por nombre, nunca un
-volcado: lo que el caso no registró se omite, no se inventa, y ningún
+del spec (#11, #16): la identidad comparable del producto
+(``product_tree_digest`` cuando el caso la lleva) entra junto a la
+identidad registrada del run. La fila es una proyección por nombre, nunca
+un volcado: lo que el caso no registró se omite, no se inventa, y ningún
 campo de más de los hechos o del reporte pasa a la fila publicada. El
 workflow la sube como artefacto propio; versionar el roster sigue siendo
 una decisión del mantenedor y el workflow no commitea nada.
@@ -22,29 +24,18 @@ import creator_eval
 ROW_FILE = "roster-row.json"
 
 
-def _text(source, key):
-    """A non-empty string, or None when the case did not record one."""
-    value = source.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _count(source, key):
-    """An integer count, or None: a boolean is not a count."""
-    value = source.get(key)
-    return value if creator_eval._is_int(value) else None
-
-
 def derive_row(facts, report):
     """Project the roster row of one graded case from its facts and report.
 
     El veredicto, el motivo, el journal y los conteos vienen del reporte;
     el resto, de los hechos. Un campo ausente se omite para que la
-    evidencia incompleta no se rellene con supuestos.
+    evidencia incompleta no se rellene con supuestos: los predicados
+    "registrado u omitir" son los mismos del evaluador.
     """
-    creator_eval._require_dict(facts, "facts.json")
-    creator_eval._require_dict(report, "report.json")
+    creator_eval.require_dict(facts, "facts.json")
+    creator_eval.require_dict(report, "report.json")
     counts = report.get("counts")
-    creator_eval._require_dict(counts, "Conteos del reporte")
+    creator_eval.require_dict(counts, "Conteos del reporte")
     missing = [key for key in ("tool_calls", "schema_reads", "reader_calls")
                if key not in counts]
     missing += [key for key in ("verdict", "reason", "journal_file")
@@ -59,35 +50,39 @@ def derive_row(facts, report):
         if value is not None:
             row[key] = value
 
-    take("generation_id", _text(facts, "generation_id"))
-    take("framework_revision", _text(facts, "framework_revision"))
-    take("prompt_version", _text(facts, "prompt_version"))
-    take("model", _text(facts, "model"))
+    take("generation_id", creator_eval.text_or_none(facts, "generation_id"))
+    take("framework_revision",
+         creator_eval.text_or_none(facts, "framework_revision"))
+    take("prompt_version", creator_eval.text_or_none(facts, "prompt_version"))
+    take("model", creator_eval.text_or_none(facts, "model"))
     project = facts.get("project")
     if isinstance(project, dict):
-        take("root_identity", _text(project, "root_identity"))
+        take("root_identity", creator_eval.text_or_none(project, "root_identity"))
+    take("product_tree_digest",
+         creator_eval.text_or_none(facts, "product_tree_digest"))
     budget = facts.get("budget")
     if isinstance(budget, dict):
-        take("budget_tokens", _count(budget, "max_tokens"))
-    take("usage_tokens", _count(facts, "usage_tokens"))
-    take("input_tokens", _count(facts, "usage_input_tokens"))
-    take("cache_read_tokens", _count(facts, "usage_cache_read_tokens"))
-    take("output_tokens", _count(facts, "usage_output_tokens"))
-    take("steps", _count(facts, "usage_steps"))
+        take("budget_tokens", creator_eval.int_or_none(budget, "max_tokens"))
+    take("usage_tokens", creator_eval.int_or_none(facts, "usage_tokens"))
+    take("input_tokens", creator_eval.int_or_none(facts, "usage_input_tokens"))
+    take("cache_read_tokens",
+         creator_eval.int_or_none(facts, "usage_cache_read_tokens"))
+    take("output_tokens", creator_eval.int_or_none(facts, "usage_output_tokens"))
+    take("steps", creator_eval.int_or_none(facts, "usage_steps"))
     take("tool_calls", counts.get("tool_calls"))
     take("schema_reads", counts.get("schema_reads"))
-    take("reader_calls", _count(counts, "reader_calls"))
+    take("reader_calls", creator_eval.int_or_none(counts, "reader_calls"))
     if isinstance(facts.get("manifest_present"), bool):
         take("manifest", facts["manifest_present"])
     if isinstance(facts.get("prevalidation_passed"), bool):
         take("prevalidation_passed", facts["prevalidation_passed"])
     take("verdict", report["verdict"])
     take("reason", report["reason"])
-    take("stop_reason", _text(facts, "stop_reason"))
+    take("stop_reason", creator_eval.text_or_none(facts, "stop_reason"))
     elapsed = facts.get("elapsed_seconds")
     if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool):
         take("elapsed_seconds", elapsed)
-    take("journal_events", _count(facts, "journal_event_count"))
+    take("journal_events", creator_eval.int_or_none(facts, "journal_event_count"))
     take("journal", report["journal_file"])
     return row
 
@@ -100,15 +95,15 @@ def write_row(case_dir, out_path=None):
     artefacto aparte no se escribe.
     """
     case = Path(case_dir)
-    facts, _ = creator_eval._read_json(case / "facts.json")
-    report, _ = creator_eval._read_json(case / "report.json")
+    facts, _ = creator_eval.read_json(case / "facts.json")
+    report, _ = creator_eval.read_json(case / "report.json")
     row = derive_row(facts, report)
     if not (case / report["journal_file"]).is_file():
         raise ValueError(
             "El journal que la fila referencia no está en el caso: %s"
             % report["journal_file"])
     target = Path(out_path) if out_path else case / ROW_FILE
-    creator_eval._write_report(target, json.dumps(
+    creator_eval.write_report(target, json.dumps(
         row, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     return row
 

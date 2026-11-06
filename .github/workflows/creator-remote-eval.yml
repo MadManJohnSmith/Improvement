@@ -200,8 +200,18 @@ jobs:
           # project-manifest.json son el embalaje y quedan fuera.
           cp -R "fixtures/$FIXTURE/product/." "$PROJECT_DIR/"
           git -C "$PROJECT_DIR" init -b main
-          git -C "$PROJECT_DIR" config user.email "ci@users.noreply.github.com"
-          git -C "$PROJECT_DIR" config user.name "CI"
+          # Commit determinista: autor, fechas y mensaje fijos. El sha1 del
+          # commit (y con él root_identity, el sha256 del sha1 que bootstrap
+          # registra en run.json) depende del momento y del autor: sin esta
+          # fijación varía en cada corrida y la identidad del run no es
+          # comparable entre corridas. Las fechas marcan la mecanización del
+          # commit, no el momento real; el contenido del árbol manda.
+          export GIT_AUTHOR_NAME="CI"
+          export GIT_AUTHOR_EMAIL="ci@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="CI"
+          export GIT_COMMITTER_EMAIL="ci@users.noreply.github.com"
+          export GIT_AUTHOR_DATE="2026-01-01T00:00:00+00:00"
+          export GIT_COMMITTER_DATE="2026-01-01T00:00:00+00:00"
           git -C "$PROJECT_DIR" add -A
           git -C "$PROJECT_DIR" commit -m "fixture $FIXTURE para la evaluación remota"
 
@@ -248,14 +258,17 @@ jobs:
           # El constructor deriva los hechos del run terminado (modelo,
           # uso, journal bajo el home de DSH del runner) y el evaluador
           # califica con el criterio versionado; el reporte cae dentro del
-          # caso por defecto. El veredicto (PASS, FAIL_*, ABSTAIN) queda
-          # en report.json: informa el merge sin bloquearlo mecánicamente;
-          # solo un fallo cerrado del constructor o del evaluador (exit 2)
-          # falla el paso.
+          # caso por defecto. --project-root deja en los hechos el digest
+          # de árbol del producto, comparable con el registrado en el
+          # project-manifest.json del fixture. El veredicto (PASS, FAIL_*,
+          # ABSTAIN) queda en report.json: informa el merge sin bloquearlo
+          # mecánicamente; solo un fallo cerrado del constructor o del
+          # evaluador (exit 2) falla el paso.
           python3 scripts/creator_eval.py \
             --from-run "$RUN_DIR" \
             --criteria eval/criteria-remote-creator.json \
             --dsh-home "$DSH_HOME" \
+            --project-root "$PROJECT_DIR" \
             --case "$CASE_DIR" 2>&1 | tee -a "$RUN_LOG"
 
       - name: Derivar la fila del roster

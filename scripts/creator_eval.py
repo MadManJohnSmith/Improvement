@@ -40,13 +40,14 @@ JOURNAL_FILES = ("journal.jsonl", "journal.jsonl.zstd", "session.v4.jsonl.zstd")
 _UNPARSEABLE = object()
 
 
-def _require_dict(value, label):
+def require_dict(value, label):
+    """Require a JSON object, by name: the closed failure says which file."""
     if not isinstance(value, dict):
         raise ValueError(f"{label} inválido")
 
 
-def _require_criteria(criteria):
-    _require_dict(criteria, "Criterios")
+def require_criteria(criteria):
+    require_dict(criteria, "Criterios")
     missing = [key for key in REQUIRED_CRITERIA if key not in criteria]
     if missing:
         raise ValueError(f"Criterios incompletos: {missing}")
@@ -60,9 +61,27 @@ def _require_criteria(criteria):
     return criteria
 
 
-def _is_int(value):
+def is_int(value):
     """A boolean is not a count: ``True == 1`` must not satisfy a match."""
     return type(value) is int
+
+
+def text_or_none(source, key):
+    """A non-empty string field of ``source``, or None when it is absent.
+
+    The single place of the "recorded text or omit" predicate: the facts
+    derivation (creator_case) and the roster projection (creator_roster)
+    both refuse to invent a value the case did not record, so an absent or
+    empty source field is an omission, never an empty string.
+    """
+    value = source.get(key) if isinstance(source, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+def int_or_none(source, key):
+    """An integer field of ``source``, or None: a boolean is not a count."""
+    value = source.get(key) if isinstance(source, dict) else None
+    return value if is_int(value) else None
 
 
 def _mention(text, name):
@@ -164,13 +183,13 @@ def _calls(events):
                 malformed += 1
                 continue
             seq = event.get("seq")
-            calls.append((name, parsed, seq if _is_int(seq) else None))
+            calls.append((name, parsed, seq if is_int(seq) else None))
         elif kind not in KNOWN_EVENT_TYPES:
             unknown[kind] = unknown.get(kind, 0) + 1
     return calls, malformed, dict(sorted(unknown.items()))
 
 
-def _frame_count(events):
+def frame_count(events):
     """Frames exclude the session header, which is metadata and not a turn."""
     return sum(1 for event in events
                if not (isinstance(event, dict) and event.get("type") == "session"))
@@ -178,8 +197,29 @@ def _frame_count(events):
 
 def _last_seq(events):
     seqs = [event["seq"] for event in events
-            if isinstance(event, dict) and _is_int(event.get("seq"))]
+            if isinstance(event, dict) and is_int(event.get("seq"))]
     return max(seqs) if seqs else 0
+
+
+def frame_span_seconds(events):
+    """Elapsed seconds from the first to the last timestamped frame.
+
+    The frames that carry a ``seq`` also carry ``time`` in epoch
+    milliseconds; the session header carries neither. The span between the
+    first and the last timestamped frame is the defensible duration of the
+    run: persisted evidence read by the same rules as every other journal
+    count, not wall-clock taken at derivation time. Rounded to hundredths of
+    a second, like the case derived by hand that fixed the column. None when
+    no frame carries a time (the duration is omitted, not zero) or when the
+    span is negative: a clock skew is inconsistent evidence, not a duration.
+    """
+    times = [event["time"] for event in events
+             if isinstance(event, dict) and is_int(event.get("seq"))
+             and is_int(event.get("time"))]
+    if not times:
+        return None
+    elapsed = (times[-1] - times[0]) / 1000
+    return round(elapsed, 2) if elapsed >= 0 else None
 
 
 def _counts(calls, forbidden):
@@ -208,7 +248,7 @@ def _descriptive(facts):
     tokens = facts.get("usage_tokens")
     cache = facts.get("usage_cache_read_tokens")
     share = None
-    if _is_int(tokens) and tokens > 0 and _is_int(cache):
+    if is_int(tokens) and tokens > 0 and is_int(cache):
         share = round(cache / tokens, 4)
     return {
         "usage_tokens": tokens,
@@ -227,8 +267,8 @@ def grade(facts, events, criteria):
     with a forbidden schema read is a mechanism failure, and only a complete
     package with no forbidden read passes.
     """
-    _require_dict(facts, "Hechos")
-    criteria = _require_criteria(criteria)
+    require_dict(facts, "Hechos")
+    criteria = require_criteria(criteria)
     if not isinstance(events, list):
         raise ValueError("Journal inválido")
 
@@ -248,13 +288,13 @@ def grade(facts, events, criteria):
         integrity = f"journal malformado: {malformed} frame(s) sin forma"
     elif not calls:
         integrity = "journal sin llamadas de herramienta: no hay corrida que calificar"
-    elif not _is_int(facts.get("journal_event_count")):
+    elif not is_int(facts.get("journal_event_count")):
         integrity = "event_count ausente o inválido en los hechos"
-    elif facts["journal_event_count"] != _frame_count(events):
+    elif facts["journal_event_count"] != frame_count(events):
         integrity = ("event_count no coincide: hechos=%r journal=%d"
-                     % (facts["journal_event_count"], _frame_count(events)))
+                     % (facts["journal_event_count"], frame_count(events)))
     elif ("journal_last_seq" in facts and
-          not _is_int(facts["journal_last_seq"])):
+          not is_int(facts["journal_last_seq"])):
         integrity = "last_seq inválido en los hechos"
     elif ("journal_last_seq" in facts and
           facts["journal_last_seq"] != _last_seq(events)):
@@ -312,7 +352,7 @@ def grade(facts, events, criteria):
     }
 
 
-def _read_json(path):
+def read_json(path):
     try:
         raw = path.read_bytes()
     except OSError as error:
@@ -336,7 +376,7 @@ def _journal_path(case):
     return case / present[0], present[0]
 
 
-def _read_events(path, source):
+def read_events(path, source):
     try:
         raw = path.read_bytes()
     except OSError as error:
@@ -385,7 +425,7 @@ def _existing_digests(path):
     return digests
 
 
-def _write_report(path, payload):
+def write_report(path, payload):
     handle = tempfile.NamedTemporaryFile(
         "w", dir=str(path.parent), prefix=path.name + ".", suffix=".tmp",
         delete=False, encoding="utf-8")
@@ -411,9 +451,9 @@ def evaluate_case(case_dir, report_path, *, overwrite=False):
     facts_path = case / "facts.json"
     criteria_path = case / "criteria.json"
     journal_path, journal_file = _journal_path(case)
-    facts, facts_digest = _read_json(facts_path)
-    criteria, criteria_digest = _read_json(criteria_path)
-    events, journal_digest = _read_events(journal_path, journal_file)
+    facts, facts_digest = read_json(facts_path)
+    criteria, criteria_digest = read_json(criteria_path)
+    events, journal_digest = read_events(journal_path, journal_file)
     digests = {"facts": facts_digest, "criteria": criteria_digest,
                "journal": journal_digest}
     existing = _existing_digests(report)
@@ -427,7 +467,7 @@ def evaluate_case(case_dir, report_path, *, overwrite=False):
     result = grade(facts, events, criteria)
     result["digests"] = digests
     result["journal_file"] = journal_file
-    _write_report(report, json.dumps(
+    write_report(report, json.dumps(
         result, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     return result
 
@@ -451,6 +491,9 @@ def main(argv=None):
     parser.add_argument("--dsh-home",
                         help="Home de DSH donde descubrir el journal "
                              "(por defecto DSH_HOME o los candidatos estándar)")
+    parser.add_argument("--project-root", metavar="PRODUCT_DIR", default=None,
+                        help="Raíz del producto del run: sin ella los hechos "
+                             "no llevan product_tree_digest y el campo se omite")
     args = parser.parse_args(argv)
     try:
         if args.from_run:
@@ -459,10 +502,11 @@ def main(argv=None):
             # Importe perezoso: la derivación arrastra el validador del Host
             # y el cliente Creator, que el modo de calificación pura no usa.
             import creator_case
-            criteria, _ = _read_json(Path(args.criteria))
+            criteria, _ = read_json(Path(args.criteria))
             case_dir = Path(args.case)
             creator_case.build_case(args.from_run, case_dir, criteria,
-                                    dsh_home=args.dsh_home)
+                                    dsh_home=args.dsh_home,
+                                    project_root=args.project_root)
             report = Path(args.report) if args.report else case_dir / "report.json"
             evaluate_case(case_dir, report, overwrite=args.overwrite)
         else:

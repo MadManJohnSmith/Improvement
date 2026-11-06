@@ -13,17 +13,18 @@ legítimamente en 127.0.0.1 dentro del runner, así que la aserción de
 públicas del workflow, que no la necesitan.
 """
 import re
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "creator-remote-eval.yml"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# What a literal credential looks like in text; the same shape the
-# template contract (tests/test_eval_config.py) rejects, so the workflow
-# cannot reintroduce by hand what the template forbids.
-LITERAL_KEY = re.compile(
-    r"\bsk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{8,}|[A-Za-z0-9]{32,}")
+# The same literal-credential shape the template contract
+# (tests/test_eval_config.py) rejects, from the one place that owns it: the
+# workflow cannot reintroduce by hand what the template forbids.
+from support_config_contract import LITERAL_KEY
 
 
 def _workflow_text():
@@ -331,9 +332,17 @@ class RunPreparationTest(unittest.TestCase):
         fixture_script = _script(fixture[0])
         self.assertIn("fixtures/$FIXTURE/product", fixture_script,
                       "el proyecto no sale del fixture elegido")
-        self.assertIn('config user.email "ci@users.noreply.github.com"',
-                      fixture_script,
-                      "el commit del fixture no fija identidad CI")
+        # El commit del fixture es determinista: autor y fechas fijos en el
+        # propio paso, de modo que el sha1 (y con él root_identity, el
+        # sha256 del sha1 que bootstrap registra) sea estable entre corridas
+        # y comparable con la identidad registrada del fixture.
+        for piece in ('GIT_AUTHOR_NAME="CI"',
+                      'GIT_AUTHOR_EMAIL="ci@users.noreply.github.com"',
+                      'GIT_COMMITTER_NAME="CI"',
+                      'GIT_COMMITTER_EMAIL="ci@users.noreply.github.com"',
+                      'GIT_AUTHOR_DATE="', 'GIT_COMMITTER_DATE="'):
+            self.assertIn(piece, fixture_script,
+                          f"el commit del fixture no fija {piece}")
         prepared = [step for step in steps
                     if "scripts/bootstrap.py install" in _script(step)]
         self.assertEqual(len(prepared), 1,
@@ -391,10 +400,12 @@ class CaseEvaluationTest(unittest.TestCase):
 
         `creator_eval --from-run` derives the facts from the run, writes
         the case and grades it against the versioned criteria; the journal
-        is discovered under the runner's DSH home (--dsh-home) and the
-        report defaults inside the case. A closed failure of the builder
-        or the evaluator exits the step, but the verdict itself never
-        decides the workflow's outcome: it informs the merge.
+        is discovered under the runner's DSH home (--dsh-home), the product
+        root is passed (--project-root) so the facts carry the tree digest
+        comparable with the fixture registration, and the report defaults
+        inside the case. A closed failure of the builder or the evaluator
+        exits the step, but the verdict itself never decides the workflow's
+        outcome: it informs the merge.
         """
         text = _workflow_text()
         steps = _steps(text)
@@ -406,6 +417,7 @@ class CaseEvaluationTest(unittest.TestCase):
         for piece in ('--from-run "$RUN_DIR"',
                       '--criteria eval/criteria-remote-creator.json',
                       '--dsh-home "$DSH_HOME"',
+                      '--project-root "$PROJECT_DIR"',
                       '--case "$CASE_DIR"'):
             self.assertIn(piece, script,
                           f"el evaluador no recibe {piece}")
