@@ -51,7 +51,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.10.0"
+PROMPT_VERSION = "1.11.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -66,6 +66,14 @@ PROMPT_TYPES = (
 # esquema de skills (233), no la amplía.
 LEAN_PROMPT_TYPES = ("initial_onboarding", "skill_lifecycle")
 
+# Vocabulario cerrado de un contrato de skill (`schemas/skills.schema.json`,
+# `routing.capability_set`). No son las capacidades operativas del paquete
+# (`fs-read`, `fs-search`, `bash`): esas viven en `generated/capabilities.json`
+# y no se aceptan en un contrato de skill.
+SKILL_CONTRACT_CAPABILITIES = (
+    "read_product", "candidate_write", "test_execute", "report",
+)
+
 SKILL_CONTRACT_EXAMPLE = {
     "schema_version": 1,
     "kind": "skill",
@@ -76,7 +84,7 @@ SKILL_CONTRACT_EXAMPLE = {
     "reuse_reference": "<entrada exacta de la biblioteca>",
     "inputs": ["<entrada>"],
     "outputs": ["<salida>"],
-    "required_capabilities": ["fs-read"],
+    "required_capabilities": ["read_product", "report"],
     "forbidden_capabilities": ["network"],
     "files": [{"path": "skills/<name>/SKILL.md", "type": "entrypoint"}],
     "behavior_test": "<prueba ejecutable que observa la conducta>",
@@ -92,6 +100,12 @@ def _contract_rule(prompt_type):
             "```json\n"
             + json.dumps(SKILL_CONTRACT_EXAMPLE, ensure_ascii=False, indent=2)
             + "\n```\n\n"
+            "`required_capabilities` y `routing.capability_set` solo admiten "
+            "estos valores del roster aprobado: `read_product`, "
+            "`candidate_write`, `test_execute`, `report`. No uses "
+            "identificadores de filesystem (`fs-read`, `fs-search`, `bash`): "
+            "el contrato de skill no los acepta. `routing.modes` usa `auditor`, "
+            "`reparador` o `implementador`.\n\n"
             "Los tres modos de este escenario ya los escribió el Host: no redactes "
             "un contrato de modo ni consultes su schema. La forma cubre los "
             "campos obligatorios; si la prevalidación Host nombra un campo que no "
@@ -785,6 +799,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     session_root = layout["session_root"]
     product_root = layout["product_root"]
     workspace_root = layout["workspace_root"]
+    framework_root = Path(request["framework"]).name
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
@@ -800,6 +815,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
 **Session cwd (expected common-parent basename):** `{session_root}`
 **Product directory (exact basename):** `{product_root}`
 **Workspace directory (exact basename):** `{workspace_root}`
+**Framework directory (exact basename):** `{framework_root}`
 **Mode-state path from their common parent (exact):** `{state_root}`
 **Base revision:** {base_rev}
 
@@ -1160,7 +1176,11 @@ que nombre; no inspecciones la implementación del validador.
 10. `generated/capabilities.json.required_capabilities` debe cubrir la unión de
     capacidades requeridas por los modos generados. Reparación gestionada requiere
     `candidate_write`, nunca `product_write` ni escritura canónica. Ninguna
-    capacidad requerida puede aparecer en `forbidden_capabilities`
+    capacidad requerida puede aparecer en `forbidden_capabilities`. `roots` usa
+    los basenames exactos del layout — `product_read: ["{product_root}"]`,
+    `framework_execute: ["{framework_root}"]`,
+    `workspace_write: ["{workspace_root}"]` — y ningún artefacto generado
+    contiene rutas absolutas (`/home/`, `/Users/`, `C:\\Users`).
 
 ## Al finalizar
 

@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import bootstrap
 import creator_client as cc
 import generation_contracts as gc
+import skill_router
 
 # install() y run_creator emiten progreso humano por stderr por diseño
 # (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
@@ -1714,6 +1715,35 @@ class CreatorTests(Base):
                 gc.validate_skill_contract(doc)
                 self.assertEqual(set(schema["required"]) - set(doc), set())
                 self.assertNotIn("modes.schema.json", prompt)
+                self.assertNotIn("fs-read", block)
+                self.assertNotIn("fs-read", doc["required_capabilities"])
+                self.assertLessEqual(
+                    set(doc["required_capabilities"]),
+                    set(cc.SKILL_CONTRACT_CAPABILITIES))
+                for capability in cc.SKILL_CONTRACT_CAPABILITIES:
+                    self.assertIn(f"`{capability}`", prompt)
+
+    def test_skill_contract_capabilities_match_the_schema_and_router(self):
+        schema = json.loads(
+            (ROOT / "schemas" / "skills.schema.json").read_text())
+        enum = schema["properties"]["routing"]["properties"][
+            "capability_set"]["items"]["enum"]
+        self.assertEqual(set(cc.SKILL_CONTRACT_CAPABILITIES), set(enum))
+        self.assertEqual(set(cc.SKILL_CONTRACT_CAPABILITIES),
+                         set(skill_router.CAPABILITIES))
+
+    def test_prompt_declares_portable_capability_roots(self):
+        request = json.loads(
+            (self.run_dir / "inputs" / "bootstrap-request.json").read_text())
+        prompt = self._prompt_for("initial_onboarding")
+        for role, key in (("product_read", "project"),
+                          ("framework_execute", "framework"),
+                          ("workspace_write", "workspace")):
+            name = Path(request[key]).name
+            self.assertIn(f'{role}: ["{name}"]', prompt)
+        self.assertIn("rutas absolutas", prompt)
+        self.assertIn("/home/", prompt)
+
 
     def test_mode_writing_prompt_types_keep_the_full_schema_path(self):
         """The three scenarios that can rewrite modes keep the escape hatch.

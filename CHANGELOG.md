@@ -1,5 +1,27 @@
 # Cambios
 
+## Prompt 1.11.0: capacidades del contrato y raíces portables — 2026-11-06
+
+La evaluación del prompt 1.10.0 (run gen-2522adbd026d) mostró dos defectos de la
+forma inlineada: el ejemplo usaba `required_capabilities: ["fs-read"]` —un
+identificador operativo del paquete, fuera del enum del contrato de skill— y el
+paquete generado escribió raíces absolutas en `capabilities.json`, rechazadas
+por la capa de portabilidad.
+
+- **`creator_client.py`**: `SKILL_CONTRACT_CAPABILITIES` fija el vocabulario del
+  contrato (`read_product`, `candidate_write`, `test_execute`, `report`); el
+  ejemplo usa un subconjunto válido y la regla lean prohíbe identificadores de
+  filesystem y nombra `routing.capability_set`/`routing.modes`.
+- **Raíces portables**: el prompt declara los basenames exactos de producto,
+  framework y workspace para `capabilities.json.roots` y prohíbe rutas
+  absolutas en cualquier artefacto generado.
+- **Versión**: `PROMPT_VERSION` 1.10.0 → 1.11.0.
+- **Regresiones**: el ejemplo inlineado no usa `fs-read`; el vocabulario
+  coincide con el enum de `skills.schema.json` y con `skill_router.CAPABILITIES`;
+  el prompt publica las tres raíces portables.
+
+Suite: 1257 pruebas en verde.
+
 ## El hook de doc-drift descartaba el resultado de las herramientas — 2026-11-06
 
 Con el adaptador `openai-responses` de DSH, el hook `tools/post-execute` de
