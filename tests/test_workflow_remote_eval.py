@@ -419,21 +419,23 @@ class CaseEvaluationTest(unittest.TestCase):
 
 class ArtifactsTest(unittest.TestCase):
     def test_the_evidence_is_published_and_the_log_even_on_failure(self):
-        """Report, facts, criteria, journal and run log travel as artifacts.
+        """Report, facts, criteria, journal, roster row and log travel as artifacts.
 
         The case (facts.json, criteria.json, the discovered journal and
-        report.json) is uploaded whole; the run log is uploaded with
-        `if: always()`, also when the run fails, because it is the only
-        evidence a retained run without a report leaves. A missing case is
-        expected before the evaluation runs, so that upload ignores empty
+        report.json) is uploaded whole; the roster row derived from it is
+        uploaded beside it; the run log is uploaded with `if: always()`,
+        also when the run fails, because it is the only evidence a
+        retained run without a report leaves. A missing case or row is
+        expected before the evaluation runs, so those uploads ignore empty
         results; a missing log would be a defect of the workflow itself
         and must not be silently ignored.
         """
         steps = _steps(_workflow_text())
         uploads = [step for step in steps if step["attrs"].get(
             "uses", [""])[0].startswith("actions/upload-artifact")]
-        self.assertEqual(len(uploads), 2,
-                         "dos artefactos: el caso evaluado y el log del run")
+        self.assertEqual(len(uploads), 3,
+                         "tres artefactos: el caso evaluado, la fila del "
+                         "roster y el log del run")
 
         def with_block(step):
             return "\n".join(step["attrs"].get("with", []))
@@ -453,6 +455,58 @@ class ArtifactsTest(unittest.TestCase):
                   if "creator_eval.py" in _script(step)][0]
         self.assertLess(graded, steps.index(case[0]),
                         "el caso se publica tras construirse")
+
+
+class RosterRowArtifactTest(unittest.TestCase):
+    def test_the_roster_row_is_derived_and_published_as_its_own_artifact(self):
+        """The row travels as its own artifact; the workflow never commits it.
+
+        The roster is the maintainer's history, not the repository's
+        (#16): the workflow derives the row from the graded case as a
+        closed projection and writes it outside the case tree, so the row
+        artifact is its own evidence and the case artifact stays exactly
+        the case. It uploads under the same publication condition as the
+        case, and versioning the roster stays a maintainer decision: the
+        only git commit in the file remains the fixture's.
+        """
+        text = _workflow_text()
+        steps = _steps(text)
+
+        def with_block(step):
+            return "\n".join(step["attrs"].get("with", []))
+
+        derived = [step for step in steps
+                   if "creator_roster.py" in _script(step)]
+        self.assertEqual(len(derived), 1,
+                         "la derivación de la fila es un único paso")
+        script = _script(derived[0])
+        self.assertIn('--case "$CASE_DIR"', script,
+                      "la fila no se deriva del caso evaluado")
+        self.assertIn('--out "$ROSTER_ROW"', script,
+                      "la fila no se escribe dentro del caso ya publicado")
+        graded = [index for index, step in enumerate(steps)
+                  if "creator_eval.py" in _script(step)][0]
+        self.assertLess(graded, steps.index(derived[0]),
+                        "la fila se deriva tras calificar el caso")
+        self.assertRegex(
+            text, r"(?m)^\s*ROSTER_ROW: \$\{\{ runner\.temp \}\}",
+            "la fila no vive bajo el temp del runner")
+        uploads = [step for step in steps if step["attrs"].get(
+            "uses", [""])[0].startswith("actions/upload-artifact")]
+        row = [step for step in uploads if "ROSTER_ROW" in with_block(step)]
+        self.assertEqual(len(row), 1,
+                         "la fila del roster no viaja como artefacto propio")
+        self.assertIn("name: creator-eval-roster-row", with_block(row[0]),
+                      "el artefacto de la fila no lleva su nombre propio")
+        self.assertEqual(row[0]["attrs"].get("if"), ["always()"],
+                         "la fila no comparte la condición del caso")
+        self.assertIn("if-no-files-found: ignore", with_block(row[0]),
+                      "sin fila no hay artefacto de fila que publicar")
+        commits = [step for step in steps if " commit " in _script(step)]
+        self.assertEqual(len(commits), 1,
+                         "el único commit del workflow es el del fixture")
+        self.assertIn('git -C "$PROJECT_DIR" init', _script(commits[0]),
+                      "el commit del workflow no es el del fixture")
 
 
 class DispatchInputsTest(unittest.TestCase):

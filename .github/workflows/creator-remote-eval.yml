@@ -1,8 +1,9 @@
-# Evaluación remota del Creator contra el fixture de producto (issue #15,
-# spec #11). Solo workflow_dispatch: nunca en push, pull_request ni
+# Evaluación remota del Creator contra el fixture de producto (issues #15
+# y #16, spec #11). Solo workflow_dispatch: nunca en push, pull_request ni
 # horario, porque cada corrida gasta tokens de un proveedor real. El
-# veredicto informa el merge sin bloquearlo mecánicamente; el contrato del
-# workflow lo mantiene tests/test_workflow_remote_eval.py.
+# veredicto informa el merge sin bloquearlo mecánicamente; el caso, la
+# fila del roster y el log viajan como artefactos, y el workflow no
+# commitea nada. El contrato lo mantiene tests/test_workflow_remote_eval.py.
 name: Evaluación remota de Creator
 
 on:
@@ -66,6 +67,7 @@ jobs:
       PROJECT_DIR: ${{ runner.temp }}/creator-eval/project
       WORKSPACE_DIR: ${{ runner.temp }}/creator-eval/workspace
       RUN_LOG: ${{ runner.temp }}/creator-eval/run.log
+      ROSTER_ROW: ${{ runner.temp }}/creator-eval/roster-row.json
       DSH_HOME: ${{ runner.temp }}/creator-eval/dsh-home
       PROMPT_VERSION: ${{ inputs.prompt_version }}
       MODEL: ${{ inputs.model }}
@@ -256,12 +258,31 @@ jobs:
             --dsh-home "$DSH_HOME" \
             --case "$CASE_DIR" 2>&1 | tee -a "$RUN_LOG"
 
+      - name: Derivar la fila del roster
+        run: |
+          # La fila del roster sale del caso evaluado como proyección
+          # cerrada (sin secretos) y viaja como artefacto propio, junto al
+          # caso y al journal que referencia (#16). Versionar el roster
+          # sigue siendo una decisión del mantenedor: el workflow no
+          # commitea ni modifica nada.
+          python3 scripts/creator_roster.py \
+            --case "$CASE_DIR" \
+            --out "$ROSTER_ROW" 2>&1 | tee -a "$RUN_LOG"
+
       - name: Publicar el caso evaluado
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: creator-eval-case
           path: ${{ env.CASE_DIR }}
+          if-no-files-found: ignore
+
+      - name: Publicar la fila del roster
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-eval-roster-row
+          path: ${{ env.ROSTER_ROW }}
           if-no-files-found: ignore
 
       - name: Publicar el log del run
