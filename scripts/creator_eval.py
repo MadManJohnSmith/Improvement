@@ -6,8 +6,12 @@ patrón de lectura respetó el caso pre-registrado. La evidencia incompleta se
 declara ABSTAIN, nunca PASS.
 """
 
+import argparse
+import hashlib
 import json
 import re
+import sys
+from pathlib import Path
 
 VERDICTS = ("PASS", "FAIL_MECHANISM", "FAIL_COMPLETION", "ABSTAIN")
 
@@ -218,3 +222,96 @@ def grade(facts, events, criteria):
         "unknown_types": unknown,
         "malformed_events": malformed,
     }
+
+
+CASE_FILES = ("facts.json", "criteria.json", "journal.jsonl")
+
+
+def _read_json(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise ValueError(f"No se puede leer {path.name}: {error}") from error
+    except ValueError as error:
+        raise ValueError(f"JSON inválido en {path.name}: {error}") from error
+
+
+def _read_events(path):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"No se puede leer {path.name}: {error}") from error
+    events = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except ValueError as error:
+            raise ValueError(
+                f"JSON inválido en {path.name}:{number}: {error}") from error
+    return events
+
+
+def _sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _existing_digests(path):
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "ilegible"
+    if not isinstance(data, dict):
+        return "ilegible"
+    return data.get("digests", "ilegible")
+
+
+def evaluate_case(case_dir, report_path, *, overwrite=False):
+    """Grade one case directory and retain the report with input digests."""
+    case = Path(case_dir)
+    report = Path(report_path)
+    if not case.is_dir():
+        raise ValueError(f"Caso ausente o no regular: {case}")
+    facts_path = case / "facts.json"
+    criteria_path = case / "criteria.json"
+    journal_path = case / "journal.jsonl"
+    facts = _read_json(facts_path)
+    criteria = _read_json(criteria_path)
+    events = _read_events(journal_path)
+    digests = {"facts": _sha256(facts_path),
+               "criteria": _sha256(criteria_path),
+               "journal": _sha256(journal_path)}
+    existing = _existing_digests(report)
+    if existing is not None and existing != digests and not overwrite:
+        raise ValueError(
+            f"El informe {report.name} existe con otros digests; "
+            "usa --overwrite para reemplazarlo")
+    result = grade(facts, events, criteria)
+    result["digests"] = digests
+    report.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="creator_eval.py",
+        description="Califica una corrida de Creator y retiene el informe con digests.")
+    parser.add_argument("--case", required=True)
+    parser.add_argument("--report", required=True)
+    parser.add_argument("--overwrite", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        evaluate_case(args.case, args.report, overwrite=args.overwrite)
+    except (OSError, ValueError) as error:
+        print(f"creator_eval: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

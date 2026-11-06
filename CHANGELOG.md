@@ -1,5 +1,21 @@
 # Cambios
 
+## Evaluador de Creator: CLI y retención del caso — 2026-11-05
+
+Segunda rebanada (ticket 08, spec #7): el evaluador deja de ser solo una función
+y se puede correr sobre un directorio de caso.
+
+- **`scripts/creator_eval.py`**: `evaluate_case` y CLI con `--case`, `--report` y
+  `--overwrite`. El informe lleva veredicto, evidencia, conteos y sha256 de
+  hechos, criterios y journal; un veredicto cerrado sale 0 y solo la entrada
+  inválida sale 2 con el error nombrado; un informe existente con otros digests
+  no se sobrescribe sin `--overwrite`.
+- **`tests/test_creator_eval.py`**: 6 pruebas de CLI sobre casos temporales,
+  incluidos los digests, ABSTAIN como veredicto cerrado, la entrada ausente y la
+  reescritura idéntica.
+
+Suite: 1235 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Evaluador de Creator: núcleo de veredicto — 2026-11-05
 
 Primera rebanada del ticket 07 (spec #7): decidir una corrida deja de depender

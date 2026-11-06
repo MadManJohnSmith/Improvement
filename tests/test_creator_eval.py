@@ -1,6 +1,11 @@
 """Núcleo del evaluador de Creator: veredicto cerrado sobre artefactos registrados."""
+import contextlib
+import hashlib
+import io
 import json
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -182,3 +187,97 @@ class CreatorEvalGradeTest(unittest.TestCase):
         report = creator_eval.grade(_run(events), events, _criteria())
         self.assertAlmostEqual(report["descriptive"]["cache_share"], 0.7)
         self.assertEqual(report["descriptive"]["usage_tokens"], 1000)
+
+class CreatorEvalCliTest(unittest.TestCase):
+    def _case(self, **facts_overrides):
+        case = Path(tempfile.mkdtemp(prefix="creator-eval-"))
+        self.addCleanup(shutil.rmtree, case, True)
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        facts = _run(events, **facts_overrides)
+        (case / "facts.json").write_text(json.dumps(facts), encoding="utf-8")
+        (case / "criteria.json").write_text(json.dumps(_criteria()),
+                                            encoding="utf-8")
+        (case / "journal.jsonl").write_text(
+            "".join(json.dumps(event) + "\n" for event in events),
+            encoding="utf-8")
+        return case
+
+    def test_cli_writes_a_report_with_digests(self):
+        """The report is citable: every input is named by its sha256."""
+        case = self._case()
+        report_path = case / "report.json"
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(report_path)])
+        self.assertEqual(code, 0, errors.getvalue())
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual(report["verdict"], "PASS")
+        for name, filename in (("facts", "facts.json"),
+                               ("criteria", "criteria.json"),
+                               ("journal", "journal.jsonl")):
+            self.assertEqual(
+                report["digests"][name],
+                hashlib.sha256((case / filename).read_bytes()).hexdigest())
+
+    def test_cli_abstain_is_not_a_process_error(self):
+        """A closed verdict exits 0; only invalid input is an error."""
+        case = self._case(model="")
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(case / "report.json")])
+        self.assertEqual(code, 0)
+        report = json.loads((case / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["verdict"], "ABSTAIN")
+
+    def test_cli_missing_input_exits_2_and_names_it(self):
+        case = self._case()
+        (case / "journal.jsonl").unlink()
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(case / "report.json")])
+        self.assertEqual(code, 2)
+        self.assertIn("journal.jsonl", errors.getvalue())
+
+    def test_cli_invalid_criteria_exits_2(self):
+        case = self._case()
+        (case / "criteria.json").write_text('{"id": "case"}', encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(case / "report.json")])
+        self.assertEqual(code, 2)
+        self.assertIn("Criterios", errors.getvalue())
+
+    def test_cli_refuses_to_overwrite_other_digests(self):
+        """A previous verdict is not lost because the inputs changed."""
+        case = self._case()
+        report_path = case / "report.json"
+        report_path.write_text(json.dumps(
+            {"verdict": "ABSTAIN", "digests": {"facts": "0" * 64,
+             "criteria": "0" * 64, "journal": "0" * 64}}), encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(report_path)])
+        self.assertEqual(code, 2)
+        self.assertIn("overwrite", errors.getvalue())
+        self.assertEqual(json.loads(report_path.read_text(
+            encoding="utf-8"))["verdict"], "ABSTAIN")
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(report_path),
+                                      "--overwrite"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(report_path.read_text(
+            encoding="utf-8"))["verdict"], "PASS")
+
+    def test_cli_rewrites_an_identical_report(self):
+        case = self._case()
+        report_path = case / "report.json"
+        with contextlib.redirect_stderr(io.StringIO()):
+            first = creator_eval.main(["--case", str(case),
+                                       "--report", str(report_path)])
+        before = report_path.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()):
+            second = creator_eval.main(["--case", str(case),
+                                        "--report", str(report_path)])
+        self.assertEqual((first, second), (0, 0))
+        self.assertEqual(report_path.read_bytes(), before)
