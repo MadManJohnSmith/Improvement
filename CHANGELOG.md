@@ -1,5 +1,23 @@
 # Cambios
 
+## Evaluador de Creator: journal comprimido y control real — 2026-11-05
+
+Tercera rebanada (ticket 09, spec #7): el evaluador acepta la evidencia tal como
+se retuvo y se validó contra los dos journals históricos.
+
+- **`scripts/creator_eval.py`**: lee `journal.jsonl.zstd` con el descompresor del
+  sistema y nombra su ausencia; rechaza tener los dos journals a la vez; el
+  informe registra `journal_file` y `seq_checked`. El encabezado `session` no
+  cuenta como frame (los hechos históricos lo excluyen) y un `journal_last_seq`
+  ausente no abstiene; un valor presente que no coincide sí.
+- **`tests/test_creator_eval.py`**: 5 pruebas nuevas, incluida la equivalencia
+  comprimido/plano, el descompresor ausente y el encabezado que no cuenta.
+- **Control real, fuera del repo**: `creator-eval-2026-11-05/CONTROL.md`. A y B
+  dan FAIL_COMPLETION por manifest ausente; B leyó los dos schemas dos y una vez,
+  lecturas que el grep manual no había visto.
+
+Suite: 1240 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Evaluador de Creator: CLI y retención del caso — 2026-11-05
 
 Segunda rebanada (ticket 08, spec #7): el evaluador deja de ser solo una función

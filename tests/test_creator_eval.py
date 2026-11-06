@@ -4,9 +4,11 @@ import hashlib
 import io
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,6 +132,27 @@ class CreatorEvalGradeTest(unittest.TestCase):
             _run(events, journal_last_seq=7), events, _criteria())
         self.assertEqual(report["verdict"], "ABSTAIN")
         self.assertIn("last_seq", report["reason"])
+
+
+    def test_absent_last_seq_keeps_the_count_check(self):
+        """An older harness did not record last_seq; the count still binds."""
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        facts = _run(events)
+        facts.pop("journal_last_seq")
+        report = creator_eval.grade(facts, events, _criteria())
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertFalse(report["seq_checked"])
+
+
+    def test_the_session_header_is_not_a_journal_frame(self):
+        """The harness count excludes the header; the grader must agree."""
+        events = [{"type": "session", "version": 4, "id": "s"},
+                  _call(0, "read", {"path": "product/src/main.py"}),
+                  _call(1, "bash", {"command": "ls"})]
+        facts = _run(events)
+        facts["journal_event_count"] = 2
+        report = creator_eval.grade(facts, events, _criteria())
+        self.assertEqual(report["verdict"], "PASS")
 
     def test_journal_without_tool_calls_abstains(self):
         """An empty or message-only journal is not a clean run."""
@@ -281,3 +304,64 @@ class CreatorEvalCliTest(unittest.TestCase):
                                         "--report", str(report_path)])
         self.assertEqual((first, second), (0, 0))
         self.assertEqual(report_path.read_bytes(), before)
+
+class CreatorEvalCompressedTest(unittest.TestCase):
+    def _case(self, compressed=False):
+        case = Path(tempfile.mkdtemp(prefix="creator-eval-zstd-"))
+        self.addCleanup(shutil.rmtree, case, True)
+        events = [_call(0, "read", {"path": "product/src/main.py"})]
+        facts = _run(events)
+        (case / "facts.json").write_text(json.dumps(facts), encoding="utf-8")
+        (case / "criteria.json").write_text(json.dumps(_criteria()),
+                                            encoding="utf-8")
+        journal = case / "journal.jsonl"
+        journal.write_text(
+            "".join(json.dumps(event) + "\n" for event in events),
+            encoding="utf-8")
+        if compressed:
+            target = case / "journal.jsonl.zstd"
+            subprocess.run(["zstd", "-q", "-o", str(target), str(journal)],
+                           check=True)
+            journal.unlink()
+        return case
+
+    def test_a_compressed_journal_grades_like_the_plain_one(self):
+        """The retained evidence may be compressed; the verdict may not change."""
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        plain = self._case()
+        with contextlib.redirect_stderr(io.StringIO()):
+            creator_eval.main(["--case", str(plain),
+                               "--report", str(plain / "report.json")])
+        compressed = self._case(compressed=True)
+        with contextlib.redirect_stderr(io.StringIO()):
+            creator_eval.main(["--case", str(compressed),
+                               "--report", str(compressed / "report.json")])
+        first = json.loads((plain / "report.json").read_text(encoding="utf-8"))
+        second = json.loads((compressed / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(first["verdict"], second["verdict"])
+        self.assertEqual(first["counts"], second["counts"])
+        self.assertEqual(second["journal_file"], "journal.jsonl.zstd")
+
+    def test_a_missing_decompressor_is_named(self):
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        case = self._case(compressed=True)
+        with unittest.mock.patch.object(creator_eval, "DECOMPRESSOR",
+                                        "zstd-ausente-xyz"):
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                code = creator_eval.main(["--case", str(case),
+                                          "--report", str(case / "report.json")])
+        self.assertEqual(code, 2)
+        self.assertIn("zstd-ausente-xyz", errors.getvalue())
+
+    def test_two_journal_files_are_ambiguous(self):
+        if not shutil.which("zstd"):
+            self.skipTest("zstd no disponible")
+        case = self._case(compressed=True)
+        (case / "journal.jsonl").write_text("{}\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code = creator_eval.main(["--case", str(case),
+                                      "--report", str(case / "report.json")])
+        self.assertEqual(code, 2)
+        self.assertIn("journal", errors.getvalue())

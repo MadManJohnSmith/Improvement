@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -97,6 +98,12 @@ def _calls(events):
     return calls, malformed, sorted(unknown)
 
 
+def _frame_count(events):
+    """Frames exclude the session header, which is metadata and not a turn."""
+    return sum(1 for event in events
+               if not (isinstance(event, dict) and event.get("type") == "session"))
+
+
 def _last_seq(events):
     seqs = [event["seq"] for event in events
             if isinstance(event, dict) and isinstance(event.get("seq"), int)]
@@ -168,10 +175,11 @@ def grade(facts, events, criteria):
         integrity = f"journal malformado: {malformed} frame(s) sin forma"
     elif not calls:
         integrity = "journal sin llamadas de herramienta: no hay corrida que calificar"
-    elif facts.get("journal_event_count") != len(events):
+    elif facts.get("journal_event_count") != _frame_count(events):
         integrity = ("event_count no coincide: hechos=%r journal=%d"
-                     % (facts.get("journal_event_count"), len(events)))
-    elif facts.get("journal_last_seq") != _last_seq(events):
+                     % (facts.get("journal_event_count"), _frame_count(events)))
+    elif (isinstance(facts.get("journal_last_seq"), int) and
+          facts["journal_last_seq"] != _last_seq(events)):
         integrity = ("last_seq no coincide: hechos=%r journal=%d"
                      % (facts.get("journal_last_seq"), _last_seq(events)))
     elif (criteria["require_manifest"] and
@@ -221,10 +229,11 @@ def grade(facts, events, criteria):
         "descriptive": _descriptive(facts),
         "unknown_types": unknown,
         "malformed_events": malformed,
+        "seq_checked": isinstance(facts.get("journal_last_seq"), int),
     }
 
 
-CASE_FILES = ("facts.json", "criteria.json", "journal.jsonl")
+DECOMPRESSOR = "zstd"
 
 
 def _read_json(path):
@@ -236,11 +245,38 @@ def _read_json(path):
         raise ValueError(f"JSON inválido en {path.name}: {error}") from error
 
 
-def _read_events(path):
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ValueError(f"No se puede leer {path.name}: {error}") from error
+def _journal_path(case):
+    plain = case / "journal.jsonl"
+    compressed = case / "journal.jsonl.zstd"
+    if plain.exists() and compressed.exists():
+        raise ValueError("journal.jsonl y journal.jsonl.zstd: deja uno")
+    if plain.exists():
+        return plain, "journal.jsonl"
+    if compressed.exists():
+        return compressed, "journal.jsonl.zstd"
+    raise ValueError("Falta journal.jsonl o journal.jsonl.zstd en el caso")
+
+
+def _read_events(path, source):
+    if source.endswith(".zstd"):
+        try:
+            done = subprocess.run([DECOMPRESSOR, "-dc", "--", str(path)],
+                                  capture_output=True, check=False)
+        except FileNotFoundError as error:
+            raise ValueError(f"Descompresor ausente: {DECOMPRESSOR}") from error
+        if done.returncode != 0:
+            detail = done.stderr.decode("utf-8", "replace").strip()
+            raise ValueError(
+                f"Journal comprimido ilegible: {detail or path.name}") from None
+        try:
+            text = done.stdout.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError(f"Journal no UTF-8: {path.name}") from error
+    else:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as error:
+            raise ValueError(f"No se puede leer {path.name}: {error}") from error
     events = []
     for number, line in enumerate(text.splitlines(), 1):
         if not line.strip():
@@ -277,10 +313,10 @@ def evaluate_case(case_dir, report_path, *, overwrite=False):
         raise ValueError(f"Caso ausente o no regular: {case}")
     facts_path = case / "facts.json"
     criteria_path = case / "criteria.json"
-    journal_path = case / "journal.jsonl"
+    journal_path, journal_file = _journal_path(case)
     facts = _read_json(facts_path)
     criteria = _read_json(criteria_path)
-    events = _read_events(journal_path)
+    events = _read_events(journal_path, journal_file)
     digests = {"facts": _sha256(facts_path),
                "criteria": _sha256(criteria_path),
                "journal": _sha256(journal_path)}
@@ -291,6 +327,7 @@ def evaluate_case(case_dir, report_path, *, overwrite=False):
             "usa --overwrite para reemplazarlo")
     result = grade(facts, events, criteria)
     result["digests"] = digests
+    result["journal_file"] = journal_file
     report.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8")

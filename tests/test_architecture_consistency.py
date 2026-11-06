@@ -229,7 +229,7 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         somebody can see; a silent skip is not possible any more.
         """
         declared = ("DSH_MODULE_ROOT", "node", "node_modules", "bubblewrap",
-                    "jsonschema", "dsh-tools", "runtime")
+                    "jsonschema", "dsh-tools", "runtime", "zstd")
         offenders = []
         for path in sorted((ROOT / "tests").glob("*.py")):
             source = path.read_text(encoding="utf-8")
