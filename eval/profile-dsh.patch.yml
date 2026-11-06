@@ -1,0 +1,38 @@
+# Plantilla del patch de perfil de DSH para la evaluación remota de Creator.
+# Formato: array YAML de entradas del loader, el mismo que un
+# `cordis.patch.yml` de un bundle de perfil (DSH 0.2.1). El workflow la
+# copia como `cordis.patch.yml` y sustituye los marcadores antes de
+# instalar el bundle; la receta está en eval/README.md.
+#
+# Los marcadores se escriben de forma que una plantilla sin rellenar sea
+# YAML inválido: no puede cargarla nadie por descuido. La clave nunca entra
+# en este fichero: `apiKeyEnv` nombra la variable de entorno cuyo valor
+# exporta el runner desde el secreto del repositorio. Sin proveedor ni
+# modelo fijados: los aporta quien despacha.
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      @DSH_PROFILE_PROVIDER@:
+        displayName: @DSH_PROFILE_PROVIDER@
+        apiKeyEnv: DSH_PROVIDER_API_KEY
+        api: openai-responses
+        baseURL: @DSH_PROFILE_BASE_URL@
+        models:
+          - id: @DSH_PROFILE_MODEL@
+            name: @DSH_PROFILE_MODEL@
+            contextWindow: @DSH_PROFILE_CONTEXT_WINDOW@
+            maxTokens: @DSH_PROFILE_MAX_TOKENS@
+            input:
+              - text
+            reasoningEfforts:
+              off: null
+              low: low
+              medium: medium
+              high: high
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: @DSH_PROFILE_PROVIDER@
+    model: @DSH_PROFILE_MODEL@
+    reasoningEffort: high
