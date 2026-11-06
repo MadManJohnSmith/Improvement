@@ -649,7 +649,7 @@ only the operator can produce**, and it should be named so that it is not confus
 - **Twenty-six stacks are declared and none have a campaign**; the table `stack_coverage` of
   Above it names them all.
 
-**D11: the corpus is already executable, and what remains is to execute it against a mode.** The 55
+**D11: the corpus is already executable, and what remains is to execute it against a mode.** At that point the 55
 scenarios of `library/` were tables of declarative assertions (`contract_declared: true`),
 not tasks that an agent might receive. `scripts/corpus_compiler.py` gives them shape
 deterministic executable reusing `acceptance_harness._public_input`, and the oracle is

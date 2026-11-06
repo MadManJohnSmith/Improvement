@@ -662,7 +662,7 @@ sólo el operador puede producir**, y conviene nombrarla para que no se confunda
 - **Veintiséis stacks están declarados y ninguno tiene campaña**; la tabla `stack_coverage` de
   arriba los nombra todos.
 
-**D11: el corpus ya es ejecutable, y lo que falta es ejecutarlo contra un modo.** Los 55
+**D11: el corpus ya es ejecutable, y lo que falta es ejecutarlo contra un modo.** En ese punto, los 55
 escenarios de `library/` eran tablas de aserciones declarativas (`contract_declared: true`),
 no tareas que un agente pudiera recibir. `scripts/corpus_compiler.py` les da forma
 ejecutable determinista reutilizando `acceptance_harness._public_input`, y el oráculo se

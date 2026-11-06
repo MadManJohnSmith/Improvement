@@ -409,6 +409,50 @@ class ArchitectureConsistencyTest(unittest.TestCase):
             self.assertGreater(claims, 0,
                                f"{relative} no publica cifra de suite que comprobar")
 
+    def test_the_published_corpus_count_is_the_one_that_compiles(self):
+        """The executable corpus is a claim about `library/`, right now.
+
+        Both usage documents described `compile-corpus` as turning "55
+        scenarios" into cases while the corpus already had 59: the golden in
+        `test_corpus_gate` fails when the library grows, but it cannot see
+        prose, so the operator documents drifted in silence. The live documents
+        are scanned here, so the failure names the file where the figure is
+        published. Historical figures are allowed when the paragraph says it
+        belongs to an earlier moment ("at that point"), the same rule the suite
+        count already follows; the counts in `docs/progreso-agentico.md` and
+        `docs/workflows-lecciones.md` describe a past run and are out of scope.
+        """
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            import corpus_compiler
+            corpus = corpus_compiler.compile_corpus(ROOT / "library")
+        finally:
+            sys.path.remove(str(ROOT / "scripts"))
+        cases = len(corpus["cases"])
+        self.assertGreater(cases, 0, "el corpus no compiló: el escaneo está roto")
+        claim = re.compile(r"\b(\d+) (?:cases|casos|scenarios|escenarios)\b")
+        live = ("README.md", "README.es.md", "docs/status.md",
+                "docs/status.es.md", "docs/usage.md", "docs/usage.es.md")
+        for relative in live:
+            self.assertTrue((ROOT / relative).is_file(), f"falta {relative}")
+            claims = 0
+            for paragraph in self.read(relative).split("\n\n"):
+                text = re.sub(r"\s+", " ", paragraph)
+                lowered = text.lower()
+                for said in claim.findall(text):
+                    claims += 1
+                    if int(said) == cases:
+                        continue
+                    if "at that point" in lowered or "en ese punto" in lowered:
+                        continue
+                    with self.subTest(relative=relative, said=said):
+                        self.assertEqual(
+                            int(said), cases,
+                            f"{relative} publica {said} y el corpus compila {cases}")
+            self.assertGreater(claims, 0,
+                               f"{relative} no publica cifra de corpus que comprobar")
+
     def test_the_suite_runs_without_writing_to_stderr(self):
         """CLIs that must exit 2 write their complaint to stderr by design.
 

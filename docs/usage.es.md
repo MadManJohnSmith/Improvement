@@ -233,7 +233,7 @@ python3 -B scripts/bootstrap.py bound-skill-gate --corpus /ruta/externa/corpus.j
   --baseline /ruta/externa/baseline.json --candidate /ruta/externa/candidata.json \
   --baseline-digest <sha256> --candidate-digest <sha256> --report /ruta/externa/informe.json
 ```
-`compile-corpus` convierte los 55 escenarios de `library/` en casos ejecutables: `task`, fixture y
+`compile-corpus` convierte los 59 escenarios de `library/` en casos ejecutables: `task`, fixture y
 `evaluated_claim`, con `target` apuntando a la skill. **El veredicto esperado no viaja en el caso público** —se
 deriva en el Host y solo se usa si el `corpus_digest` recalculado coincide con el declarado, de modo que un corpus
 editado después de compilar se rechaza en vez de puntuarse—. Cada observación va ligada a corpus, candidato y

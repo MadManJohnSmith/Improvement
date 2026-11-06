@@ -1,5 +1,26 @@
 # Cambios
 
+## Retrospectiva de la sesión — 2026-11-05
+
+La cifra del corpus se publicaba como 55 escenarios en documentos vivos mientras
+`library/` compilaba 59: el cambio de biblioteca actualizó el golden de
+`test_corpus_gate` y las tablas de estado, pero no `docs/usage.md`/`.es.md` ni la
+sección D11 de ambos `docs/status`. La prueba nueva recorre README y los
+documentos de estado/uso y nombra el archivo que publica una cifra que ya no
+compila; una cifra anterior sigue permitida si el párrafo dice que pertenece a
+un momento anterior.
+
+- **`docs/usage.md`/`.es.md` y D11 de `docs/status.md`/`.es.md`**: 55 → 59 excepto
+  donde la frase describe el estado de D11, ahora marcado con "at that point" /
+  "en ese punto".
+- **`tests/test_architecture_consistency.py`**: `test_the_published_corpus_count_is_the_one_that_compiles`,
+  junto a la prueba equivalente para la suite.
+- **`.gitignore`**: `/.agents/` ignorado como `.zcode/`, porque es configuración
+  local del agente y no contenido del flujo; un `git add -A` lo coló en un commit
+  que hubo que enmendar.
+
+Suite: 1211 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Lectura delegada del Host — 2026-11-05
 
 Primera unidad del mecanismo ratificado para el gate de Creator (SoL-Pi): el Host
