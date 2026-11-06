@@ -5,7 +5,7 @@ versionados para que cualquier runner pueda repetir el caso (issue #14,
 spec #11). El contrato de ambos lo mantiene `tests/test_eval_config.py`.
 
 - `criteria-remote-creator.json` — criterio pre-registrado del caso. Lo
-  consume `scripts/creator_eval.py` tal cual (`_require_criteria`); el `id`
+  consume `scripts/creator_eval.py` tal cual (`require_criteria`); el `id`
   del caso llega al reporte (`report.json` → `case`).
 - `profile-dsh.patch.yml` — plantilla del patch de perfil de DSH 0.2.1,
   en el formato `cordis.patch.yml` de un bundle de perfil (array YAML de

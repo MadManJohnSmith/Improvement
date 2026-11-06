@@ -373,6 +373,16 @@ A workflow is declared in three layers, and its execution is mechanical by the H
 
 The default campaign (U6, still without operational acceptance) is generated deterministically in `.dsh-managed/campaign/` after publishing the presets: `preflight → audit → verify-pre → repair-1 → verify-post → repair-2 → verify-final → close` (`rondas_max=2`), with the structured result in `evidence/campana/` and the verdict derived from the product ledger in `evidence/veredicto.json`. Asks select the preset per step with fallback to the plan's preset; `if_veredicto` is skipped with `ASK_SKIPPED` unless it matches, and `result_contract.evidence_name` confines the evidence. The gate wrapper returns 0 PASS / 1 FAIL / 2 BLOCKED: BLOCKED is a value, not an event of its own, and the Host does not write the ledger. The plan remains in outline v1; there is no `bootstrap campaign`, no `gate.cwd` and no closed integration with `acceptance.py`. Current limit: a FAIL gate is not `STEP_COMPLETED` and the conditional ask that depends on it stays RETAINED instead of repairing; no verified complete cycle is declared.
 
+### 4.10 Remote evaluation of the Creator
+
+The quality of a Creator prompt version is evaluated remotely against a versioned synthetic product, never against an operator repository:
+
+- **Product fixture** (`fixtures/libreta/`): a complete minimal product whose `project-manifest.json` registers the framework tree digest of `product/` as its identity; the fixture gates live in `tests/test_fixtures.py`.
+- **Case artifacts** (`eval/`): `criteria-remote-creator.json`, the pre-registered criteria that `scripts/creator_eval.py` consumes verbatim, and `profile-dsh.patch.yml`, the DSH profile template whose `@NAME@` fill points are deliberately invalid YAML. The provider key is only referenced (`apiKeyEnv` names the environment variable the runner exports from the repository secret); no key value, provider or model is pinned into the repository.
+- **Manual workflow** (`.github/workflows/creator-remote-eval.yml`, `workflow_dispatch` only, because every run bills a real provider): renders the profile from the template, turns the fixture into a Git project with a deterministic commit (fixed author and dates, so the recorded `root_identity` is stable across runs), prepares the run with `bootstrap install --no-dispatch`, dispatches the Creator and grades the finished run. The verdict informs the merge; it does not block it mechanically, and the workflow never commits anything.
+- **Case builder** (`scripts/creator_case.py`): derives the case facts from the run's own evidence — model, usage, journal counts, duration from the journal frames, re-run Host prevalidation, and the product tree digest when the product root is passed — writing `facts.json`, `criteria.json` and the journal into the case directory. An undiscoverable journal and an unexpected validator exception are closed failures (no case is written); absent evidence is omitted, never invented.
+- **Roster row** (`scripts/creator_roster.py`): a closed, by-name projection of the graded case published as its own artifact beside the case and the run log; keeping the roster is a maintainer decision.
+
 ---
 
 ## 5. Layout of a generation

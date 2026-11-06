@@ -68,3 +68,21 @@ _Avoid_: Resumen del Host, Lectura por subagente
 **Decisión resuelta (Resolved Decision)**:
 Decisión cuyo razonamiento previo ya fijó la acción y sus argumentos literales, de modo que el recibo de la herramienta solo determina si está lista para ejecutarse. Su reutilización exige guardas sobre recibos observados, argumentos cerrados y un certificado que ligue plan, paso, predecesor y argumentos exactos.
 _Avoid_: Decisión cacheada, Memoización de prompts
+
+### Evaluación remota del Creator
+
+**Constructor de caso (Case Builder)**:
+El derivador del Host (`scripts/creator_case.py`) que reconstruye el caso de evaluación desde la evidencia propia de un run terminado del Creator: documentos del run, journal de la sesión de DSH, re-ejecución del manifiesto y de la prevalidación Host y, con la raíz del producto, el digest de árbol comparable. Escribe los hechos, los criterios y el journal en el directorio de caso y deja el veredicto al evaluador; lo que el run no registró se omite y el journal indescubrible o la excepción inesperada del validador son fallos cerrados, nunca hechos inventados.
+_Avoid_: Transcripción manual, Envoltorio del evaluador
+
+**Caso de evaluación (Evaluation Case)**:
+Directorio cerrado (`facts.json` + `criteria.json` + journal + `report.json`) que contiene todo lo que el evaluador calificó, con los digests de sus entradas retenidos en el reporte; es la unidad de evidencia de la evaluación remota del Creator y viaja íntegro como artefacto.
+_Avoid_: Carpeta del run, Informe suelto
+
+**Fila del roster (Roster Row)**:
+Proyección cerrada por nombre (las columnas del spec) del caso de evaluación calificado, derivada por `scripts/creator_roster.py` y publicada por el workflow como artefacto propio; lo que el caso no registró se omite. No es el roster de presets de la generación ACTIVE que el Host publica en DSH (el catálogo de modos instalados): esta fila es el registro histórico de una evaluación del Creator; los dos sentidos conviven y el spec no se renombra.
+_Avoid_: Volcado de facts, Roster de presets (sentido distinto)
+
+**Plantilla de perfil DSH (DSH Profile Template)**:
+El patch de perfil versionado en `eval/profile-dsh.patch.yml`, con puntos de relleno `@NOMBRE@` deliberadamente inválidos como YAML: el workflow lo copia como `cordis.patch.yml` del bundle del perfil y sustituye los marcadores desde entradas y secretos; la clave solo se referencia por `apiKeyEnv`, jamás por valor.
+_Avoid_: Perfil escrito a mano, Configuración del proveedor fijada

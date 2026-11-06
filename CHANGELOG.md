@@ -1,5 +1,129 @@
 # Cambios
 
+## eval-remota: arreglo de revisión — 2026-11-06
+
+El code-review del spec #11 (sobre los tickets #12–#16) encontró tres
+defectos del eje spec y cuatro del eje estándares; corregidos con
+regresiones.
+
+- **Identidad comparable del producto**: `root_identity` en run.json es el
+  sha256 del sha1 del commit del producto, que en CI varía por corrida y
+  nunca iguala el digest registrado en
+  `fixtures/libreta/project-manifest.json`. Ahora `creator_case` deriva
+  `product_tree_digest` con la convención del framework
+  (`acceptance_reviewer.tree_digest`) cuando recibe la raíz del producto
+  (`--project-root`, que pasa el workflow); sin raíz el campo se omite,
+  nunca se inventa. El workflow fija autor y fechas del commit del fixture
+  (commit determinista): `root_identity` estable entre corridas. La fila
+  del roster publica la columna nueva.
+- **Duración**: `elapsed_seconds` se deriva del journal (intervalo entre el
+  primer y el último frame con `time`, excluido el encabezado;
+  `creator_eval.frame_span_seconds`) y se omite sin evidencia.
+- **Prevalidación**: una excepción inesperada del validador Host aborta la
+  derivación como fallo cerrado (exit 2, sin caso) en lugar de puntuarse
+  como `prevalidation_passed=False` (infraestructura no es fallo del
+  prompt); el `ValueError` del validador (paquete ausente o ilegible)
+  sigue siendo prevalidación no superada, el veredicto del caso real
+  1.11.0.
+- **Estándares**: la regex `LITERAL_KEY` vive en
+  `tests/support_config_contract.py`; la política del home de DSH se
+  reutiliza de `creator_client` (`dsh_home_candidates`); los compartidos
+  de `creator_eval` pasan a API pública (`read_json`, `require_dict`,
+  `require_criteria`, `is_int`, `frame_count`, `read_events`,
+  `write_report`) y los predicados "registrado u omitir" se unifican en
+  `text_or_none`/`int_or_none`; el comentario de `resolve_dsh_home` se
+  mueve a su función.
+- **Documentación**: sección 4.10 de la arquitectura, estado comprobado y
+  glosario (constructor de caso, caso de evaluación, fila del roster,
+  plantilla de perfil DSH).
+
+Suite: 1289 pruebas en verde.
+
+## Fila del roster publicada como artefacto — 2026-11-06
+
+La evaluación remota no dejaba historia del mantenedor: el caso calificado
+quedaba como artefacto efímero y el roster seguía siendo transcripción
+manual (issue #16, spec #11).
+
+- **`scripts/creator_roster.py`** (nuevo): proyección cerrada por nombre
+  del caso evaluado (facts.json + report.json + el journal que el
+  evaluador calificó) a la fila del roster con las columnas del spec; lo
+  que el caso no registró se omite, ningún campo de más pasa, y el CLI
+  falla cerrado sin reporte o sin el journal referenciado.
+- **Workflow**: paso de derivación tras calificar y artefacto propio
+  `creator-eval-roster-row` con la misma condición de publicación que el
+  caso; versionar el roster sigue siendo decisión del mantenedor y el
+  workflow no commitea nada.
+- **Regresiones**: `tests/test_creator_roster.py` (caso sintético sin
+  datos reales: columnas exactas, filtrado de campos privados, fallo
+  cerrado) y `tests/test_workflow_remote_eval.py` (tres artefactos, único
+  commit del fixture).
+
+Suite: 1289 pruebas en verde.
+
+## Workflow manual de evaluación remota del Creator — 2026-11-06
+
+La evaluación dependía de la máquina del mantenedor: sin workflow,
+ninguna corrida remota era repetible por otro runner (issue #15,
+spec #11).
+
+- **`.github/workflows/creator-remote-eval.yml`** (nuevo, `workflow_dispatch`
+  solo: cada corrida gasta tokens de un proveedor real): preflight cerrado
+  antes del primer token (fixture, plantilla, criterio, URL pública,
+  secreto y zstd), render del perfil DSH desde la plantilla versionada,
+  fixture convertido en proyecto Git, run preparado con `bootstrap install
+  --no-dispatch`, despacho de `creator_client` con continuidad RETAINED
+  (exit 1 con veredicto visto continúa; un crash también sale 1) y caso
+  construido y calificado con `creator_eval --from-run`.
+- El veredicto informa el merge sin bloquearlo mecánicamente; solo un
+  fallo cerrado del constructor o del evaluador (exit 2) falla el paso.
+- **Regresiones**: `tests/test_workflow_remote_eval.py` — contrato de
+  textos y regex sin PyYAML y sin ejecutar el workflow: disparo manual
+  exclusivo, entradas sin proveedor por defecto, preflight antes del
+  despacho, render con marcadores cerrados, clave nunca impresa, sin
+  `localhost` en la configuración del proveedor, orden
+  fixture/run/despacho/evaluación y artefactos.
+
+Suite: 1289 pruebas en verde.
+
+## Fixture de producto libreta con identidad fijada — 2026-11-06
+
+La evaluación remota necesitaba un producto de entrada repetible y
+saneado (issue #13, spec #11).
+
+- **`fixtures/libreta/`** (nuevo): producto sintético completo (CLI de
+  libreta de notas: `src/`, `tests/`, `pyproject.toml`) con su
+  `project-manifest.json`; no lleva golden manifest, así que la puerta de
+  `tests/test_fixtures.py` se divide por clase declarada de fixture y los
+  manifests (syncify, rehabweb) conservan todos sus gates intactos.
+- La identidad registrada es el digest de árbol de `product/` con la
+  convención del framework, verificada y estable ante mtimes y copias.
+- Saneamiento ampliado a datos personales (correos y direcciones
+  postales) para todo `fixtures/`.
+
+Suite: 1289 pruebas en verde.
+
+## Constructor del caso desde el run terminado — 2026-11-06
+
+El evaluador exigía hechos transcritos a mano desde los documentos del run
+y el journal de la sesión: un caso no era reproducible sin ese trabajo
+manual (issue #12, spec #11).
+
+- **`scripts/creator_case.py`** (nuevo) y modo `--from-run` de
+  `scripts/creator_eval.py`: deriva los hechos del run (modelo desde el
+  request/header del journal, uso, pasos, motivo de parada y cursor de
+  creator-session.json, manifiesto y prevalidación re-ejecutados con
+  `host_validator`, conteos recalculados del journal con las reglas del
+  evaluador), descubre el journal escaneando `sessions/*/<sessionId>/` sin
+  reconstruir el slug, escribe el caso y lo califica con `evaluate_case`,
+  cuyo núcleo no cambia.
+- El journal indescubrible es un fallo cerrado (sin caso); la
+  inconsistencia entre hechos y journal la detecta grade() como ABSTAIN.
+- Verificado contra el caso real treatment-1.11.0: cada campo derivado
+  coincide con los hechos transcritos a mano y el veredicto se repite.
+
+Suite: 1289 pruebas en verde.
+
 ## eval: criterio versionado y plantilla de perfil DSH — 2026-11-06
 
 El caso remoto de Creator dependía de ficheros escritos a mano en la máquina
@@ -10,7 +134,7 @@ el repositorio, así que ningún otro runner podía repetir la evaluación
 - **`eval/criteria-remote-creator.json`**: el criterio del caso con `id`
   estable (`remote-creator-v1`), las lecturas prohibidas de los schemas de
   modos y skills, manifiesto y prevalidación requeridos; lo consume
-  `creator_eval._require_criteria` sin cambios en el núcleo de veredicto.
+  `creator_eval.require_criteria` sin cambios en el núcleo de veredicto.
 - **`eval/profile-dsh.patch.yml`**: plantilla del patch de perfil de DSH
   0.2.1 (formato `cordis.patch.yml`) con puntos de relleno `@NOMBRE@`
   deliberadamente YAML inválido; el workflow los sustituye (receta en
@@ -22,7 +146,7 @@ el repositorio, así que ningún otro runner podía repetir la evaluación
   rechaza; la plantilla exige referencias a variables de entorno, URL base
   solo por marcador, ninguna clave literal y ningún host local.
 
-Suite: 1262 pruebas en verde.
+Suite: 1289 pruebas en verde.
 
 ## Prompt 1.11.0: capacidades del contrato y raíces portables — 2026-11-06
 
