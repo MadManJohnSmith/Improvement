@@ -1,5 +1,22 @@
 # Cambios
 
+## Cableado del lector en el prompt del Creator — 2026-11-05
+
+Tres decisiones cerradas antes de tocar código: el destinatario es el Creator
+(no los modos), la superficie es la regla de economía de lectura que el Host ya
+deriva en el prompt, y el alcance es advisory — el script impone la forma de la
+vista, el Host no cambia su contrato de aceptación.
+
+- **`scripts/creator_client.py`**: regla nueva con el comando literal
+  `python3 -B <FRAMEWORK>/scripts/read_view.py --root <FRAMEWORK> --path ... --start/--end`
+  para archivos del framework que no quepan holgados; `PROMPT_VERSION` 1.8.0 → 1.9.0.
+- **`tests/test_creator_and_validator.py`**: la regla llega a los cinco tipos de
+  prompt con el comando absoluto y las cotas.
+- **`docs/status.md`/`.es.md`**: el lector pasa de "sin cablear" a cableado en el
+  prompt del Creator, sin evidencia de uso ni de ahorro todavía.
+
+Suite: 1212 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Retrospectiva de la sesión — 2026-11-05
 
 La cifra del corpus se publicaba como 55 escenarios en documentos vivos mientras

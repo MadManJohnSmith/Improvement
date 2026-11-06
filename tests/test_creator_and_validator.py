@@ -1663,6 +1663,31 @@ class CreatorTests(Base):
             self.assertIn('`description: "<texto>"`', prompt, ptype)
             self.assertIn("Nested mappings are not allowed", prompt, ptype)
 
+    def test_every_prompt_points_at_the_delegated_reader_for_large_files(self):
+        """A full schema is billed again as a cache read on every later turn.
+
+        The measured 79 % of cache reads is context re-sent, not new input, so
+        the lever is what the Creator puts in the window: a bounded view keeps
+        the original on disk. The command has to be literal and absolute, or
+        the Creator has to reconstruct a path the run already knows.
+        """
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        proj_manifest = {"base_revision": "rev-test"}
+        idx = {"entries": []}
+        command = (f"python3 -B {cc.FRAMEWORK}/scripts/read_view.py "
+                   f"--root {cc.FRAMEWORK} --path")
+        for ptype in cc.PROMPT_TYPES:
+            prompt = cc.build_creator_prompt(
+                self.run_dir, run_doc, proj_manifest, idx,
+                prompt_type=ptype,
+                context={"reason": "test retention", "skill_name": "test-skill"},
+            )
+            with self.subTest(prompt_type=ptype):
+                self.assertIn(command, prompt)
+                self.assertIn("--start", prompt)
+                self.assertIn("--end", prompt)
+                self.assertIn("sha256", prompt)
+
 
 def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
                     models=2, default_provider=None, extra_providers=()):

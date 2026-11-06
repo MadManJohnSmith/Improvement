@@ -51,7 +51,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.8.0"
+PROMPT_VERSION = "1.9.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -796,6 +796,14 @@ Reglas concretas de economía, derivadas de ensayos reales de este run:
   se leen **una sola vez cada uno** y ya: su lectura repetida es el mayor gasto
   medido de la generación. Cuando un error de la prevalidación Host nombre el
   campo, corrige el archivo y revalida: no releas el schema entero de nuevo.
+- Para un archivo del framework que no quepa holgado en el contexto (un schema
+  grande, un contrato o una fuente de más de ~200 líneas), no lo leas completo:
+  pide una vista acotada al lector del Host, que devuelve ruta, sha256 del archivo
+  completo, rango, total de líneas y el excerpt exacto:
+  `python3 -B {FRAMEWORK}/scripts/read_view.py --root {FRAMEWORK} --path <ruta relativa> --start <N> --end <M>`
+  El original permanece en disco y la vista es lo que entra en contexto; si el
+  rango no basta, pide el siguiente con `--start`/`--end`, nunca pegues el
+  archivo entero ni reimprimas lo que ya tienes.
 - No construyas paquetes de sondeo (`probe-generated`, `mode.json` vacío, manifest
   mínimo) para tantear al validador: cada sondeo devuelve el informe completo y se
   paga dos veces. Escribe el paquete real en `generated/` y validalo.
