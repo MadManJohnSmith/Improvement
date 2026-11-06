@@ -1,5 +1,23 @@
 # Cambios
 
+## Evaluador de Creator: núcleo de veredicto — 2026-11-05
+
+Primera rebanada del ticket 07 (spec #7): decidir una corrida deja de depender
+de leer el journal a mano. `creator_eval.grade` recibe hechos, eventos y el caso
+pre-registrado y devuelve un veredicto cerrado —PASS, FAIL_MECHANISM,
+FAIL_COMPLETION o ABSTAIN— con la evidencia de cada criterio.
+
+- **`scripts/creator_eval.py`**: función pura, sin E/S ni red. ABSTAIN precede a
+  cualquier veredicto (modelo, identidad, journal malformado, sin llamadas,
+  conteo/seq que no concuerdan); FAIL_COMPLETION por manifest o prevalidación;
+  FAIL_MECHANISM por lectura completa de un schema del caso; PASS si no hay
+  ninguna. Una vista del lector delegado no cuenta como lectura completa.
+- **`tests/test_creator_eval.py`**: 15 pruebas con journals sintéticos, incluida
+  la frontera de nombre (`my_modes.schema.json` no cuenta) y la determinación
+  byte a byte del informe.
+
+Suite: 1229 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Formas exactas en el prompt: el Creator no lee schemas que no redacta — 2026-11-05
 
 `initial_onboarding` y `skill_lifecycle` no escriben modos —los materializa el
