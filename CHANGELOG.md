@@ -1,6 +1,25 @@
 # Cambios
 
-## Retrospectiva global y adaptación del entorno — 2026-11-06
+## Tope de rounds del run, no de la invocación — 2026-11-05
+
+La reanudación rearmaba el tope de reintentos de un gate: con `rounds: 3`, un run
+retenido por `gate-rounds-exhausted` volvía a ejecutar el gate tres veces en el
+siguiente proceso aunque el journal ya registraba tres rechazos. El conteo de
+fase (`max_rounds`) sí se reconstruía del journal; el del paso no.
+
+- **`workflow.py`**: `_replay` cuenta los `GATE_REJECTED` por paso y
+  `_run_gate_attempts` arranca de ese conteo. Un paso agotado recibe un solo
+  intento de sonda al reanudar y vuelve a retenerse si falla; si la sonda pasa,
+  completa. Así el tope pertenece al run (el `run_id` deriva del plan y cambiar
+  `rounds` cambia de run) sin cerrar la vía de reparación del entorno.
+- **Regresión**: `test_reanudacion_conserva_el_tope_de_rounds` — tres rechazos,
+  reanudación fallida con un único intento 4, y `RUN_COMPLETED` tras reparar.
+- **Estado y README**: U1 declara el alcance del tope en ambos idiomas; el
+  recuento publicado de la suite pasa a 1255.
+
+Suite: 1255 pruebas en verde.
+
+## Retrospectiva global y adaptación del entorno — 2026-11-05
 
 Retrospectiva sobre las 3.252 sesiones locales de ZCode (136.565 llamadas de
 herramienta, 2.720 errores). La masa de errores no está en el flujo: rutas

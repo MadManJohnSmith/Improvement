@@ -316,6 +316,31 @@ class WorkflowExecutorTests(unittest.TestCase):
         self.assertEqual(emitted['result'], 'RETAINED')
         self.assertEqual(emitted['cause'], 'gate-rounds-exhausted:g1')
 
+    def test_reanudacion_conserva_el_tope_de_rounds(self):
+        flag = self.tmp / 'bandera'
+        plan_path = self.write_plan(
+            [self.gate('g1', ['test', '-f', str(flag)], action='retry', rounds=3)])
+        first = run_plan(plan_path)
+        self.assertEqual(first['result'], 'RETAINED')
+        self.assertEqual(first['cause'], 'gate-rounds-exhausted:g1')
+
+        # La reanudación sondea una vez: el tope ya agotado no se rearma.
+        second = run_plan(plan_path)
+        self.assertEqual(second['result'], 'RETAINED')
+        self.assertEqual(second['cause'], 'gate-rounds-exhausted:g1')
+        payloads = read_journal(second['run_dir'])
+        starts = [e['payload']['attempt'] for e in payloads
+                  if e['kind'] == 'STEP_STARTED']
+        self.assertEqual(starts, [1, 2, 3, 4])
+        self.assertEqual([e['kind'] for e in payloads].count('GATE_REJECTED'), 4)
+
+        # Con el entorno reparado, la sonda pasa y el run completa.
+        flag.write_text('')
+        third = run_plan(plan_path)
+        self.assertEqual(third['result'], 'COMPLETED')
+        kinds = [e['kind'] for e in read_journal(third['run_dir'])]
+        self.assertEqual(kinds.count('STEP_COMPLETED'), 1)
+
     # -- comando inexistente y exit >= 2: IMPOSSIBLE -> RETAINED
 
     def test_gate_imposible_comando_inexistente_y_exit_2(self):

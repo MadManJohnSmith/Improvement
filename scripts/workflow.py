@@ -1040,8 +1040,8 @@ def _ask_quiescent(client, session_id, state):
 
 def _empty_state():
     return {'completed': {}, 'failed_gates': {}, 'skipped': {}, 'attempts': {},
-            'phase': None, 'phase_started_ids': set(), 'plan_sha256': None,
-            'pending_asks': {}, 'started_reasoning': {}}
+            'rejections': {}, 'phase': None, 'phase_started_ids': set(),
+            'plan_sha256': None, 'pending_asks': {}, 'started_reasoning': {}}
 
 
 def _latest_ask_dispatch(run_dir, step_id, attempt):
@@ -1127,6 +1127,8 @@ def _replay(payloads, run_dir):
         elif kind == 'GATE_REJECTED':
             rejected_gates[(payload['step_id'], payload['attempt'])] = payload
             obs_digests[payload['observation']] = payload['output_sha256']
+            state['rejections'][payload['step_id']] = (
+                state['rejections'].get(payload['step_id'], 0) + 1)
             if state['phase'] is not None:
                 state['phase']['count'] += 1
 
@@ -1217,6 +1219,7 @@ class _Run:
         self.failed_gates = state['failed_gates']
         self.skipped = state['skipped']
         self.attempts = state['attempts']
+        self.rejections = state['rejections']
         self.phase = state['phase']
         self.phase_started_ids = state['phase_started_ids']
         self.pending_asks = state['pending_asks']
@@ -1400,7 +1403,9 @@ class _Run:
 
     def _run_gate_attempts(self, step, command, fds, action, rounds):
         step_id = step['id']
-        failures = 0
+        # El tope de rounds es del run, no de la invocación: los rechazos
+        # journalizados cuentan en la reanudación (como el conteo de fase).
+        failures = self.rejections.get(step_id, 0)
         while True:
             attempt = self.attempts.get(step_id, 0) + 1
             self.attempts[step_id] = attempt
@@ -1492,6 +1497,7 @@ class _Run:
                             and self.phase['count'] > self.phase['max_rounds']):
                         self._retain('fase-rounds-exceeded:' + self.phase['name'])
                 failures += 1
+                self.rejections[step_id] = failures
                 if action == 'retry':
                     if failures >= rounds:
                         self.record('ROUND_CAP_REACHED', {'step_id': step_id, 'rounds': rounds})
