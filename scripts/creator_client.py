@@ -51,7 +51,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.9.0"
+PROMPT_VERSION = "1.10.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -60,6 +60,51 @@ PROMPT_TYPES = (
     "repair_retained",
     "skill_lifecycle",
 )
+
+# Escenarios que no redactan modos: el Host ya materializó los tres. La forma
+# exacta sustituye a la lectura de `modes.schema.json` (702 líneas) y del
+# esquema de skills (233), no la amplía.
+LEAN_PROMPT_TYPES = ("initial_onboarding", "skill_lifecycle")
+
+SKILL_CONTRACT_EXAMPLE = {
+    "schema_version": 1,
+    "kind": "skill",
+    "name": "<name>",
+    "motive": "<motivo recurrente observado>",
+    "domain": ["<dominio>"],
+    "reuse_source": "base-library",
+    "reuse_reference": "<entrada exacta de la biblioteca>",
+    "inputs": ["<entrada>"],
+    "outputs": ["<salida>"],
+    "required_capabilities": ["fs-read"],
+    "forbidden_capabilities": ["network"],
+    "files": [{"path": "skills/<name>/SKILL.md", "type": "entrypoint"}],
+    "behavior_test": "<prueba ejecutable que observa la conducta>",
+    "provenance": {"license": "MIT", "source": "<ruta o URL de la fuente>"},
+}
+
+
+def _contract_rule(prompt_type):
+    """Return the exact contract shape this scenario is allowed to author."""
+    if prompt_type in LEAN_PROMPT_TYPES:
+        return (
+            "Forma exacta del contrato de skill (`contracts/<name>.skill.json`):\n\n"
+            "```json\n"
+            + json.dumps(SKILL_CONTRACT_EXAMPLE, ensure_ascii=False, indent=2)
+            + "\n```\n\n"
+            "Los tres modos de este escenario ya los escribió el Host: no redactes "
+            "un contrato de modo ni consultes su schema. La forma cubre los "
+            "campos obligatorios; si la prevalidación Host nombra un campo que no "
+            f"aparece, consulta `{FRAMEWORK}/schemas/skills.schema.json` una sola vez."
+        )
+    return (
+        "Todo contrato nuevo de modo/skill debe cumplir su schema y llevar "
+        "discriminador explícito: `kind: \"mode\"` para "
+        "`schemas/modes.schema.json`, o `kind: \"skill\"` para "
+        "`schemas/skills.schema.json`. `kind` es opcional únicamente para "
+        "preservar contratos schema v1 previos; no lo omitas en salidas nuevas "
+        "ni infieras variantes por campos como `motive`."
+    )
 
 CREATOR_INTERNAL_CAPABILITIES = [
     "project-discovery",
@@ -743,6 +788,7 @@ def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index,
     state_root = layout["state_root"]
     first_bash_command = startup_check(layout)
     base_rev = project_manifest.get("base_revision", "unknown")
+    contract_rule = _contract_rule(prompt_type)
 
     header = f"""# Creator Generation Request — {project_name}
 
@@ -792,10 +838,10 @@ Reglas concretas de economía, derivadas de ensayos reales de este run:
   No necesitas leerlos para copiarlos: céntrate en requisitos, escenarios,
   capacidades y skills específicas. Releerlos o reimprimirlos en bash para
   "inspeccionarlos" vuelve a gastar el contexto que ahorró el andamiaje.
-- Los schemas grandes (`schemas/modes.schema.json`, `schemas/skills.schema.json`)
-  se leen **una sola vez cada uno** y ya: su lectura repetida es el mayor gasto
+- Un schema se lee **una sola vez** y ya: su lectura repetida es el mayor gasto
   medido de la generación. Cuando un error de la prevalidación Host nombre el
   campo, corrige el archivo y revalida: no releas el schema entero de nuevo.
+  Si la forma exacta ya está en este prompt, no leas el schema que la respalda.
 - Para un archivo del framework que no quepa holgado en el contexto (un schema
   grande, un contrato o una fuente de más de ~200 líneas), no lo leas completo:
   pide una vista acotada al lector del Host, que devuelve ruta, sha256 del archivo
@@ -1065,11 +1111,8 @@ campos requeridos `schema_version,scenario_id,type,description,input,expected,sr
 `description`). Los campos opcionales de escenario son `target_mode`,
 `target_skill`, `holdout_family`, `verification_state`.
 
-Todo contrato nuevo de modo/skill debe cumplir su schema y llevar discriminador
-explícito: `kind: "mode"` para `schemas/modes.schema.json`, o `kind: "skill"`
-para `schemas/skills.schema.json`. `kind` es opcional únicamente para preservar
-contratos schema v1 previos; no lo omitas en salidas nuevas ni infieras variantes
-por campos como `motive`.
+{contract_rule}
+
 En `generation-manifest.json`, todo archivo cuyo basename sea `SKILL.md` debe
 usar artifact `type: "skill-entrypoint"`. Si una skill declara `routing`,
 Creator asocia nombre exacto de `skills/<name>/SKILL.md` con acciones/modos,

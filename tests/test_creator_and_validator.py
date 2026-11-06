@@ -1350,8 +1350,6 @@ class CreatorTests(Base):
         for value in gc.SCENARIO_TYPES | gc.SCENARIO_VERDICTS | gc.HOLDOUT_FAMILIES:
             self.assertIn(f"`{value}`", prompt)
         self.assertIn("schema_version,scenario_id,type,description,input,expected,sr_links", prompt)
-        self.assertIn('`kind: "mode"`', prompt)
-        self.assertIn('`kind: "skill"`', prompt)
         self.assertIn("SKILL.md` debe\nusar artifact `type: \"skill-entrypoint\"`", prompt)
         self.assertIn("frontmatter YAML mínimo válido", prompt)
         self.assertIn("`escalation_channel: forbidden`", prompt)
@@ -1687,6 +1685,52 @@ class CreatorTests(Base):
                 self.assertIn("--start", prompt)
                 self.assertIn("--end", prompt)
                 self.assertIn("sha256", prompt)
+
+    def _prompt_for(self, prompt_type):
+        run_doc = json.loads((self.run_dir / "run.json").read_text())
+        return cc.build_creator_prompt(
+            self.run_dir, run_doc, {"base_revision": "rev-test"},
+            {"entries": []}, prompt_type=prompt_type,
+            context={"reason": "test retention", "skill_name": "test-skill"})
+
+    def test_lean_prompt_types_inline_a_valid_skill_contract(self):
+        """A schema the Creator never needs is 233 lines of avoidable context.
+
+        `initial_onboarding` and `skill_lifecycle` write skills and the
+        acceptance plan; the three modes are Host-materialized. The shape is
+        inlined instead of pointing at `skills.schema.json`, and it is checked
+        by the same Host validator so the example cannot drift into a document
+        that would be rejected at acceptance.
+        """
+        schema = json.loads((ROOT / "schemas" / "skills.schema.json").read_text())
+        for prompt_type in ("initial_onboarding", "skill_lifecycle"):
+            prompt = self._prompt_for(prompt_type)
+            with self.subTest(prompt_type=prompt_type):
+                marker = "Forma exacta del contrato de skill"
+                self.assertIn(marker, prompt)
+                tail = prompt.split(marker, 1)[1]
+                block = tail.split("```json", 1)[1].split("```", 1)[0]
+                doc = json.loads(block)
+                gc.validate_skill_contract(doc)
+                self.assertEqual(set(schema["required"]) - set(doc), set())
+                self.assertNotIn("modes.schema.json", prompt)
+
+    def test_mode_writing_prompt_types_keep_the_full_schema_path(self):
+        """The three scenarios that can rewrite modes keep the escape hatch.
+
+        Closing the schema path everywhere would make the cheap path the only
+        path even when the Creator must inspect a mode contract the Host did
+        not materialize for that change.
+        """
+        for prompt_type in ("material_change_regeneration", "framework_update",
+                            "repair_retained"):
+            prompt = self._prompt_for(prompt_type)
+            with self.subTest(prompt_type=prompt_type):
+                self.assertIn("modes.schema.json", prompt)
+                self.assertIn("skills.schema.json", prompt)
+                self.assertIn('`kind: "mode"`', prompt)
+                self.assertIn('`kind: "skill"`', prompt)
+                self.assertNotIn("Forma exacta del contrato de skill", prompt)
 
 
 def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",

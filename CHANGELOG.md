@@ -1,5 +1,26 @@
 # Cambios
 
+## Formas exactas en el prompt: el Creator no lee schemas que no redacta — 2026-11-05
+
+`initial_onboarding` y `skill_lifecycle` no escriben modos —los materializa el
+Host— pero el prompt les anunciaba `modes.schema.json` (702 líneas) y
+`skills.schema.json` (233) como lecturas esperadas. La viñeta de economía ya no
+los nombra; en esos dos escenarios la forma exacta del contrato de skill se
+inlinea y se valida con `generation_contracts.validate_skill_contract`, así que
+el ejemplo no puede derivar en un documento que la aceptación rechazaría. Los
+tres escenarios que sí pueden reescribir modos conservan la ruta completa y el
+discriminador `kind`.
+
+- **`scripts/creator_client.py`**: `LEAN_PROMPT_TYPES`, `SKILL_CONTRACT_EXAMPLE` y
+  `_contract_rule(prompt_type)`; `PROMPT_VERSION` 1.9.0 → 1.10.0.
+- **`tests/test_creator_and_validator.py`**: dos pruebas en el seam del prompt —
+  la forma inline pasa el validador y cubre las 12 claves obligatorias; los tipos
+  que escriben modos conservan schema y `kind`.
+- **`docs/status.md`/`.es.md`**: la regla del lector queda fechada en la versión
+  vigente del prompt.
+
+Suite: 1214 pruebas en verde (11 omitidas sin el módulo DSH externo; 1 con él).
+
 ## Cableado del lector en el prompt del Creator — 2026-11-05
 
 Tres decisiones cerradas antes de tocar código: el destinatario es el Creator
