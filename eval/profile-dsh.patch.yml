@@ -7,8 +7,10 @@
 # Los marcadores se escriben de forma que una plantilla sin rellenar sea
 # YAML inválido: no puede cargarla nadie por descuido. La clave nunca entra
 # en este fichero: `apiKeyEnv` nombra la variable de entorno cuyo valor
-# exporta el runner desde el secreto del repositorio. Sin proveedor ni
-# modelo fijados: los aporta quien despacha.
+# exporta el runner desde el secreto del repositorio; en el modo keyless el
+# flujo elimina esa línea y DSH no envía cabecera de credencial (el
+# proveedor aplica su cupo anónimo). Sin proveedor, canal ni modelo
+# fijados: los aporta quien despacha.
 - id: llm-pi-ai
   name: "@deepseek-ai/dsh-llm-pi-ai"
   config:
@@ -16,7 +18,7 @@
       @DSH_PROFILE_PROVIDER@:
         displayName: @DSH_PROFILE_PROVIDER@
         apiKeyEnv: DSH_PROVIDER_API_KEY
-        api: openai-responses
+        api: @DSH_PROFILE_API@
         baseURL: @DSH_PROFILE_BASE_URL@
         models:
           - id: @DSH_PROFILE_MODEL@

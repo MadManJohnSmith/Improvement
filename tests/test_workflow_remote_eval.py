@@ -210,6 +210,10 @@ class PreflightTest(unittest.TestCase):
                           f"el preflight no cierra {window} como entero")
         self.assertIn('[ -n "$DSH_PROVIDER_API_KEY" ] ||', script,
                       "el preflight no cierra el secreto vacío")
+        self.assertIn('case "$AUTH" in', script,
+                      "el secreto solo se exige en el modo secret")
+        self.assertIn("keyless)", script,
+                      "el modo keyless prescinde de la clave del proveedor")
         self.assertRegex(
             text, r"(?m)^\s*DSH_HOME: \$\{\{ runner\.temp \}\}",
             "DSH_HOME no apunta a un home local del runner")
@@ -237,7 +241,7 @@ class ProfileRenderTest(unittest.TestCase):
         template = (ROOT / "eval" / "profile-dsh.patch.yml").read_text(
             encoding="utf-8")
         markers = sorted(set(re.findall(r"@([A-Z_]+)@", template)))
-        self.assertEqual(len(markers), 5,
+        self.assertEqual(len(markers), 6,
                          "la plantilla declara los marcadores de la receta")
         render = [step for step in steps
                   if "@DSH_PROFILE_PROVIDER@" in _script(step)]
@@ -277,6 +281,41 @@ class ProfileRenderTest(unittest.TestCase):
                 f"configuración del proveedor con host local: {line.strip()}")
         self.assertNotIn("http://", text,
                          "toda URL pública del workflow es https")
+
+
+class KeylessAuthTest(unittest.TestCase):
+    def test_keyless_mode_strips_the_credential_reference_after_render(self):
+        """auth=keyless removes apiKeyEnv so DSH sends no credential header.
+
+        The opencode free tier accepts anonymous requests and answers with
+        its own usage limit, not an authentication error (probed directly
+        against its public endpoint). DSH only omits the header when the
+        profile carries no `apiKeyEnv` at all: its own MISSING_CREDENTIAL
+        message documents removing it for providers that authenticate from
+        pi-ai's environment discovery, which on a clean runner finds
+        nothing. The strip runs after the render and before the dispatch,
+        guarded by the auth mode, and in secret mode the line survives so
+        the runner-exported secret keeps working.
+        """
+        text = _workflow_text()
+        steps = _steps(text)
+        render = [index for index, step in enumerate(steps)
+                  if "@DSH_PROFILE_PROVIDER@" in _script(step)]
+        dispatch = [index for index, step in enumerate(steps)
+                    if "creator_client.py" in _script(step)]
+        strip = [index for index, step in enumerate(steps)
+                 if "apiKeyEnv:/d" in _script(step)]
+        self.assertEqual(len(strip), 1,
+                         "la eliminación de apiKeyEnv es un paso único")
+        self.assertLess(render[0], strip[0],
+                        "el modo keyless actúa tras el render del perfil")
+        self.assertLess(strip[0], dispatch[0],
+                        "el modo keyless actúa antes de despachar el Creator")
+        script = _script(steps[strip[0]])
+        self.assertIn('[ "$AUTH" = "keyless" ]', script,
+                      "la eliminación está guardada por el modo de auth")
+        self.assertIn("cordis.patch.yml", script,
+                      "la eliminación opera sobre el perfil renderizado")
 
 
 class SecretHandlingTest(unittest.TestCase):
@@ -531,11 +570,15 @@ class DispatchInputsTest(unittest.TestCase):
         the chosen model are overridable because the profile template needs
         them, with defaults from the observed case. The prompt_version
         default is bound to the Creator's own PROMPT_VERSION so it cannot
-        rot when the prompt moves.
+        rot when the prompt moves. The provider API channel and the auth
+        mode are inputs too: the endpoint picks the protocol
+        (openai-completions for opencode, openai-responses for the observed
+        omniroute case) and the auth mode picks secret versus keyless.
         """
         inputs = _dispatch_inputs(_workflow_text())
         for name in ("model", "provider_base_url", "prompt_version",
-                     "budget", "context_window", "max_tokens", "fixture"):
+                     "budget", "context_window", "max_tokens", "fixture",
+                     "provider_api", "auth"):
             self.assertIn(name, inputs,
                           f"falta la entrada {name} del dispatch")
         self.assertTrue(inputs["model"]["required"])
@@ -544,6 +587,11 @@ class DispatchInputsTest(unittest.TestCase):
         self.assertTrue(inputs["provider_base_url"]["required"])
         self.assertNotIn("default", inputs["provider_base_url"],
                          "la URL base no lleva defecto: sin proveedor fijado")
+        self.assertEqual(inputs["auth"].get("default"), "secret",
+                         "el modo de autenticación por defecto es el secreto")
+        self.assertEqual(inputs["provider_api"].get("default"),
+                         "openai-completions",
+                         "el canal por defecto es el OpenAI estándar")
         for name, default in (("prompt_version", None), ("budget", None),
                               ("fixture", None), ("context_window", None),
                               ("max_tokens", None)):

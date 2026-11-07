@@ -1,5 +1,21 @@
 # Cambios
 
+## eval-remota: modo keyless y canal de API adaptables — 2026-11-06
+
+Adaptación del workflow de evaluación remota para el tier gratuito de
+opencode, que acepta peticiones anónimas (verificado contra su endpoint
+público: el límite del tier responde con `FreeUsageLimitError`, no con
+error de autenticación) y habla `openai-completions`.
+
+- La plantilla del perfil convierte el canal en punto de relleno
+  (`@DSH_PROFILE_API@`); el workflow lo recibe como entrada
+  `provider_api` con defecto `openai-completions`.
+- Nueva entrada `auth` (`secret` por defecto, `keyless`): en keyless el
+  preflight no exige el secreto y un paso posterior al render elimina la
+  línea `apiKeyEnv` del perfil, con lo que DSH no envía cabecera de
+  credencial (comportamiento documentado por su propio
+  `MISSING_CREDENTIAL`). Receta y ejemplo de opencode en `eval/README.md`.
+
 ## eval-remota: arreglo de revisión — 2026-11-06
 
 El code-review del spec #11 (sobre los tickets #12–#16) encontró tres

@@ -31,6 +31,7 @@ TEMPLATE_PATH = EVAL / "profile-dsh.patch.yml"
 # cannot load, so no run ever uses a guessed URL or provider.
 MARKERS = {
     "DSH_PROFILE_PROVIDER",
+    "DSH_PROFILE_API",
     "DSH_PROFILE_BASE_URL",
     "DSH_PROFILE_MODEL",
     "DSH_PROFILE_CONTEXT_WINDOW",
@@ -111,16 +112,18 @@ class ProfileTemplateTest(unittest.TestCase):
             self.assertIn(f"@{marker}@", self.text)
 
     def test_the_profile_template_keeps_the_loader_contract_that_worked(self):
-        """The two loader entries DSH 0.2.1 consumes, over the responses API.
+        """The two loader entries DSH 0.2.1 consumes, with the channel as a fill point.
 
-        The entry ids are upstream plugin names, not provider identity; the
-        `openai-responses` channel is the one the observed case validated.
+        The entry ids are upstream plugin names, not provider identity. The
+        API channel is a fill point too: `openai-responses` is the channel
+        the omniroute case validated, `openai-completions` the one the
+        opencode free tier speaks; the workflow brings it per dispatch.
         """
         for line in ("- id: llm-pi-ai",
                      'name: "@deepseek-ai/dsh-llm-pi-ai"',
                      "- id: agent-default-model",
                      'name: "@deepseek-ai/dsh-agent-default-model"',
-                     "api: openai-responses"):
+                     "api: @DSH_PROFILE_API@"):
             self.assertIn(line, self.text)
         # agent-default-model must point at the same fill points, so the
         # substituted profile stays internally consistent.

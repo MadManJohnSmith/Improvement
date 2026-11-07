@@ -24,6 +24,25 @@ on:
         description: 'URL base pública del proveedor (https; sin localhost)'
         required: true
         type: string
+      provider_api:
+        description: >-
+          Canal de API del proveedor: openai-completions (el OpenAI
+          estándar, el de opencode) u openai-responses (el validado con
+          omniroute)
+        required: false
+        default: 'openai-completions'
+        type: string
+      auth:
+        description: >-
+          Modo de autenticación: secret exporta el secreto
+          DSH_PROVIDER_API_KEY; keyless renderiza el perfil sin apiKeyEnv
+          y el proveedor aplica su cupo anónimo (tier gratuito de opencode)
+        required: false
+        default: 'secret'
+        type: choice
+        options:
+          - secret
+          - keyless
       budget:
         description: 'Techo de tokens facturables del run Creator'
         required: false
@@ -72,6 +91,8 @@ jobs:
       PROMPT_VERSION: ${{ inputs.prompt_version }}
       MODEL: ${{ inputs.model }}
       PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
+      PROVIDER_API: ${{ inputs.provider_api }}
+      AUTH: ${{ inputs.auth }}
       BUDGET: ${{ inputs.budget }}
       CONTEXT_WINDOW: ${{ inputs.context_window }}
       MAX_TOKENS: ${{ inputs.max_tokens }}
@@ -132,8 +153,20 @@ jobs:
           case "$MAX_TOKENS" in ''|*[!0-9]*)
             fail "max_tokens debe ser un entero (techo de salida del modelo)" ;;
           esac
-          [ -n "$DSH_PROVIDER_API_KEY" ] ||
-            fail "el secreto DSH_PROVIDER_API_KEY está vacío"
+          case "$AUTH" in
+            secret)
+              [ -n "$DSH_PROVIDER_API_KEY" ] ||
+                fail "el secreto DSH_PROVIDER_API_KEY está vacío"
+              ;;
+            keyless)
+              # Sin clave: el perfil va sin apiKeyEnv (paso siguiente al
+              # render) y DSH no envía cabecera de credencial; el proveedor
+              # la trata como uso anónimo de su tier gratuito.
+              ;;
+            *)
+              fail "auth debe ser secret o keyless"
+              ;;
+          esac
           command -v zstd >/dev/null ||
             fail "falta el descompresor zstd"
           command -v node >/dev/null ||
@@ -181,6 +214,7 @@ jobs:
               "[]\n", encoding="utf-8")
           PY
           sed -e "s|@DSH_PROFILE_PROVIDER@|$PROVIDER|g" \
+              -e "s|@DSH_PROFILE_API@|$PROVIDER_API|g" \
               -e "s|@DSH_PROFILE_BASE_URL@|$PROVIDER_BASE_URL|g" \
               -e "s|@DSH_PROFILE_MODEL@|$MODEL|g" \
               -e "s|@DSH_PROFILE_CONTEXT_WINDOW@|$CONTEXT_WINDOW|g" \
@@ -190,6 +224,17 @@ jobs:
             echo "render: quedaron marcadores sin sustituir en el perfil" |
               tee -a "$RUN_LOG" >&2
             exit 1
+          fi
+
+      - name: Modo keyless del perfil
+        run: |
+          # auth=keyless: sin la línea apiKeyEnv el plugin llm-pi-ai de DSH
+          # no exige credencial (su MISSING_CREDENTIAL lo documenta) y
+          # envía la petición sin cabecera de autenticación; el proveedor
+          # la trata como uso anónimo de su tier gratuito. En auth=secret
+          # la línea queda y el runner exporta el secreto como su valor.
+          if [ "$AUTH" = "keyless" ]; then
+            sed -i '/apiKeyEnv:/d' "$DSH_HOME/profiles/web/cordis.patch.yml"
           fi
 
       - name: Fixture como proyecto Git

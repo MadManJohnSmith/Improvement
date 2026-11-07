@@ -19,6 +19,7 @@ workflow la copia como `cordis.patch.yml` dentro del bundle de perfil y
 sustituye los marcadores antes de instalarlo, por ejemplo:
 
     sed -e "s|@DSH_PROFILE_PROVIDER@|$PROVIDER|g" \
+        -e "s|@DSH_PROFILE_API@|$PROVIDER_API|g" \
         -e "s|@DSH_PROFILE_BASE_URL@|$BASE_URL|g" \
         -e "s|@DSH_PROFILE_MODEL@|$MODEL|g" \
         -e "s|@DSH_PROFILE_CONTEXT_WINDOW@|$CONTEXT_WINDOW|g" \
@@ -31,9 +32,33 @@ sustituye los marcadores antes de instalarlo, por ejemplo:
   workflow.
 - `$MODEL`, `$CONTEXT_WINDOW`, `$MAX_TOKENS`: modelo y sus ventanas de
   contexto y salida; entradas del workflow.
+- `$PROVIDER_API`: canal de la API que habla el endpoint
+  (`openai-completions`, el OpenAI estándar, u `openai-responses`, el
+  validado con omniroute); entrada del workflow.
+
+## Modo keyless
+
+Con `auth=keyless` el workflow **elimina la línea `apiKeyEnv:`** del
+patch renderizado (`sed -i '/apiKeyEnv:/d'`). Sin esa línea, el plugin
+`llm-pi-ai` de DSH no exige credencial (su error `MISSING_CREDENTIAL` lo
+documenta: "remove apiKeyEnv only if this provider should authenticate
+from pi-ai's own environment discovery") y envía la petición sin
+cabecera de autenticación. Verificado contra el endpoint público de
+opencode: una petición anónima se evalúa contra el cupo gratuito (la
+respuesta es su propio `FreeUsageLimitError` al agotarse, nunca un error
+de autenticación). Con `auth=secret` la línea queda y el runner exporta
+el secreto `DSH_PROVIDER_API_KEY` como su valor.
+
+Ejemplo con el tier gratuito de opencode (valores del endpoint público
+`/inference/v1/models`): `$PROVIDER_API=openai-completions`,
+`$BASE_URL=https://opencode.ai/inference/openai/v1`,
+`$MODEL=deepseek-v4.1-flash-free`, `$CONTEXT_WINDOW=200000`,
+`$MAX_TOKENS=32000`. El límite del tier gratuito es por peticiones, no
+por tokens: si el run lo agota, el journal y el log del run lo muestran
+(`FreeUsageLimitError`) y el caso queda como evidencia, no como fallo
+del prompt.
 
 La clave nunca pasa por el repositorio: `apiKeyEnv: DSH_PROVIDER_API_KEY`
 es el **nombre** de la variable de entorno cuyo valor exporta el runner
 desde el secreto del repositorio antes de lanzar DSH; el perfil solo la
-referencia. El canal fijado es `api: openai-responses`, el validado en el
-caso observado.
+referencia.
