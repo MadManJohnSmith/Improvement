@@ -215,10 +215,18 @@ class PreflightTest(unittest.TestCase):
         self.assertIn("keyless)", script,
                       "el modo keyless prescinde de la clave del proveedor")
         self.assertRegex(
-            text, r"(?m)^\s*DSH_HOME: \$\{\{ runner\.temp \}\}",
-            "DSH_HOME no apunta a un home local del runner")
+            text, r'(?m)^\s*EVAL_ROOT="\$RUNNER_TEMP/creator-eval"',
+            "los directorios efímeros cuelgan del temp del runner")
+        self.assertRegex(
+            text, r'(?m)^\s*DSH_HOME="\$EVAL_ROOT/dsh-home"',
+            "DSH_HOME apunta a un home local del runner, nunca al de nadie")
         self.assertNotIn("~/.dsh", text)
         self.assertNotIn("$HOME/.dsh", text)
+        self.assertNotIn(
+            "${{ runner.", text,
+            "el contexto runner no está disponible en el env del job y "
+            "GitHub rechaza el workflow al dispararlo (HTTP 422): los "
+            "directorios efímeros se publican por GITHUB_ENV con RUNNER_TEMP")
 
 
 class ProfileRenderTest(unittest.TestCase):
@@ -540,7 +548,7 @@ class RosterRowArtifactTest(unittest.TestCase):
         self.assertLess(graded, steps.index(derived[0]),
                         "la fila se deriva tras calificar el caso")
         self.assertRegex(
-            text, r"(?m)^\s*ROSTER_ROW: \$\{\{ runner\.temp \}\}",
+            text, r'(?m)^\s*ROSTER_ROW="\$EVAL_ROOT/roster-row\.json"',
             "la fila no vive bajo el temp del runner")
         uploads = [step for step in steps if step["attrs"].get(
             "uses", [""])[0].startswith("actions/upload-artifact")]

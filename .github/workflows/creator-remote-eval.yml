@@ -77,17 +77,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
-      # Todo lo efímero vive fuera del checkout y fuera de cualquier
-      # repositorio: bootstrap exige un workspace externo al framework y al
-      # proyecto, y el home de DSH es un home local del runner, nunca el
-      # home por defecto del usuario (docs/setup-dsh.md).
-      EVAL_ROOT: ${{ runner.temp }}/creator-eval
-      CASE_DIR: ${{ runner.temp }}/creator-eval/case
-      PROJECT_DIR: ${{ runner.temp }}/creator-eval/project
-      WORKSPACE_DIR: ${{ runner.temp }}/creator-eval/workspace
-      RUN_LOG: ${{ runner.temp }}/creator-eval/run.log
-      ROSTER_ROW: ${{ runner.temp }}/creator-eval/roster-row.json
-      DSH_HOME: ${{ runner.temp }}/creator-eval/dsh-home
       PROMPT_VERSION: ${{ inputs.prompt_version }}
       MODEL: ${{ inputs.model }}
       PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
@@ -100,14 +89,40 @@ jobs:
     steps:
       - name: Abrir el log del run
         run: |
+          # Los directorios efímeros se fijan aquí con RUNNER_TEMP y se
+          # publican para los pasos siguientes vía GITHUB_ENV: el contexto
+          # runner no está disponible en el env de un job y GitHub
+          # rechazaría el workflow al dispararlo. Todo lo efímero vive
+          # fuera del checkout y fuera de cualquier repositorio: bootstrap
+          # exige un workspace externo al framework y al proyecto, y el
+          # home de DSH es un home local del runner, nunca el home por
+          # defecto del usuario (docs/setup-dsh.md).
+          EVAL_ROOT="$RUNNER_TEMP/creator-eval"
+          CASE_DIR="$EVAL_ROOT/case"
+          PROJECT_DIR="$EVAL_ROOT/project"
+          WORKSPACE_DIR="$EVAL_ROOT/workspace"
+          RUN_LOG="$EVAL_ROOT/run.log"
+          ROSTER_ROW="$EVAL_ROOT/roster-row.json"
+          DSH_HOME="$EVAL_ROOT/dsh-home"
           mkdir -p "$EVAL_ROOT"
           {
             echo "== evaluación remota del Creator =="
             echo "prompt_version: $PROMPT_VERSION"
             echo "model: $MODEL"
+            echo "provider_api: $PROVIDER_API"
+            echo "auth: $AUTH"
             echo "fixture: $FIXTURE"
             echo "budget: $BUDGET"
           } > "$RUN_LOG"
+          {
+            echo "EVAL_ROOT=$EVAL_ROOT"
+            echo "CASE_DIR=$CASE_DIR"
+            echo "PROJECT_DIR=$PROJECT_DIR"
+            echo "WORKSPACE_DIR=$WORKSPACE_DIR"
+            echo "RUN_LOG=$RUN_LOG"
+            echo "ROSTER_ROW=$ROSTER_ROW"
+            echo "DSH_HOME=$DSH_HOME"
+          } >> "$GITHUB_ENV"
 
       - name: Checkout del framework
         uses: actions/checkout@v4
