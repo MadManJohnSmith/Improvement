@@ -1,5 +1,19 @@
 # Cambios
 
+## ADR 0004: revisión convergente, consejo estrecho y compresión con evidencia — 2026-11-06
+
+Prácticas de dos charlas de ingeniería con agentes, contrastadas contra el
+repositorio y reducidas a lo que faltaba:
+
+- `docs/adr/0004-revision-convergente-y-compresion-con-evidencia.md`: fija
+  cuatro decisiones y sus descartes. Revisión por veredicto con tope de tres
+  rondas y re-revisión incremental; consejo de segunda familia solo para
+  diseño/ADR y solo del lado del mantenedor (el runtime distribuido prohíbe
+  delegación); compresión en dos fases solo con eval ejecutable, con el
+  piloto diferido al roster de #11; jerarquía código > estático > prosa.
+- `AGENTS.md`: la jerarquía queda escrita para que un agente no recurra a
+  prosa primero ante un fallo repetido.
+
 ## Retro: guardrails de suite y workflows — 2026-11-06
 
 Candidatos de la retrospectiva de las dos sesiones del día, convertidos en

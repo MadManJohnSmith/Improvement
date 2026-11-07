@@ -14,7 +14,7 @@ Este repositorio contiene el flujo distribuible, no el workspace de un proyecto 
 
 El mantenedor guía ensayos con DSH Standard, evalúa evidencia real de las sesiones y convierte fallos relevantes en cambios del flujo y regresiones. Standard y los modos/skills genéricos del MVP son herramientas de construcción y fixtures; **no son la distribución final para proyectos nuevos**. Tras C0–C7, Creator generará `<Proyecto>-auditor` y `<Proyecto>-continuous-repair` específicos. Los IDs de sesión de DSH no son IDs de ZCode: usar una fuente disponible y autorizada, sin inventar acceso entre sistemas ni importar historiales privados al repo.
 
-Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimos. No repetir toda la arquitectura ni exigir aprobación por cada subpaso ya autorizado. No afirmar autonomía, carga de skills o aislamiento a partir de un prompt o un estado declarativo.
+Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimos. Ante un fallo repetido de un agente, el orden es estructura o código que impida el error, después check estático o prueba que lo atrape, y solo si ninguno puede, prosa en AGENTS.md o skills. No repetir toda la arquitectura ni exigir aprobación por cada subpaso ya autorizado. No afirmar autonomía, carga de skills o aislamiento a partir de un prompt o un estado declarativo.
 
 Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas externas, actualizar estado/documentación si corresponde, revisar lo que se versionará y dejar el árbol limpio tras un commit autorizado. Si hay trabajo ajeno, no descartarlo ni incluirlo para aparentar limpieza; señalarlo.
 
