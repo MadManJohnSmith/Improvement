@@ -106,3 +106,7 @@ _Avoid_: Prueba E2E libre, Simulación improvisada
 **Aceptación de caso (Case Acceptance)**:
 Acto del mantenedor que versiona la fila del roster de un caso tras revisar sus artefactos; el workflow nunca se auto-acepta ni commitea.
 _Avoid_: PASS automático, Cierre por veredicto
+
+**Veredicto esperado del corpus (Expected Verdict)**:
+El veredicto del conjunto cerrado que el mantenedor validó al aceptar un caso y que el índice del corpus registra como expectativa: describe la evidencia registrada, nunca el comportamiento deseado del prompt. El puntaje del corpus cuenta coincidencias entre veredicto esperado y veredicto recalificado sobre el journal congelado, de modo que un corpus aceptado es correcto por construcción y su recalificación es guarda de integridad del evaluador y del corpus, no medida del prompt vigente ni colina de mejora.
+_Avoid_: Veredicto deseado, PASS esperado de un caso rojo, Meta de optimización
