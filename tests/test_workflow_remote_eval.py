@@ -400,9 +400,16 @@ class RunPreparationTest(unittest.TestCase):
                      '--workspace "$WORKSPACE_DIR"'):
             self.assertIn(flag, prepared_script,
                           f"el run no se prepara con {flag}")
+        # La exportación usa el MISMO nombre que consumen los pasos
+        # siguientes ($RUN_DIR en despacho y evaluación): un desajuste de
+        # caja expone una variable vacía y el Creator busca run.json en el
+        # checkout (fallo real del primer despacho remoto).
         self.assertRegex(
-            prepared_script, r'echo "run_dir=\$RUN_DIR" >> "\$GITHUB_ENV"',
+            prepared_script, r'echo "RUN_DIR=\$RUN_DIR" >> "\$GITHUB_ENV"',
             "el run_dir no se exporta para los pasos siguientes")
+        self.assertNotRegex(
+            prepared_script, r'echo "run_dir=',
+            "la exportación en minúsculas no la consume nadie")
         order = [steps.index(fixture[0]), steps.index(prepared[0]),
                  [index for index, step in enumerate(steps)
                   if "creator_client.py" in _script(step)][0]]

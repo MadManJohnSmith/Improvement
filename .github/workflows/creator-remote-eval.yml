@@ -287,7 +287,10 @@ jobs:
             --no-dispatch > "$EVAL_ROOT/install.json" 2>> "$RUN_LOG"
           RUN_DIR="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["run_dir"])' "$EVAL_ROOT/install.json")"
           echo "run preparado: $RUN_DIR" | tee -a "$RUN_LOG"
-          echo "run_dir=$RUN_DIR" >> "$GITHUB_ENV"
+          # El nombre exportado es el mismo que consumen el despacho y la
+          # evaluación ($RUN_DIR): una desajuste de caja dejaría la
+          # variable vacía y el Creator buscaría run.json en el checkout.
+          echo "RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
 
       - name: Despachar el Creator
         env:
