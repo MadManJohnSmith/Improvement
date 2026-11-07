@@ -416,6 +416,19 @@ class RunPreparationTest(unittest.TestCase):
         self.assertEqual(order, sorted(order),
                         "fixture, run y despacho no van en orden")
 
+    def test_the_dsh_npm_spec_is_pinned_for_the_runner(self):
+        """The registry only ships DSH prereleases; the workflow pins one.
+
+        `npx -y @deepseek-ai/dsh@*` matches no published version (every
+        release is a prerelease), which is how the first remote dispatch
+        failed: `dsh web` never started. The workflow pins the spec the
+        local evaluation validated, and creator_client honors it via
+        DSH_NPM_SPEC.
+        """
+        self.assertIn("DSH_NPM_SPEC: '@deepseek-ai/dsh@0.2.2-rc.1'",
+                      _workflow_text(),
+                      "el workflow no fija el spec npm de DSH")
+
 
 class DispatchContinuityTest(unittest.TestCase):
     def test_a_retained_run_continues_into_evaluation(self):

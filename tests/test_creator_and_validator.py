@@ -3653,5 +3653,44 @@ class ValidatorTests(Base):
         self.assertFalse(capabilities["passed"])
 
 
+class DshNpmSpecTests(unittest.TestCase):
+    """El spec npm de DSH es fijable por entorno; el defecto no cambia."""
+
+    def test_the_headless_default_keeps_the_bare_package(self):
+        """Sin DSH_NPM_SPEC, el argv sigue siendo el paquete pelado.
+
+        En local npx resuelve por caché; fijar una versión por defecto
+        sería fijar el runtime del framework en código.
+        """
+        with unittest.mock.patch.dict(os.environ):
+            os.environ.pop("DSH_NPM_SPEC", None)
+            self.assertEqual(cc.dsh_headless_command()[2], "@deepseek-ai/dsh")
+
+    def test_launch_commands_honor_dsh_npm_spec(self):
+        """DSH_NPM_SPEC fija el spec que npx instala.
+
+        El registro público solo publica prereleases de DSH, así que
+        `npx -y @deepseek-ai/dsh@*` no casa ninguna versión (ETARGET,
+        primer despacho remoto): el workflow fija la versión validada y
+        ambos caminos de lanzamiento la usan.
+        """
+        seen = []
+
+        def record(argv, **kwargs):
+            seen.append(list(argv))
+            raise RuntimeError("stop")
+
+        with unittest.mock.patch.dict(
+                os.environ, {"DSH_NPM_SPEC": "@deepseek-ai/dsh@0.2.2-rc.1"}):
+            self.assertEqual(cc.dsh_headless_command()[2],
+                             "@deepseek-ai/dsh@0.2.2-rc.1")
+            with unittest.mock.patch.object(cc.subprocess, "Popen",
+                                            side_effect=record):
+                with self.assertRaises(RuntimeError):
+                    cc.launch_dsh_web()
+        self.assertEqual(seen[0][:3],
+                         ["npx", "-y", "@deepseek-ai/dsh@0.2.2-rc.1"])
+
+
 if __name__ == "__main__":
     unittest.main()

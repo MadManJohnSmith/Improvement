@@ -86,6 +86,11 @@ jobs:
       CONTEXT_WINDOW: ${{ inputs.context_window }}
       MAX_TOKENS: ${{ inputs.max_tokens }}
       FIXTURE: ${{ inputs.fixture }}
+      # El registro npm solo publica prereleases de DSH: el spec pelado
+      # (@deepseek-ai/dsh@*) no casa ninguno y `dsh web` no arranca
+      # (ETARGET, primer despacho remoto). Se fija la versión validada en
+      # la evaluación local; creator_client la usa vía DSH_NPM_SPEC.
+      DSH_NPM_SPEC: '@deepseek-ai/dsh@0.2.2-rc.1'
     steps:
       - name: Abrir el log del run
         run: |

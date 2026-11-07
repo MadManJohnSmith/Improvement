@@ -1890,8 +1890,18 @@ def _patched_launch_command(command):
     return [*command, "--patch", str(DSH_PLUGIN_PATCH)]
 
 
-def dsh_headless_command(command=("npx", "-y", "@deepseek-ai/dsh",
-                                 "--profile", "headless")):
+def dsh_npm_spec():
+    """Spec npm del paquete DSH que npx debe instalar.
+
+    ``DSH_NPM_SPEC`` lo fija (por ejemplo ``@deepseek-ai/dsh@0.2.2-rc.1``
+    en CI, donde el registro solo publica prereleases y el spec pelado
+    ``@deepseek-ai/dsh@*`` no casa ninguno); el defecto queda pelado para
+    no fijar el runtime del framework en código.
+    """
+    return os.environ.get("DSH_NPM_SPEC") or "@deepseek-ai/dsh"
+
+
+def dsh_headless_command(command=None):
     """Argv oficial de un turno headless, con el overlay del framework.
 
     ``--patch`` es una flag del lanzador, no de la app, así que compone con
@@ -1906,6 +1916,8 @@ def dsh_headless_command(command=("npx", "-y", "@deepseek-ai/dsh",
     Devuelve el argv; no lanza el proceso. El escape sigue siendo
     ``DSH_PLUGIN_PATCH=0``, heredado del camino web en lugar de redefinido aquí.
     """
+    if command is None:
+        command = ("npx", "-y", dsh_npm_spec(), "--profile", "headless")
     return _patched_launch_command(command)
 
 
@@ -1938,7 +1950,7 @@ def _terminate_process(process, *, wait_timeout=5):
             pass
 
 
-def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
+def launch_dsh_web(command=None, *,
                    env=None, cwd=None, spawn_timeout=120):
     """Launch DSH web and return ``(process, client)`` after token capture.
 
@@ -1949,6 +1961,8 @@ def launch_dsh_web(command=("npx", "-y", "@deepseek-ai/dsh", "web"), *,
     the captured output is included in the error with any token redacted,
     so the launch failure is diagnosable.
     """
+    if command is None:
+        command = ("npx", "-y", dsh_npm_spec(), "web")
     child_env = os.environ.copy()
     if env:
         child_env.update(env)
