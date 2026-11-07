@@ -38,16 +38,20 @@ sustituye los marcadores antes de instalarlo, por ejemplo:
 
 ## Modo keyless
 
-Con `auth=keyless` el workflow **elimina la línea `apiKeyEnv:`** del
-patch renderizado (`sed -i '/apiKeyEnv:/d'`). Sin esa línea, el plugin
-`llm-pi-ai` de DSH no exige credencial (su error `MISSING_CREDENTIAL` lo
-documenta: "remove apiKeyEnv only if this provider should authenticate
-from pi-ai's own environment discovery") y envía la petición sin
-cabecera de autenticación. Verificado contra el endpoint público de
-opencode: una petición anónima se evalúa contra el cupo gratuito (la
-respuesta es su propio `FreeUsageLimitError` al agotarse, nunca un error
-de autenticación). Con `auth=secret` la línea queda y el runner exporta
-el secreto `DSH_PROVIDER_API_KEY` como su valor.
+Verificado contra el endpoint público de opencode: su tier gratuito solo
+acepta peticiones **sin** cabecera de autenticación (cualquier Bearer no
+vacío responde `authentication_error`; sin cabecera, la petición se
+evalúa contra el cupo anónimo), pero pi-ai de DSH siempre exige una
+credencial (`No API key for provider`). Por eso `auth=keyless` aplica el
+patrón OmniRoute: un proxy local del runner
+(`eval/keyless_proxy.py`, solo stdlib) se interpone entre DSH y el
+proveedor, elimina la cabecera `Authorization` y reenvía al upstream
+retransmitiendo el stream por trozos. El workflow lo lanza antes del
+render, publica el endpoint local en `PROVIDER_ENDPOINT`
+(`http://127.0.0.1:8091`) y el perfil renderizado lo usa como baseURL;
+el despacho exporta como credencial un señuelo (`anonymous`) que pi-ai
+exige y el proxy elimina. Su contrato lo mantiene
+`tests/test_keyless_proxy.py` (stub de upstream incluido).
 
 Ejemplo con el tier gratuito de opencode (valores del endpoint público
 `/inference/v1/models`): `$PROVIDER_API=openai-completions`,
@@ -58,7 +62,7 @@ por tokens: si el run lo agota, el journal y el log del run lo muestran
 (`FreeUsageLimitError`) y el caso queda como evidencia, no como fallo
 del prompt.
 
-La clave nunca pasa por el repositorio: `apiKeyEnv: DSH_PROVIDER_API_KEY`
-es el **nombre** de la variable de entorno cuyo valor exporta el runner
-desde el secreto del repositorio antes de lanzar DSH; el perfil solo la
-referencia.
+Con `auth=secret` no hay proxy: la URL pública va directa al perfil y
+`apiKeyEnv: DSH_PROVIDER_API_KEY` es el **nombre** de la variable de
+entorno cuyo valor exporta el runner desde el secreto del repositorio
+antes de lanzar DSH; el perfil solo la referencia.

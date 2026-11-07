@@ -239,10 +239,10 @@ class ProfileRenderTest(unittest.TestCase):
         leftover marker must fail the run instead of reaching DSH. The key
         is not substituted by anyone: `apiKeyEnv` names the variable the
         runner exports from the secret. The localhost assertion is scoped
-        to provider configuration and public URLs: DSH legitimately listens
-        on 127.0.0.1 inside the runner without the workflow naming it, so
-        only URL-bearing and provider lines are checked, and no insecure
-        `http://` may appear at all.
+        to provider configuration and public URLs: the only host-local URL
+        the workflow may name is the keyless proxy's own endpoint
+        (PROVIDER_ENDPOINT, 127.0.0.1 inside the runner), so those lines
+        are exempted, and no insecure `http://` may appear anywhere else.
         """
         text = _workflow_text()
         steps = _steps(text)
@@ -279,51 +279,69 @@ class ProfileRenderTest(unittest.TestCase):
         self.assertLess(rendered, dispatch[0],
                         "el perfil no se renderiza antes de despachar")
         local = re.compile(r"localhost|127\.0\.0\.1", re.I)
+        proxy_endpoint = "PROVIDER_ENDPOINT=http://127.0.0.1:8091"
+        self.assertIn(proxy_endpoint, text,
+                      "el proxy keyless declara su endpoint local")
         url_lines = [line for line in text.splitlines()
-                     if "://" in line or "baseURL" in line.lower()
-                     or line.strip().endswith("_URL")]
+                     if ("://" in line or "baseURL" in line.lower()
+                         or line.strip().endswith("_URL"))
+                     and proxy_endpoint not in line]
         self.assertTrue(url_lines, "el workflow declara URLs que revisar")
         for line in url_lines:
             self.assertNotRegex(
                 line, local,
                 f"configuración del proveedor con host local: {line.strip()}")
-        self.assertNotIn("http://", text,
-                         "toda URL pública del workflow es https")
+        self.assertNotIn("http://", text.replace(proxy_endpoint, ""),
+                         "toda URL pública del workflow es https; la única "
+                         "http es el proxy local 127.0.0.1 del runner")
 
 
 class KeylessAuthTest(unittest.TestCase):
-    def test_keyless_mode_strips_the_credential_reference_after_render(self):
-        """auth=keyless removes apiKeyEnv so DSH sends no credential header.
+    def test_keyless_mode_strips_the_credential_header_with_a_local_proxy(self):
+        """auth=keyless puts a header-stripping proxy between DSH and the provider.
 
-        The opencode free tier accepts anonymous requests and answers with
-        its own usage limit, not an authentication error (probed directly
-        against its public endpoint). DSH only omits the header when the
-        profile carries no `apiKeyEnv` at all: its own MISSING_CREDENTIAL
-        message documents removing it for providers that authenticate from
-        pi-ai's environment discovery, which on a clean runner finds
-        nothing. The strip runs after the render and before the dispatch,
-        guarded by the auth mode, and in secret mode the line survives so
-        the runner-exported secret keeps working.
+        Probed against the opencode endpoint: the free tier only accepts
+        requests with NO authorization header (any non-empty Bearer is an
+        authentication error), while pi-ai always demands a credential
+        (`No API key for provider`). The OmniRoute pattern applies: DSH
+        talks to a runner-local proxy (eval/keyless_proxy.py, stdlib only)
+        that drops the Authorization header and forwards to the upstream,
+        with a throwaway dummy credential exported for the dispatch. The
+        proxy runs after the preflight and before the profile render,
+        whose baseURL becomes the local endpoint in keyless mode.
         """
         text = _workflow_text()
         steps = _steps(text)
+        preflight = [index for index, step in enumerate(steps)
+                     if "command -v zstd" in _script(step)]
         render = [index for index, step in enumerate(steps)
                   if "@DSH_PROFILE_PROVIDER@" in _script(step)]
         dispatch = [index for index, step in enumerate(steps)
                     if "creator_client.py" in _script(step)]
-        strip = [index for index, step in enumerate(steps)
-                 if "apiKeyEnv:/d" in _script(step)]
-        self.assertEqual(len(strip), 1,
-                         "la eliminación de apiKeyEnv es un paso único")
-        self.assertLess(render[0], strip[0],
-                        "el modo keyless actúa tras el render del perfil")
-        self.assertLess(strip[0], dispatch[0],
-                        "el modo keyless actúa antes de despachar el Creator")
-        script = _script(steps[strip[0]])
-        self.assertIn('[ "$AUTH" = "keyless" ]', script,
-                      "la eliminación está guardada por el modo de auth")
-        self.assertIn("cordis.patch.yml", script,
-                      "la eliminación opera sobre el perfil renderizado")
+        proxy = [index for index, step in enumerate(steps)
+                 if "keyless_proxy.py" in _script(step)]
+        self.assertEqual(len(proxy), 1,
+                         "el proxy keyless es un paso único")
+        order = [preflight[0], proxy[0], render[0], dispatch[0]]
+        self.assertEqual(order, sorted(order),
+                         "preflight, proxy, render y despacho no van en orden")
+        script = _script(steps[proxy[0]])
+        self.assertIn("eval/keyless_proxy.py", script,
+                      "el proxy no sale del fichero versionado")
+        self.assertIn('UPSTREAM_BASE="$PROVIDER_BASE_URL"', script,
+                      "el proxy no apunta al upstream público")
+        self.assertIn("PROVIDER_ENDPOINT=http://127.0.0.1:8091", script,
+                      "el endpoint local no queda publicado para el render")
+        render_script = _script(steps[render[0]])
+        self.assertIn("PROVIDER_ENDPOINT", render_script,
+                      "el render no usa el endpoint local en modo keyless")
+        self.assertNotIn("apiKeyEnv:/d", text,
+                         "borrar apiKeyEnv dejó de ser el modo keyless: "
+                         "pi-ai exige credencial incluso señuela")
+        self.assertIn(
+            "inputs.auth == 'keyless' && 'anonymous' "
+            "|| secrets.DSH_PROVIDER_API_KEY", text,
+            "el despacho no exporta la credencial señuela en keyless")
 
 
 class SecretHandlingTest(unittest.TestCase):
@@ -346,7 +364,9 @@ class SecretHandlingTest(unittest.TestCase):
             self.assertRegex(
                 line.strip(),
                 r"^DSH_PROVIDER_API_KEY: "
-                r"\$\{\{ secrets\.DSH_PROVIDER_API_KEY \}\}$",
+                r"\$\{\{ (?:secrets\.DSH_PROVIDER_API_KEY"
+                r"|inputs\.auth == 'keyless' && 'anonymous' "
+                r"\|\| secrets\.DSH_PROVIDER_API_KEY) \}\}$",
                 "el secreto aparece fuera de una asignación de env: "
                 f"{line.strip()}")
         self.assertNotRegex(

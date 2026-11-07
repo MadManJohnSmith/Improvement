@@ -1,20 +1,31 @@
 # Cambios
 
-## eval-remota: modo keyless y canal de API adaptables — 2026-11-06
+## eval-remota: modo keyless y canal de API adaptables — 2026-11-06/07
 
 Adaptación del workflow de evaluación remota para el tier gratuito de
-opencode, que acepta peticiones anónimas (verificado contra su endpoint
-público: el límite del tier responde con `FreeUsageLimitError`, no con
-error de autenticación) y habla `openai-completions`.
+opencode y para proveedores con canal distinto, con lo aprendido en los
+primeros despachos remotos (cuatro corridas reales).
 
+- El registro npm solo publica prereleases de DSH: `npx @deepseek-ai/dsh@*`
+  no casa ninguna versión (ETARGET en el segundo despacho). Nuevo
+  `DSH_NPM_SPEC` en `creator_client` (defecto sin cambios) y el workflow
+  fija `@deepseek-ai/dsh@0.2.2-rc.1`, la versión validada en local.
+- El contexto `runner` no está disponible en el env de un job (HTTP 422
+  al disparar, primer despacho): los directorios efímeros van por
+  `GITHUB_ENV` con `RUNNER_TEMP`. La exportación del run usa el mismo
+  nombre que consumen los pasos (`RUN_DIR`): el desajuste de caja dejó
+  al Creator buscando `run.json` en el checkout (tercer despacho).
 - La plantilla del perfil convierte el canal en punto de relleno
   (`@DSH_PROFILE_API@`); el workflow lo recibe como entrada
   `provider_api` con defecto `openai-completions`.
-- Nueva entrada `auth` (`secret` por defecto, `keyless`): en keyless el
-  preflight no exige el secreto y un paso posterior al render elimina la
-  línea `apiKeyEnv` del perfil, con lo que DSH no envía cabecera de
-  credencial (comportamiento documentado por su propio
-  `MISSING_CREDENTIAL`). Receta y ejemplo de opencode en `eval/README.md`.
+- Nueva entrada `auth` (`secret` por defecto, `keyless`): verificado que
+  el tier gratuito de opencode solo acepta peticiones sin cabecera de
+  autenticación y que pi-ai siempre exige credencial, el modo keyless
+  lanza un proxy local en el runner (`eval/keyless_proxy.py`, el patrón
+  OmniRoute) que elimina la cabecera `Authorization` y reenvía al
+  upstream; el perfil usa su endpoint local y el despacho exporta una
+  credencial señuelo. Contrato offline del proxy con stub de upstream
+  (`tests/test_keyless_proxy.py`). Receta y ejemplo en `eval/README.md`.
 
 ## eval-remota: arreglo de revisión — 2026-11-06
 

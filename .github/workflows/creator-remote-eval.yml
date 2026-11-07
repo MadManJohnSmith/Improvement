@@ -179,9 +179,10 @@ jobs:
                 fail "el secreto DSH_PROVIDER_API_KEY está vacío"
               ;;
             keyless)
-              # Sin clave: el perfil va sin apiKeyEnv (paso siguiente al
-              # render) y DSH no envía cabecera de credencial; el proveedor
-              # la trata como uso anónimo de su tier gratuito.
+              # Sin clave real: el despacho exporta la credencial señuelo
+              # y el proxy local del runner elimina la cabecera antes del
+              # upstream (el tier gratuito solo acepta peticiones sin
+              # cabecera).
               ;;
             *)
               fail "auth debe ser secret o keyless"
@@ -192,10 +193,41 @@ jobs:
           command -v node >/dev/null ||
             fail "falta node para lanzar DSH"
 
+      - name: Proxy keyless del runner
+        if: inputs.auth == 'keyless'
+        run: |
+          # pi-ai siempre exige una credencial ("No API key for provider")
+          # y el tier gratuito del proveedor solo acepta peticiones SIN
+          # cabecera de autenticación (cualquier Bearer no vacío es
+          # `authentication_error`): el patrón OmniRoute. DSH habla con un
+          # proxy local del runner (eval/keyless_proxy.py, solo stdlib)
+          # que elimina la cabecera Authorization y reenvía al upstream;
+          # el SSE se retransmite por trozos. El endpoint local queda en
+          # PROVIDER_ENDPOINT para el render del perfil.
+          cp eval/keyless_proxy.py "$EVAL_ROOT/keyless-proxy.py"
+          UPSTREAM_BASE="$PROVIDER_BASE_URL" PROXY_PORT=8091 \
+            python3 "$EVAL_ROOT/keyless-proxy.py" >> "$RUN_LOG" 2>&1 &
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if (echo > /dev/tcp/127.0.0.1/8091) 2>/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+          echo "PROVIDER_ENDPOINT=http://127.0.0.1:8091" >> "$GITHUB_ENV"
+          echo "proxy keyless listo en 127.0.0.1:8091 -> $PROVIDER_BASE_URL" |
+            tee -a "$RUN_LOG"
+
       - name: Render del perfil DSH desde la plantilla
         run: |
           PROFILE_DIR="$DSH_HOME/profiles/web"
           mkdir -p "$PROFILE_DIR"
+          # En keyless el baseURL del perfil es el proxy local del runner
+          # (PROVIDER_ENDPOINT, publicado por el paso anterior); en secret,
+          # la URL pública que trae el despacho.
+          PROFILE_BASE_URL="$PROVIDER_BASE_URL"
+          if [ "$AUTH" = "keyless" ]; then
+            PROFILE_BASE_URL="$PROVIDER_ENDPOINT"
+          fi
           # Receta de eval/README.md: la plantilla se copia como
           # cordis.patch.yml del bundle del perfil y se sustituyen sus
           # marcadores. La clave no la sustituye nadie: apiKeyEnv nombra la
@@ -235,7 +267,7 @@ jobs:
           PY
           sed -e "s|@DSH_PROFILE_PROVIDER@|$PROVIDER|g" \
               -e "s|@DSH_PROFILE_API@|$PROVIDER_API|g" \
-              -e "s|@DSH_PROFILE_BASE_URL@|$PROVIDER_BASE_URL|g" \
+              -e "s|@DSH_PROFILE_BASE_URL@|$PROFILE_BASE_URL|g" \
               -e "s|@DSH_PROFILE_MODEL@|$MODEL|g" \
               -e "s|@DSH_PROFILE_CONTEXT_WINDOW@|$CONTEXT_WINDOW|g" \
               -e "s|@DSH_PROFILE_MAX_TOKENS@|$MAX_TOKENS|g" \
@@ -244,17 +276,6 @@ jobs:
             echo "render: quedaron marcadores sin sustituir en el perfil" |
               tee -a "$RUN_LOG" >&2
             exit 1
-          fi
-
-      - name: Modo keyless del perfil
-        run: |
-          # auth=keyless: sin la línea apiKeyEnv el plugin llm-pi-ai de DSH
-          # no exige credencial (su MISSING_CREDENTIAL lo documenta) y
-          # envía la petición sin cabecera de autenticación; el proveedor
-          # la trata como uso anónimo de su tier gratuito. En auth=secret
-          # la línea queda y el runner exporta el secreto como su valor.
-          if [ "$AUTH" = "keyless" ]; then
-            sed -i '/apiKeyEnv:/d' "$DSH_HOME/profiles/web/cordis.patch.yml"
           fi
 
       - name: Fixture como proyecto Git
@@ -299,7 +320,10 @@ jobs:
 
       - name: Despachar el Creator
         env:
-          DSH_PROVIDER_API_KEY: ${{ secrets.DSH_PROVIDER_API_KEY }}
+          # En keyless la credencial es un señuelo: pi-ai exige alguna y el
+          # proxy local elimina la cabecera antes del upstream. En secret,
+          # el valor del secreto del repositorio.
+          DSH_PROVIDER_API_KEY: ${{ inputs.auth == 'keyless' && 'anonymous' || secrets.DSH_PROVIDER_API_KEY }}
         run: |
           # RETAINED no es un fallo del workflow: main() de creator_client
           # sale con 1 cuando el veredicto es RETAINED y la evaluación
