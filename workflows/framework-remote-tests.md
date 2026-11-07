@@ -61,9 +61,59 @@ mantenedor decide si corrige o revierte; el flujo no repara el repositorio.
 - Las claves del proveedor viven en secretos del CI y nunca se imprimen. El
   evaluador registra el modelo usado, no elige proveedor.
 
+## Protocolo de corridas
+
+Acordado el 2026-11-07; la decisión de fondo vive en
+`docs/adr/0003-protocolo-de-corridas-remotas.md`. Rige toda corrida
+remota del framework.
+
+**Clases.** Una **corrida de sondeo** comprueba infraestructura — que el
+cupo del proveedor esté disponible, que el runtime arranque — y espera
+`ABSTAIN`: nunca genera fila versionable ni aceptación. Una **corrida de
+verificación** es un despacho pre-registrado que busca veredictos
+evaluables del caso (y, cuando esté implementado, del recorrido del
+producto); es la única que puede terminar en fila versionada. La tarea
+automática de reintentos de cupo solo sondea.
+
+**Pre-registro de despacho.** Toda corrida de verificación se anuncia
+antes de correrse: comentario en el issue del spec (#11) con las entradas
+exactas del despacho (versión de prompt, modelo, presupuesto, fixture,
+modo de autenticación) y el SHA de `main` desde el que corre. El agente
+de implementación despacha bajo esa regla; el mantenedor puede despachar
+sin aviso; la automatización solo sondea.
+
+**Estímulo.** El Creator recibe siempre y solo el prompt que construye el
+framework a la versión fijada; su digest queda registrado por run en
+`generation-request.json`. Ninguna entrada del workflow altera el texto
+del prompt. Los mensajes del usuario simulado nunca entran a la sesión
+del Creator.
+
+**Recorrido del producto.** Cuando esté implementado (job posterior a la
+calificación del mismo workflow, spec propio posterior a la retro): tras
+generar el paquete, un usuario simulado instala, activa (checkpoint 1) y
+ejecuta un ciclo real auditoría → reparación → verificación (checkpoint
+2). Sus mensajes salen de un guion versionado con una lista versionada de
+variaciones que el runner elige de forma determinista: nada se improvisa
+dentro de la corrida.
+
+**Reintentos.** Solo el `ABSTAIN` de causa de infraestructura o cupo se
+reintenta. Un `FAIL_COMPLETION` o `FAIL_MECHANISM` es evidencia: no se
+vuelve a correr sin una versión de prompt nueva.
+
+**Aceptación.** La fila del roster lleva los veredictos de la corrida
+(caso y, cuando aplique, los dos checkpoints del recorrido). El workflow
+nunca se auto-acepta ni commitea: el mantenedor acepta un caso
+versionando su fila tras revisar los artefactos. Un despacho no aceptado
+es solo evidencia.
+
+**Corridas locales del agente.** El agente de implementación puede correr
+verificaciones locales contra evidencia real solo en modo lectura, con
+salidas fuera del repositorio y declaradas en su informe.
+
 ## Abierto
 
-- Contenido exacto del fixture y su `root_identity` (hoy el caso usa un producto
-  externo).
-- Nombres de los archivos de workflow y plantilla del perfil DSH para el CI.
+- La implementación del job de recorrido del producto (spec propio,
+  posterior a la retro).
 - Modelo y presupuesto por defecto de la evaluación manual.
+- La ventana de cupo anónimo del tier gratuito (hoy bloquea la primera
+  corrida completa; los reintentos de sondeo la buscan).

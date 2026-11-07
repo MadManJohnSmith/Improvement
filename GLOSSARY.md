@@ -86,3 +86,23 @@ _Avoid_: Volcado de facts, Roster de presets (sentido distinto)
 **Plantilla de perfil DSH (DSH Profile Template)**:
 El patch de perfil versionado en `eval/profile-dsh.patch.yml`, con puntos de relleno `@NOMBRE@` deliberadamente inválidos como YAML: el workflow lo copia como `cordis.patch.yml` del bundle del perfil y sustituye los marcadores desde entradas y secretos; la clave solo se referencia por `apiKeyEnv`, jamás por valor.
 _Avoid_: Perfil escrito a mano, Configuración del proveedor fijada
+
+**Corrida de sondeo (Probe Run)**:
+Despacho remoto que comprueba infraestructura — disponibilidad del cupo del proveedor, arranque del runtime — y espera `ABSTAIN`; nunca genera fila versionable ni aceptación.
+_Avoid_: Test de humo, Corrida de calentamiento
+
+**Corrida de verificación (Verification Run)**:
+Despacho remoto pre-registrado que busca veredictos evaluables del caso de evaluación y de los checkpoints del recorrido del producto; la única clase de corrida que puede terminar en fila versionada.
+_Avoid_: Corrida oficial, Test remoto sin registro
+
+**Pre-registro de despacho (Dispatch Pre-registration)**:
+Anuncio público previo a toda corrida de verificación, con las entradas exactas del despacho y el SHA de `main` desde el que corre; lo hace el agente de implementación, no el mantenedor, que puede despachar sin aviso.
+_Avoid_: Autorización previa, Ticket de corrida
+
+**Recorrido del producto (Product Journey)**:
+Simulación versionada del flujo del usuario tras generar el paquete: instalación, activación (checkpoint 1) y ciclo real auditoría → reparación → verificación (checkpoint 2), con mensajes salidos de un guion versionado y variaciones elegidas de forma determinista; nunca improvisados dentro de la corrida.
+_Avoid_: Prueba E2E libre, Simulación improvisada
+
+**Aceptación de caso (Case Acceptance)**:
+Acto del mantenedor que versiona la fila del roster de un caso tras revisar sus artefactos; el workflow nunca se auto-acepta ni commitea.
+_Avoid_: PASS automático, Cierre por veredicto
