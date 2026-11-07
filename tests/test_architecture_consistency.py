@@ -386,13 +386,13 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         discovered = ut.TestLoader().discover(
             str(ROOT / "tests")).countTestCases()
         self.assertGreater(discovered, 0, "la suite no se descubrió: el escaneo está roto")
-        published = [
-            ("README.md", "at that point",
-             re.compile(r"Framework suite: \*\*(\d+) tests green\*\*")),
-            ("README.es.md", "en ese punto",
-             re.compile(r"Suite del (?:propio )?framework: \*\*(\d+) pruebas en verde\*\*")),
-        ]
-        for relative, historical, claim in published:
+        # Los patrones son compartidos con scripts/suite_count.py, el
+        # reescritor de la cifra viva: una sola fuente para quien afirma y
+        # quien reescribe, de modo que no pueden divergir en silencio.
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import suite_count
+        for relative, historical, claim, _measured in suite_count.LIVE_CLAIMS:
             if not (ROOT / relative).exists():
                 continue
             claims = 0

@@ -66,3 +66,15 @@ Con `auth=secret` no hay proxy: la URL pública va directa al perfil y
 `apiKeyEnv: DSH_PROVIDER_API_KEY` es el **nombre** de la variable de
 entorno cuyo valor exporta el runner desde el secreto del repositorio
 antes de lanzar DSH; el perfil solo la referencia.
+
+Antes de `gh secret set`, valida que el valor sea una credencial real y no
+una referencia de placeholder (`refs.*` del YAML de credenciales de DSH no
+es una clave: el primer secreto fijado fue exactamente eso — GitHub enmascaró
+cada guion del log — y hubo que borrarlo):
+
+```console
+$ printf '%s' "$VALOR" | grep -Eq '^(refs\.|<|\$)' && echo "PLACEHOLDER, no fijar"
+```
+
+Si el comando imprime el aviso, el valor no es una clave: busca la credencial
+real en la fuente del proveedor.

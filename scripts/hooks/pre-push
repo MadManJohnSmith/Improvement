@@ -1,0 +1,14 @@
+#!/bin/sh
+# Guard de push (retro del 2026-11-06): la suite debe estar verde antes de
+# publicar. El empuje con la suite en rojo ocurrió porque un pipe (`tail`)
+# enmascaró el código de salida; este hook corre la suite directamente y
+# aborta el push si algo falla. La lección ya vivía en
+# tests/test_workflow_lessons.py como regla para los gates del framework;
+# aquí queda aplicada a las operaciones propias.
+#
+# Activación (una vez, configuración local del repo):
+#   git config core.hooksPath scripts/hooks
+# Bypass consciente de un operador que sabe lo que hace: git push --no-verify.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+exec python3 -B -m unittest discover -s tests

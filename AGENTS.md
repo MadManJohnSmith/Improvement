@@ -18,7 +18,7 @@ Preservar evidencia externa de fallos, deduplicar causas y hacer cambios mínimo
 
 Antes de cerrar una unidad: ejecutar las comprobaciones pertinentes con salidas externas, actualizar estado/documentación si corresponde, revisar lo que se versionará y dejar el árbol limpio tras un commit autorizado. Si hay trabajo ajeno, no descartarlo ni incluirlo para aparentar limpieza; señalarlo.
 
-No cerrar el turno con un plan o una promesa: ejecutar el siguiente paso. Devolver el control solo ante un bloqueo real o una decisión que solo el usuario pueda tomar.
+No cerrar el turno con un plan o una promesa: ejecutar el siguiente paso. Devolver el control solo ante un bloqueo real o una decisión que solo el usuario pueda tomar, y al hacerlo usa la herramienta de pregunta en vez de listas de decisiones en prosa. Al crear una tarea automatizada o en segundo plano, declara en ese momento su propósito, alcance, condición de parada y cómo retirarla.
 
 ## Agent skills
 

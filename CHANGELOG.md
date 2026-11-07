@@ -1,5 +1,31 @@
 # Cambios
 
+## Retro: guardrails de suite y workflows — 2026-11-06
+
+Candidatos de la retrospectiva de las dos sesiones del día, convertidos en
+checks mecánicos y steering:
+
+- actionlint 1.7.7 en CI sobre los workflows (el shellcheck de la imagen
+  cubre los pasos run; descarga fijada y sin pipes): el 422 del contexto
+  `runner` en el env del job y el desajuste `run_dir`/`RUN_DIR` — dos de los
+  cinco fallos que enseñaron los despachos reales — eran cazables sin
+  gastar corrida.
+- `scripts/hooks/pre-push` versionado: la suite corre antes de publicar;
+  activación con `git config core.hooksPath scripts/hooks`. El empuje con la
+  suite en rojo por un pipe (`tail` enmascaró el código de salida) deja de
+  ser alcanzable por descuido.
+- `scripts/suite_count.py`: descubre el total y reescribe la cifra viva de
+  ambos README; el gate de consistencia importa los patrones del script, una
+  sola fuente para quien afirma y quien reescribe. El recuento deja de
+  editarse a mano cada ronda — la sesión lo erró dos veces: 1295 publicado,
+  1294 real.
+- `AGENTS.md`: al devolver control por una decisión, la herramienta de
+  pregunta en vez de listas en prosa (el mantenedor lo tuvo que pedir a
+  mitad de sesión); al crear una automatización, declarar propósito,
+  alcance, condición de parada y retiro en el momento.
+- `eval/README.md`: validación anti-placeholder antes de `gh secret set`
+  (el primer secreto fijado fue una referencia `refs.*`, no una clave).
+
 ## eval-remota: modo keyless y canal de API adaptables — 2026-11-06/07
 
 Adaptación del workflow de evaluación remota para el tier gratuito de

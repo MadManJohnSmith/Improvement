@@ -15,6 +15,20 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      # El lint estático ve sin gastar corrida lo que los dos primeros
+      # despachos reales enseñaron por la vía cara: el contexto `runner` no
+      # está disponible en el env de un job (HTTP 422) y un desajuste de caja
+      # (`run_dir`/`RUN_DIR`) solo se nota cuando el paso consume la variable.
+      # actionlint ejecuta shellcheck sobre los pasos run cuando está en PATH
+      # (la imagen del runner lo trae). Versión fijada, descarga sin pipes:
+      # el código de salida no se deduce de un pipeline.
+      - name: Lint estático de workflows (actionlint fijado)
+        run: |
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -no-color
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
