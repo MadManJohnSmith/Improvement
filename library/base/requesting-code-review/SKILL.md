@@ -12,6 +12,9 @@ El revisor es otro actor distinto del autor; la auto-revisión no es revisión.
 ## Procedimiento
 Define el alcance exacto: archivos y diff identificado con hash del candidato.
 Declara qué tipo de feedback se busca: corrección, seguridad, diseño o reglas.
+Pide veredicto por eje (listo o no listo) y clasifica cada hallazgo como
+bloqueante o no bloqueante y como introducido por el diff o preexistente;
+el número de comentarios no es el criterio de cierre.
 Incluye el camino de verificación: comandos o escenarios que el revisor puede
 ejecutar para comprobar el comportamiento sin reconstruir tu contexto.
 Añade lo que el revisor no puede saber: decisiones tomadas y porqué, límites
@@ -22,6 +25,7 @@ es revisión superficial.
 ## Invariantes
 El candidato revisado queda fijado por hash; feedback sobre otro candidato
 no aplica sin reverificación.
+La solicitud pide veredicto por eje y la clasificación de cada hallazgo.
 El autor no aprueba su propio trabajo; el veredicto lo emite el revisor.
 La revisión es consulta al Host: no sustituye acceptance ni validación.
 
@@ -29,6 +33,8 @@ La revisión es consulta al Host: no sustituye acceptance ni validación.
 No enviar a revisión sin verificación local previa (suite en verde, escenarios).
 No presentar como candidato un estado distinto del que se revisa.
 No marcar revisión como aprobada sin veredicto externo registrado.
+No fijar «cero comentarios» como criterio: un cambio con mejoras no
+bloqueantes puede estar listo.
 Si no hay revisor independiente disponible, conserva UNVERIFIED.
 
 ## Escenarios y cierre

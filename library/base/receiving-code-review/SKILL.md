@@ -12,14 +12,21 @@ automática sobre hechos: cada afirmación técnica se verifica antes de actuar.
 
 ## Procedimiento
 Clasifica cada punto: aceptado, rechazado o requiere evidencia adicional.
+Clasifícalo también por severidad (bloqueante o no bloqueante) y por origen
+(introducido por el candidato o preexistente); un preexistente se devuelve a
+su propio cambio salvo que bloquee este.
 Para aceptados: cambio concreto, verificación y evidencia por punto.
 Para rechazados: motivo verificable registrado; un rechazo sin motivo no existe.
 Verifica las afirmaciones del revisor contra el candidato con el mismo rigor
 que cualquier otra fuente: reproduce el problema o confirma la observación.
 Responde al conjunto, no solo a los puntos cómodos; los silencios no son rechazos.
+Tras corregir, la re-revisión cubre solo el diff incremental desde el
+candidato revisado.
 
 ## Invariantes
 Ningún punto se marca resuelto sin cambio verificable o motivo registrado.
+Todo hallazgo bloqueante cierra antes de fusionar; un preexistente no
+bloqueante no se arregla aquí.
 La verificación del feedback usa el candidato exacto que se revisó (hash).
 Adoptar feedback no amplía alcance: los cambios nuevos grandes vuelven a plan.
 El veredicto del revisor se registra aunque se discuta un punto concreto.
@@ -29,6 +36,8 @@ No descartar feedback por tono, autoría o preferencia sin motivo técnico.
 No aplicar cambios sugeridos sin entender el problema que señalan.
 No reenviar a revisión un candidato distinto del revisado sin declararlo.
 Si el feedback contradice al encargo o a la arquitectura, escala la contradicción.
+No pedir una cuarta ronda de revisión: a la tercera, replantea el enfoque o
+escala.
 
 ## Escenarios y cierre
 Escenarios: SC-113 (positiva), SC-114 (negativa: adoptar sin verificar).

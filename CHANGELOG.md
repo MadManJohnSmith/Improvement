@@ -7,10 +7,18 @@ repositorio y reducidas a lo que faltaba:
 
 - `docs/adr/0004-revision-convergente-y-compresion-con-evidencia.md`: fija
   cuatro decisiones y sus descartes. Revisión por veredicto con tope de tres
-  rondas y re-revisión incremental; consejo de segunda familia solo para
-  diseño/ADR y solo del lado del mantenedor (el runtime distribuido prohíbe
-  delegación); compresión en dos fases solo con eval ejecutable, con el
-  piloto diferido al roster de #11; jerarquía código > estático > prosa.
+  rondas y re-revisión incremental, dentro de la distribución (skills base y
+  aceptación acotada) y replicada en las herramientas del mantenedor; consejo
+  multimodelo fuera del framework, por la prohibición de delegación y porque
+  el consenso no es evidencia; compresión en dos fases fuera de la
+  distribución, solo con eval ejecutable y piloto diferido al roster de #11;
+  jerarquía código > estático > prosa.
+- `library/base/requesting-code-review`, `library/base/receiving-code-review`,
+  `skills/workflow-bounded-acceptance`, `library/base/environment-retro` y
+  `library/library.json`: vocabulario de convergencia (bloqueante/no
+  bloqueante, introducido/preexistente, cierre fix-o-razón, re-revisión
+  incremental, tope de tres rondas) y la jerarquía estructura > check > prosa
+  para fallos repetidos de agentes.
 - `AGENTS.md`: la jerarquía queda escrita para que un agente no recurra a
   prosa primero ante un fallo repetido.
 

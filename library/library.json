@@ -128,7 +128,8 @@
       "invariants": [
         "Candidato fijado por hash; feedback sobre otro candidato no aplica",
         "El autor no autoaprueba; el veredicto lo emite el revisor",
-        "La revisión es consulta al Host, no aceptación"
+        "La revisión es consulta al Host, no aceptación",
+        "La solicitud pide veredicto por eje y la clasificación de cada hallazgo"
       ],
       "limits": [
         "Sin revisor independiente: UNVERIFIED",
@@ -152,7 +153,9 @@
         "Cada punto cierra con cambio verificado o motivo registrado",
         "El feedback se verifica contra el candidato exacto",
         "Adoptar feedback no amplía alcance",
-        "El veredicto del revisor se registra aunque se discuta un punto"
+        "El veredicto del revisor se registra aunque se discuta un punto",
+        "Todo bloqueante cierra antes de fusionar; un preexistente no bloqueante no se arregla aquí",
+        "La re-revisión cubre solo el diff incremental"
       ],
       "limits": [
         "Los silencios no son rechazos: el conjunto se responde",

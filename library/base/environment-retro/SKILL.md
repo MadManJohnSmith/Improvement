@@ -14,6 +14,9 @@ sesión: sin evidencia no hay retro.
 ## Procedimiento
 Recolecta los fallos anclados a su evidencia: ruta, línea o recibo. La narración de la
 sesión no es evidencia por sí sola.
+Antes de clasificar, pregunta si la estructura puede impedir el fallo: un cambio de
+código o de interfaz que haga difícil el error va antes que un check que lo detecte
+y que una prosa que lo advierta.
 Clasifica cada fallo con su regla: fallo mecánico → propuesta de check automático;
 judgement call recurrente → standard declarado; guardrail ausente → hallazgo registrado.
 Propón el cambio del entorno con su verificación: el check nuevo llega con un test que
