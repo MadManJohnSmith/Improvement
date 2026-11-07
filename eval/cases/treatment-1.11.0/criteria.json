@@ -1,0 +1,9 @@
+{
+ "id": "treatment-1.11.0",
+ "forbidden_schema_reads": [
+  "modes.schema.json",
+  "skills.schema.json"
+ ],
+ "require_manifest": true,
+ "require_prevalidation": true
+}

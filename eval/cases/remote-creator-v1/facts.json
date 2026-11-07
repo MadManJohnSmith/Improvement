@@ -1,0 +1,29 @@
+{
+  "budget": {
+    "max_attempts": 3,
+    "max_seconds": 1800,
+    "max_tokens": 1500000
+  },
+  "elapsed_seconds": 1.1,
+  "framework_revision": "3380c1b5c46ecc86b9af621ea0c5d25d4a99870f",
+  "generation_id": "gen-c242748fd4d1",
+  "journal_event_count": 18,
+  "journal_last_seq": 17,
+  "manifest_present": false,
+  "model": "opencode-ai/deepseek-v4.1-flash-free",
+  "prevalidation_passed": false,
+  "product_tree_digest": "91b56774adc3cb149ecc4f5fcd15fc52d3e8f8035628e39a57ddbdef2ae540ac",
+  "project": {
+    "name": "project",
+    "root_identity": "c06018d2419582803eab14526a21312e97f6600de628d1380ff56ae416311983"
+  },
+  "prompt_version": "1.11.0",
+  "stop_reason": "TERMINAL_WITHOUT_MANIFEST",
+  "terminal_turn": true,
+  "turns_started": 1,
+  "usage_cache_read_tokens": 0,
+  "usage_input_tokens": 0,
+  "usage_output_tokens": 0,
+  "usage_steps": 0,
+  "usage_tokens": 0
+}

@@ -1,0 +1,36 @@
+{
+ "below_budget": false,
+ "budget": 1400000,
+ "creator_verdict": {
+  "generation_id": "gen-a4f2bd32e825",
+  "reason": "Límite de tokens Creator excedido: 1409291 >= 1400000; cancelación confirmada y sesión quiescente",
+  "result": "RETAINED"
+ },
+ "deadline_seconds": 1800,
+ "elapsed_seconds": 212.92,
+ "framework_revision": "950b2f88110dad09a73354a546ac5f3aaf17c1ec",
+ "generation_id": "gen-a4f2bd32e825",
+ "headless_overlay": true,
+ "journal_decompress_rc": 0,
+ "journal_event_count": 519,
+ "journal_last_seq": 518,
+ "journal_present": true,
+ "manifest_present": true,
+ "model": "omniroute-responses/openrouter/stealth/crouton-alpha",
+ "phase": "RETAINED",
+ "prevalidation_passed": false,
+ "project": {
+  "name": "product",
+  "root_identity": "430b77c49db7a04d2bf4bba41fb1fa3b7912d56ad223d6579f5f3a8634531d9d"
+ },
+ "prompt_version": "1.11.0",
+ "returncode": 0,
+ "stop_reason": "CANCELLED_QUIESCENT",
+ "terminal_turn": true,
+ "turns_started": 1,
+ "usage_cache_read_tokens": 0,
+ "usage_input_tokens": 1399970,
+ "usage_output_tokens": 9321,
+ "usage_steps": 57,
+ "usage_tokens": 1409291
+}

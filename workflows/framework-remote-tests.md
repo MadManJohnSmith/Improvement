@@ -110,10 +110,37 @@ es solo evidencia.
 verificaciones locales contra evidencia real solo en modo lectura, con
 salidas fuera del repositorio y declaradas en su informe.
 
+**Aplicación local del protocolo (venue OmniRoute).** Mientras el cupo
+gratuito manda, la primera corrida de verificación y las corridas de
+guardia de la fase 2 se despachan en la máquina del mantenedor vía el
+gateway local de OmniRoute (decisión de #27). El workflow de CI no
+cambia: exige una URL base pública https — el gateway local no pasa esa
+validación sin un túnel — y una clave free no cubre las ~60 llamadas
+secuenciales de una corrida completa; el gateway local agrega
+~200 peticiones al día entre varias claves free y ya corrió un Creator
+real (precedente de #26). El workflow queda como vehículo de sondeo
+keyless y como venue futuro si alguna vez existe una clave con cupo
+suficiente. El protocolo aplica sin cambios mecánicos:
+
+- **Pre-registro:** comentario en #11 con las mismas entradas del
+  workflow (modelo, base URL del gateway local, modo de autenticación,
+  ventana de contexto, techo de salida) más el presupuesto explícito
+  (≥1.500.000 tokens: el default de CI 500000 está por debajo del mínimo
+  real medido de ~1,41M, hallazgo de #18), la identidad del fixture y el
+  SHA de `main`.
+- **Despacho:** lo ejecuta el mantenedor. La receta es la del workflow
+  aplicada en local: fixture convertido en proyecto Git con commit
+  determinista, `bootstrap install --no-dispatch`, despacho con
+  `creator_client.py --launch-dsh`, derivación del caso con
+  `--from-run`. El gateway local hace innecesario el proxy keyless.
+- **Aceptación:** versionar la fila del roster y el caso según el
+  contrato del corpus (#19), tras revisar los artefactos.
+
 ## Abierto
 
 - La implementación del job de recorrido del producto (spec propio,
   posterior a la retro).
 - Modelo y presupuesto por defecto de la evaluación manual.
-- La ventana de cupo anónimo del tier gratuito (hoy bloquea la primera
-  corrida completa; los reintentos de sondeo la buscan).
+- La ventana de cupo anónimo del tier gratuito (afecta solo a la ruta de
+  sondeo keyless de CI; la primera corrida completa despacha en local
+  vía OmniRoute).

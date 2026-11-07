@@ -78,3 +78,22 @@ $ printf '%s' "$VALOR" | grep -Eq '^(refs\.|<|\$)' && echo "PLACEHOLDER, no fija
 
 Si el comando imprime el aviso, el valor no es una clave: busca la credencial
 real en la fuente del proveedor.
+
+## Corpus de casos versionados
+
+`eval/cases/` (contrato de #19, versionado en #22): `index.json` y un
+directorio por caso con `facts.json` y `criteria.json` tal como los derivó
+`--from-run`. El journal, el reporte completo y el estímulo materializado
+viven fuera del árbol, en el directorio hermano de evidencia, con su digest
+registrado en el índice; el gate de saneamiento
+(`tests/test_eval_cases.py`) recorre `eval/cases/` desde que el corpus
+entra, y todo caso entra por revisión del mantenedor.
+
+Puntuación offline, determinista y sin modelo — `journal_sha256` del índice
+se verifica contra la evidencia externa antes de calificar, y
+`prompt_bytes` solo entra con `--prompt-file` explícito:
+
+    python3 -B scripts/creator_eval.py --corpus eval/cases/index.json \
+      --evidence <raíz de evidencia externa> \
+      [--prompt-file <estímulo materializado del run>]
+

@@ -1,0 +1,23 @@
+{
+ "schema_version": 1,
+ "cases": [
+  {
+   "id": "remote-creator-v1",
+   "expected_verdict": "ABSTAIN",
+   "prompt_version": "1.11.0",
+   "run_id": "gen-c242748fd4d1",
+   "product_identity": "c06018d2419582803eab14526a21312e97f6600de628d1380ff56ae416311983",
+   "journal": "remote-creator-v1/session.v4.jsonl.zstd",
+   "journal_sha256": "a783f4e21d03ed7275d326668d8384bc3ab6aa00d5aad4d764f91965097b8474"
+  },
+  {
+   "id": "treatment-1.11.0",
+   "expected_verdict": "FAIL_COMPLETION",
+   "prompt_version": "1.11.0",
+   "run_id": "gen-a4f2bd32e825",
+   "product_identity": "430b77c49db7a04d2bf4bba41fb1fa3b7912d56ad223d6579f5f3a8634531d9d",
+   "journal": "treatment-1.11.0/session.v4.jsonl.zstd",
+   "journal_sha256": "df270183c2164a770acd3be2ee8bc83c682d20899435b1533cfeda195ec951d0"
+  }
+ ]
+}

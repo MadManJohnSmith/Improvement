@@ -1,5 +1,30 @@
 # Cambios
 
+## eval-remota: corpus versionado y venue local del protocolo — 2026-11-07
+
+Primera mitad de #22 (la derivación del caso verde espera la corrida de
+verificación):
+
+- `eval/cases/`: corpus versionado con las dos clases derivables sin despacho
+  nuevo — `treatment-1.11.0` (rojo real, `FAIL_COMPLETION`, run
+  `gen-a4f2bd32e825`, caso local del 2026-11-05) y `remote-creator-v1`
+  (`ABSTAIN` de cupo anónimo, run `gen-c242748fd4d1`, artefacto de la corrida
+  de CI 42322391040). Cada caso lleva `facts.json` + `criteria.json` tal como
+  los derivó `--from-run`; `index.json` registra id, veredicto esperado
+  (validado, no deseado — #20), versión de prompt, identidad del producto,
+  run_id y digest del journal.
+- Journals, reportes y estímulos fuera del árbol, en el hermano de evidencia
+  (`eval-corpus/`) con digests verificados en la copia y procedencia en su
+  `PROVENANCE.md`. Puntaje del corpus: **2/2 correctos, 1 ABSTAIN, sin
+  errores**; `prompt_bytes` 30.385 del estímulo 1.11.0 materializado (digest
+  coincidente con `generation-request.json` del run).
+- `workflows/framework-remote-tests.md`: aplicación local del protocolo
+  (decisión de #27) — la primera corrida de verificación y las de guardia se
+  despachan en local vía OmniRoute mientras el cupo gratuito manda; el
+  workflow de CI queda en sondeo keyless y como venue futuro.
+- `eval/README.md`: sección del corpus (ubicación, evidencia externa y
+  comando de puntuación).
+
 ## eval-remota: comando de corpus — 2026-11-07
 
 Preparación del entorno de hill climbing (mapa #17): el corpus versionado ya
