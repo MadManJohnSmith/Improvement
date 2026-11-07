@@ -1,5 +1,22 @@
 # Cambios
 
+## eval-remota: comando de corpus — 2026-11-07
+
+Preparación del entorno de hill climbing (mapa #17): el corpus versionado ya
+tiene comando de puntuación propio.
+
+- `creator_eval.py --corpus`: puntúa `eval/cases/index.json` completo, lectura
+  pura y determinista. Los journals son evidencia externa referida por el
+  índice y su digest se verifica antes de calificar; un desajuste es error del
+  caso y la salida es 1 — un corpus herido no se publica como sano. Sin
+  `--prompt-file` el puntaje omite `prompt_bytes`, nunca lo inventa.
+- `scripts/sanitation.py`: los patrones de saneamiento (rutas locales,
+  credenciales, bearer, correo, dirección postal) viven en un solo sitio y los
+  gates de `fixtures/` y de `eval/cases/` los comparten.
+- `tests/test_eval_cases.py`: gate activo desde el momento en que el corpus
+  entre (#22); la ausencia del corpus es un estado afirmado, no una omisión.
+- Recuento de suite 1294 → 1310.
+
 ## ADR 0004: revisión convergente, consejo estrecho y compresión con evidencia — 2026-11-06
 
 Prácticas de dos charlas de ingeniería con agentes, contrastadas contra el

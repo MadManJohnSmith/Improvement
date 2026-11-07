@@ -472,11 +472,95 @@ def evaluate_case(case_dir, report_path, *, overwrite=False):
     return result
 
 
+INDEX_REQUIRED = ("id", "expected_verdict", "prompt_version", "run_id",
+                  "journal", "journal_sha256")
+
+
+def validate_index(index_path):
+    """Valida la estructura del índice del corpus, sin leer evidencia.
+
+    Fail-closed: entradas sin claves usables, digests que no son hex64, ids
+    duplicados o un corpus vacío son error, no advertencia. La existencia de
+    casos y journals se comprueba al puntuar, donde el fallo se atribuye al
+    caso y no al índice.
+    """
+    data, _ = read_json(Path(index_path))
+    require_dict(data, "índice del corpus")
+    entries = data.get("cases")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("el índice del corpus no declara casos: "
+                         "'cases' ausente o vacío")
+    seen = set()
+    for entry in entries:
+        require_dict(entry, "entrada del índice")
+        for key in INDEX_REQUIRED:
+            value = entry.get(key)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"entrada sin '{key}' usable: "
+                                 f"{entry.get('id', '?')}")
+        digest = entry["journal_sha256"]
+        if len(digest) != 64 or set(digest.lower()) - set("0123456789abcdef"):
+            raise ValueError(f"journal_sha256 no es hex64: {entry['id']}")
+        if entry["id"] in seen:
+            raise ValueError(f"id duplicado en el índice: {entry['id']}")
+        seen.add(entry["id"])
+    return entries
+
+
+def score_corpus(index_path, *, evidence_root, prompt_path=None):
+    """Puntúa el corpus: lectura pura, determinista y fail-closed.
+
+    El journal de cada caso es evidencia externa referida por el índice; su
+    digest se verifica antes de calificar y un desajuste es error del caso,
+    nunca un salto silencioso. Con errores de integridad el puntaje omite
+    correct/abstain/mismatches: un corpus herido no se publica como sano.
+    """
+    index = Path(index_path)
+    entries = validate_index(index)
+    evidence = Path(evidence_root)
+    details = []
+    errors = []
+    versions = set()
+    for entry in sorted(entries, key=lambda item: item["id"]):
+        cid = entry["id"]
+        try:
+            case_dir = index.parent / cid
+            if not case_dir.is_dir():
+                raise ValueError(f"caso ausente en el índice: {cid}")
+            facts, _ = read_json(case_dir / "facts.json")
+            criteria, _ = read_json(case_dir / "criteria.json")
+            journal = evidence / entry["journal"]
+            events, journal_digest = read_events(journal, journal.name)
+            if journal_digest != entry["journal_sha256"]:
+                raise ValueError("el digest del journal no coincide con el "
+                                 "índice")
+            verdict = grade(facts, events, criteria)["verdict"]
+        except (OSError, ValueError) as error:
+            errors.append({"id": cid, "reason": str(error)})
+            continue
+        versions.add(entry["prompt_version"])
+        details.append({"id": cid, "expected": entry["expected_verdict"],
+                        "actual": verdict,
+                        "ok": verdict == entry["expected_verdict"]})
+    score = {"cases": len(entries), "prompt_versions": sorted(versions)}
+    if prompt_path is not None:
+        score["prompt_bytes"] = Path(prompt_path).stat().st_size
+    if errors:
+        score["errors"] = errors
+        return score
+    score["errors"] = []
+    score["correct"] = sum(1 for item in details if item["ok"])
+    score["abstain"] = sum(1 for item in details if item["actual"] == "ABSTAIN")
+    score["mismatches"] = [item["id"] for item in details if not item["ok"]]
+    score["details"] = details
+    return score
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="creator_eval.py",
         description="Califica una corrida de Creator y retiene el informe con digests.")
-    parser.add_argument("--case", required=True,
+    parser.add_argument("--case",
                         help="Caso a calificar, o caso a construir con --from-run")
     parser.add_argument("--report",
                         help="Informe a retener; por defecto <case>/report.json "
@@ -494,8 +578,31 @@ def main(argv=None):
     parser.add_argument("--project-root", metavar="PRODUCT_DIR", default=None,
                         help="Raíz del producto del run: sin ella los hechos "
                              "no llevan product_tree_digest y el campo se omite")
+    parser.add_argument("--corpus", metavar="INDEX", default=None,
+                        help="Índice del corpus (eval/cases/index.json): "
+                             "puntúa todos los casos, sin escribir nada")
+    parser.add_argument("--evidence", metavar="DIR", default=None,
+                        help="Raíz de evidencia externa con los journals "
+                             "(obligatorio con --corpus)")
+    parser.add_argument("--prompt-file", metavar="PROMPT", default=None,
+                        help="Fichero de prompt versionado: sin él el "
+                             "puntaje omite prompt_bytes, nunca lo inventa")
     args = parser.parse_args(argv)
     try:
+        if args.corpus and (args.case or args.from_run):
+            raise ValueError("--corpus no se combina con --case ni --from-run")
+        if not args.corpus and not args.case:
+            raise ValueError("elige un modo: --case (opcionalmente con "
+                             "--from-run) o --corpus")
+        if args.corpus:
+            if not args.evidence:
+                raise ValueError("--evidence es obligatorio con --corpus")
+            score = score_corpus(
+                Path(args.corpus), evidence_root=Path(args.evidence),
+                prompt_path=Path(args.prompt_file) if args.prompt_file else None)
+            print(json.dumps(score, ensure_ascii=False, indent=2,
+                             sort_keys=True))
+            return 1 if score["errors"] else 0
         if args.from_run:
             if not args.criteria:
                 raise ValueError("--criteria es obligatorio con --from-run")
