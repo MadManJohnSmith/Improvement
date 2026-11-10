@@ -153,8 +153,12 @@ def _product_tree_digest(project_root):
     the product, so the digest comparable with the one registered in the
     product manifest (``acceptance_reviewer.tree_digest``, the framework's
     own convention) only exists when the caller supplies the root, as the
-    workflow does with ``--project-root``. Absent root, absent field: the
-    closed projection never invents an identity.
+    workflow does with ``--project-root``. The framework convention excludes
+    the checkout's root ``.git`` from the walk, so the comparability holds
+    when the root is a Git project and not only the bare product: the same
+    tree yields the registered value whether it arrives as a clone or not.
+    Absent root, absent field: the closed projection never invents an
+    identity.
     """
     if not project_root:
         return None

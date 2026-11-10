@@ -33,6 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
 sys.path.insert(0, str(ROOT / "scripts"))
+import acceptance_reviewer
 import generation_contracts as gc
 import sanitation
 
@@ -228,7 +229,11 @@ def _tree_digest(root):
     agree on this convention: every file sorted by path, each entry carrying
     the relative path, the file's sha256 and its byte size, serialised as
     canonical JSON. No timestamps and no filesystem metadata, which is what
-    makes the digest a stable identity for the same content.
+    makes the digest a stable identity for the same content. The framework's
+    walk additionally excludes a root ``.git`` — its metadata is specific to
+    the environment that produced the checkout — so this mirror keeps the
+    raw convention: the products it digests carry no ``.git``, which is also
+    what makes it the no-exclusion baseline of the Git-project regression.
     """
     root = Path(root)
     entries = []
@@ -302,6 +307,84 @@ class ProductIdentityTest(unittest.TestCase):
                 self.assertNotEqual(_tree_digest(copy),
                                     _tree_digest(product_root),
                                     "cambiar el contenido no mueve la identidad")
+
+    def test_the_identity_survives_turning_the_product_into_a_git_project(self):
+        """The registered identity holds over a Git checkout of the product.
+
+        The bytes of a checkout's ``.git`` (objects, hooks, whatever the
+        runner leaves behind) are specific to the environment that produced
+        it: with them in the walk, ``--project-root`` over a Git project
+        produced a digest that reproduced nowhere, and the value registered
+        in the manifest stopped being comparable (follow-up #28). The
+        framework convention excludes the root ``.git`` from the walk, so
+        two clones of the same tree with different Git metadata and the
+        bare copy all carry the registered identity. The mirror — which has
+        no exclusion — does move on a checkout, and that is the regression's
+        own non-vacuity: dropping the exclusion would turn the clone
+        assertions red instead of drifting silently. The same regression
+        fixes the rest of the contract: the golden value pins the entry
+        format (relative path, sha256, byte size, canonical JSON), and a
+        symlink in the paths the walk still covers is rejected as before.
+        """
+        import shutil
+        import subprocess
+        import tempfile
+        registered = json.loads(
+            (FIXTURES / "libreta" / "project-manifest.json").read_text(
+                encoding="utf-8"))["root_identity"]
+        product_root = FIXTURES / "libreta" / "product"
+        work = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, work, ignore_errors=True)
+
+        def checkout(name, identity):
+            root = work / name
+            shutil.copytree(product_root, root)
+            subprocess.run(["git", "init", "-q", str(root)], check=True,
+                           capture_output=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True,
+                           capture_output=True)
+            subprocess.run(
+                ["git", "-C", str(root),
+                 "-c", f"user.email={identity}@example.invalid",
+                 "-c", f"user.name={identity}",
+                 "commit", "-qm", f"fixture {name}"],
+                check=True, capture_output=True)
+            return root
+
+        clone_a = checkout("clone-a", "runner-a")
+        clone_b = checkout("clone-b", "runner-b")
+        # Content beyond the commit identity a runner leaves in .git: an
+        # environment marker and a symlink, which a clone of the same tree
+        # produced elsewhere does not carry.
+        (clone_b / ".git" / "runner-marker").write_text("ci specific\n")
+        (work / "outside.txt").write_text("target outside the walk\n")
+        (clone_b / ".git" / "hooks" / "pre-commit").symlink_to(
+            work / "outside.txt")
+        bare = work / "bare"
+        shutil.copytree(product_root, bare)
+
+        self.assertEqual(acceptance_reviewer.tree_digest(clone_a), registered,
+                         "un checkout del producto no lleva la identidad "
+                         "registrada")
+        self.assertEqual(acceptance_reviewer.tree_digest(clone_b), registered,
+                         "dos clones del mismo árbol con .git distinto "
+                         "no deben mover la identidad")
+        self.assertEqual(acceptance_reviewer.tree_digest(bare), registered,
+                         "el producto sin .git sigue llevando la identidad "
+                         "registrada")
+        self.assertNotEqual(_tree_digest(clone_a), registered,
+                            "sin la exclusión del .git raíz el digest del "
+                            "checkout se movería: la igualdad no sería vacua")
+        self.assertEqual(_tree_digest(bare), registered,
+                         "el espejo sin exclusión y el framework concuerdan "
+                         "en un árbol sin .git")
+
+        linked = work / "linked"
+        shutil.copytree(product_root, linked)
+        (linked / "src" / "alias.py").symlink_to(
+            linked / "src" / "__init__.py")
+        with self.assertRaisesRegex(ValueError, "Symlink no permitido"):
+            acceptance_reviewer.tree_digest(linked)
 
 
 if __name__ == "__main__":

@@ -26,10 +26,22 @@ def _sha256(path):
 
 
 def tree_digest(root):
-    """Stable digest of relative path, file digest and byte size."""
+    """Stable digest of relative path, file digest and byte size.
+
+    The walk covers every regular file under ``root`` except anything that
+    hangs from a ``.git`` at the root of the walk: the Git metadata of a
+    checkout — a ``.git`` directory, or the gitfile a worktree carries — is
+    specific to the environment that produced it, and carrying those bytes
+    made the same product tree digest differently per clone. The rest of
+    the contract is unchanged: entries sorted by relative path, each
+    carrying path, sha256 and byte size, serialised as canonical JSON; a
+    symlink in the paths the walk still covers is rejected as before.
+    """
     root = Path(root)
     entries = []
     for path in sorted(root.rglob("*")):
+        if path.relative_to(root).parts[0] == ".git":
+            continue
         if path.is_symlink():
             raise ValueError(f"Symlink no permitido en candidato: {path}")
         if path.is_file():

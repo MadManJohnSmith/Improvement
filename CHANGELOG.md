@@ -1,5 +1,35 @@
 # Cambios
 
+## tree-digest: el digest de árbol excluye el `.git` raíz — 2026-11-10
+
+Cierre del hallazgo de seguimiento #28 (materialización del pre-registro de
+la corrida de verificación, #22):
+
+- **`acceptance_reviewer.tree_digest` excluye del recorrido todo lo que
+  cuelga de un `.git` en la raíz.** Los bytes del `.git` de un checkout
+  (objetos, hooks, lo que deje el runner) son específicos del entorno que
+  lo produjo: con ellos en el recorrido, `creator_case.py --project-root`
+  sobre un proyecto Git producía un digest que no reproducía entre
+  entornos y el valor registrado en `fixtures/libreta/project-manifest.json`
+  (`85cd1e88…`) dejaba de ser comparable. Decisión del mantenedor (2026-11-10):
+  excluir el `.git` raíz; el resto del contrato no cambia — ficheros
+  regulares, path relativo + sha256 + tamaño, symlinks del recorrido
+  rechazados con el error de siempre. El salto por primera componente de
+  ruta deja fuera también el gitfile `.git` de un worktree, por la misma
+  razón (metadata de Git específica del entorno).
+- **Una regresión fija el contrato completo** (`tests/test_fixtures.py`,
+  clase `ProductIdentityTest`): dos clones del mismo árbol con `.git`
+  distinto y la copia sin `.git` llevan la identidad registrada; el espejo
+  del digest sin exclusión mueve el digest sobre un checkout, que es la
+  no-vacuidad de la regresión — quitar la exclusión la pone en rojo —; el
+  valor dorado fija el formato de entradas; y un symlink en el recorrido
+  se rechaza igual. La comparabilidad que `docs/status.md` declara para el
+  `product_tree_digest` queda cierta también sobre proyectos Git; los
+  digests ya registrados en evidencia histórica no se reescriben y la
+  comparabilidad del corpus sigue yendo por `root_identity`.
+- Suite 1328 → 1329 (+1: la regresión del digest de árbol); saltos 12 sin
+  cambios; recuentos resincronizados.
+
 ## Jardinero: postes de madera — 2026-11-10
 
 Fase 3 del plan de arquitectura (auditoría del 2026-11-10):
