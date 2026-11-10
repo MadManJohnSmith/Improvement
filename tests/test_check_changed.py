@@ -137,6 +137,32 @@ class PrePushHookCanaryTests(unittest.TestCase):
         self.assertIn('unittest discover -s tests', hook)
 
 
+class RunnerPathTests(unittest.TestCase):
+    """El runner del ciclo rápido monta el path que la suite completa da por
+    hecho: tests/ para importar por nombre y la raíz del repo para los
+    imports de paquete (`tests.otro_modulo`) que algunos builders usan."""
+
+    def test_the_runner_path_makes_the_tests_package_importable(self):
+        import importlib.util
+
+        saved = [entry for entry in sys.path
+                 if entry in (str(REPO_ROOT), str(check_changed.TESTS_DIR))]
+        for entry in saved:
+            sys.path.remove(entry)
+        try:
+            check_changed.prepare_test_sys_path()
+            self.assertIn(str(REPO_ROOT), sys.path)
+            self.assertIn(str(check_changed.TESTS_DIR), sys.path)
+            self.assertIsNotNone(
+                importlib.util.find_spec("tests"),
+                "sin la raíz en sys.path, los imports tests.* mueren en el "
+                "ciclo rápido aunque pasen en la suite completa")
+        finally:
+            for entry in saved:
+                if entry not in sys.path:
+                    sys.path.insert(0, entry)
+
+
 class CliContractTests(unittest.TestCase):
     """Contrato de salida: la selección es JSON estable y nombra canaries."""
 

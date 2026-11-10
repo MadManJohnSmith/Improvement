@@ -207,9 +207,24 @@ def resolve_affected(changed, import_map):
     return dict(sorted(selected.items())), sorted(uncovered)
 
 
+def prepare_test_sys_path():
+    """tests/ y la raíz del repo en sys.path, para importar en ambos modos.
+
+    Los módulos de test se importan por nombre tras añadir `tests/`, pero
+    algunos importan a su vez `tests.otro_modulo` (paquete): sin la RAÍZ del
+    repo en el path, el ciclo rápido moría donde la suite completa pasa
+    (`importlib.import_module("tests.test_creator_and_validator")` en el
+    builder de paquetes). Defecto latente de la fase 1, destapado el
+    2026-11-10 por el primer cambio real a `acceptance_reviewer`.
+    """
+    for path in (str(REPO_ROOT), str(TESTS_DIR)):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
 def run_selected(files):
-    """Corre la selección en un proceso, con los tests/ en el sys.path."""
-    sys.path.insert(0, str(TESTS_DIR))
+    """Corre la selección en un proceso, con el path que la suite espera."""
+    prepare_test_sys_path()
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for name in files:
