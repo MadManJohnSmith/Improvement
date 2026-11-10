@@ -23,17 +23,6 @@ def _write_new(path, value):
         json.dump(value, f, ensure_ascii=False, indent=2); f.write("\n")
 
 
-def reconcile(run_dirs):
-    runs = []
-    for raw in run_dirs:
-        p = Path(raw)
-        if not (p / "run.json").is_file():
-            raise ValueError(f"Run ausente: {p}")
-        run = json.loads((p / "run.json").read_text())
-        runs.append({"generation_id": run.get("generation_id"), "status": run.get("status")})
-    return {"schema_version": SCHEMA_VERSION, "runs": runs, "timestamp": _now()}
-
-
 def prepare(repo, *, tag=None, authorized=False):
     repo = Path(repo)
     if not (repo / ".git").is_dir():

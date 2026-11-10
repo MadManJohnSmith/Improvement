@@ -78,8 +78,8 @@ OVERRIDES = {
     },
     'scripts/capabilities.py': {
         'tests': (),
-        'motivo': 'módulo huérfano declarado: nada lo importa ni lo invoca '
-                  '(deuda nombrada, pendiente del gate de símbolos huérfanos)',
+        'motivo': 'plano de capability sin puerta de entrada: deuda declarada '
+                  'en el ALLOWLIST del gate de símbolos huérfanos',
     },
 }
 

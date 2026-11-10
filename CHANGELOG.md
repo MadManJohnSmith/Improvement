@@ -1,5 +1,35 @@
 # Cambios
 
+## Jardinero: poda preventiva — 2026-11-10
+
+Fase 2 del plan de arquitectura (auditoría del 2026-11-10):
+
+- **La auditoría E14 es mecanismo.** `tests/test_no_orphan_symbols.py` corre
+  el pase AST en cada suite: todo símbolo público de `scripts/` y `eval/`
+  con referencia cualificada cero —nadie importa el módulo y nombra al
+  símbolo, ni el propio módulo lo usa por dentro— rompe la suite, salvo
+  ALLOWLIST con motivo. Las referencias por docstring no cuentan: narrar un
+  propósito no es tenerlo.
+- **Tres huérfanos sentenciados al instalar el gate.** Los dos conocidos
+  (`workflow_evidence.memory_sizes`, `workflow_reasoning.normalize_level`,
+  ambos con docstrings que afirmaban un uso inexistente) y un tercero que el
+  gate encontró solo: `promotion.reconcile`, conciliación de runs
+  sustituida desde hace tiempo por `state_reconcile.py`, sin referencias en
+  tests, bootstrap ni docs.
+- **Deuda nombrada, decisión del mantenedor.** `scripts/capabilities.py` es
+  un plano de autoridad sin puerta de entrada cableada (nada lo importa ni
+  lo invoca): `capabilities.reusable` vive en el ALLOWLIST del gate y el
+  módulo en el override de cobertura de `check_changed.py`, hasta que se
+  borre o se cablee.
+- **Plomería de tests consolidada.** `tests/support_manifest.py` concentra
+  el patrón "toquetear artifact + re-firmar manifest" que estaba copiado 11
+  veces en `test_creator_and_validator.py` (−55 líneas): una sola forma de
+  re-firmar, una sola posibilidad de deriva. El 12º sitio queda tal cual:
+  usa `.get`, digest precalculado y no reescribe el manifest
+  deliberadamente. Los fixtures de composición de los ficheros-validador no
+  se consolidan: son copias antitautológicas por diseño.
+- Suite 1320 → 1324 (4 canaries del gate); recuentos resincronizados.
+
 ## Jardinero: señal fiable y puerta rápida — 2026-11-10
 
 Fase 1 del plan de arquitectura para agentes (auditoría del 2026-11-10):

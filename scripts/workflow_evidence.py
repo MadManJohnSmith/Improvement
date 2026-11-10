@@ -321,22 +321,6 @@ def read_memory(path):
     return value
 
 
-def memory_sizes(path):
-    """Tamaños por ruta que la memoria publicó; vacío si la memoria es ilegible.
-
-    Solo se usa para medir `bytes_saved` sin volver a leer el producto, y un
-    valor ausente o inválido deja la medida en 0 en lugar de estimarse.
-    """
-    value = read_memory(path)
-    sizes = value.get('sizes') if value is not None else None
-    if (not isinstance(sizes, dict)
-            or any(not isinstance(key, str) or not isinstance(item, int)
-                   or isinstance(item, bool) or item < 0
-                   for key, item in sizes.items())):
-        return {}
-    return {key: item for key, item in sizes.items() if key in (value['files'] if value else {})}
-
-
 def reconcile_hint(workspace, target):
     """Payload listo para MEMORY_RECONCILED: pista numérica, nunca autoridad.
 

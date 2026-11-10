@@ -17,9 +17,11 @@ import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import bootstrap
+import support_manifest
 import creator_client as cc
 import generation_contracts as gc
 import skill_router
@@ -1231,11 +1233,7 @@ class CreatorTests(Base):
         del plan["public_scenarios"][0]["type"]
         plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
         plan_path.write_bytes(plan_bytes)
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "acceptance-plan.json":
-                artifact["sha256"] = cc._digest_bytes(plan_bytes)
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "acceptance-plan.json", plan_bytes)
 
         with self.assertRaisesRegex(ValueError, "Prevalidación Host falló"):
             cc.CreatorSession(self.run_dir).verify_generation_output()
@@ -2542,11 +2540,7 @@ class ValidatorTests(Base):
         del legacy["kind"]
         legacy_bytes = (json.dumps(legacy, indent=2) + "\n").encode()
         contract_path.write_bytes(legacy_bytes)
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "contracts/skill-contract.json":
-                artifact["sha256"] = cc._digest_bytes(legacy_bytes)
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "contracts/skill-contract.json", legacy_bytes)
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertTrue(report.layers["contracts"]["passed"],
                         report.layers["contracts"]["details"])
@@ -2559,11 +2553,7 @@ class ValidatorTests(Base):
                 contract = dict(original, kind=value)
                 contract_bytes = (json.dumps(contract, indent=2) + "\n").encode()
                 contract_path.write_bytes(contract_bytes)
-                for artifact in manifest["artifacts"]:
-                    if artifact["path"] == "contracts/skill-contract.json":
-                        artifact["sha256"] = cc._digest_bytes(contract_bytes)
-                (generated / "generation-manifest.json").write_text(
-                    json.dumps(manifest, indent=2) + "\n")
+                support_manifest.resign_artifact(generated, manifest, "contracts/skill-contract.json", contract_bytes)
                 report = hv.validate_package(generated, run_dir=self.run_dir)
                 self.assertFalse(report.layers["contracts"]["passed"])
                 self.assertIn(expected, " ".join(
@@ -2874,11 +2864,7 @@ class ValidatorTests(Base):
         mode = json.loads(mode_path.read_text())
         del mode["mode_lifecycle"]
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-auditor/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-auditor/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("mode_lifecycle", " ".join(
@@ -2956,11 +2942,7 @@ class ValidatorTests(Base):
         contract["provision"] = "git-worktree-add-or-exact-safe-reuse"
         contract["provision_command"] += '; git -C "$product" worktree add -b dsh/x "$candidate"'
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-continuous-repair/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-continuous-repair/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("role contract", " ".join(
@@ -2977,11 +2959,7 @@ class ValidatorTests(Base):
             "state_root": f"{self.workspace.name}/mode-state",
         })
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-continuous-repair/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-continuous-repair/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("role contract", " ".join(
@@ -3066,11 +3044,7 @@ class ValidatorTests(Base):
         mode = json.loads(mode_path.read_text())
         del mode["mode_lifecycle"]["startup"]
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-auditor/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-auditor/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
@@ -3081,11 +3055,7 @@ class ValidatorTests(Base):
         mode = json.loads(mode_path.read_text())
         del mode["mode_lifecycle"]["tool_policy"]["bash_workdir"]
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-auditor/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-auditor/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
@@ -3096,11 +3066,7 @@ class ValidatorTests(Base):
         mode = json.loads(mode_path.read_text())
         del mode["mode_lifecycle"]["startup"]["success_sentinel"]
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-auditor/mode.json":
-                artifact["sha256"] = cc._digest_bytes(mode_path.read_bytes())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-auditor/mode.json", mode_path.read_bytes())
         report = hv.validate_package(generated, run_dir=self.run_dir)
         self.assertFalse(report.layers["contracts"]["passed"])
         self.assertIn("mode_lifecycle", " ".join(report.layers["contracts"]["details"]))
@@ -3416,11 +3382,7 @@ class ValidatorTests(Base):
         skill_path = mode_dir / "SKILL.md"
         wrong = skill_path.read_text().replace("workspace/mode-state", "Workspace/mode-state")
         skill_path.write_text(wrong)
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "modes/project-auditor/SKILL.md":
-                artifact["sha256"] = cc._digest_bytes(wrong.encode())
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "modes/project-auditor/SKILL.md", wrong.encode())
 
         report = hv.validate_package(generated, run_dir=self.run_dir)
 
@@ -3443,11 +3405,7 @@ class ValidatorTests(Base):
         del plan["public_scenarios"][0]["type"]
         plan_bytes = (json.dumps(plan, indent=2) + "\n").encode()
         plan_path.write_bytes(plan_bytes)
-        for artifact in manifest["artifacts"]:
-            if artifact["path"] == "acceptance-plan.json":
-                artifact["sha256"] = cc._digest_bytes(plan_bytes)
-        (generated / "generation-manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n")
+        support_manifest.resign_artifact(generated, manifest, "acceptance-plan.json", plan_bytes)
 
         report = hv.validate_package(generated)
 

@@ -45,11 +45,6 @@ def validate(level):
     return level
 
 
-def normalize_level(level):
-    """Alias explícito para puntos que normalizan al cargar el plan."""
-    return validate(level)
-
-
 def effective(plan, step):
     """(nivel pedido, fuente) con precedencia paso > plan > legacy.
 
