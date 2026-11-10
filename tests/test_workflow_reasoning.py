@@ -661,7 +661,11 @@ class RealRuntimeNotVerifiedTests(unittest.TestCase):
     `ClientSelectionWrapperTests`). Lo que SIGUE sin ejercicio es una sesion
     `dsh web` real con el nivel aplicado: ninguna prueba de este repo habla con
     un servidor vivo. Estas pruebas lo dicen para que no se afirme en falso lo
-    no ejecutado.
+    no ejecutado. El coste de una sesion real queda por medir: ninguna cifra
+    de estas pruebas proviene de una sesion viva, y esta nota de cuidado vive
+    aqui y no en sondas de entorno, porque el PATH del operador no es un hecho
+    del repo (sondarlo dejaba la suite entera en rojo en la maquina donde DSH
+    si existe).
     """
 
     def test_the_wrapper_exists_but_was_never_exercised_against_a_live_session(self):
@@ -716,17 +720,6 @@ class RealRuntimeNotVerifiedTests(unittest.TestCase):
         self.assertEqual(outcome['result'], 'ABSTAINED')
         self.assertIn('cliente DSH', outcome['reason'])
         self.assertFalse(run_root.exists())
-
-    def test_the_cost_of_a_real_session_is_not_claimed_here(self):
-        """El coste observado de una sesion real DSH no se midio en esta prueba.
-
-        Sin `dsh` en PATH ni `~/.config/dsh/.credentials.yaml`, ninguna sesion
-        real corre: `creator_client.from_dsh_home` lanzaria
-        'No .credentials.yaml'. La cifra de coste queda por medir, no estimada.
-        """
-        self.assertIsNone(shutil.which('dsh'))
-        self.assertFalse(Path.home().joinpath('.config', 'dsh',
-                                              '.credentials.yaml').is_file())
 
 
 class LevelChangeIsADifferentRunTests(unittest.TestCase):

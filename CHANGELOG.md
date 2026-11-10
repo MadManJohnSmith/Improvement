@@ -1,5 +1,36 @@
 # Cambios
 
+## Jardinero: señal fiable y puerta rápida — 2026-11-10
+
+Fase 1 del plan de arquitectura para agentes (auditoría del 2026-11-10):
+
+- **El canario que sondeaba el mundo ya no rompe la suite del operador.**
+  `test_the_cost_of_a_real_session_is_not_claimed_here` afirmaba
+  `shutil.which('dsh') is None` y la ausencia de `.credentials.yaml`; en la
+  máquina donde DSH existe legítimamente la suite entera caía
+  (`FAILED (failures=1)`). Las sondas no probaban la procedencia de las
+  cifras: la nota epistémica vive ahora en el docstring de
+  `RealRuntimeNotVerifiedTests` y la invariante real (sin cliente usable →
+  `ABSTAINED` con causa) queda en su test de comportamiento.
+- **Identidad git propia en los fixtures** que crean commits con
+  `commit-tree` (`test_mode_lifecycle.py`): la suite ya no depende de la
+  configuración global de git (2 errors en entornos sandbox).
+- **`scripts/check_changed.py` (stdlib): la puerta rápida del ciclo modular.**
+  El mapeo módulo→tests deja de ser folklore: derivación transitiva por AST
+  de importación sobre `scripts/` y `eval/` (un test que importa
+  `host_validator` ejercita también `layout_contract`), overrides con motivo
+  para lo que la importación no ve (plugins `.mjs`, hook, workflow de
+  evaluación), canaries permanentes de consistencia, y fallo cerrado
+  nombrando cualquier módulo sin cobertura derivada ni override declarado.
+- **El hook pre-push deja de ser un fantasma.** `scripts/hooks/pre-push`
+  hace preflight con la puerta antes de correr la suite completa (que sigue
+  siendo la última puerta del push); `tests/test_check_changed.py` liga hook
+  y puerta para que ninguno de los dos se pudra en silencio. Activación
+  local: `git config core.hooksPath scripts/hooks`.
+- **Deuda nombrada, no resuelta:** `scripts/capabilities.py` es un módulo
+  huérfano (nada lo importa ni lo invoca). Queda declarado en el override de
+  cobertura pendiente del gate de símbolos huérfanos (fase 2 del plan).
+
 ## eval-remota: corpus versionado y venue local del protocolo — 2026-11-07
 
 Primera mitad de #22 (la derivación del caso verde espera la corrida de

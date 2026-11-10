@@ -1011,7 +1011,8 @@ class ModeLifecycleTests(unittest.TestCase):
             # Una revisión que existe en el objeto store pero no en esta historia:
             # exactamente lo que deja una historia reescrita o forzada.
             orphan = subprocess.check_output(
-                ["git", "-C", str(product), "commit-tree",
+                ["git", "-C", str(product), "-c", "user.name=Test",
+                 "-c", "user.email=test@example.invalid", "commit-tree",
                  "4b825dc642cb6eb9a060e54bf8d69288fbee4904"],
                 input="divergido\n", text=True).strip()
             self.assertNotEqual(
@@ -1207,7 +1208,8 @@ class ModeLifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             session, product, layout, base = self._provision_fixture(Path(tmp))
             orphan = subprocess.check_output(
-                ["git", "-C", str(product), "commit-tree",
+                ["git", "-C", str(product), "-c", "user.name=Test",
+                 "-c", "user.email=test@example.invalid", "commit-tree",
                  "4b825dc642cb6eb9a060e54bf8d69288fbee4904"],
                 input="orphan\n", text=True).strip()
             digest = "0123456789abcdef"

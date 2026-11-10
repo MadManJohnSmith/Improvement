@@ -38,8 +38,10 @@ historial local de ZCode (3.252 sesiones, 136.565 llamadas de herramienta,
 
 ## Suite y commits
 
-- Durante el ciclo, el módulo afectado; la suite completa una vez al cierre de la
-  unidad. Un cambio solo de documentación no pide la suite completa.
+- Durante el ciclo, el módulo afectado (`python3 -B scripts/check_changed.py`
+  deriva los tests de lo cambiado; el mapa es canary, no folklore); la suite
+  completa una vez al cierre de la unidad. Un cambio solo de documentación no
+  pide la suite completa.
 - Antes de `reset`, `cherry-pick -i` o cualquier reescritura, mirar `git status`:
   el trabajo sin versionar no se descarta.
 - Si falla el proyecto desechable, se corrige el proyecto, no el flujo.
