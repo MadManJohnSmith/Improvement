@@ -1,5 +1,32 @@
 # Cambios
 
+## Jardinero: postes de madera — 2026-11-10
+
+Fase 3 del plan de arquitectura (auditoría del 2026-11-10):
+
+- **Cada acción de los workflows va anclada por SHA completo.** checkout,
+  setup-python, setup-node y upload-artifact pasan de `@v4`/`@v5`
+  (referencias mutables) a SHA de commit con la versión anotada;
+  `tests/test_workflow_pinning.py` exige el ancla de 40 hex para todo
+  `uses:`. Es la superficie de suministro que este repo ejecuta (el
+  workflow de evaluación maneja `DSH_PROVIDER_API_KEY`).
+- **Los criteria por caso versionado pasan por el validador del evaluador
+  en la suite** (`tests/test_eval_cases.py`): un `criteria.json` malformado
+  se descubría solo en la corrida externa, cara y posterior al despacho.
+- **La evidencia contra el loader real corre programada**
+  (`tests/test_real_loader_evidence.py`): `verify-doc-drift.mjs` (offline,
+  con node) y los dos chequeos del loader DSH (con `DSH_MODULE_ROOT`)
+  entran en la suite con la convención del repo — skip que nombra el
+  componente ausente; antes vivían solo en `docs/setup-dsh.md`.
+- **Contrato compartido afinado**: el detector de claves literales
+  (`LITERAL_KEY`) excluye los runs pegados a `@` u otro alfanumérico — el
+  SHA de una acción anclada es una referencia, no una clave pegada.
+- Suite 1324 → 1328 (+4: pinning 1, loader real 2, criteria 1); saltos
+  11 → 12 (el loader real nombra su componente); recuentos resincronizados.
+- Pendiente declarado de la fase 3: la consolidación `scripts/support.py`
+  (11 wrappers sha256, ~15 escrituras atómicas) — unidad propia por su
+  churn sobre módulos calientes.
+
 ## Jardinero: poda preventiva — 2026-11-10
 
 Fase 2 del plan de arquitectura (auditoría del 2026-11-10):

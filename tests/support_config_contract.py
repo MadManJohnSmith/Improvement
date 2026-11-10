@@ -12,6 +12,9 @@ ejecución de módulo único.
 import re
 
 # What a literal credential looks like in text. apiKeyEnv names a variable;
-# only a value would match these.
+# only a value would match these. The third alternative excludes runs glued
+# to `@` or to another alphanumeric: the 40-hex SHA a pinned action points
+# at (`uses: actions/checkout@<sha> # v4`) is a reference, not a pasted key.
 LITERAL_KEY = re.compile(
-    r"\bsk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{8,}|[A-Za-z0-9]{32,}")
+    r"\bsk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{8,}"
+    r"|(?<![0-9A-Za-z@])[A-Za-z0-9]{32,}")

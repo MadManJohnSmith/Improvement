@@ -65,5 +65,30 @@ class EvalCasesGateTest(unittest.TestCase):
             creator_eval.validate_index(index)
 
 
+class VersionedCaseCriteriaTests(unittest.TestCase):
+    """Los criteria por caso versionado pasan por el validador del evaluador.
+
+    El índice se valida y los facts llevan su puerta de saneamiento, pero un
+    `criteria.json` malformado solo se descubría en la corrida externa —
+    cara y posterior al despacho—, nunca en la suite. La misma función que
+    exige el evaluador al gradear (`require_criteria`) decide aquí, offline
+    y sin gastar.
+    """
+
+    def test_every_versioned_case_criteria_passes_the_evaluator_validator(self):
+        import json
+
+        cases = ROOT / "eval" / "cases"
+        checked = 0
+        for path in sorted(cases.glob("*/criteria.json")):
+            with self.subTest(case=path.parent.name):
+                criteria = json.loads(path.read_text(encoding="utf-8"))
+                creator_eval.require_criteria(criteria)
+            checked += 1
+        self.assertTrue(
+            checked,
+            "sin criteria versionados que validar: el escaneo está roto")
+
+
 if __name__ == "__main__":
     unittest.main()

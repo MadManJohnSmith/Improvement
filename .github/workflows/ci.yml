@@ -14,7 +14,7 @@ jobs:
     # que bubblewrap necesita para las pruebas end-to-end del canal.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # El lint estático ve sin gastar corrida lo que los dos primeros
       # despachos reales enseñaron por la vía cara: el contexto `runner` no
       # está disponible en el env de un job (HTTP 422) y un desajuste de caja
@@ -29,7 +29,7 @@ jobs:
             https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -no-color
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@0ae58361cdfd39e2950bed97a1e26aa20c3d8955 # v5
         with:
           python-version: '3.x'
       - name: bubblewrap para las pruebas del canal de inferencia
