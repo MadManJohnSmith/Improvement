@@ -1,5 +1,29 @@
 # Cambios
 
+## creator: el digest de routing efectivo liga el roster declarado — 2026-11-12
+
+Fallo estructural convertido desde evidencia real (colina proxy sobre el
+prompt de Creator, ronda 0, run `gen-78901d1c44fa`, 2026-11-11; ADR 0004):
+
+- **`_manifest_derived` alimentaba a `effective_routing_digest` el digest
+  equivocado.** Copiaba `inputs/effective-routing.json`, cuyo valor es el
+  digest de la configuración DSH de proveedores y routing que
+  `bootstrap.py install` escribe sobre `pf["dsh"]`; el validador
+  (`host_validator.py`, capa `contracts`) exige el digest del roster de
+  routing declarado en los skill-contratos del paquete
+  (`skill_router._digest` sobre `[[name,routing],...]`). Con roster de
+  instalación vacío, cualquier generación que declarara routing fallaba
+  siempre, y el propio prompt promete la segunda semántica.
+- **`creator_client.effective_routing_digest(generated)`** deriva ahora el
+  digest desde los contratos del paquete, la misma forma canónica que
+  recomputa el validador. Sin filas declaradas, el digest de la lista
+  vacía. El input de instalación conserva su propósito original y deja de
+  alimentar este campo.
+- **Regresión** (`tests/test_routing_digest_binding.py`): la derivación
+  coincide con `skill_router._digest` con filas y sin ellas, y sobre un
+  run real el campo derivado nunca es el digest de la configuración
+  instalada mientras el paquete declara routing.
+
 ## tree-digest: el digest de árbol excluye el `.git` raíz — 2026-11-10
 
 Cierre del hallazgo de seguimiento #28 (materialización del pre-registro de

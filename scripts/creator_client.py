@@ -629,6 +629,37 @@ def _is_declared_output(relative):
     return relative in DECLARED_OUTPUT_FILES
 
 
+def effective_routing_digest(generated):
+    """SHA-256 canónico del roster de routing que el paquete declara.
+
+    Filas (name, routing) de los skill-contratos bajo `contracts/`, la misma
+    forma que host_validator recomputa al verificar el binding del manifest
+    («effective_routing_digest no liga roster aprobado»). Sin filas
+    declaradas, el digest de la lista vacía. El digest que bootstrap instala
+    en `inputs/effective-routing.json` es el de la configuración DSH de
+    proveedores y routing, no este roster: alimentar ese valor al campo
+    hacía fallar toda generación que declarara routing (ronda 0 de la
+    colina proxy, run gen-78901d1c44fa, 2026-11-11).
+    """
+    import skill_router as router
+    rows = []
+    contracts = Path(generated) / "contracts"
+    if contracts.is_dir():
+        for path in sorted(contracts.glob("*.json")):
+            if path.is_symlink():
+                continue
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(doc, dict) or "routing" not in doc:
+                continue
+            name = doc.get("name")
+            if isinstance(name, str) and name:
+                rows.append((name, doc["routing"]))
+    return router._digest(sorted(rows))
+
+
 def _manifest_derived(run_dir, generated, *, session_ref=None):
     """Return the manifest fields the Host derives from the run and the package.
 
@@ -646,7 +677,6 @@ def _manifest_derived(run_dir, generated, *, session_ref=None):
     run_dir = Path(run_dir)
     generated = Path(generated)
     request = _read_json(run_dir / "inputs" / "bootstrap-request.json")
-    routing = _read_json(run_dir / "inputs" / "effective-routing.json")
     discovery = _read_json(run_dir / "discovery" / "project-manifest.json")
     dsh = request.get("dsh") or {}
     run_doc = _read_json(run_dir / "run.json")
@@ -715,7 +745,7 @@ def _manifest_derived(run_dir, generated, *, session_ref=None):
         },
         "framework": {"revision": run_doc.get("framework_revision", "unknown")},
         "artifacts": artifacts,
-        "effective_routing_digest": routing["routing_digest"],
+        "effective_routing_digest": effective_routing_digest(generated),
         "context_policy": {
             "skill_entrypoint_max_bytes": 32768,
             "support_file_max_bytes": hv.SUPPORT_FILE_MAX_BYTES,
