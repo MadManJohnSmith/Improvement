@@ -15,7 +15,6 @@ Subcomandos:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -30,6 +29,7 @@ FRAMEWORK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FRAMEWORK / "scripts"))
 
 from onboard import checked, framework_clean, prepare_project_skills
+from support import digest_bytes, digest_file
 import metrics
 import state_reconcile
 
@@ -83,18 +83,6 @@ def _resolve_project_argument(value, *, framework=FRAMEWORK):
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def _digest_bytes(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def _digest_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _write_json(path, value):
@@ -199,8 +187,8 @@ def _root_identity(project, project_git):
     if _is_sha256_hex(rev):
         return rev.lower()
     if rev:
-        return _digest_bytes(rev.encode("utf-8"))
-    return _digest_bytes(str(project).encode("utf-8"))
+        return digest_bytes(rev.encode("utf-8"))
+    return digest_bytes(str(project).encode("utf-8"))
 
 
 def _detect_languages(project):
@@ -275,7 +263,7 @@ def _detect_instructions(project):
                 "path": rel,
                 "scope": scope,
                 "precedence": precedence,
-                "sha256": _digest_file(p),
+                "sha256": digest_file(p),
             })
     return entries
 
@@ -671,7 +659,7 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
         library_doc = _read_json(library_path)
         gc.validate("library", library_doc)
         _write_json(run_dir / "inputs" / "library.json", library_doc)
-        library_digest = _digest_file(library_path)
+        library_digest = digest_file(library_path)
 
     # Create inputs/bootstrap-request.json
     _write_json(run_dir / "inputs" / "bootstrap-request.json", {
@@ -734,7 +722,7 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     })
 
     # Create inputs/effective-routing.json (digest only, no credentials)
-    routing_digest = _digest_bytes(
+    routing_digest = digest_bytes(
         json.dumps(pf["dsh"], sort_keys=True).encode("utf-8")
     )
     _write_json(run_dir / "inputs" / "effective-routing.json", {
@@ -837,7 +825,7 @@ def _acceptance_request(run_dir, generated, *, source):
     return {
         "schema_version": SCHEMA_VERSION,
         "generation_id": gen_id,
-        "manifest_digest": _digest_file(manifest_path),
+        "manifest_digest": digest_file(manifest_path),
         "artifact_count": len(artifacts),
         "timestamp": _now_iso(),
         "source": source,

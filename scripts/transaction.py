@@ -23,6 +23,7 @@ import mode_lifecycle
 from mode_lifecycle import initialize_state
 from campaign_plan import write_campaign
 from host_validator import skill_frontmatter_issue
+from support import atomic_write, digest_bytes, digest_file
 
 FRAMEWORK = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -31,14 +32,6 @@ SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def _sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _json(path):
@@ -98,7 +91,7 @@ def _inventory(root):
     for p in sorted(root.rglob("*")):
         if p.is_file() and not p.is_symlink():
             result[str(p.relative_to(root))] = {
-                "sha256": _sha256(p),
+                "sha256": digest_file(p),
                 "size_bytes": p.stat().st_size,
             }
     return result
@@ -166,17 +159,13 @@ class Transaction:
             name = getattr(mode_lifecycle, name_attr)
             body = getattr(mode_lifecycle, body_attr).encode("utf-8")
             declared = getattr(mode_lifecycle, digest_attr)
-            measured = hashlib.sha256(body).hexdigest()
+            measured = digest_bytes(body)
             if measured != declared:
                 raise TransactionError(f"digest del helper {name} no coincide")
             target = target_root / name
             if target.is_symlink():
                 raise TransactionError(f"helper gestionado es symlink: {name}")
-            temporary = target_root / ("." + name + "." + secrets.token_hex(8))
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(body)
-            os.replace(temporary, target)
+            atomic_write(target, body)
             published[name] = measured
         return published
 
@@ -307,7 +296,7 @@ class Transaction:
                 continue
             if key == 'capability-plan':
                 path = root / 'capability-plan.json'
-                if path.is_symlink() or not path.is_file() or _sha256(path) != saved.get('sha256'):
+                if path.is_symlink() or not path.is_file() or digest_file(path) != saved.get('sha256'):
                     raise TransactionError('Backup de capability-plan alterado')
             elif key == 'campaign':
                 path = root / 'campaign'

@@ -12,7 +12,7 @@ tests. Cada fichero-validador se queda el suyo.
 import json
 from pathlib import Path
 
-from acceptance import _digest_bytes
+from support import digest_bytes
 
 
 def resign_artifact(generated, manifest, relative_path, new_bytes):
@@ -24,6 +24,6 @@ def resign_artifact(generated, manifest, relative_path, new_bytes):
     """
     for artifact in manifest["artifacts"]:
         if artifact["path"] == relative_path:
-            artifact["sha256"] = _digest_bytes(new_bytes)
+            artifact["sha256"] = digest_bytes(new_bytes)
     (Path(generated) / "generation-manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n")

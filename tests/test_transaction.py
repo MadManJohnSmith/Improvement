@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import transaction as tx
+from support import digest_file
 import stack
 import acceptance
 import acceptance_reviewer
@@ -172,11 +173,11 @@ class TransactionTests(unittest.TestCase):
             "acceptance_plan_valid": True,
             "dynamic_evaluation": "NOT_RUN",
             "candidate_digest": acceptance_reviewer.tree_digest(generated),
-            "manifest_digest": acceptance._digest_file(
+            "manifest_digest": digest_file(
                 generated / "generation-manifest.json"),
-            "validation_summary_digest": acceptance._digest_file(
+            "validation_summary_digest": digest_file(
                 run / "validation" / "summary.json"),
-            "acceptance_plan_digest": acceptance._digest_file(
+            "acceptance_plan_digest": digest_file(
                 generated / "acceptance-plan.json"),
             "host_policy_digest": acceptance.current_host_policy_digest(),
             "timestamp": "2026-01-01T00:00:00+00:00",

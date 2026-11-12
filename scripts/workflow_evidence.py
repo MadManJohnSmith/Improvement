@@ -19,13 +19,14 @@ parcial, es evidencia de otro árbol. Un fichero cambiado, borrado o renombrado
 se cuenta como fallo; un symlink, un fichero que cambia mientras se lee o un
 inventario ilegible descartan la memoria entera en lugar de degradarla.
 """
-import hashlib
 import json
 import os
 import stat
 import subprocess
 
 from pathlib import Path
+
+from support import digest_bytes
 
 MEMORY_NAME = 'memory.json'
 MEMORY_KIND = 'workflow-memory'
@@ -46,10 +47,6 @@ CONFIG_FILES = (IDENTITY_NAME, BASE_NAME)
 
 class EvidenceError(ValueError):
     """Inventario o memoria ilegible; la memoria se descarta entera."""
-
-
-def _digest(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def _canonical(value):
@@ -102,7 +99,7 @@ def _walk_folders(root, prefix=''):
             data = path.read_bytes()
             if len(data) != info.st_size:
                 raise EvidenceError('fichero cambió durante la lectura: ' + relative)
-            result[relative] = _digest(data)
+            result[relative] = digest_bytes(data)
             sizes[relative] = info.st_size
     return result, sizes
 
@@ -184,10 +181,10 @@ def _bounded_tree_digest(root):
             except OSError:
                 entries.append((os.path.relpath(path, root), 'x', 'ilegible'))
                 continue
-            entries.append((os.path.relpath(path, root), 'f', _digest(data)))
+            entries.append((os.path.relpath(path, root), 'f', digest_bytes(data)))
     if len(entries) > SKILL_ENTRY_LIMIT:
         raise EvidenceError('skills por encima del tope de entradas')
-    return _digest(_canonical(entries).encode('utf-8'))
+    return digest_bytes(_canonical(entries).encode('utf-8'))
 
 
 def _config_digest(workspace, base):
@@ -204,7 +201,7 @@ def _config_digest(workspace, base):
         pieces.append(name + ':' + (_canonical(value) if value is not None else 'ausente'))
     for root in SKILL_ROOTS:
         pieces.append(root + ':' + _bounded_tree_digest(str(Path(workspace) / root)))
-    return _digest('\n'.join(pieces).encode('utf-8'))
+    return digest_bytes('\n'.join(pieces).encode('utf-8'))
 
 
 def snapshot(workspace):

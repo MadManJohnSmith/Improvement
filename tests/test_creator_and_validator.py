@@ -25,6 +25,7 @@ import support_manifest
 import creator_client as cc
 import generation_contracts as gc
 import skill_router
+from support import digest_bytes
 
 # install() y run_creator emiten progreso humano por stderr por diseño
 # (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
@@ -162,7 +163,7 @@ class Base(unittest.TestCase):
                     "type": "skill-entrypoint" if name == "SKILL.md" else
                             ("mode-definition" if name == "mode.json" else
                              "mode-adapter"),
-                    "sha256": cc._digest_bytes(content.encode()),
+                    "sha256": digest_bytes(content.encode()),
                 })
         capabilities = {
             "schema_version": 1,
@@ -201,15 +202,15 @@ class Base(unittest.TestCase):
         artifacts = mode_artifacts + [{
             "path": "skills/project-auditor/SKILL.md",
             "type": "skill-entrypoint",
-            "sha256": cc._digest_bytes(skill_content.encode()),
+            "sha256": digest_bytes(skill_content.encode()),
         }, {
             "path": "capabilities.json",
             "type": "manifest",
-            "sha256": cc._digest_bytes(capabilities_bytes),
+            "sha256": digest_bytes(capabilities_bytes),
         }, {
             "path": "acceptance-plan.json",
             "type": "plan",
-            "sha256": cc._digest_bytes(acceptance_bytes),
+            "sha256": digest_bytes(acceptance_bytes),
         }]
         manifest = {
             "schema_version": 1,
@@ -538,7 +539,7 @@ class CreatorTests(Base):
         plan_path.write_bytes(plan_bytes)
         next(item for item in manifest["artifacts"]
              if item["path"] == "acceptance-plan.json")["sha256"] = (
-                 cc._digest_bytes(plan_bytes))
+                 digest_bytes(plan_bytes))
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
 
@@ -1537,7 +1538,7 @@ class CreatorTests(Base):
                             if art["path"] == first["path"])
         self.assertNotEqual(actual_first["sha256"], "0" * 64)
         self.assertEqual(actual_first["sha256"],
-                         cc._digest_bytes(
+                         digest_bytes(
                              (generated / first["path"]).read_bytes()))
         # provenance carries the file reference that was missing before
         import generation_contracts as gc
@@ -2508,7 +2509,7 @@ class ValidatorTests(Base):
         manifest["artifacts"].append({
             "path": "contracts/skill-contract.json",
             "type": "contract",
-            "sha256": cc._digest_bytes(
+            "sha256": digest_bytes(
                 (contracts / "skill-contract.json").read_bytes()),
         })
         (generated / "generation-manifest.json").write_text(
@@ -2640,7 +2641,7 @@ class ValidatorTests(Base):
         path.write_text(body)
         manifest["artifacts"].append({
             "path": relative, "type": "skill-reference",
-            "sha256": cc._digest_bytes(body.encode())})
+            "sha256": digest_bytes(body.encode())})
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
         return path
@@ -2794,7 +2795,7 @@ class ValidatorTests(Base):
             (generated / "generation-manifest.json").read_text())
         for art in manifest["artifacts"]:
             if art["path"] == "contracts/skill-contract.json":
-                art["sha256"] = cc._digest_bytes(
+                art["sha256"] = digest_bytes(
                     (generated / "contracts" / "skill-contract.json").read_bytes())
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
@@ -2822,7 +2823,7 @@ class ValidatorTests(Base):
         contract.write_text(json.dumps(doc) + "\n")
         manifest["artifacts"].append({"path": "contracts/project-extra.skill.json",
                                        "type": "contract",
-                                       "sha256": cc._digest_bytes(contract.read_bytes())})
+                                       "sha256": digest_bytes(contract.read_bytes())})
         manifest["effective_routing_digest"] = skill_router._digest(
             [("project-extra", routing)])
         (generated / "generation-manifest.json").write_text(
@@ -2837,7 +2838,7 @@ class ValidatorTests(Base):
             "---\nname: project-extra\ndescription: Extra\n---\n# Extra\n")
         manifest["artifacts"].append({"path": "skills/project-extra/SKILL.md",
                                        "type": "skill-entrypoint",
-                                       "sha256": cc._digest_bytes((skill / "SKILL.md").read_bytes())})
+                                       "sha256": digest_bytes((skill / "SKILL.md").read_bytes())})
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
         report = hv.validate_package(generated)
@@ -3319,7 +3320,7 @@ class ValidatorTests(Base):
         skill = generated / "skills/project-auditor/SKILL.md"
         skill.write_text("---\nname: project-auditor\ndescription: a: b\n"
                          "---\n# Auditor\n")
-        digest = cc._digest_bytes(skill.read_bytes())
+        digest = digest_bytes(skill.read_bytes())
         for artifact in manifest["artifacts"]:
             if artifact.get("path") == "skills/project-auditor/SKILL.md":
                 artifact["sha256"] = digest
@@ -3356,7 +3357,7 @@ class ValidatorTests(Base):
         mode_path.write_text(json.dumps(mode, indent=2) + "\n")
         next(item for item in manifest["artifacts"] if item["path"] ==
              "modes/project-continuous-repair/mode.json")["sha256"] = (
-                 cc._digest_bytes(mode_path.read_bytes()))
+                 digest_bytes(mode_path.read_bytes()))
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
         report = hv.validate_package(generated, run_dir=self.run_dir)
@@ -3454,7 +3455,7 @@ class ValidatorTests(Base):
         (contracts / "repair.mode.json").write_bytes(mode_bytes)
         manifest["artifacts"].append({
             "path": "contracts/repair.mode.json", "type": "contract",
-            "sha256": cc._digest_bytes(mode_bytes),
+            "sha256": digest_bytes(mode_bytes),
         })
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
@@ -3475,7 +3476,7 @@ class ValidatorTests(Base):
         (contracts / "repair.mode.json").write_bytes(mode_bytes)
         manifest["artifacts"].append({
             "path": "contracts/repair.mode.json", "type": "contract",
-            "sha256": cc._digest_bytes(mode_bytes),
+            "sha256": digest_bytes(mode_bytes),
         })
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
@@ -3492,7 +3493,7 @@ class ValidatorTests(Base):
         (generated / "capabilities.json").write_bytes(cap_bytes)
         for art in manifest["artifacts"]:
             if art["path"] == "capabilities.json":
-                art["sha256"] = cc._digest_bytes(cap_bytes)
+                art["sha256"] = digest_bytes(cap_bytes)
         contracts = generated / "contracts"
         contracts.mkdir()
         for name, required, forbidden in (
@@ -3505,7 +3506,7 @@ class ValidatorTests(Base):
             path.write_bytes(data)
             manifest["artifacts"].append({
                 "path": f"contracts/{name}.mode.json", "type": "contract",
-                "sha256": cc._digest_bytes(data),
+                "sha256": digest_bytes(data),
             })
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")
@@ -3526,7 +3527,7 @@ class ValidatorTests(Base):
         (contracts / "scenarios.jsonl").write_bytes(data)
         manifest["artifacts"].append({
             "path": "contracts/scenarios.jsonl", "type": "contract",
-            "sha256": cc._digest_bytes(data),
+            "sha256": digest_bytes(data),
         })
         (generated / "generation-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n")

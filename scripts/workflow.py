@@ -74,6 +74,7 @@ from composition_contract import (ANTI_ESCALATION_PLUGIN,
                                   REQUIRED_MODE_PLUGINS)
 import workflow_evidence
 import workflow_reasoning
+from support import digest_bytes
 
 MAX_RECORD = 4096
 MAX_STORE = 8 * 1024 * 1024
@@ -135,10 +136,6 @@ class _Retained(Exception):
 
 def _canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
-
-
-def _sha256_bytes(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def _is_int(value):
@@ -646,7 +643,7 @@ def _read_verified(run_dir, limit):
                 or envelope.get('version') != 1 or set(envelope) != ENVELOPE_KEYS):
             raise WorkflowError('registro inválido' + where)
         content = {name: envelope[name] for name in CONTENT_KEYS}
-        if envelope['content_sha256'] != _sha256_bytes(_canonical(content)):
+        if envelope['content_sha256'] != digest_bytes(_canonical(content)):
             raise WorkflowError('registro alterado' + where)
         if content['seq'] != seq or content['prev_sha256'] != prev:
             raise WorkflowError('cadena del journal rota' + where)
@@ -680,7 +677,7 @@ def verify(run_dir, *, journal_limit=None):
     raw = snapshot.read_bytes()
     if len(raw) > MAX_PLAN_BYTES:
         raise WorkflowError('instantánea del plan demasiado grande')
-    if _sha256_bytes(raw) != payloads[0]['payload']['plan_sha256']:
+    if digest_bytes(raw) != payloads[0]['payload']['plan_sha256']:
         raise WorkflowError(SNAPSHOT_NAME + ' no coincide con PLAN_LOADED')
     try:
         plan = _validate_plan(json.loads(raw))
@@ -808,7 +805,7 @@ class _JournalWriter:
     def append(self, kind, payload, *, terminal=False):
         envelope = {'version': 1, 'seq': self.seq, 'event_id': 'e-' + secrets.token_urlsafe(12),
                     'kind': kind, 'payload': payload, 'prev_sha256': self.prev}
-        content_sha256 = _sha256_bytes(_canonical(envelope))
+        content_sha256 = digest_bytes(_canonical(envelope))
         envelope['content_sha256'] = content_sha256
         line = _canonical(envelope) + b'\n'
         if len(line) > MAX_RECORD:
@@ -1141,7 +1138,7 @@ def _replay(payloads, run_dir):
         obs_path = run_dir / obs_rel
         if not obs_path.is_file():
             raise WorkflowError('falta fichero de observación: ' + obs_rel)
-        if _sha256_bytes(obs_path.read_bytes()) != expected_sha:
+        if digest_bytes(obs_path.read_bytes()) != expected_sha:
             raise WorkflowError('observación alterada: ' + obs_rel)
 
     verified = {}
@@ -1471,7 +1468,7 @@ class _Run:
             relative, data = self._write_observation(step_id, 'gate', attempt,
                                                      exit_code=exit_code, stdout=stdout,
                                                      stderr=stderr, error=error, **extra_obs)
-            output_sha256 = _sha256_bytes(data)
+            output_sha256 = digest_bytes(data)
             if error is not None:
                 self._retain('gate-impossible:' + step_id + ':spawn')
             if exit_code == 0:
@@ -1532,7 +1529,7 @@ class _Run:
             digests[dep] = done['output_sha256']
         relative, data = self._write_observation(step_id, 'join', attempt, deps=digests)
         payload = {'step_id': step_id, 'attempt': attempt, 'observation': relative,
-                   'output_sha256': _sha256_bytes(data), 'deps': digests}
+                   'output_sha256': digest_bytes(data), 'deps': digests}
         self.record('STEP_COMPLETED', payload)
         self.completed[step_id] = dict(payload)
 
@@ -1577,7 +1574,7 @@ class _Run:
             verdict = source_info.get('result')
             if verdict is None:
                 obs_path = self.run_dir / source_info['observation']
-                if obs_path.is_file() and _sha256_bytes(obs_path.read_bytes()) == source_digest:
+                if obs_path.is_file() and digest_bytes(obs_path.read_bytes()) == source_digest:
                     try:
                         obs_body = json.loads(obs_path.read_bytes().decode('utf-8'))
                         verdict = obs_body.get('result')
@@ -1613,7 +1610,7 @@ class _Run:
             payload['reasoning'] = reasoning
         self.record('STEP_STARTED', payload)
         request_id = self._request_id(step_id, attempt)
-        prompt_sha256 = _sha256_bytes(step['prompt'].encode('utf-8'))
+        prompt_sha256 = digest_bytes(step['prompt'].encode('utf-8'))
         # Sesión NUEVA por intento con el preset verificado del proyecto;
         # nunca se adoptan sesiones ajenas.
         try:
@@ -1733,7 +1730,7 @@ class _Run:
         if pending['request_id'] != request_id:
             self._retain('ask-estado-ilegible:' + step_id + ':request_id no determinista')
         session_id = pending['session_id']
-        prompt_sha256 = _sha256_bytes(step['prompt'].encode('utf-8'))
+        prompt_sha256 = digest_bytes(step['prompt'].encode('utf-8'))
         state = _new_ask_state()
         try:
             observation = self.ask_client.creator_observation(session_id, cursor=-1)
@@ -1798,7 +1795,7 @@ class _Run:
             if source_info and source_info.get('output_sha256'):
                 deps[cond['from']] = source_info['output_sha256']
         payload = {'step_id': step_id, 'attempt': attempt, 'observation': relative,
-                   'output_sha256': _sha256_bytes(data), 'deps': deps,
+                   'output_sha256': digest_bytes(data), 'deps': deps,
                    'prompt_sha256': prompt_sha256}
         if reasoning is not None:
             # El nivel aplicado viaja con la prueba: queda en journal y en el
@@ -1871,7 +1868,7 @@ class _Run:
             value = json.loads(data.decode('utf-8'))
             if not isinstance(value, dict):
                 raise ValueError('resultado no es un objeto JSON')
-            return (target.relative_to(workspace).as_posix(), value, _sha256_bytes(data))
+            return (target.relative_to(workspace).as_posix(), value, digest_bytes(data))
         except (OSError, ValueError) as error:
             if not retain:
                 raise
@@ -1922,7 +1919,7 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
     hermano externo <workspace>-workflow.
     """
     plan, raw = load_plan(plan_path)
-    plan_sha256 = _sha256_bytes(raw)
+    plan_sha256 = digest_bytes(raw)
     campaign_manifest = _campaign_manifest(plan_path, plan_sha256)
     has_ask = any(step['type'] == 'ask' for step in plan['steps'])
     if has_ask and ask_client is None:
@@ -1970,7 +1967,7 @@ def run_plan(plan_path, *, journal_limit=None, ask_client=None, run_root=None):
         snapshot = run_dir / SNAPSHOT_NAME
         if not snapshot.is_file():
             raise WorkflowError('run dir existente sin ' + SNAPSHOT_NAME)
-        if _sha256_bytes(snapshot.read_bytes()) != plan_sha256:
+        if digest_bytes(snapshot.read_bytes()) != plan_sha256:
             raise WorkflowError('el plan difiere de la instantánea del run dir')
         state = _replay(payloads, run_dir)
         writer = _JournalWriter(run_dir, limit, len(payloads),

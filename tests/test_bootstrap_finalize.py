@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import bootstrap
+from support import digest_file
 
 # install() y run_creator emiten progreso humano por stderr por diseño
 # (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
@@ -35,7 +36,7 @@ class FinalizeTests(unittest.TestCase):
             json.dumps({
                 "schema_version": 1,
                 "generation_id": "gen-test",
-                "manifest_digest": bootstrap._digest_file(manifest_path),
+                "manifest_digest": digest_file(manifest_path),
                 "artifact_count": 0,
                 "timestamp": "2026-01-01T00:00:00+00:00",
                 "source": "creator",
@@ -233,7 +234,7 @@ class FinalizeTests(unittest.TestCase):
             request.write_text(json.dumps({
                 "schema_version": 1,
                 "generation_id": "gen-test",
-                "manifest_digest": bootstrap._digest_file(
+                "manifest_digest": digest_file(
                     self.generated / "generation-manifest.json"),
                 "artifact_count": 0,
                 "timestamp": "2026-01-01T00:00:00+00:00",
@@ -297,7 +298,7 @@ class FinalizeTests(unittest.TestCase):
         def regenerate(_workspace, _generated, *, source="creator"):
             request = {
                 "schema_version": 1, "generation_id": "gen-test",
-                "manifest_digest": bootstrap._digest_file(manifest_path),
+                "manifest_digest": digest_file(manifest_path),
                 "artifact_count": 1,
                 "timestamp": "2026-01-02T00:00:00+00:00",
                 "source": source,

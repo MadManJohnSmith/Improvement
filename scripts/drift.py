@@ -52,6 +52,8 @@ import sys
 import tokenize
 from pathlib import Path
 
+from support import digest_bytes
+
 SCHEMA_VERSION = 1
 
 DEFAULT_THRESHOLDS = {
@@ -172,10 +174,6 @@ def _target_tree(repo_root, target_rev):
 
 def _normalize_ws(text):
     return re.sub(r"\s+", " ", text).strip()
-
-
-def _sha256(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # --------------------------------------------------------------------------
@@ -937,7 +935,7 @@ def collect_baseline(config, *, target_rev="HEAD"):
                 tokens = units.get(name, {}).get("tokens", [])
                 entry = {
                     "symbol_id": "%s::%s" % (path, name),
-                    "contract_hash": _sha256(signature),
+                    "contract_hash": digest_bytes(signature.encode("utf-8")),
                     "signature": signature,
                     "tokens": tokens,
                 }
@@ -1083,7 +1081,7 @@ def evaluate(config, *, base_rev=None, target_rev="HEAD", dry_run=False):
             previous_private = previous["private"] if previous else None
 
             for name, signature in sorted(live.items()):
-                digest = _sha256(signature)
+                digest = digest_bytes(signature.encode("utf-8"))
                 record = {
                     "symbol_id": "%s::%s" % (path, name),
                     "contract_hash": digest,
@@ -1243,7 +1241,8 @@ def _check_pinned_block(block, tree, problems):
             problems["contract"].append({
                 "symbol": "%s::%s" % (path, name),
                 "before": signature, "after": None})
-        elif _sha256(signature) != _sha256(live[name]):
+        elif (digest_bytes(signature.encode("utf-8"))
+                != digest_bytes(live[name].encode("utf-8"))):
             problems["contract"].append({
                 "symbol": "%s::%s" % (path, name),
                 "before": signature, "after": live[name]})
@@ -1275,7 +1274,7 @@ def _base_symbols(config, base_rev, target_tree):
                 units = extract_semantic_tokens(path, source)
                 base.setdefault(doc, {})[path] = {
                     "public": {
-                        name: (_sha256(signatures[name]), signatures[name],
+                        name: (digest_bytes(signatures[name].encode("utf-8")), signatures[name],
                                units.get(name, {}).get("tokens", []))
                         for name in signatures},
                     "private": {

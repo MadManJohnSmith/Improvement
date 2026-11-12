@@ -24,6 +24,7 @@ import generation_contracts as gc
 from composition_contract import validate_operational_composition
 from layout_contract import layout_from_paths, validate_mode_layout
 from onboard import checked
+from support import digest_file
 
 SCHEMA_VERSION = 1
 
@@ -148,10 +149,6 @@ def skill_frontmatter_issue(path, expected_name):
     return None
 
 
-def _digest_file(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def _candidate_digest(root):
     """Digest every candidate entry, including symlinks rejected by validation."""
     root = Path(root)
@@ -168,7 +165,7 @@ def _candidate_digest(root):
             entries.append({
                 "path": relative,
                 "kind": "file",
-                "sha256": _digest_file(path),
+                "sha256": digest_file(path),
                 "size_bytes": path.stat().st_size,
             })
     return hashlib.sha256(json.dumps(
@@ -240,7 +237,7 @@ def validate_package(generated_dir, *, run_dir=None):
     report = ValidationReport(
         expected_gen_id,
         candidate_digest=_candidate_digest(generated),
-        manifest_digest=_digest_file(manifest_path),
+        manifest_digest=digest_file(manifest_path),
     )
 
     # Layer 1: Schema/version/unknown fields, including acceptance-plan early

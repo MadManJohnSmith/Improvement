@@ -37,6 +37,7 @@ from pathlib import Path
 import decisions
 import metrics
 import missions
+from support import digest_bytes
 from budget import Ledger
 from publisher import Publisher
 
@@ -277,8 +278,8 @@ class HostController:
         task_bytes = Path(task_ref).read_bytes()
         result_bytes = Path(result_ref).read_bytes()
         unit['task_ref'], unit['result_ref'] = str(task_ref), str(result_ref)
-        unit['task_sha256'] = missions.digest(task_bytes)
-        unit['result_sha256'] = missions.digest(result_bytes)
+        unit['task_sha256'] = digest_bytes(task_bytes)
+        unit['result_sha256'] = digest_bytes(result_bytes)
         self._save_queue()
         self._event('UNIT_REFS_UPDATED', unit=unit_id,
                     task_sha256=unit['task_sha256'], result_sha256=unit['result_sha256'])
@@ -479,10 +480,10 @@ class HostController:
 
     def _check_received(self, unit):
         task_bytes = Path(unit['task_ref']).read_bytes()
-        if missions.digest(task_bytes) != unit['task_sha256']:
+        if digest_bytes(task_bytes) != unit['task_sha256']:
             raise ValueError('sha256 de task no coincide con lo esperado')
         result_bytes = Path(unit['result_ref']).read_bytes()
-        if missions.digest(result_bytes) != unit['result_sha256']:
+        if digest_bytes(result_bytes) != unit['result_sha256']:
             raise ValueError('sha256 de result no coincide con lo esperado')
 
     def _publish(self, unit):

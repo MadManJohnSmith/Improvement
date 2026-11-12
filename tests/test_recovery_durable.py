@@ -24,6 +24,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import missions
+from support import digest_bytes
 from budget import BudgetExhausted, Ledger
 from host_launcher import launch
 from publisher import Publisher
@@ -124,8 +125,8 @@ class FixtureSession:
         qa_path = self.root / 'qa' / (unit + '.json')
         if not qa_path.exists():
             _save(qa_path, dict(
-                task_sha256=missions.digest(task_path.read_bytes()), files=green['after'],
-                check_sha256=missions.digest((green_dir / 'check.json').read_bytes()),
+                task_sha256=digest_bytes(task_path.read_bytes()), files=green['after'],
+                check_sha256=digest_bytes((green_dir / 'check.json').read_bytes()),
                 reviewer=unit + '-qa', session_ref='fixture-only',
                 review='QA simulada del fixture; no es revisión de agente.', verdict='ACCEPTED'))
         self.inject('during_qa')
@@ -136,11 +137,11 @@ class FixtureSession:
                 findings.parent.mkdir(parents=True, exist_ok=True)
                 findings.write_text('Fixture ' + unit + ': eliminar el desfase; prueba verde.')
             _save(result_path, dict(
-                version=1, task_sha256=missions.digest(task_path.read_bytes()),
+                version=1, task_sha256=digest_bytes(task_path.read_bytes()),
                 files=green['after'], status='ACCEPTED', findings_ref=str(findings),
-                findings_sha256=missions.digest(findings.read_bytes()),
+                findings_sha256=digest_bytes(findings.read_bytes()),
                 check_ref=str(green_dir / 'check.json'), qa_ref=str(qa_path),
-                qa_sha256=missions.digest(qa_path.read_bytes())))
+                qa_sha256=digest_bytes(qa_path.read_bytes())))
         if not missions.verify(task_path, result_path).startswith('ACCEPTED'):
             self._retain(unit, 'verificación documental no aceptada')
             return
@@ -148,8 +149,8 @@ class FixtureSession:
         store = self.publisher(unit)
         batch = self.batch_id(unit)
         evidence_payload = {
-            'task_ref': str(task_path), 'task_sha256': missions.digest(task_path.read_bytes()),
-            'result_ref': str(result_path), 'result_sha256': missions.digest(result_path.read_bytes())}
+            'task_ref': str(task_path), 'task_sha256': digest_bytes(task_path.read_bytes()),
+            'result_ref': str(result_path), 'result_sha256': digest_bytes(result_path.read_bytes())}
         try:
             closed = store.resolve(batch + '-close')
         except ValueError:
@@ -651,9 +652,9 @@ class RecoveryDurableTest(unittest.TestCase):
                 worker_path = root / 'launch-worker.py'
                 worker_path.write_text(LAUNCH_WORKER)
                 (root / 'launch-state').mkdir()
-                task_sha = missions.digest(task_path.read_bytes())
-                check_sha = missions.digest((green_dir / 'check.json').read_bytes())
-                calc_sha = missions.digest((candidate / 'calc.py').read_bytes())
+                task_sha = digest_bytes(task_path.read_bytes())
+                check_sha = digest_bytes((green_dir / 'check.json').read_bytes())
+                calc_sha = digest_bytes((candidate / 'calc.py').read_bytes())
 
                 def launch_worker(mode, timeout=30):
                     return launch(reads={'product': candidate, 'worker': worker_path},
@@ -734,7 +735,7 @@ class RecoveryDurableTest(unittest.TestCase):
     def _collect_and_publish(self, root, session, state, task_sha, check_sha, green):
         produced = json.loads((state / 'qa.json').read_text())
         self.assertEqual(produced['calc_sha256'],
-                         missions.digest((root / 'candidates' / 'h' / 'calc.py').read_bytes()))
+                         digest_bytes((root / 'candidates' / 'h' / 'calc.py').read_bytes()))
         self.assertEqual(produced['task_sha256'], task_sha)
         self.assertEqual(produced['check_sha256'], check_sha)
         qa_path = root / 'qa' / 'h.json'
@@ -752,9 +753,9 @@ class RecoveryDurableTest(unittest.TestCase):
         if not result_path.exists():
             _save(result_path, dict(
                 version=1, task_sha256=task_sha, files=green['after'], status='ACCEPTED',
-                findings_ref=str(findings), findings_sha256=missions.digest(findings.read_bytes()),
+                findings_ref=str(findings), findings_sha256=digest_bytes(findings.read_bytes()),
                 check_ref=str(root / 'runs' / 'h-green' / 'check.json'), qa_ref=str(qa_path),
-                qa_sha256=missions.digest(qa_path.read_bytes())))
+                qa_sha256=digest_bytes(qa_path.read_bytes())))
         self.assertTrue(missions.verify(root / 'tasks' / 'h.json', result_path).startswith('ACCEPTED'))
         store = session.publisher('h')
         try:
@@ -764,7 +765,7 @@ class RecoveryDurableTest(unittest.TestCase):
             evidence = store.publish_batch_record(
                 'owner-fixture', 'auth-fixture', 'batch-h', 'evidence',
                 {'task_ref': str(root / 'tasks' / 'h.json'), 'task_sha256': task_sha,
-                 'result_ref': str(result_path), 'result_sha256': missions.digest(result_path.read_bytes())},
+                 'result_ref': str(result_path), 'result_sha256': digest_bytes(result_path.read_bytes())},
                 'evidence')['record_id']
             task = store.publish_batch_record(
                 'owner-fixture', 'auth-fixture', 'batch-h', 'task',

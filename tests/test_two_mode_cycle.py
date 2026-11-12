@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import missions
+from support import digest_bytes
 import onboard
 from publisher import Publisher
 
@@ -42,9 +43,9 @@ class TwoModeCycleTest(unittest.TestCase):
             findings = root / 'audit-findings.md'
             findings.write_text('value.py satisfies the declared contract.')
             audit_result = root / 'audit-result.json'
-            missions.save(audit_result, dict(version=1, task_sha256=missions.digest(audit_task.read_bytes()),
+            missions.save(audit_result, dict(version=1, task_sha256=digest_bytes(audit_task.read_bytes()),
                 files=audit_check['after'], status='ACCEPTED', findings_ref=str(findings),
-                findings_sha256=missions.digest(findings.read_bytes())))
+                findings_sha256=digest_bytes(findings.read_bytes())))
             self.assertTrue(missions.verify(audit_task, audit_result).startswith('ACCEPTED'))
 
             candidate = root / 'candidate'
@@ -66,24 +67,24 @@ class TwoModeCycleTest(unittest.TestCase):
             green = missions.run_check(repair_task, root / 'repair-green', repair_argv, 5)
             self.assertEqual(green['exit_code'], 0)
             qa = root / 'repair-qa.json'
-            missions.save(qa, dict(task_sha256=missions.digest(repair_task.read_bytes()), files=green['files'],
-                check_sha256=missions.digest((root / 'repair-green/check.json').read_bytes()),
+            missions.save(qa, dict(task_sha256=digest_bytes(repair_task.read_bytes()), files=green['files'],
+                check_sha256=digest_bytes((root / 'repair-green/check.json').read_bytes()),
                 reviewer='synthetic-qa', session_ref='fixture-only',
                 review='Simulated QA; not independent agent evidence.', verdict='ACCEPTED'))
             result = root / 'repair-result.json'
-            missions.save(result, dict(version=1, task_sha256=missions.digest(repair_task.read_bytes()),
+            missions.save(result, dict(version=1, task_sha256=digest_bytes(repair_task.read_bytes()),
                 files=green['files'], status='ACCEPTED', findings_ref=str(findings),
-                findings_sha256=missions.digest(findings.read_bytes()),
+                findings_sha256=digest_bytes(findings.read_bytes()),
                 check_ref=str(root / 'repair-green/check.json'), qa_ref=str(qa),
-                qa_sha256=missions.digest(qa.read_bytes())))
+                qa_sha256=digest_bytes(qa.read_bytes())))
             self.assertTrue(missions.verify(repair_task, result).startswith('ACCEPTED'))
             reaudit = missions.reaudit(repair_task, result, root / 'repair-reaudit.json')
             self.assertEqual(reaudit['verdict'], 'PENDING_SEMANTIC_REVIEW')
 
             publisher = Publisher(root / 'receipts')
             opened = publisher.open_batch('owner', 'auth', 'synthetic repair', 'trial-batch')
-            evidence = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'evidence', {'task_ref': str(repair_task), 'task_sha256': missions.digest(repair_task.read_bytes()),
-                'result_ref': str(result), 'result_sha256': missions.digest(result.read_bytes())}, 'evidence')
+            evidence = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'evidence', {'task_ref': str(repair_task), 'task_sha256': digest_bytes(repair_task.read_bytes()),
+                'result_ref': str(result), 'result_sha256': digest_bytes(result.read_bytes())}, 'evidence')
             task = publisher.publish_batch_record('owner', 'auth', 'trial-batch', 'task', {'evidence_id': evidence['record_id']}, 'task')
             closed = publisher.close_batch('owner', 'auth', 'trial-batch', 'COMPLETE', [evidence['record_id'], task['record_id']], [])
             for index in range(9):

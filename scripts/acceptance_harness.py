@@ -7,10 +7,10 @@ holdout oracles in memory.  It deliberately contains no DSH transport.
 
 import hashlib
 import json
-import os
 import re
-import tempfile
 from pathlib import Path
+
+from support import atomic_write
 
 SCHEMA_VERSION = 1
 SCENARIO_TYPES = frozenset({
@@ -333,24 +333,6 @@ def _holdout_template(family, case_id, token):
     return ({"case_id": case_id, "family": family, "input": inputs}, oracle)
 
 
-def _atomic_write(path, text):
-    path = Path(path)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent,
-                                     text=True)
-    try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(text)
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-        raise
-
-
 def _public_input(scenario_type, target, token):
     templates = {
         "positive": {"task": "Demonstrate the declared mode contract on a bounded fixture.", "fixture": f"fixture-{token}", "evaluated_claim": "the candidate supports the declared mode contract on the bounded fixture"},
@@ -429,8 +411,10 @@ def materialize_acceptance(plan_path, tests_dir, host_policy_digest):
     spec_text = json.dumps(tests_spec, ensure_ascii=False, sort_keys=True,
                            indent=2) + "\n"
     tests_dir = Path(tests_dir)
-    _atomic_write(tests_dir / "public" / "scenarios.jsonl", scenarios_text)
-    _atomic_write(tests_dir / "holdout-spec.json", spec_text)
+    for target, text in ((tests_dir / "public" / "scenarios.jsonl", scenarios_text),
+                         (tests_dir / "holdout-spec.json", spec_text)):
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        atomic_write(target, text, mode=0o600)
     return {
         "plan": plan,
         "public_cases": public,

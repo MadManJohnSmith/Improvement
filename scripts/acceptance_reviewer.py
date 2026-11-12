@@ -13,16 +13,9 @@ import time
 from pathlib import Path
 
 from creator_client import acquire_dsh_client
+from support import digest_file
 
 SCHEMA_VERSION = 1
-
-
-def _sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def tree_digest(root):
@@ -47,7 +40,7 @@ def tree_digest(root):
         if path.is_file():
             entries.append({
                 "path": str(path.relative_to(root)),
-                "sha256": _sha256(path),
+                "sha256": digest_file(path),
                 "size_bytes": path.stat().st_size,
             })
     return hashlib.sha256(

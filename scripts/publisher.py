@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Publicación local acotada de recibos; no es un publicador Host ni sandbox."""
-import hashlib
 import json
 import os
 import re
@@ -12,15 +11,12 @@ from pathlib import Path
 import missions
 
 from onboard import FRAMEWORK, checked
+from support import digest_bytes
 
 MAX_PAYLOAD = 8192
 MAX_RECEIPT = 16384
 MAX_RECORDS = 16
 MAX_TEXT = 3000
-
-
-def _digest(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def _external(path):
@@ -66,10 +62,10 @@ class Publisher:
             'authorization': authorization, 'payload': payload,
         }
         content = json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
-        envelope['content_sha256'] = _digest(content)
+        envelope['content_sha256'] = digest_bytes(content)
         raw = json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2).encode() + b'\n'
         path = self.root / (record_id + '.json')
-        digest = _digest(raw)
+        digest = digest_bytes(raw)
         if len(raw) > MAX_RECEIPT:
             raise ValueError('Recibo demasiado grande')
         if not path.exists():
@@ -94,7 +90,7 @@ class Publisher:
             if not path.is_file() or path.is_symlink():
                 raise ValueError('Registro inválido')
             existing = path.read_bytes()
-            if _digest(existing) != digest:
+            if digest_bytes(existing) != digest:
                 raise ValueError('Conflicto de registro')
             return json.loads(existing)
         # ponytail: almacén local confiable; concurrencia hostil requiere Host.
@@ -271,7 +267,7 @@ class Publisher:
             artifact = artifact['payload']
             try:
                 for name in ('task', 'result'):
-                    if missions.digest(checked(artifact[name + '_ref']).read_bytes()) != artifact.get(name + '_sha256'):
+                    if digest_bytes(checked(artifact[name + '_ref']).read_bytes()) != artifact.get(name + '_sha256'):
                         raise ValueError('Artefacto de misión alterado')
                 verdict = missions.verify(artifact['task_ref'], artifact['result_ref'])
             except (OSError, KeyError, TypeError) as error:
@@ -371,6 +367,6 @@ class Publisher:
             content = {key: value[key] for key in ('version', 'record_id', 'caller', 'authorization', 'payload')}
         except KeyError as error:
             raise ValueError('Recibo alterado') from error
-        if value.get('content_sha256') != _digest(json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()):
+        if value.get('content_sha256') != digest_bytes(json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()):
             raise ValueError('Recibo alterado')
         return value

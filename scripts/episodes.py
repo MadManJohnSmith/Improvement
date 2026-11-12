@@ -26,11 +26,12 @@ And one rule decides what may be trusted:
   lost cache from turning a proven repair into a repeat.
 """
 
-import hashlib
 import json
 import os
 from pathlib import Path
 import tempfile
+
+from support import digest_bytes
 
 LEDGER_NAME = "episodes.jsonl"
 INDEX_NAME = "episodes-index.json"
@@ -44,10 +45,6 @@ MAX_PER_SIGNATURE = 3
 VERDICTS = ("PASS", "FAIL", "BLOCKED", "NOT_COVERED")
 
 
-def _digest(value):
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 def signature(path, excerpt, fingerprint=None):
     """A stable identity for a defect: its fingerprint when the tool gave one,
     otherwise the same pair the fingerprint is computed from."""
@@ -55,7 +52,7 @@ def signature(path, excerpt, fingerprint=None):
         return fingerprint
     if not isinstance(path, str) or not isinstance(excerpt, str):
         raise ValueError("firma de episodio necesita ruta y fragmento")
-    return _digest(f"{path}\n{excerpt}")
+    return digest_bytes(f"{path}\n{excerpt}".encode("utf-8"))
 
 
 def _checked(workspace):

@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import bootstrap
 import creator_client as cc
+from support import digest_bytes
 
 # install() y run_creator emiten progreso humano por stderr por diseño
 # (IMPROVEMENT_QUIET=1 lo apaga); sin esto, la salida de la suite se
@@ -93,7 +94,7 @@ class PromptEfficiency(Base):
         self.assertIn("sin omitir contratos, escenarios, holdouts ni validación Host", text)
         self.assertLess(text.index("## Secuencia de generación eficiente"),
                         text.index("## Pipeline interno"))
-        self.assertEqual(prompt["prompt_digest"], cc._digest_bytes(text.encode()))
+        self.assertEqual(prompt["prompt_digest"], digest_bytes(text.encode()))
 
 
 class RealEventShapes(Base):

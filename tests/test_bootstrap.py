@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import bootstrap as bs
+from support import digest_file
 
 
 class _BootstrapTestBase(unittest.TestCase):
@@ -280,7 +281,7 @@ class TestAccept(_BootstrapTestBase):
                 {
                     "path": "skills/my-project-auditor/SKILL.md",
                     "type": "skill-entrypoint",
-                    "sha256": bs._digest_file(skill_file),
+                    "sha256": digest_file(skill_file),
                 },
             ],
             "required_capabilities": [],

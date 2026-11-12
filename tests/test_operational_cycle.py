@@ -9,6 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import missions as m
+from support import digest_bytes
 
 
 class OperationalCycleTest(unittest.TestCase):
@@ -42,16 +43,16 @@ class OperationalCycleTest(unittest.TestCase):
             findings = root / 'findings.txt'
             findings.write_text('Synthetic fixture: remove off-by-one; empty queue test passes.')
             qa_path = root / 'qa.json'
-            qa = dict(task_sha256=m.digest(task_path.read_bytes()), files=green['files'],
-                      check_sha256=m.digest((root / 'green/check.json').read_bytes()),
+            qa = dict(task_sha256=digest_bytes(task_path.read_bytes()), files=green['files'],
+                      check_sha256=digest_bytes((root / 'green/check.json').read_bytes()),
                       reviewer='fixture-reviewer', session_ref='SIMULATED QA, not an agent session',
                       review='Fixture represents independent QA reference, not actual semantic review.',
                       verdict='ACCEPTED')
             m.save(qa_path, qa)
             result = dict(version=1, task_sha256=qa['task_sha256'], files=green['files'], status='ACCEPTED',
-                          findings_ref=str(findings), findings_sha256=m.digest(findings.read_bytes()),
+                          findings_ref=str(findings), findings_sha256=digest_bytes(findings.read_bytes()),
                           check_ref=str(root / 'green/check.json'), qa_ref=str(qa_path),
-                          qa_sha256=m.digest(qa_path.read_bytes()))
+                          qa_sha256=digest_bytes(qa_path.read_bytes()))
             result_path = root / 'result.json'
 
             def verify(value):
@@ -93,7 +94,7 @@ class OperationalCycleTest(unittest.TestCase):
             qa['reviewer'] = task['executor']
             qa_path.write_text(json.dumps(qa))
             with self.assertRaises(ValueError):
-                verify(dict(result, qa_sha256=m.digest(qa_path.read_bytes())))
+                verify(dict(result, qa_sha256=digest_bytes(qa_path.read_bytes())))
             self.assertEqual(original, {p.name: p.read_bytes() for p in product.iterdir()})
 
             missing_scope = dict(task)
@@ -132,9 +133,9 @@ class OperationalCycleTest(unittest.TestCase):
             self.assertTrue(check['timed_out'])
             report = root / 'report.txt'
             report.write_text('test.py sleeps; inspection only, no claim of correctness')
-            result = dict(version=1, task_sha256=m.digest(path.read_bytes()),
+            result = dict(version=1, task_sha256=digest_bytes(path.read_bytes()),
                           files=m.snapshot(candidate, task['files']), status='ACCEPTED',
-                          findings_ref=str(report), findings_sha256=m.digest(report.read_bytes()))
+                          findings_ref=str(report), findings_sha256=digest_bytes(report.read_bytes()))
             result_path = root / 'result.json'
             m.save(result_path, result)
             self.assertTrue(m.verify(path, result_path).startswith('ACCEPTED'))

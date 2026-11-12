@@ -22,6 +22,8 @@ import os
 from pathlib import Path
 import tempfile
 
+from support import digest_bytes
+
 MARKER_NAME = ".commit.json"
 MARKER_VERSION = 1
 MAX_ENTRIES = 64
@@ -36,12 +38,6 @@ _RECOVERABLE = ("OSError", "ValueError", "TypeError", "KeyError")
 
 def marker_path(state_root):
     return Path(state_root) / MARKER_NAME
-
-
-def _digest(data):
-    import hashlib
-
-    return hashlib.sha256(data).hexdigest()
 
 
 def _read(path):
@@ -115,7 +111,7 @@ def record_write(state_root, relative, content):
     files = [item for item in marker["files"] if item["path"] != relative]
     if len(files) >= MAX_ENTRIES:
         raise ValueError(f"la unidad toca más de {MAX_ENTRIES} ficheros de estado")
-    files.append({"path": relative, "sha256": _digest(content.encode("utf-8"))})
+    files.append({"path": relative, "sha256": digest_bytes(content.encode("utf-8"))})
     marker["files"] = sorted(files, key=lambda item: item["path"])
     _write(marker_path(state_root), marker)
     return marker
@@ -156,7 +152,7 @@ def reconcile(state_root, now=None):
         except OSError:
             missing.append(item["path"])
             continue
-        if _digest(data) != item.get("sha256"):
+        if digest_bytes(data) != item.get("sha256"):
             altered.append(item["path"])
     if missing or altered:
         verdict = "TORN"

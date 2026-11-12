@@ -4,7 +4,6 @@ Valida estáticamente el paquete y su plan, conserva bindings de candidato y
 política, y emite READY_FOR_INSTALL o RETAINED. No crea sesiones DSH evaluator,
 reviewer ni descendientes y no afirma haber ejecutado holdouts dinámicos.
 """
-import hashlib
 import json
 import os
 import tempfile
@@ -14,6 +13,7 @@ from pathlib import Path
 import acceptance_harness as harness
 from acceptance_reviewer import tree_digest
 import host_validator
+from support import digest_bytes, digest_file
 
 SCHEMA_VERSION = 1
 HOST_POLICY_VERSION = "acceptance-host-policy-v1"
@@ -24,17 +24,9 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _digest_bytes(value):
-    return hashlib.sha256(value).hexdigest()
-
-
-def _digest_file(path):
-    return _digest_bytes(Path(path).read_bytes())
-
-
 def current_host_policy_digest():
     """Digest the current Host policy from its authoritative version source."""
-    return _digest_bytes(HOST_POLICY_VERSION.encode("utf-8"))
+    return digest_bytes(HOST_POLICY_VERSION.encode("utf-8"))
 
 
 def _retained_candidate_digest(root):
@@ -53,10 +45,10 @@ def _retained_candidate_digest(root):
             entries.append({
                 "path": relative,
                 "kind": "file",
-                "sha256": _digest_file(path),
+                "sha256": digest_file(path),
                 "size_bytes": path.stat().st_size,
             })
-    return _digest_bytes(json.dumps(
+    return digest_bytes(json.dumps(
         entries, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
@@ -142,7 +134,7 @@ def validate_early_retained(path, generated, *, generation_id=None):
         raise ValueError("static-retained obsoleto: cambió el candidato")
     manifest = generated / "generation-manifest.json"
     expected_manifest = (
-        _digest_file(manifest) if manifest.is_file()
+        digest_file(manifest) if manifest.is_file()
         and not manifest.is_symlink() else None)
     if retained["manifest_digest"] != expected_manifest:
         raise ValueError("static-retained obsoleto: cambió el manifest")
@@ -151,7 +143,7 @@ def validate_early_retained(path, generated, *, generation_id=None):
         raise ValueError("static-retained validation_summary inválido")
     summary_path = path.parent.parent / summary["ref"]
     if (summary_path.is_symlink() or not summary_path.is_file()
-            or _digest_file(summary_path) != summary["digest"]):
+            or digest_file(summary_path) != summary["digest"]):
         raise ValueError("static-retained obsoleto: validation summary no coincide")
     try:
         summary_doc = _read(summary_path)
@@ -237,7 +229,7 @@ def validate_host_verdict(path, generated, *, generation_id=None):
     manifest = generated / "generation-manifest.json"
     if tree_digest(generated) != verdict["candidate_digest"]:
         raise ValueError("host-verdict obsoleto: cambió el candidato")
-    if _digest_file(manifest) != verdict["manifest_digest"]:
+    if digest_file(manifest) != verdict["manifest_digest"]:
         raise ValueError("host-verdict obsoleto: cambió el manifest")
     acceptance_dir = path.parent
     bound = {
@@ -245,7 +237,7 @@ def validate_host_verdict(path, generated, *, generation_id=None):
         "acceptance_plan_digest": generated / "acceptance-plan.json",
     }
     for field, artifact in bound.items():
-        if not artifact.is_file() or _digest_file(artifact) != verdict[field]:
+        if not artifact.is_file() or digest_file(artifact) != verdict[field]:
             raise ValueError(f"host-verdict obsoleto: {field} no coincide")
     ready = (verdict["static_passed"] and verdict["acceptance_plan_valid"]
              and verdict["dynamic_evaluation"] == "NOT_RUN")
@@ -308,11 +300,11 @@ class Acceptance:
             "reason": reason,
             "candidate_digest": self.candidate_digest,
             "manifest_digest": (
-                _digest_file(manifest_path) if manifest_path.is_file() else None),
+                digest_file(manifest_path) if manifest_path.is_file() else None),
             "host_policy_digest": self.host_policy_digest,
             "validation_summary": {
                 "ref": "validation/summary.json",
-                "digest": _digest_file(summary_path),
+                "digest": digest_file(summary_path),
             },
             "timestamp": _now_iso(),
         }
@@ -558,10 +550,10 @@ class Acceptance:
             "holdout_passed": holdout_passed,
             "independent_review": review.get("verdict"),
             "candidate_digest": self.candidate_digest,
-            "manifest_digest": _digest_file(manifest_path),
-            "public_results_digest": _digest_file(self.acceptance_dir / "public-results.json"),
-            "holdout_results_digest": _digest_file(self.acceptance_dir / "holdout-results.json"),
-            "review_digest": _digest_file(self.acceptance_dir / "independent-review.json"),
+            "manifest_digest": digest_file(manifest_path),
+            "public_results_digest": digest_file(self.acceptance_dir / "public-results.json"),
+            "holdout_results_digest": digest_file(self.acceptance_dir / "holdout-results.json"),
+            "review_digest": digest_file(self.acceptance_dir / "independent-review.json"),
             "host_policy_digest": self.host_policy_digest,
             "timestamp": _now_iso(),
         }
@@ -588,7 +580,7 @@ class Acceptance:
                 self.generation_id,
                 candidate_digest=_retained_candidate_digest(self.generated),
                 manifest_digest=(
-                    _digest_file(manifest_path) if manifest_path.is_file()
+                    digest_file(manifest_path) if manifest_path.is_file()
                     and not manifest_path.is_symlink() else None),
             )
             static_report.add_layer("static_input", False, [str(error)])
@@ -621,9 +613,9 @@ class Acceptance:
             "acceptance_plan_valid": True,
             "dynamic_evaluation": "NOT_RUN",
             "candidate_digest": self.candidate_digest,
-            "manifest_digest": _digest_file(manifest_path),
-            "validation_summary_digest": _digest_file(summary_path),
-            "acceptance_plan_digest": _digest_file(plan_path),
+            "manifest_digest": digest_file(manifest_path),
+            "validation_summary_digest": digest_file(summary_path),
+            "acceptance_plan_digest": digest_file(plan_path),
             "host_policy_digest": self.host_policy_digest,
             "timestamp": _now_iso(),
         }

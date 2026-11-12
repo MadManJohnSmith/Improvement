@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Recibos locales v1; no concede autoridad, sandbox ni autenticidad de QA."""
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,10 +9,7 @@ import subprocess
 import sys
 
 from onboard import FRAMEWORK, checked
-
-
-def digest(data):
-    return hashlib.sha256(data).hexdigest()
+from support import digest_bytes
 
 
 def read_json(path):
@@ -45,7 +41,7 @@ def snapshot(root, files):
         p = checked(root / p)
         if not p.is_file() or p.stat().st_nlink != 1:
             raise ValueError('Se requiere archivo regular sin enlaces')
-        result[name] = digest(p.read_bytes())
+        result[name] = digest_bytes(p.read_bytes())
     return result
 
 
@@ -98,11 +94,11 @@ def run_check(task_path, output, argv, timeout):
             os.killpg(process.pid, signal.SIGKILL)
             code = process.wait()
     after = snapshot(root, task['files'])
-    record = dict(version=1, task_sha256=digest(task_path.read_bytes()), root=str(root),
+    record = dict(version=1, task_sha256=digest_bytes(task_path.read_bytes()), root=str(root),
                   files=before, after=after, argv=argv, timeout_seconds=timeout,
                   exit_code=code, timed_out=timed_out,
-                  stdout_sha256=digest((output / 'stdout.txt').read_bytes()),
-                  stderr_sha256=digest((output / 'stderr.txt').read_bytes()))
+                  stdout_sha256=digest_bytes((output / 'stdout.txt').read_bytes()),
+                  stderr_sha256=digest_bytes((output / 'stderr.txt').read_bytes()))
     save(output / 'check.json', record)
     return record
 
@@ -114,7 +110,7 @@ def reaudit(task_path, result_path, report_path):
     result = read_json(result_path)
     report_path = external(report_path)
     current = snapshot(task['root'], task['files'])
-    if (result.get('version') != 1 or result.get('task_sha256') != digest(task_path.read_bytes())
+    if (result.get('version') != 1 or result.get('task_sha256') != digest_bytes(task_path.read_bytes())
             or result.get('files') != current or result.get('status') != 'ACCEPTED'):
         raise ValueError('Resultado no aceptado o candidato obsoleto')
     if task['mode'] == 'repair' and not result.get('check_ref'):
@@ -122,7 +118,7 @@ def reaudit(task_path, result_path, report_path):
     if not verify(task_path, result_path).startswith('ACCEPTED:'):
         raise ValueError('Resultado no aceptado')
     receipt = dict(version=1, task_sha256=result['task_sha256'], files=current,
-                   result_sha256=digest(checked(result_path).read_bytes()),
+                   result_sha256=digest_bytes(checked(result_path).read_bytes()),
                    verdict='PENDING_SEMANTIC_REVIEW',
                    review='Revisión incremental mecánica completada; semántica requiere Auditor/QA.')
     save(report_path, receipt)
@@ -134,7 +130,7 @@ def verify(task_path, result_path):
     task = task_at(task_path)
     result = read_json(result_path)
     current = snapshot(task['root'], task['files'])
-    if result.get('version') != 1 or result.get('task_sha256') != digest(task_path.read_bytes()):
+    if result.get('version') != 1 or result.get('task_sha256') != digest_bytes(task_path.read_bytes()):
         raise ValueError('Resultado de otro contrato')
     if result.get('files') != current:
         raise ValueError('Candidato obsoleto')
@@ -143,7 +139,7 @@ def verify(task_path, result_path):
     if not result.get('findings_ref'):
         raise ValueError('Falta entrega recuperable')
     findings = checked(result['findings_ref'])
-    if not findings.is_file() or digest(findings.read_bytes()) != result.get('findings_sha256'):
+    if not findings.is_file() or digest_bytes(findings.read_bytes()) != result.get('findings_sha256'):
         raise ValueError('Entrega ausente o alterada')
     if task['mode'] == 'repair':
         base = task.get('base')
@@ -163,17 +159,17 @@ def verify(task_path, result_path):
             raise ValueError('Prueba fallida, ajena o desactualizada')
         for name in ('stdout', 'stderr'):
             data = checked(check_path.parent / (name + '.txt')).read_bytes()
-            if digest(data) != check.get(name + '_sha256'):
+            if digest_bytes(data) != check.get(name + '_sha256'):
                 raise ValueError('Salida ausente o alterada')
     if task['mode'] == 'repair':
         qa_path = checked(result['qa_ref'])
-        if digest(qa_path.read_bytes()) != result.get('qa_sha256'):
+        if digest_bytes(qa_path.read_bytes()) != result.get('qa_sha256'):
             raise ValueError('QA alterada')
         qa = read_json(qa_path)
         if (qa.get('task_sha256') != result['task_sha256'] or qa.get('files') != current
                 or qa.get('verdict') != 'ACCEPTED' or not qa.get('reviewer')
                 or qa['reviewer'] == task['executor'] or not qa.get('session_ref')
-                or not qa.get('review') or qa.get('check_sha256') != digest(check_path.read_bytes())):
+                or not qa.get('review') or qa.get('check_sha256') != digest_bytes(check_path.read_bytes())):
             raise ValueError('Falta referencia QA independiente ligada a prueba y candidato')
     return 'ACCEPTED: integridad documental; semántica y autoridad corresponden al revisor/Host'
 

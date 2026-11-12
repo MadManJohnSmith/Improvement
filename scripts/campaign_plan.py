@@ -18,7 +18,6 @@ desde la instalación (`transaction` los publica y el gate los comprueba contra
 en el preflight, después de haber escrito todo esto.
 """
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -30,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import workflow_reasoning
+from support import digest_bytes
 
 CAMPAIGN_RELATIVE = '.dsh-managed/campaign'
 PLAN_NAME = 'plan.json'
@@ -114,10 +114,6 @@ def _canonical(value):
 
 def _document(value):
     return _canonical(value) + b'\n'
-
-
-def _sha256(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def _pick_preset(preset_ids, markers, role):
@@ -251,7 +247,7 @@ def _executable_digests(plan):
             if not path.is_absolute() or path.is_symlink() or not path.is_file():
                 raise CampaignPlanError('ejecutable de gate no es fichero regular: ' + executable)
             try:
-                digests[executable] = _sha256(path.read_bytes())
+                digests[executable] = digest_bytes(path.read_bytes())
             except OSError as error:
                 raise CampaignPlanError('ejecutable de gate ilegible: ' + executable) from error
         script_path = Path(step['command'][1])
@@ -261,7 +257,7 @@ def _executable_digests(plan):
                 mod_str = str(module.resolve())
                 if mod_str not in digests:
                     try:
-                        digests[mod_str] = _sha256(module.read_bytes())
+                        digests[mod_str] = digest_bytes(module.read_bytes())
                     except OSError as error:
                         raise CampaignPlanError('módulo de gate ilegible: ' + mod_str) from error
     return digests
@@ -270,7 +266,7 @@ def _executable_digests(plan):
 def manifest_document(plan_bytes, preset_ids, stacks, rondas_max, executables):
     """Manifiesto de la campaña: lo que el Host necesita para saber qué generó
     el plan. `workflow.py` no lo carga, así que puede llevar campos propios."""
-    digest = _sha256(plan_bytes)
+    digest = digest_bytes(plan_bytes)
     return {
         'campaign_plan_sha256': digest,
         'generation': 'campana-' + digest[:16],

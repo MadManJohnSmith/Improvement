@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Contratos deterministas para ciclos de auditoría y reparación externa."""
-import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -8,6 +7,7 @@ import re
 import stat
 
 from onboard import checked
+from support import digest_bytes, digest_file
 
 UNIT_STATES = {'PLANNED', 'AUDITING', 'ACCEPTED', 'RETAINED', 'UNVERIFIED', 'STALE'}
 FINDING_STATES = {'READY_FOR_REPAIR', 'RETAINED', 'UNVERIFIED', 'DUPLICATE', 'NEEDS_DECISION', 'STALE'}
@@ -25,10 +25,6 @@ EXCLUSION_FIELDS = frozenset(
     {'kind', 'reason', 'owner', 'receipt', 'expires_at'})
 CAMPAIGN_MANIFEST = '.dsh-managed/campaign/manifest.json'
 _DATE_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-
-
-def digest(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def read(path):
@@ -182,11 +178,7 @@ def inventory(root, exclusions=None, *, today=None, ceiling=None):
             elif stat.S_ISDIR(mode):
                 visit(path)
             else:
-                sha = hashlib.sha256()
-                with path.open('rb') as stream:
-                    for block in iter(lambda: stream.read(65536), b''):
-                        sha.update(block)
-                files[name] = sha.hexdigest()
+                files[name] = digest_file(path)
 
     visit(root)
     if set(excluded) != set(exclusions):
@@ -220,7 +212,7 @@ def validate_coverage(root, owners, snapshot, *, today=None, ceiling=None):
     gaps = sorted(set(current['files']) - set(owners))
     return {
         'status': 'UNVERIFIED' if gaps else 'PARTITION_VERIFIED',
-        'inventory_sha256': digest(json.dumps(snapshot, sort_keys=True).encode()),
+        'inventory_sha256': digest_bytes(json.dumps(snapshot, sort_keys=True).encode()),
         'included_files': len(current['files']),
         'assigned_files': len(owners),
         'excluded_entries': len(exclusions),
@@ -427,8 +419,8 @@ def archive_cycle(root, cycle_id, summary, manifest):
     write_new(archive / 'summary.json', summary)
     write_new(archive / 'manifest.json', manifest)
     index = {'version': 1, 'cycle_id': cycle_id,
-             'summary_sha256': digest((archive / 'summary.json').read_bytes()),
-             'manifest_sha256': digest((archive / 'manifest.json').read_bytes()),
+             'summary_sha256': digest_bytes((archive / 'summary.json').read_bytes()),
+             'manifest_sha256': digest_bytes((archive / 'manifest.json').read_bytes()),
              'warning': 'Detalle histórico no se carga automáticamente; referencias absolutas pueden ser antiguas.'}
     write_new(archive / 'index.json', index)
     return index

@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 import campaign_plan
 import workflow
 import workflow_reasoning
+from support import digest_bytes
 
 from workflow import WorkflowError, read_journal, run_plan, verify
 from workflow_reasoning import ReasoningError
@@ -183,7 +184,7 @@ class PlanValidationTests(unittest.TestCase):
         self.assertNotIn(b'reasoning_effort', raw)
         outcome = run_plan(path, run_root=self.run_root)
         self.assertEqual(outcome['result'], 'COMPLETED')
-        run_dir = self.run_root / ('r-' + workflow._sha256_bytes(raw)[:24])
+        run_dir = self.run_root / ('r-' + digest_bytes(raw)[:24])
         self.assertTrue(run_dir.is_dir())
         journal = read_journal(run_dir)
         self.assertEqual(journal[0]['kind'], 'PLAN_LOADED')
@@ -249,7 +250,7 @@ class AskRuntimeTests(unittest.TestCase):
     def test_a_declared_level_is_recorded_with_its_source(self):
         outcome, path = self.run_ask(plan_level='medium', step_level='high')
         self.assertEqual(outcome['result'], 'COMPLETED')
-        journal = read_journal(self.run_root / ('r-' + workflow._sha256_bytes(path.read_bytes())[:24]))
+        journal = read_journal(self.run_root / ('r-' + digest_bytes(path.read_bytes())[:24]))
         started = next(item for item in journal if item['kind'] == 'STEP_STARTED')
         self.assertEqual(started['payload']['reasoning']['reasoning_effort'], 'high')
         self.assertEqual(started['payload']['reasoning']['source'], 'step')
@@ -260,7 +261,7 @@ class AskRuntimeTests(unittest.TestCase):
     def test_a_plan_level_is_inherited_by_an_ask_without_one(self):
         outcome, path = self.run_ask(plan_level='low')
         self.assertEqual(outcome['result'], 'COMPLETED')
-        journal = read_journal(self.run_root / ('r-' + workflow._sha256_bytes(path.read_bytes())[:24]))
+        journal = read_journal(self.run_root / ('r-' + digest_bytes(path.read_bytes())[:24]))
         completed = next(item for item in journal
                          if item['kind'] == 'STEP_COMPLETED')
         self.assertEqual(completed['payload']['reasoning']['reasoning_effort'], 'low')
@@ -270,7 +271,7 @@ class AskRuntimeTests(unittest.TestCase):
         """El nivel viaja en el journal: una reanudacion lo reutiliza tal cual."""
         outcome, path = self.run_ask(plan_level='low')
         self.assertEqual(outcome['result'], 'COMPLETED')
-        run_dir = self.run_root / ('r-' + workflow._sha256_bytes(path.read_bytes())[:24])
+        run_dir = self.run_root / ('r-' + digest_bytes(path.read_bytes())[:24])
         before = read_journal(run_dir)
         started_before = [item for item in before
                           if item['kind'] == 'STEP_STARTED']
@@ -310,7 +311,7 @@ class AskRuntimeTests(unittest.TestCase):
         outcome = run_plan(path, ask_client=FakeReasoningClient(
             supports=True, levels=['low']), run_root=self.run_root)
         self.assertEqual(outcome['result'], 'COMPLETED')
-        run_dir = self.run_root / ('r-' + workflow._sha256_bytes(
+        run_dir = self.run_root / ('r-' + digest_bytes(
             path.read_bytes())[:24])
         completed = next(item for item in read_journal(run_dir)
                          if item['kind'] == 'STEP_COMPLETED')
@@ -336,7 +337,7 @@ class AskRuntimeTests(unittest.TestCase):
         for level in ('low', 'high'):
             path = self.tmp / ('plan-%s.json' % level)
             raw = path.read_bytes()
-            digests.append(workflow._sha256_bytes(raw))
+            digests.append(digest_bytes(raw))
         self.assertNotEqual(digests[0], digests[1])  # planes distintos
 
     def test_verdict_and_capabilities_are_identical_for_low_and_high(self):
@@ -350,12 +351,12 @@ class AskRuntimeTests(unittest.TestCase):
                 run_root=self.run_root)
             self.assertEqual(outcome['result'], 'COMPLETED')
             raw = path.read_bytes()
-            run_dir = self.run_root / ('r-' + workflow._sha256_bytes(raw)[:24])
+            run_dir = self.run_root / ('r-' + digest_bytes(raw)[:24])
             completed = next(item for item in read_journal(run_dir)
                              if item['kind'] == 'STEP_COMPLETED')
             # La prueba del paso no depende del nivel.
             self.assertEqual(completed['payload']['prompt_sha256'],
-                             workflow._sha256_bytes(b'hola'))
+                             digest_bytes(b'hola'))
             results.append(completed['payload']['step_id'])
         self.assertEqual(results[0], results[1])
 
@@ -377,8 +378,8 @@ class CampaignReasoningPolicyTests(unittest.TestCase):
         first = campaign_plan._document(self.document())
         second = campaign_plan._document(self.document())
         self.assertEqual(first, second)
-        self.assertEqual(campaign_plan._sha256(first),
-                         campaign_plan._sha256(second))
+        self.assertEqual(digest_bytes(first),
+                         digest_bytes(second))
         self.assertNotIn(b'reasoning_effort', first)
         # Y sigue siendo un plan que `workflow.load_plan` acepta tal cual.
         path = self.tmp / 'plan.json'
@@ -408,8 +409,8 @@ class CampaignReasoningPolicyTests(unittest.TestCase):
 
     def test_the_default_plan_and_the_policy_disable_differ(self):
         """El opt-in cambia el sha256: no es el plan por defecto disfrazado."""
-        default = campaign_plan._sha256(campaign_plan._document(self.document()))
-        tuned = campaign_plan._sha256(campaign_plan._document(self.document(
+        default = digest_bytes(campaign_plan._document(self.document()))
+        tuned = digest_bytes(campaign_plan._document(self.document(
             esfuerzos={'auditoria': 'high'})))
         self.assertNotEqual(default, tuned)
 
@@ -754,14 +755,14 @@ class LevelChangeIsADifferentRunTests(unittest.TestCase):
                 supports=True, levels=['low', 'high']),
                 run_root=self.run_root)
             self.assertEqual(outcome['result'], 'COMPLETED')
-            run_dir = self.run_root / ('r-' + workflow._sha256_bytes(
+            run_dir = self.run_root / ('r-' + digest_bytes(
                 path.read_bytes())[:24])
             record = next(item for item in read_journal(run_dir)
                           if item['kind'] == 'STEP_STARTED')['payload']['reasoning']
             # Cada plan carga su propio nivel y su propio run dir; el sha256
             # del plan no es el mismo, así que nunca se reanuda otro nivel.
             self.assertEqual(record['reasoning_effort'], level)
-        digests = {workflow._sha256_bytes(
+        digests = {digest_bytes(
             (self.tmp / ('plan-%s.json' % level)).read_bytes()) for level in levels}
         self.assertEqual(len(digests), 2)
         self.assertEqual(len(list(self.run_root.iterdir())), 2)

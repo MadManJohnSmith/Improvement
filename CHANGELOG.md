@@ -1,5 +1,27 @@
 # Cambios
 
+## soporte: digest sha256 y escritura atómica llana consolidados — 2026-11-12
+
+- **`scripts/support.py`** concentra las dos utilidades que cada módulo de
+  `scripts/` copiaba a mano cuando su semántica exacta coincide:
+  `digest_bytes`/`digest_file` (sha256 sobre bytes crudos; fichero en trozos
+  de 64 KiB) y `atomic_write` (temporal 0600 junto al destino + `os.replace`;
+  un fallo de escritura o de replace retira el temporal sin tocar el
+  destino). 18 módulos dejan de copiarlas y consumen la versión canónica;
+  la sustitución es mecánica y sin cambio de comportamiento.
+- El docstring-inventario del módulo explicita lo que **no** se consolida y
+  por qué: escrituras con `fsync` previo (protocolo de durabilidad),
+  write-once con `os.link`, `dir_fd`+`O_NOFOLLOW`, append `O_APPEND`,
+  creación exclusiva `'xb'`, temporales con permisos de umask vs 0600,
+  `O_EXCL`+fsync de directorio, y los `_digest` que digieren JSON canónico
+  o validan hex existente. Un caso llano nuevo usa `support` en vez de
+  copiar de nuevo.
+- **Regresión propia** (`tests/test_support.py`): vector conocido de sha256
+  (y entrada vacía), rechazo de str en `digest_bytes`, `digest_file` en
+  streaming multi-trozo, roundtrip bytes/str publicado verificable por el
+  inodo, permiso preservado en destino, y fallo de publicación sin corrupción
+  ni temporal residual.
+
 ## creator: el digest de routing efectivo liga el roster declarado — 2026-11-12
 
 Fallo estructural convertido desde evidencia real (colina proxy sobre el

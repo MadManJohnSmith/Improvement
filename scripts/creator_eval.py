@@ -12,13 +12,13 @@ valor presente que no coincide o no es entero sí abstiene.
 import argparse
 import hashlib
 import json
-import os
 import re
 import shlex
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+
+from support import atomic_write
 
 DECOMPRESSOR = "zstd"
 
@@ -426,20 +426,7 @@ def _existing_digests(path):
 
 
 def write_report(path, payload):
-    handle = tempfile.NamedTemporaryFile(
-        "w", dir=str(path.parent), prefix=path.name + ".", suffix=".tmp",
-        delete=False, encoding="utf-8")
-    temporary = Path(handle.name)
-    try:
-        with handle:
-            handle.write(payload)
-        os.replace(temporary, path)
-    except BaseException:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
-        raise
+    atomic_write(path, payload)
 
 
 def evaluate_case(case_dir, report_path, *, overwrite=False):

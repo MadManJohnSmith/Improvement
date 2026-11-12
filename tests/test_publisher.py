@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from publisher import MAX_RECEIPT, Publisher
+from support import digest_bytes
 
 
 class PublisherTest(unittest.TestCase):
@@ -196,8 +197,8 @@ class PublisherTest(unittest.TestCase):
             artifact.write_text('[]')
             p.open_batch('o', 'a', 'shape rejection', 'shape')
             evidence = p.publish_batch_record('o', 'a', 'shape', 'evidence', {
-                'task_ref': str(artifact), 'task_sha256': missions.digest(artifact.read_bytes()),
-                'result_ref': str(artifact), 'result_sha256': missions.digest(artifact.read_bytes())}, 'e')['record_id']
+                'task_ref': str(artifact), 'task_sha256': digest_bytes(artifact.read_bytes()),
+                'result_ref': str(artifact), 'result_sha256': digest_bytes(artifact.read_bytes())}, 'e')['record_id']
             task = p.publish_batch_record('o', 'a', 'shape', 'task', {'evidence_id': evidence}, 't')['record_id']
             p.close_batch('o', 'a', 'shape', 'COMPLETE', [evidence, task], [])
             with self.assertRaises(ValueError):

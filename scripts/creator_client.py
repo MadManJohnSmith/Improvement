@@ -37,6 +37,7 @@ from mode_lifecycle import (SUCCESS_SENTINEL, expected_lifecycle,
                             startup_check)
 from onboard import checked
 import workflow_reasoning
+from support import digest_bytes
 
 SCHEMA_VERSION = 1
 
@@ -148,10 +149,6 @@ SKILL_SELECTION_ORDER = [
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def _digest_bytes(data):
-    return hashlib.sha256(data).hexdigest()
 
 
 def _read_json(path):
@@ -698,7 +695,7 @@ def _manifest_derived(run_dir, generated, *, session_ref=None):
         artifacts.append({
             "path": relative,
             "type": _artifact_type(relative),
-            "sha256": _digest_bytes(raw),
+            "sha256": digest_bytes(raw),
             "size_bytes": len(raw),
         })
     if not artifacts:
@@ -1690,7 +1687,7 @@ class CreatorSession:
                 "schema_version": SCHEMA_VERSION,
                 "generation_id": gen_id,
                 "prompt_version": PROMPT_VERSION,
-                "prompt_digest": _digest_bytes(prompt.encode("utf-8")),
+                "prompt_digest": digest_bytes(prompt.encode("utf-8")),
                 "project_name": run_doc["project"]["name"],
                 "skill_selection_order": SKILL_SELECTION_ORDER,
                 "internal_capabilities": CREATOR_INTERNAL_CAPABILITIES,
@@ -1720,7 +1717,7 @@ class CreatorSession:
         self.status = "PREPARED"
         return {
             "generation_id": gen_id,
-            "prompt_digest": _digest_bytes(prompt.encode("utf-8")),
+            "prompt_digest": digest_bytes(prompt.encode("utf-8")),
             "prompt_path": str(prompt_path),
         }
 
@@ -1844,7 +1841,7 @@ class CreatorSession:
                 "generation_id": gen_id,
                 "status": "GENERATED",
                 "artifact_count": len(manifest.get("artifacts", [])),
-                "manifest_digest": _digest_bytes(
+                "manifest_digest": digest_bytes(
                     json.dumps(manifest, sort_keys=True).encode("utf-8")
                 ),
                 "timestamp": _now_iso(),
@@ -3204,7 +3201,7 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
                 if not finish_path.is_file():
                     return session.create_finish(manifest)
                 finish = _read_json(finish_path)
-                expected = _digest_bytes(
+                expected = digest_bytes(
                     json.dumps(manifest, sort_keys=True).encode("utf-8"))
                 if (finish.get("status") != "GENERATED" or
                         finish.get("generation_id") != manifest.get("generation_id") or
