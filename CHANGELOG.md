@@ -1,5 +1,31 @@
 # Cambios
 
+## stack: el runner de python-generic va por evidencia declarada — 2026-11-12
+
+Fallo convertido desde la evidencia de la colina proxy del prompt de Creator
+(rondas 1b y 3, runs `gen-29fc7ec56e4b` y `gen-a5dcb08a7b61`, registrada en
+#11):
+
+- **`python-generic` ya no adivina pytest.** El plan de verificación
+  derivaba `pytest -q` como entrypoint principal de todo producto Python
+  con markers genéricos, lo declarara o no: en el fixture (`libreta`,
+  suite unittest solo estándar) los SKILL.md de modo heredaban un
+  entrypoint que el producto no puede correr, y dos ejecuciones reales lo
+  reportaron como hallazgo. "Detection never guesses" también aquí.
+- **`_python_generic_verify`** resuelve por evidencia: pytest solo si está
+  declarado (`pytest.ini`, `conftest.py` o la dependencia escrita en
+  `pyproject.toml`/`requirements*.txt`); con ficheros `test*.py` observados
+  (los que el discover de la biblioteca estándar recoge por omisión),
+  `{python} -B -m unittest discover` — la misma forma que la declaración
+  propietaria ya usaba, con `-B` para no dejar `__pycache__` en el producto
+  verificado; sin runner declarado ni tests observados, solo el humo de
+  `compileall`.
+- **Regresión** (`tests/test_stack.py`): suite unittest → discover (y
+  `pytest` ausente del plan), dependencia declarada → pytest,
+  `pytest.ini` → pytest, sin runner ni tests → solo smoke, test en raíz →
+  discover desde el producto, y el fixture medido (`fixtures/libreta`) →
+  discover. `python-django` y el resto del registro no cambian.
+
 ## soporte: digest sha256 y escritura atómica llana consolidados — 2026-11-12
 
 - **`scripts/support.py`** concentra las dos utilidades que cada módulo de

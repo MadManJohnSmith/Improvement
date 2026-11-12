@@ -42,8 +42,10 @@ STACKS = {
         "needs": ("python3",),
     },
     "python-generic": {
+        # Sin `verify` estática: el runner se resuelve por evidencia declarada
+        # en `_python_generic_verify` (pytest exige declaración; con ficheros
+        # de test observados, el discover de la biblioteca estándar).
         "markers": ("pyproject.toml", "requirements.txt", "setup.cfg", "tox.ini", "pytest.ini"),
-        "verify": (["{python}", "-m", "pytest", "-q"], ["{python}", "-m", "compileall", "-q", "."]),
         "provision_outside": True,
         "needs": ("python3",),
     },
@@ -568,6 +570,43 @@ def declared(product):
     return resolved
 
 
+def _python_generic_verify(product, root):
+    """Runner de test por evidencia declarada; nunca un guess.
+
+    Defecto medido (colina proxy del prompt de Creator, rondas 1b y 3, runs
+    gen-29fc7ec56e4b y gen-a5dcb08a7b61, 2026-11-11/12): un producto stdlib
+    con suite unittest recibía `pytest -q` como entrypoint principal del
+    plan — un comando que el producto no declara ni puede correr, y la prosa
+    de modo lo heredaba. Aquí pytest exige declaración explícita (pytest.ini,
+    conftest.py o la dependencia escrita en pyproject.toml/requirements*.txt);
+    con ficheros `test*.py` observados (los que el discover de la biblioteca
+    estándar recoge por omisión), el runner es ese discover, que corre donde
+    corre python; `-B` evita dejar `__pycache__` en el producto verificado.
+    Sin runner declarado ni tests observados, solo el humo de compileall.
+    """
+    root_dir = Path(product) / root if root else Path(product)
+    pytest_declared = (
+        (root_dir / "pytest.ini").is_file()
+        or (root_dir / "conftest.py").is_file()
+        or any(
+            "pytest" in path.read_text(encoding="utf-8", errors="replace")
+            for path in [root_dir / "pyproject.toml",
+                         *sorted(root_dir.glob("requirements*.txt"))]
+            if path.is_file()))
+    if pytest_declared:
+        return (["{python}", "-m", "pytest", "-q"],
+                ["{python}", "-m", "compileall", "-q", "."])
+    tests_dir = root_dir / "tests"
+    if tests_dir.is_dir() and any(tests_dir.glob("test*.py")):
+        start = "tests"
+    elif any(root_dir.glob("test*.py")):
+        start = "."
+    else:
+        return (["{python}", "-m", "compileall", "-q", "."],)
+    return (["{python}", "-B", "-m", "unittest", "discover", "-s", start],
+            ["{python}", "-m", "compileall", "-q", "."])
+
+
 def _capability_status(needs, *, path_env=None, home=None, workspace=None,
                        stack_name=None, default_path=None):
     status = []
@@ -785,8 +824,12 @@ def plan(product, *, workspace=None, env=None):
             continue
         spec = STACKS[entry['stack']]
         effective_python = _materialized_python(workspace, entry['stack'], interpreter)
+        if entry['stack'] == 'python-generic':
+            commands = _python_generic_verify(product, entry['root'])
+        else:
+            commands = spec['verify']
         verify = [[part.replace('{python}', effective_python) for part in command]
-                  for command in spec['verify']]
+                  for command in commands]
         stack_plan = {
             'stack': entry['stack'],
             'root': entry['root'],

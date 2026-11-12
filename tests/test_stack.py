@@ -9,6 +9,7 @@ paso exacto de provisión. Sin stubs: la evidencia es el entrypoint del producto
 o BLOCKED nombrando lo que falta.
 """
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -521,6 +522,76 @@ class StackPlanTests(unittest.TestCase):
             self.assertEqual(entry['verify_command'][1:],
                              ['-B', '-m', 'unittest', 'discover', '-s', 'tests'])
             self.assertTrue(entry['verification_ready'])
+
+
+class PythonGenericRunnerEvidenceTests(unittest.TestCase):
+    """El runner de python-generic va por evidencia declarada, no por guess.
+
+    Defecto medido en la colina proxy del prompt de Creator (rondas 1b y 3,
+    runs gen-29fc7ec56e4b y gen-a5dcb08a7b61): un producto stdlib con suite
+    unittest recibía `pytest -q` como entrypoint principal del plan — un
+    comando que el producto no declara ni puede correr, y la prosa de modo
+    lo heredaba. La forma derivada coincide con la que la declaración
+    propietaria (`improvement-verification.json`) ya usaba.
+    """
+
+    def test_unittest_suite_gets_stdlib_discover_never_pytest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pyproject.toml': '[project]\nname = "x"\n',
+                                      'requirements.txt': 'setuptools\n',
+                                      'tests/test_value.py': 'import unittest\n'})
+            entry, = stack.plan(product, workspace=root / 'ws')['stacks']
+            self.assertEqual(entry['stack'], 'python-generic')
+            self.assertEqual(entry['verify_command'][1:],
+                             ['-B', '-m', 'unittest', 'discover', '-s', 'tests'])
+            self.assertNotIn('pytest', json.dumps(entry['verify_command']))
+            self.assertNotIn('pytest', json.dumps(entry['lint_command']))
+
+    def test_declared_pytest_dependency_keeps_pytest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pyproject.toml': '[project]\nname = "x"\n',
+                                      'requirements.txt': 'pytest\n',
+                                      'tests/test_value.py': 'def test_x(): pass\n'})
+            entry, = stack.plan(product, workspace=root / 'ws')['stacks']
+            self.assertEqual(entry['verify_command'][1:], ['-m', 'pytest', '-q'])
+
+    def test_pytest_ini_declares_the_runner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pytest.ini': '[pytest]\n',
+                                      'tests/test_value.py': 'def test_x(): pass\n'})
+            entry, = stack.plan(product, workspace=root / 'ws')['stacks']
+            self.assertEqual(entry['verify_command'][1:], ['-m', 'pytest', '-q'])
+
+    def test_without_runner_or_tests_is_smoke_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pyproject.toml': '[project]\nname = "x"\n'})
+            entry, = stack.plan(product, workspace=root / 'ws')['stacks']
+            self.assertEqual(entry['verify_command'][1:], ['-m', 'compileall', '-q', '.'])
+            self.assertIsNone(entry['lint_command'])
+
+    def test_root_level_test_file_discovers_from_product_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = _product(root, {'pyproject.toml': '[project]\nname = "x"\n',
+                                      'test_value.py': 'import unittest\n'})
+            entry, = stack.plan(product, workspace=root / 'ws')['stacks']
+            self.assertEqual(entry['verify_command'][1:],
+                             ['-B', '-m', 'unittest', 'discover', '-s', '.'])
+
+    def test_the_measured_fixture_gets_discover(self):
+        """El producto del defecto medido (fixtures/libreta) deriva discover."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(__file__).resolve().parents[1] / 'fixtures' / 'libreta' / 'product'
+            product = Path(tmp) / 'libreta'
+            shutil.copytree(fixture, product)
+            entry, = stack.plan(product, workspace=Path(tmp) / 'ws')['stacks']
+            self.assertEqual(entry['verify_command'][1:],
+                             ['-B', '-m', 'unittest', 'discover', '-s', 'tests'])
+            self.assertNotIn('pytest', json.dumps(entry['verify_command']))
 
 
 if __name__ == '__main__':
