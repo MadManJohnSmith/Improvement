@@ -2147,6 +2147,148 @@ def _read_settings_structure(dsh_home):
     return default, providers
 
 
+def _split_patch_entries(lines):
+    """Split a cordis patch document into its top-level ``- id:`` entries."""
+    entries = []
+    current = None
+    for raw in lines:
+        if re.match(r"^-\s+id\s*:", raw):
+            if current:
+                entries.append(current)
+            current = [raw]
+        elif current is not None:
+            current.append(raw)
+    if current:
+        entries.append(current)
+    return entries
+
+
+def _structure_from_patch_entry(entry_lines):
+    """(default_fields, providers) for one patch entry, structure only.
+
+    Mirrors ``_read_settings_structure``'s promise: provider names,
+    ``apiKeyEnv`` NAMES and model counts; key values are never read. The
+    shape parsed is the one DSH 0.2.2 writes for the two entries this
+    resolver needs (``@deepseek-ai/dsh-llm-pi-ai`` with its ``providers``
+    mapping and ``@deepseek-ai/dsh-agent-default-model``); a shape the
+    parser does not recognize yields nothing instead of a wrong answer.
+    """
+    entry_name = None
+    for raw in entry_lines[1:12]:
+        m = re.match(r"^\s*name\s*:\s*['\"]([^'\"]+)['\"]", raw)
+        if m:
+            entry_name = m.group(1)
+            break
+    if entry_name == "@deepseek-ai/dsh-agent-default-model":
+        default = {}
+        for raw in entry_lines[1:]:
+            m = re.match(r"^\s+(provider|model)\s*:\s*(\S.*?)\s*$", raw)
+            if m:
+                default[m.group(1)] = m.group(2).strip().strip('"\'')
+        return default, {}
+    if entry_name != "@deepseek-ai/dsh-llm-pi-ai":
+        return {}, {}
+    providers = {}
+    providers_indent = None
+    current = None
+    for raw in entry_lines[1:]:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if providers_indent is None:
+            if re.match(r"^providers\s*:\s*$", stripped):
+                providers_indent = indent
+            continue
+        if indent <= providers_indent:
+            break
+        m_id = re.match(r"^-\s+id\s*:\s*(\S.*)$", stripped)
+        if m_id and current:
+            providers[current]["models"] += 1
+            if not providers[current]["first_model"]:
+                providers[current]["first_model"] = (
+                    m_id.group(1).strip().strip('"\''))
+            continue
+        m_key = re.match(r"^([A-Za-z0-9_-]+)\s*:\s*(.*)$", stripped)
+        if not m_key:
+            continue
+        key, value = m_key.group(1), m_key.group(2).strip()
+        if value == "":
+            if indent == providers_indent + 2:
+                current = key
+                providers.setdefault(
+                    current,
+                    {"api_key_env": None, "models": 0, "first_model": None})
+            continue
+        if current and key == "apiKeyEnv":
+            providers[current]["api_key_env"] = value.strip('"\'')
+    return {}, providers
+
+
+def _read_profile_patch_structure(home):
+    """Read provider structure from a DSH 0.2.2 profile tree.
+
+    DSH 0.2.2 replaced ``settings.yaml`` with profile trees: the providers a
+    route serves live in the ``@deepseek-ai/dsh-llm-pi-ai`` entry of
+    ``profiles/<name>/cordis*.yml`` and the chosen default in
+    ``@deepseek-ai/dsh-agent-default-model``. A fully configured home warned
+    on every dispatch (and would have been refused under
+    ``DSH_PROVIDER_STRICT=1``) because the resolver only knew settings.yaml;
+    measured on this machine's real home, 2026-11-12. Structure only.
+    """
+    default = {}
+    providers = {}
+    profiles = Path(home) / "profiles"
+    try:
+        entries = sorted(p for p in profiles.iterdir() if p.is_dir())
+    except OSError:
+        return default, providers
+    for profile in entries:
+        for name in ("cordis.patch.yml", "cordis.yml"):
+            try:
+                lines = (profile / name).read_text(
+                    encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            for entry in _split_patch_entries(lines):
+                entry_default, entry_providers = (
+                    _structure_from_patch_entry(entry))
+                for key, value in entry_default.items():
+                    default.setdefault(key, value)
+                providers.update(entry_providers)
+    return default, providers
+
+
+def _credential_ref_names(home):
+    """Ref NAMES stored in ``<home>/.credentials.yaml``; values discarded.
+
+    DSH resolves an ``apiKeyEnv`` reference through the credential store
+    before the launch environment, so a ref whose name matches the variable
+    makes the provider usable even with no environment variable. The file is
+    scanned for the ``refs:`` section only and every value is discarded
+    immediately: only names survive, per the framework's never-a-value
+    promise.
+    """
+    try:
+        lines = (Path(home) / ".credentials.yaml").read_text(
+            encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return set()
+    names = set()
+    in_refs = False
+    for line in lines:
+        if re.match(r"^refs\s*:\s*(#.*)?$", line):
+            in_refs = True
+            continue
+        if in_refs:
+            if re.match(r"^\S", line):
+                break
+            m = re.match(r"^\s+([A-Za-z0-9_-]+)\s*:\s*\S", line)
+            if m:
+                names.add(m.group(1))
+    return names
+
+
 def _find_dsh_pids():
     """PIDs of running DSH web processes (exact command match)."""
     try:
@@ -2295,20 +2437,32 @@ def dsh_provider_status(dsh_home):
     """Resolve a usable provider/model without assuming one setup.
 
     No user can be expected to hold the same provider keys: the resolver
-    walks the providers configured in settings.yaml — DSH's own default
-    (the last model the user configured) first, then the rest in
-    configuration order — and picks the first one that has models and
-    whose key variable is present. Variable NAMES only; values are never
-    read, copied or logged. When nothing is usable it stops with the
-    per-provider missing variable so the run keeps a single actionable
-    message.
+    walks the configured providers — DSH's own default (the last model the
+    user configured) first, then the rest in configuration order — and
+    picks the first one that has models and whose key is resolvable by
+    NAME: the variable present in the launch environment (or a running
+    DSH's) or a ref of the same name in the home's ``.credentials.yaml``
+    store. Variable NAMES and stores only; key values are never read,
+    copied or logged. Structure comes from settings.yaml; DSH 0.2.2 moved
+    it into profile trees (``profiles/<name>/cordis*.yml`` plus the
+    ``.credentials.yaml`` refs), so when settings.yaml is unreadable the
+    same structure is read from the profile patch — a fully configured
+    0.2.2 home warned on every dispatch before this (measured
+    2026-11-12). When nothing is usable it stops with the per-provider
+    missing name so the run keeps a single actionable message.
     """
     home = Path(dsh_home).expanduser()
+    layout = "settings-yaml"
     try:
         default, providers = _read_settings_structure(home)
     except (OSError, ValueError) as e:
-        return {"ok": False,
-                "reason": f"settings.yaml no legible en {home}: {e}"}
+        settings_error = e
+        default, providers = _read_profile_patch_structure(home)
+        if not providers:
+            return {"ok": False,
+                    "reason": f"settings.yaml no legible en {home}: "
+                              f"{settings_error}"}
+        layout = "profile-patch"
     if not providers:
         return {"ok": False,
                 "reason": f"settings.yaml en {home} no declara providers"}
@@ -2317,6 +2471,7 @@ def dsh_provider_status(dsh_home):
     if preferred in providers:
         ordered.remove(preferred)
         ordered.insert(0, preferred)
+    ref_names = _credential_ref_names(home)
     checked = []
     for name in ordered:
         info = providers[name]
@@ -2324,17 +2479,20 @@ def dsh_provider_status(dsh_home):
             checked.append(f"{name}: sin modelos")
             continue
         env_name = info["api_key_env"]
-        if env_name and not _env_var_present(env_name):
+        if env_name and not (_env_var_present(env_name)
+                             or env_name in ref_names):
             checked.append(f"{name}: llave {env_name} ausente")
             continue
         return {"ok": True, "provider": name, "models": info["models"],
                 "model": info["first_model"], "api_key_env": env_name,
+                "layout": layout,
                 "source": ("default" if name == preferred else "fallback"),
                 "skipped": checked}
     detail = "; ".join(checked) or "sin proveedores con modelos"
     return {"ok": False,
             "reason": "ningún proveedor utilizable (" + detail +
                       "); define la llave de alguno en el entorno de DSH "
+                      "o como ref en el .credentials.yaml del home "
                       "y vuelve a intentarlo"}
 
 
@@ -2342,7 +2500,8 @@ def _provider_gate_origin(status, origin=None):
     """Origin string for the acquisition result.
 
     Keys visible in the process environment are only one of DSH's possible
-    sources (dotenv, keychain, UI-entered credentials): a missing key is a
+    sources (the ``.credentials.yaml`` credential store, the launch
+    environment, credentials entered in the UI): a missing key is a
     warning, not a block — the real authentication failure would surface as
     a retained run with its cause. DSH_PROVIDER_STRICT handling (the hard
     stop) belongs to the caller.
@@ -2352,7 +2511,8 @@ def _provider_gate_origin(status, origin=None):
         return f"{base} ({status['provider']})"
     return ("aviso: " + status["reason"] + (
         "; se despacha igualmente: DSH puede resolver la llave por otros "
-        "medios (dotenv/keychain/UI). Si Creator falla por autenticación "
+        "medios (el almacén de credenciales .credentials.yaml, el entorno "
+        "de lanzamiento o la UI). Si Creator falla por autenticación "
         "el run quedará RETAINED con la causa"))
 
 

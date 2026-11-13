@@ -1,5 +1,35 @@
 # Cambios
 
+## creator: el resolver de proveedor lee el árbol de perfiles 0.2.2 — 2026-11-12
+
+Fallo convertido desde la evidencia real de esta máquina (home DSH 0.2.2
+completamente configurado, medición 2026-11-12):
+
+- **`dsh_provider_status` ya no depende de `settings.yaml`.** DSH 0.2.2
+  movió la configuración a árboles de perfil: los proveedores viven en la
+  entrada `@deepseek-ai/dsh-llm-pi-ai` de `profiles/<name>/cordis*.yml` y el
+  default en `@deepseek-ai/dsh-agent-default-model`. Un home 0.2.2
+  perfectamente configurado avisaba en cada despacho ("settings.yaml no
+  legible") y habría sido rechazado bajo `DSH_PROVIDER_STRICT=1`. Cuando
+  settings.yaml no es legible, la misma estructura (solo estructura) se lee
+  del patch de perfil; el error original se conserva si el árbol tampoco
+  declara proveedores.
+- **La llave se considera resuelta también por el almacén de credenciales.**
+  DSH resuelve una referencia `apiKeyEnv` por el seam de credenciales antes
+  que por el entorno: una ref con el mismo nombre en
+  `<home>/.credentials.yaml` hace usable la ruta sin variable de entorno
+  (la capa `.env` del boot rechaza esa variable: solo el entorno de
+  lanzamiento puede fijarla). Solo nombres de refs; los valores se
+  descartan al leer la línea.
+- **Aviso de adquisición preciso**: "(dotenv/keychain/UI)" pasó a nombrar el
+  almacén real (`.credentials.yaml`, entorno de lanzamiento, UI).
+- **Regresión** (`tests/test_creator_and_validator.py`): home 0.2.2 con la
+  clave solo como ref → ok con layout `profile-patch` y el default honrado;
+  sin ref ni entorno → fallo que nombra la variable y el almacén; promesa
+  never-a-value sobre el archivo con secreto; clave en el entorno de
+  lanzamiento → camino `_env_var_present` intacto; y el camino settings.yaml
+  reporta su layout. Módulo enfocado: 181 tests OK.
+
 ## stack: el runner de python-generic va por evidencia declarada — 2026-11-12
 
 Fallo convertido desde la evidencia de la colina proxy del prompt de Creator

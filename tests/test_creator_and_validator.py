@@ -1800,6 +1800,46 @@ def _write_dsh_home(home, *, provider="testprov", api_key_env="TEST_PROV_KEY",
     return home
 
 
+def _write_dsh_home_022(home, *, credentials=True):
+    """Fixture DSH 0.2.2 home: profile patch tree, sin settings.yaml.
+
+    La forma verificada en un home real (medición 2026-11-12): los
+    proveedores viven en la entrada ``@deepseek-ai/dsh-llm-pi-ai`` de
+    ``profiles/web/cordis.patch.yml`` y el default en
+    ``@deepseek-ai/dsh-agent-default-model``. El parser distingue la clave
+    de proveedor por indent == providers_indent+2, así que la indentación
+    es exactamente la del home real. Solo estructura: la ref de
+    ``.credentials.yaml`` guarda un valor de ficción que ningún resultado
+    puede revelar.
+    """
+    home = Path(home)
+    profile = home / "profiles" / "web"
+    profile.mkdir(parents=True, exist_ok=True)
+    (profile / "cordis.patch.yml").write_text(
+        "- id: llm-pi-ai\n"
+        "  name: '@deepseek-ai/dsh-llm-pi-ai'\n"
+        "  config:\n"
+        "    providers:\n"
+        "      testprov:\n"
+        "        apiKeyEnv: TEST_PROV_KEY\n"
+        "        models:\n"
+        "          - id: model-0\n"
+        "          - id: model-1\n"
+        "- id: agent-default-model\n"
+        "  name: '@deepseek-ai/dsh-agent-default-model'\n"
+        "  config:\n"
+        "    provider: testprov\n"
+        "    model: model-0\n",
+        encoding="utf-8")
+    if credentials:
+        (home / ".credentials.yaml").write_text(
+            "version: 1\n"
+            "refs:\n"
+            "  TEST_PROV_KEY: valor-secreto-de-prueba\n",
+            encoding="utf-8")
+    return home
+
+
 class DshLifecycleTests(unittest.TestCase):
     """Ciclo de vida DSH: instancias previas y puerta de llave API."""
 
@@ -2250,6 +2290,89 @@ class DshLifecycleTests(unittest.TestCase):
             status = cc.dsh_provider_status(home)
         self.assertTrue(status["ok"])
         self.assertEqual(status["provider"], "testprov")
+
+    def test_provider_status_reads_022_profile_patch_with_credentials_ref(self):
+        """Home 0.2.2 sin settings.yaml: la llave vive solo como ref en
+        .credentials.yaml y la puerta la acepta.
+
+        DSH 0.2.2 ya no usa settings.yaml: los proveedores viven en
+        profiles/<name>/cordis*.yml y la clave se resuelve vía refs en
+        .credentials.yaml. Un home 0.2.2 perfectamente configurado avisaba
+        en cada despacho (y bajo DSH_PROVIDER_STRICT=1 sería rechazado)
+        porque el resolver solo leía settings.yaml; medido en un home real
+        el 2026-11-12. Aquí la variable de entorno está ausente y la
+        puerta resuelve por el nombre de la ref, no por su valor.
+        """
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]):
+            home = _write_dsh_home_022(tmp)
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "testprov")
+        self.assertEqual(status["layout"], "profile-patch")
+        self.assertEqual(status["source"], "default")
+        self.assertEqual(status["model"], "model-0")
+        self.assertEqual(status["api_key_env"], "TEST_PROV_KEY")
+
+    def test_provider_status_022_without_any_key_names_the_credentials_store(self):
+        """Sin ref en .credentials.yaml y sin variable de entorno, el fallo
+        nombra las dos vías que quedarían: la variable y el almacén."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]):
+            home = _write_dsh_home_022(tmp, credentials=False)
+            status = cc.dsh_provider_status(home)
+        self.assertFalse(status["ok"])
+        self.assertIn("TEST_PROV_KEY", status["reason"])
+        self.assertIn(".credentials.yaml", status["reason"])
+
+    def test_provider_status_022_never_a_value_from_credentials_refs(self):
+        """La promesa never-a-value atraviesa el almacén de credenciales.
+
+        `_credential_ref_names` lee `.credentials.yaml`, donde sí hay un
+        valor: el resultado de la puerta solo puede llevar el NOMBRE de la
+        ref, nunca el valor guardado bajo ella.
+        """
+        secret = "valor-secreto-de-prueba"
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ, {"TEST_PROV_KEY": ""}), \
+                unittest.mock.patch.object(cc, "_find_dsh_pids",
+                                           return_value=[]):
+            home = _write_dsh_home_022(tmp)
+            written = (home / ".credentials.yaml").read_text(encoding="utf-8")
+            self.assertIn(secret, written,
+                          "el fixture no contiene el secreto: no probaría nada")
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertNotIn(secret, repr(status),
+                         "el status de la puerta filtró el valor de la ref")
+
+    def test_provider_status_022_key_in_launch_env_still_works(self):
+        """El camino _env_var_present queda intacto en un home 0.2.2:
+        llave en el entorno de lanzamiento y sin .credentials.yaml."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
+            home = _write_dsh_home_022(tmp, credentials=False)
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["provider"], "testprov")
+        self.assertEqual(status["layout"], "profile-patch")
+
+    def test_provider_status_settings_yaml_path_reports_its_layout(self):
+        """El campo layout es aditivo: el camino settings.yaml que ya
+        funcionaba se reporta como settings-yaml y los consumidores
+        existentes lo ignoran."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.dict(os.environ,
+                                         {"TEST_PROV_KEY": "x"}):
+            home = _write_dsh_home(tmp)
+            status = cc.dsh_provider_status(home)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["layout"], "settings-yaml")
 
 
 class _FakeProcess:
