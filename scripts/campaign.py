@@ -39,7 +39,7 @@ from mode_lifecycle import BYTE_LIMITS
 MARKER = '__IMPROVEMENT_GATE__'
 EXIT_PASS = 0
 EXIT_FAIL = 1
-EXIT_BLOCKED = 2
+EXIT_BLOCKED = EXIT_FAIL  # veredicto con artefacto: el runner solo conoce 0/1
 STATE_DIRNAME = 'mode-state'
 EVIDENCE_DIRNAME = 'evidence'
 VERDICT_NAME = 'veredicto.json'
