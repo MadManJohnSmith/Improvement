@@ -1,5 +1,30 @@
 # Cambios
 
+## creator: primera generación ACTIVE — la puerta se cierra por el flujo propio — 2026-11-13
+
+`gen-e9b8a23da747` es la primera generación **ACTIVE** post-presupuesto,
+verificada con `verify-acceptance` (`run_status: ACTIVE`,
+`is_active_deployment: true`): tres presets publicados, `mode-state`
+provisionado, plan de capacidades y campaña ligados. El paquete salió de una
+sesión real de Creator (prompt 1.12.0, 2.572.575 tokens, 54 pasos, bajo
+techo, ruta gratuita de nemotron vía el router OmniRoute) que el Host retuvo
+por portability, y se cerró por el flujo diseñado — retención →
+`repair_retained` → activación — no por una corrección Host de la salida del
+Creator.
+
+Cinco turnos de reparación medidos (568k / 1.04M / 1.26M / 1.24M / 1.22M
+tokens; ~54k tokens por paso releyendo el paquete entero): el quinto dejó
+`validate_package` íntegramente verde. Dos lecciones convertidas en código en
+los commits de esta unidad: los hallazgos viajan en la causa del turno
+(desde una validación fresca, no del snapshot vencido de
+`validation/summary.json`) y la contabilidad del primer intento se archiva
+para no heredar gasto ni tropezar con la valla de integridad.
+
+Hallazgo de entorno (máquina, no repositorio): DSH lanza `pnpm` para instalar
+bundles; npm bloquea sus scripts de instalación por defecto y el bin queda
+sin binario de plataforma (`ENOEXEC` en el spawn de DSH). La instalación que
+funciona: `npm install -g --allow-scripts=pnpm pnpm`.
+
 ## creator: el despacho repair_retained queda cableado — 2026-11-13
 
 El escenario `repair_retained` existía como tipo de prompt sin despachador;
