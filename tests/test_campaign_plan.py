@@ -311,10 +311,12 @@ class CampaignPlanTests(unittest.TestCase):
                          {'path': 'auditoria.json', 'evidence_name': 'campana'})
         self.assertEqual(by_id['reparar-1']['preset'], 'campana-reparacion')
         self.assertEqual(by_id['reparar-1']['prompt_file'], 'prompts/reparar.md')
-        self.assertEqual(by_id['reparar-1']['if_veredicto'],
-                         {'from': 'verificar-pre', 'path': 'veredicto.json',
-                          'field': 'verdict', 'equals': 'FAIL'})
-        self.assertEqual(by_id['reparar-2']['if_veredicto']['from'], 'verificar-post')
+        # La reparación es incondicional tras la auditoría: el reparador
+        # reclama su sombra y registra el candidato él mismo (decisión
+        # del mantenedor, 2026-11-14). Los gates de verificación evalúan
+        # el candidato registrado.
+        self.assertNotIn('if_veredicto', by_id['reparar-1'])
+        self.assertNotIn('if_veredicto', by_id['reparar-2'])
         self.assertEqual(by_id['reparar-1']['result_contract'],
                          {'path': 'reparar.json', 'evidence_name': 'campana'})
 
@@ -374,26 +376,26 @@ elif args.fase in ('final', 'cerrar'):
             # 1. Ejecutar plan generado
             outcome_f = workflow.run_plan(managed_f / 'plan.json', ask_client=client_f)
             self.assertEqual(outcome_f['result'], 'COMPLETED')
-            # auditar (1) y reparar-1 (2) deben haber creado sesión; reparar-2 debe haberse saltado
-            self.assertEqual(len(client_f.created), 2)
+            # Las tres peticiones crean sesión: la reparación es incondicional
+            # tras la auditoría (decisión del mantenedor, 2026-11-14); el
+            # reparador decide si hay hallazgos que reparar.
+            self.assertEqual(len(client_f.created), 3)
             sessions = [c[2] for c in client_f.created]
             self.assertIn('campana-auditor', sessions[0])
             self.assertIn('campana-reparacion', sessions[1])
+            self.assertIn('campana-reparacion', sessions[2])
 
             events_f = workflow.read_journal(outcome_f['run_dir'])
             skipped_f = [e['payload'] for e in events_f if e['kind'] == 'ASK_SKIPPED']
-            self.assertEqual(len(skipped_f), 1)
-            self.assertEqual(skipped_f[0]['step_id'], 'reparar-2')
-            self.assertEqual(skipped_f[0]['from'], 'verificar-post')
-            self.assertEqual(skipped_f[0]['real'], 'PASS')
-            self.assertEqual(skipped_f[0]['esperado'], 'FAIL')
+            self.assertEqual(len(skipped_f), 0,
+                             'sin if_veredicto ningún ask se salta')
 
             # 2. Replay y verificación inmutables:
             # El posterior PASS en verificar-post no sobreescribe ni invalida reparar-1
             self.assertEqual(workflow.verify(outcome_f['run_dir'])['events'], len(events_f))
             resumed_f = workflow.run_plan(managed_f / 'plan.json', ask_client=client_f)
             self.assertEqual(resumed_f['result'], 'COMPLETED')
-            self.assertEqual(len(client_f.created), 2)
+            self.assertEqual(len(client_f.created), 3)
 
     def test_rondas_max_tres_emite_tres_pares(self):
         bundle = self.generate(rondas_max=3)
@@ -403,10 +405,9 @@ elif args.fase in ('final', 'cerrar'):
                           'verificar-post', 'reparar-2', 'verificar-ronda-3', 'reparar-3',
                           'verificar-final', 'cerrar'])
         by_id = self.steps_by_id(bundle)
-        for index, label in ((1, 'verificar-pre'), (2, 'verificar-post'),
-                             (3, 'verificar-ronda-3')):
+        for index in ((1, 2, 3)):
             step = by_id['reparar-%d' % index]
-            self.assertEqual(step['if_veredicto']['from'], label)
+            self.assertNotIn('if_veredicto', step)
             self.assertEqual(step['preset'], 'campana-reparacion')
         # El número de rondas vive en el generador, no en el plan: el plan dice
         # cuántos pasos tiene, y el manifiesto dice cuántas rondas se pidieron.

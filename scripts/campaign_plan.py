@@ -44,7 +44,6 @@ AUDIT_RESULT = 'auditoria.json'
 REPAIR_RESULT = 'reparar.json'
 VERDICT_NAME = 'veredicto.json'
 VERDICT_FIELD = 'verdict'
-REPAIR_TRIGGER = 'FAIL'
 ROUNDS_DEFAULT = 2
 # Las dos primeras rondas llevan nombre propio porque son las que el operador
 # reconoce al leer el journal; a partir de ahí el nombre ya solo ordena.
@@ -85,11 +84,16 @@ indica tu `result_contract`.
 """
 
 REPAIR_PROMPT_TEXT = """\
-# Reparar solo el candidato vigente
+# Reparar los hallazgos vivos de este workspace
 
-Repara únicamente los ítems del candidato registrado: su `candidate_head` y su
-`candidate_diff_digest` son la identidad de lo que se está arreglando, y
-cualquier otro árbol es una reparación que nadie pidió.
+Los hallazgos con ancla viven en `mode-state/findings.jsonl`. Si no hay ninguno
+abierto, escribe el resultado diciéndolo y termina: una campaña sin hallazgos
+no inventa trabajo.
+
+- Reclama la sombra de reparación y registra el candidato en
+  `mode-state/work-items.json`: `candidate_head` y `candidate_diff_digest` son
+  la identidad de lo que se está arreglando; cualquier otro árbol es una
+  reparación que nadie pidió.
 
 - No publiques, no commitees y no abras publicación remota: la candidata vive
   sucia y el Host decide.
@@ -205,8 +209,6 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
                       'on_fail': {'action': 'continue', 'rounds': 1}})
         steps.append({'id': 'reparar-%d' % index, 'type': 'ask', 'preset': repair,
                       'prompt_file': PROMPTS_DIRNAME + '/' + REPAIR_PROMPT,
-                      'if_veredicto': {'from': verifier, 'path': VERDICT_NAME,
-                                       'field': VERDICT_FIELD, 'equals': REPAIR_TRIGGER},
                       'result_contract': {'path': REPAIR_RESULT,
                                           'evidence_name': EVIDENCE_NAME}})
     steps.append({'id': 'verificar-final', 'type': 'gate',
