@@ -1725,17 +1725,33 @@ class CreatorSession:
                                run_doc["project"]["name"], layout,
                                project_manifest)
 
-        # Save prompt. A repair session replaces the initial prompt: the
-        # original is archived under retained/ first, so the first attempt's
-        # instruction stays part of the run's evidence.
+        # Save prompt. A repair session replaces the first attempt's prompt,
+        # generation request and session accounting: the originals are
+        # archived under retained/ first (the first session's spend is part
+        # of the run's evidence), and the fresh request/session the dispatch
+        # then creates pair with the repair prompt instead of tripping the
+        # persisted-prompt integrity fence.
         prompt_path = self.run_dir / "creator-prompt.md"
         if self.prompt_type == "repair_retained":
-            if prompt_path.exists():
-                archive = self.run_dir / "retained" / "creator-prompt-initial.md"
-                archive.parent.mkdir(parents=True, exist_ok=True)
-                if not archive.exists():
-                    shutil.copy(prompt_path, archive)
+            retained_dir = self.run_dir / "retained"
+            retained_dir.mkdir(parents=True, exist_ok=True)
+            for name, archive_name in (
+                    ("creator-prompt.md", "creator-prompt-initial.md"),
+                    ("generation-request.json",
+                     "generation-request-initial.json"),
+                    ("creator-session.json", "creator-session-initial.json")):
+                source = self.run_dir / name
+                archive = retained_dir / archive_name
+                if (source.is_file() and not source.is_symlink()
+                        and not archive.exists()):
+                    shutil.copy(source, archive)
             prompt_path.write_text(prompt, encoding="utf-8")
+            request_path = self.run_dir / "generation-request.json"
+            if request_path.exists():
+                request_path.unlink()
+            session_state = self.run_dir / "creator-session.json"
+            if session_state.exists():
+                session_state.unlink()
         elif not prompt_path.exists():
             prompt_path.write_text(prompt, encoding="utf-8")
 

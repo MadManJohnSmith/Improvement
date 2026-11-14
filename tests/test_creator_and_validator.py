@@ -1799,11 +1799,24 @@ class RetainedRepairDispatchTests(Base):
             }, indent=2) + "\n", encoding="utf-8")
 
     def test_repair_session_replaces_prompt_and_moves_to_repairing(self):
-        """El turno de reparación archiva el prompt inicial y pasa a REPAIRING."""
+        """El turno de reparación archiva la primera sesión y pasa a REPAIRING.
+
+        El prompt, la petición y la contabilidad del primer intento son
+        evidencia (retained/*-initial) y desaparecen del camino activo: una
+        sesión nueva con digest de reparación propio no puede tropezar con la
+        valla de integridad del estado persistido ni heredar el gasto anterior.
+        """
         self._retain()
         initial = self.run_dir / "creator-prompt.md"
         initial.write_text("# Prompt inicial de la primera sesión\n",
                            encoding="utf-8")
+        (self.run_dir / "generation-request.json").write_text(
+            json.dumps({"schema_version": 1, "prompt_digest": "viejo"}) + "\n",
+            encoding="utf-8")
+        (self.run_dir / "creator-session.json").write_text(
+            json.dumps({"session_id": "session-vieja",
+                        "usage_by_seq": {"1": {"output": 2572575}}}) + "\n",
+            encoding="utf-8")
 
         session = cc.CreatorSession(
             self.run_dir, prompt_type="repair_retained",
@@ -1813,11 +1826,24 @@ class RetainedRepairDispatchTests(Base):
         prompt = initial.read_text(encoding="utf-8")
         self.assertIn("Corrección de generación RETAINED", prompt)
         self.assertIn("portability: contiene '/home/'", prompt)
-        archive = (self.run_dir / "retained" / "creator-prompt-initial.md")
+        retained = self.run_dir / "retained"
         self.assertEqual(
-            archive.read_text(encoding="utf-8"),
+            (retained / "creator-prompt-initial.md").read_text(
+                encoding="utf-8"),
             "# Prompt inicial de la primera sesión\n",
             "el prompt del primer intento no quedó archivado")
+        for name in ("generation-request-initial.json",
+                     "creator-session-initial.json"):
+            self.assertTrue((retained / name).is_file(),
+                            f"{name} no quedó archivado")
+        self.assertFalse((self.run_dir / "creator-session.json").exists(),
+                         "la contabilidad de la primera sesión sigue activa")
+        request = json.loads((self.run_dir / "generation-request.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(
+            request["prompt_digest"],
+            digest_bytes(prompt.encode("utf-8")),
+            "la petición activa no quedó ligada al prompt de reparación")
         run_doc = json.loads((self.run_dir / "run.json").read_text(
             encoding="utf-8"))
         self.assertEqual(run_doc["status"], "REPAIRING")

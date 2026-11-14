@@ -11,8 +11,12 @@ del prompt).
 - **`CreatorSession` acepta `prompt_type`/`prompt_context`**: la puerta de
   precondiciones admite RETAINED/REPAIRING solo para `repair_retained` (el
   despacho normal sigue exigiendo CREATED/GENERATING), `prepare()` archiva
-  el prompt inicial en `retained/creator-prompt-initial.md` antes de
-  sustituirlo por el de reparación, y el estado pasa a `REPAIRING`. El
+  en `retained/` el prompt, la petición y la contabilidad del primer intento
+  (`*-initial`) antes de sustituirlos — una petición y sesión nuevas ligan
+  el digest del prompt de reparación y no heredan el gasto anterior, que la
+  valla de integridad del estado persistido habría rechazado
+  («creator-session.json no corresponde al prompt persistido», medido en el
+  primer despacho real de reparación) — y el estado pasa a `REPAIRING`. El
   scaffold reescrito por `prepare()` deja intacto todo modo con `mode.json`
   existente: la reparación edita el paquete del Creator, no lo reinicia.
 - **`bootstrap.py repair`** (subcomando nuevo): exige un run RETAINED con
