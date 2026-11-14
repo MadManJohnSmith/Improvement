@@ -1610,7 +1610,25 @@ class _Run:
             payload['reasoning'] = reasoning
         self.record('STEP_STARTED', payload)
         request_id = self._request_id(step_id, attempt)
-        prompt_sha256 = digest_bytes(step['prompt'].encode('utf-8'))
+        # El contrato de resultado viaja EN el prompt: el plan lo conoce pero
+        # la sesión no, y la campaña operativa midió un turno que hizo toda la
+        # auditoría y falló solo por el nombre exacto del fichero de evidencia
+        # (escribió audit-report.md; el contrato exigía auditoria.json).
+        prompt_text = step['prompt']
+        contract = step.get('result_contract')
+        if contract:
+            import posixpath
+            evidence_path = posixpath.normpath(
+                f"evidence/{contract.get('evidence_name') or '.'}/{contract['path']}")
+            prompt_text = (prompt_text.rstrip() + "\n\n"
+                           + "## Resultado obligatorio de este paso\n\n"
+                           + f"Escribe el resultado estructurado de este paso con "
+                             f"workflow_write en `{evidence_path}` (relativo a la "
+                             f"raíz del workspace, creando los directorios que "
+                             f"hagan falta). Ese fichero exacto es lo que el runner "
+                             f"valida como resultado del paso; sin él el paso "
+                             f"queda en fallo.\n")
+        prompt_sha256 = digest_bytes(prompt_text.encode('utf-8'))
         # Sesión NUEVA por intento con el preset verificado del proyecto;
         # nunca se adoptan sesiones ajenas.
         try:
@@ -1626,7 +1644,7 @@ class _Run:
         if reasoning is not None:
             self._apply_reasoning(step, session_id, reasoning)
         try:
-            self.ask_client.send_prompt(session_id, step['prompt'], request_id=request_id)
+            self.ask_client.send_prompt(session_id, prompt_text, request_id=request_id)
         except (ValueError, OSError, urllib.error.URLError) as error:
             self._close_ask(session_id)
             self._retain('ask-despacho-fallo:' + step_id + ':' + _brief(error))

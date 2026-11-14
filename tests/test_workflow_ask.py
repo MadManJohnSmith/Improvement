@@ -118,6 +118,7 @@ class FakeAskClient:
         self.sessions = {}
         self.created = []         # (session_id, workspace, preset)
         self.sent = []            # (session_id, request_id)
+        self.prompts = []         # (session_id, prompt_text)
         self.cancels = []         # session_id
         self.observation_calls = []  # (session_id, cursor)
         self.obs_error_after = None  # 1 => la 2ª observación falla
@@ -148,6 +149,7 @@ class FakeAskClient:
 
     def send_prompt(self, session_id, prompt, request_id=None):
         self.sent.append((session_id, request_id))
+        self.prompts.append((session_id, prompt))
         session = self.sessions[session_id]
         session.queue(request_id)
         if self.on_send is not None:
@@ -265,13 +267,46 @@ class WorkflowAskTests(unittest.TestCase):
         self.assertEqual(workspace, self.workspace)
         expected_request = self.expected_request_id(plan_path, 'a1', 1)
         self.assertEqual(client.sent, [(session_id, expected_request)])
+
+    def test_the_result_contract_travels_in_the_prompt(self):
+        """El nombre exacto de la evidencia llega EN el prompt del turno.
+
+        La campaña operativa del 2026-11-13 midió un turno que hizo toda la
+        auditoría (34 pasos, findings, handoffs, verificaciones reales) y
+        falló solo por el nombre del fichero de evidencia: el plan exigía
+        auditoria.json y la sesión nunca lo recibió, así que el modelo escribió
+        audit-report.md. El contrato viaja ahora en el prompt.
+        """
+        client = FakeAskClient()
+        plan_path = self.write_plan([
+            self.ask('auditar', prompt='Audita el producto.',
+                     result_contract={'evidence_name': 'campana',
+                                      'path': 'auditoria.json'}),
+        ])
+        client.complete_after = 1
+        client.on_complete = lambda session: _write_result(
+            session.workspace, 'campana/auditoria.json', {'verdict': 'PASS'})
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'COMPLETED')
+        session_id, prompt = client.prompts[0]
+        self.assertIn('evidence/campana/auditoria.json', prompt)
+        self.assertIn('Resultado obligatorio de este paso', prompt)
+        # El prompt original no se pierde: el contrato se añade al final.
+        self.assertTrue(prompt.startswith('Audita el producto.'))
+        session_id, workspace, preset = client.created[0]
+        self.assertEqual(preset, 'cordis')
+        self.assertEqual(workspace, self.workspace)
+        expected_request = self.expected_request_id(plan_path, 'a1', 1)
+        self.assertEqual(client.sent, [(session_id, expected_request)])
         payloads = self.payloads(outcome['run_dir'])
         completed = [p for p in payloads
                      if p['kind'] == 'STEP_COMPLETED' and p['payload']['step_id'] == 'a1']
         self.assertEqual(len(completed), 1)
         payload = completed[0]['payload']
         self.assertEqual(payload['prompt_sha256'],
-                         hashlib.sha256(b'resume el estado').hexdigest())
+                         hashlib.sha256(client.prompts[0][1].encode('utf-8')).hexdigest())
+        self.assertIn('evidence/resultado.json', client.prompts[0][1],
+                      'el contrato de resultado debe viajar en el prompt')
         self.assertEqual(payload['result_path'], 'evidence/resultado.json')
         result_bytes = (self.workspace / 'evidence' / 'resultado.json').read_bytes()
         self.assertEqual(payload['result_sha256'], hashlib.sha256(result_bytes).hexdigest())
@@ -290,6 +325,37 @@ class WorkflowAskTests(unittest.TestCase):
         self.assertEqual(gate_body['stdout'],
                          str(self.workspace / 'evidence' / 'resultado.json') + '\n')
         self.assertEqual(verify(outcome['run_dir'])['events'], len(payloads))
+
+    def test_the_result_contract_travels_in_the_prompt(self):
+        """El nombre exacto de la evidencia llega EN el prompt del turno.
+
+        La campaña operativa del 2026-11-13 midió un turno que hizo toda la
+        auditoría (34 pasos, findings, handoffs, verificaciones reales) y
+        falló solo por el nombre del fichero de evidencia: el plan exigía
+        auditoria.json y la sesión nunca lo recibió, así que el modelo escribió
+        audit-report.md. El contrato viaja ahora en el prompt.
+        """
+        client = FakeAskClient()
+        plan_path = self.write_plan([
+            self.ask('auditar', prompt='Audita el producto.',
+                     result_contract={'evidence_name': 'campana',
+                                      'path': 'auditoria.json'}),
+        ])
+        client.complete_after = 1
+        client.on_complete = lambda session: _write_result(
+            session.workspace, 'campana/auditoria.json', {'verdict': 'PASS'})
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'COMPLETED')
+        session_id, prompt = client.prompts[0]
+        self.assertIn('evidence/campana/auditoria.json', prompt)
+        self.assertIn('Resultado obligatorio de este paso', prompt)
+        # El prompt original no se pierde: el contrato se añade al final.
+        self.assertTrue(prompt.startswith('Audita el producto.'))
+        session_id, workspace, preset = client.created[0]
+        self.assertEqual(preset, 'cordis')
+        self.assertEqual(workspace, self.workspace)
+        expected_request = self.expected_request_id(plan_path, 'auditar', 1)
+        self.assertEqual(client.sent, [(session_id, expected_request)])
 
     # -- abstención por preset antes de crear run dir
 
