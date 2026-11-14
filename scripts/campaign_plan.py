@@ -99,12 +99,45 @@ no inventa trabajo.
   sucia y el Host decide.
 - Nada se marca resuelto sin la salida que lo demuestra. Si el comando no
   corrió o no lo entiendes, el ítem sigue abierto.
-- Registra los resultados de verificación en `mode-state/verification-results.jsonl`
-  mediante el plugin. NUNCA en `evidence/`.
 - Escribe el resultado en `evidence/campana/` con el nombre que indica tu
   `result_contract`, incluyendo la identidad real del candidato (head y digest
   de diff) tal y como la registraste.
 """
+
+
+def _verification_records_block(stack_value):
+    """El formato EXACTO de los registros de verificación, para el prompt.
+
+    La campaña operativa del 2026-11-14 midió un turno de reparación que
+    arregló los tres hallazgos y verificó de verdad, y el Host rechazó el
+    ledger entero por la forma de los registros: el reparador no conocía el
+    schema estricto que `stack.py` impone (cinco campos, sin extras) ni que el
+    `command` debe ser el texto exacto del plan de capacidades. El schema
+    correcto ya vive en el `state-schema.json` del mode-state; el prompt lo
+    reproduce y lista los comandos exactos del stack para que no haya que
+    buscarlos.
+    """
+    block = (
+        "- Registra los resultados de verificación en "
+        "`mode-state/verification-results.jsonl` mediante el plugin. NUNCA en "
+        "`evidence/`. Formato EXACTO por registro (una línea JSONL por hallazgo "
+        "verificado; ningún campo de más ni de menos — el Host rechaza el lote "
+        "entero si un registro no cumple):\n"
+        '  {"finding_id": "<id del hallazgo>", "candidate_head": "<head del '
+        'candidato, 40-64 hex>", "candidate_diff_digest": "<digest del diff, 64 '
+        'hex>", "result": "PASS" | "FAIL" | "BLOCKED", "command": "<comando de '
+        'verificación EXACTO de este stack, tal como está en el plan de '
+        'capacidades>"}\n'
+    )
+    ready = [entry for entry in (stack_value or {}).get('stacks', [])
+             if entry.get('verification_ready')]
+    if ready:
+        block += "- Comandos de verificación EXACTOS del plan de capacidades:\n"
+        for entry in ready:
+            command = entry.get('verify_command')
+            command = ' '.join(command) if isinstance(command, list) else command
+            block += f"  - {entry.get('stack')}: `{command}`\n"
+    return block
 
 
 class CampaignPlanError(ValueError):
@@ -279,8 +312,10 @@ def manifest_document(plan_bytes, preset_ids, stacks, rondas_max, executables):
     }
 
 
-def prompts():
-    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT, REPAIR_PROMPT: REPAIR_PROMPT_TEXT}
+def prompts(stack_value=None):
+    repair = (REPAIR_PROMPT_TEXT
+              + _verification_records_block(stack_value))
+    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT, REPAIR_PROMPT: repair}
 
 
 def generate(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
@@ -300,7 +335,8 @@ def generate(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
         'plan_bytes': plan_bytes,
         'manifest': manifest,
         'manifest_bytes': _document(manifest),
-        'prompts': {name: text.encode('utf-8') for name, text in prompts().items()},
+        'prompts': {name: text.encode('utf-8')
+                    for name, text in prompts(stack_value).items()},
         'workspace': workspace,
     }
 
