@@ -1,5 +1,48 @@
 # Cambios
 
+## creator: la reanudación completa el manifiesto mínimo antes de aceptar — 2026-11-13
+
+Fallo convertido desde la evidencia real de `gen-2c9fb042bac6` (campaña local
+sobre la ruta gratuita de nemotron del router OmniRoute, sin créditos de pago):
+el paquete quedó **completo** al tocar el techo (3.303.316 tokens, 56 pasos:
+manifest, report, contratos, 15 escenarios y 2 skills de proyecto), y el
+primer `finalize` sobre él crasheó con `KeyError('artifacts')` en
+`verify_manifest_hashes` en vez de fallar closed.
+
+- **Causa**: solo el cierre normal del wrapper de Creator ejecuta la
+  preparación del paquete (chequeo de scaffold, inyección determinista,
+  `complete_manifest`). La cancelación por techo mató la sesión antes, y
+  tanto `finalize` como el `bootstrap.py accept` que el propio prompt ordena
+  invocar al Creator validaban el manifiesto mínimo sin `artifacts`; el
+  validador asumía la forma enriquecida y el KeyError pelado atravesó
+  `static_validation`, que solo captura `ContractError`.
+- **`verify_manifest_hashes` falla closed**: ausencia o malformación de
+  `artifacts` (sin lista, entrada sin objeto, sin `path`, sin `sha256`) es
+  ahora `ContractError` que nombra el defecto; ningún camino vuelve a
+  crashear por la forma del manifiesto.
+- **`prepare_retained_package`** extrae la secuencia del cierre (scaffold →
+  inyección determinista → `complete_manifest`) y la ejecutan `finalize`
+  (antes de que la petición de aceptación ligue el digest del manifiesto) y
+  `bootstrap.py accept`. Sobre un manifiesto ya enriquecido es no-op
+  estricto.
+- **Prompt 1.12.0**: `gen-2c9fb042bac6` transcribió al report las rutas
+  absolutas del bloque de invocación de `accept` que el propio prompt
+  renderiza; la capa de portabilidad retuvo el paquete 9/10 capas por esa
+  única causa. La entrada de salida de `generation-report.md` prohíbe ahora
+  rutas absolutas del mantenedor y transcribir ese bloque. El default de
+  `prompt_version` del workflow remoto se sincronizó (el test de binding lo
+  atrapó).
+- **Regresión** (`tests/test_creator_and_validator.py`): manifiesto mínimo →
+  `ContractError` que nombra `artifacts`; artefacto sin `sha256` → ídem;
+  `prepare_retained_package` completa el manifiesto mínimo y el paquete pasa
+  `validate_package`; no-op byte-idéntico sobre manifiesto enriquecido;
+  `accept` acepta el manifiesto mínimo y deja la petición ligada al digest
+  enriquecido; el prompt prohíbe rutas absolutas en la entrada del report.
+  Módulos enfocados: 187 + 160 + 12 tests OK. Re-ejecución real de
+  `finalize` sobre el paquete retenido: veredicto estructurado fail-closed,
+  9/10 capas, retención única por portability; nada instalado y el paquete
+  del Creator queda intacto como evidencia.
+
 ## creator: el resolver de proveedor lee el árbol de perfiles 0.2.2 — 2026-11-12
 
 Fallo convertido desde la evidencia real de esta máquina (home DSH 0.2.2

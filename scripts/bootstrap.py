@@ -901,6 +901,13 @@ def accept(workspace, generated_dir, *, source="creator"):
     if manifest_path.is_symlink():
         raise ValueError("generation-manifest.json es un enlace simbólico")
 
+    # The Creator invokes accept with its own minimal manifest — the Host
+    # completes the derived half at session close, which has not happened yet
+    # inside the session. Prepare the package the same way the finish path
+    # does before binding or verifying anything (measured: gen-2c9fb042bac6
+    # crashed with KeyError('artifacts') on this very path, 2026-11-12).
+    import creator_client as cc
+    cc.prepare_retained_package(generated.parent, generated)
     manifest = _read_json(manifest_path)
 
     # Validate manifest against C0 schema
@@ -1121,6 +1128,16 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
 
     if not generated.is_dir():
         raise ValueError(f"generated/ ausente: {generated}")
+
+    # A ceiling or a crash can kill the Creator session before its finish path:
+    # the package is then complete but still carries the Creator's minimal
+    # manifest, which neither the acceptance request nor the hash validator can
+    # bind (measured on gen-2c9fb042bac6, 2026-11-12: KeyError('artifacts')).
+    # The resume path runs the same preparation the finish path would have,
+    # before anything binds the manifest digest.
+    import creator_client as cc
+    cc.prepare_retained_package(run_dir, generated)
+
     request_input_error = None
     request_regenerated = False
     if request_path.is_symlink():

@@ -1339,8 +1339,21 @@ def verify_manifest_hashes(manifest_doc, generated_dir):
     mismatches = []
     manifested_paths = set()
 
-    for art in manifest_doc["artifacts"]:
-        rel_path = art["path"]
+    artifacts = manifest_doc.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        _require(False,
+                 "generation-manifest sin lista 'artifacts': el manifiesto "
+                 "mínimo del Creator debe completarse con complete_manifest "
+                 "antes de verificarse")
+    for art in artifacts:
+        _require(isinstance(art, dict),
+                 f"manifest artifact inválido (no es objeto): {art!r}")
+        rel_path = art.get("path")
+        expected = art.get("sha256")
+        _require(isinstance(rel_path, str) and rel_path,
+                 f"manifest artifact sin path: {art!r}")
+        _require(isinstance(expected, str) and expected,
+                 f"manifest artifact sin sha256: {rel_path}")
         manifested_paths.add(rel_path)
         full_path = generated / rel_path
 
@@ -1350,8 +1363,8 @@ def verify_manifest_hashes(manifest_doc, generated_dir):
                  f"manifest artifact is symlink: {rel_path}")
 
         actual = compute_file_sha256(full_path)
-        if actual != art["sha256"]:
-            mismatches.append((rel_path, art["sha256"], actual))
+        if actual != expected:
+            mismatches.append((rel_path, expected, actual))
 
     # Check for unmanifested files (generation-manifest.json itself is excluded)
     manifest_meta_files = {"generation-manifest.json"}

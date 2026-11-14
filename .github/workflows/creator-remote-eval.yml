@@ -14,7 +14,7 @@ on:
           Versión del prompt del Creator que se evalúa; por defecto, la del
           checkout (PROMPT_VERSION en scripts/creator_client.py)
         required: false
-        default: '1.11.0'
+        default: '1.12.0'
         type: string
       model:
         description: 'Identificador del modelo que recibe el proveedor (id de la API)'

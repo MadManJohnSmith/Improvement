@@ -1600,6 +1600,173 @@ class CreatorTests(Base):
             cc.complete_manifest(self.run_dir, generated)
         self.assertIn("fuera del contrato Host", str(caught.exception))
 
+    def test_verify_manifest_hashes_rejects_the_minimal_manifest_closed(self):
+        """El manifiesto mínimo del Creator (sin `artifacts`) es ContractError.
+
+        El primer finalize sobre un paquete completo retenido por presupuesto
+        crasheó con KeyError('artifacts') aquí dentro (gen-2c9fb042bac6,
+        2026-11-12): la función asumía la forma enriquecida y el KeyError
+        pelado atravesó static_validation, que solo captura ContractError.
+        La ausencia de la lista debe fallar closed nombrando el campo.
+        """
+        generated, _ = self.make_package()
+        (generated / "generation-manifest.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "generation_id": self.gen_id,
+                "status": "GENERATED",
+                "required_capabilities": ["read_product"],
+                "forbidden_capabilities": ["network"],
+            }, indent=2) + "\n", encoding="utf-8")
+        manifest = json.loads(
+            (generated / "generation-manifest.json").read_text(
+                encoding="utf-8"))
+        with self.assertRaises(gc.ContractError) as caught:
+            gc.verify_manifest_hashes(manifest, str(generated))
+        self.assertIn("artifacts", str(caught.exception))
+
+    def test_verify_manifest_hashes_rejects_an_artifact_without_sha256(self):
+        """Un artefacto incompleto es ContractError, no KeyError de entrada."""
+        generated, manifest = self.make_package()
+        manifest["artifacts"] = [{"path": "capabilities.json"}]
+        with self.assertRaises(gc.ContractError) as caught:
+            gc.verify_manifest_hashes(manifest, str(generated))
+        self.assertIn("sha256", str(caught.exception))
+
+    def test_prepare_retained_package_completes_the_minimal_manifest(self):
+        """La reanudación produce exactamente el manifiesto que accept exige.
+
+        El cierre normal del wrapper (inject determinista + complete_manifest)
+        nunca llegó a correr en la corrida retenida por techo; finalize debe
+        reproducir esa secuencia antes de ligar el digest de la petición de
+        aceptación, conservando las decisiones propias del Creator.
+        """
+        generated, _ = self.make_package()
+        session = cc.CreatorSession(self.run_dir)
+        session.prepare()
+        for role, purpose in (
+                ("auditor", "Audita el producto"),
+                ("continuous-repair", "Repara hallazgos"),
+                ("implementer", "Implementa el cambio")):
+            mode_dir = generated / "modes" / f"project-{role}"
+            mode = json.loads((mode_dir / "mode.json").read_text(
+                encoding="utf-8"))
+            mode["purpose"] = purpose
+            mode["invariants"] = ["Estado acotado"]
+            (mode_dir / "mode.json").write_text(
+                json.dumps(mode, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            skill = mode_dir / "SKILL.md"
+            skill.write_text(skill.read_text(encoding="utf-8")
+                             .replace(cc.PROSE_PLACEHOLDER, f"Contenido de {purpose}.")
+                             .replace("__IMPROVEMENT_FILL_DESCRIPTION__",
+                                      f"Descripcion de {purpose}"),
+                             encoding="utf-8")
+        minimal = {
+            "schema_version": 1,
+            "generation_id": self.gen_id,
+            "status": "GENERATED",
+            "required_capabilities": [],
+            "forbidden_capabilities": [],
+        }
+        (generated / "generation-manifest.json").write_text(
+            json.dumps(minimal, indent=2) + "\n", encoding="utf-8")
+
+        cc.prepare_retained_package(self.run_dir, generated)
+
+        manifest = json.loads(
+            (generated / "generation-manifest.json").read_text(
+                encoding="utf-8"))
+        self.assertIsInstance(manifest.get("artifacts"), list)
+        self.assertTrue(manifest["artifacts"], "sin artefactos manifestados")
+        for art in manifest["artifacts"]:
+            with self.subTest(path=art.get("path")):
+                self.assertIn("sha256", art)
+        # Las decisiones del Creator sobreviven a la enriqueción.
+        self.assertEqual(manifest["required_capabilities"], [])
+        self.assertEqual(manifest["forbidden_capabilities"], [])
+        import host_validator
+        report = host_validator.validate_package(generated, run_dir=self.run_dir)
+        self.assertTrue(report.passed, report.layers)
+
+    def test_prepare_retained_package_leaves_enriched_manifests_alone(self):
+        """Un manifiesto ya enriquecido por el cierre normal no se reescribe."""
+        generated, manifest = self.make_package()
+        before = (generated / "generation-manifest.json").read_bytes()
+        with unittest.mock.patch.object(cc, "complete_manifest") as mock_complete:
+            cc.prepare_retained_package(self.run_dir, generated)
+        mock_complete.assert_not_called()
+        self.assertEqual(
+            before, (generated / "generation-manifest.json").read_bytes())
+
+    def test_accept_completes_the_minimal_manifest_before_validating(self):
+        """El accept que el prompt ordena al Creator funciona con su manifiesto mínimo.
+
+        «## Al finalizar» pide al Creator invocar `bootstrap.py accept` dentro
+        de la sesión, cuando la mitad derivada del manifiesto todavía no
+        existe: sin la preparación, ese camino crasheaba igual que finalize
+        (misma familia del KeyError('artifacts') de gen-2c9fb042bac6,
+        2026-11-12). La petición queda ligada al manifiesto ya enriquecido.
+        """
+        generated, _ = self.make_package()
+        session = cc.CreatorSession(self.run_dir)
+        session.prepare()
+        for role, purpose in (
+                ("auditor", "Audita el producto"),
+                ("continuous-repair", "Repara hallazgos"),
+                ("implementer", "Implementa el cambio")):
+            mode_dir = generated / "modes" / f"project-{role}"
+            mode = json.loads((mode_dir / "mode.json").read_text(
+                encoding="utf-8"))
+            mode["purpose"] = purpose
+            mode["invariants"] = ["Estado acotado"]
+            (mode_dir / "mode.json").write_text(
+                json.dumps(mode, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+            skill = mode_dir / "SKILL.md"
+            skill.write_text(skill.read_text(encoding="utf-8")
+                             .replace(cc.PROSE_PLACEHOLDER, f"Contenido de {purpose}.")
+                             .replace("__IMPROVEMENT_FILL_DESCRIPTION__",
+                                      f"Descripcion de {purpose}"),
+                             encoding="utf-8")
+        (generated / "generation-manifest.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "generation_id": self.gen_id,
+                "status": "GENERATED",
+                "required_capabilities": [],
+                "forbidden_capabilities": [],
+            }, indent=2) + "\n", encoding="utf-8")
+
+        result = bootstrap.accept(self.workspace, generated)
+
+        self.assertEqual(result["result"], "ACCEPT_REQUESTED")
+        manifest = json.loads(
+            (generated / "generation-manifest.json").read_text(
+                encoding="utf-8"))
+        self.assertIsInstance(manifest.get("artifacts"), list)
+        request = json.loads(
+            (self.run_dir / "acceptance" / "request.json").read_text(
+                encoding="utf-8"))
+        self.assertEqual(request["generation_id"], self.gen_id)
+        self.assertEqual(request["artifact_count"], len(manifest["artifacts"]))
+
+    def test_prompt_binds_the_report_to_relative_paths(self):
+        """La capa de portabilidad retiene por `/home/`: el prompt lo prohíbe donde se escribe.
+
+        gen-2c9fb042bac6 escribió `/home/alan/...` en generation-report.md
+        (transcribió el bloque de invocación de accept) y la capa de
+        portabilidad retuvo el paquete completo: la prevención va en la
+        entrada de salida del propio report, no solo en la regla genérica de
+        capabilities.json.
+        """
+        cc.CreatorSession(self.run_dir).prepare()
+        prompt = (self.run_dir / "creator-prompt.md").read_text()
+        self.assertIn(
+            "- `generation-report.md` (sin rutas absolutas del mantenedor",
+            prompt)
+        self.assertIn("nunca transcribas", prompt)
+
     def test_yaml_quoting_rule_lives_in_the_shared_output_section(self):
         """A plain ': ' is discarded by DSH's YAML parser.
 

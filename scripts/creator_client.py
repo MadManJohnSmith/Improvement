@@ -52,7 +52,7 @@ class CreatorUsageAmbiguous(ValueError):
 
 _DSH_URL_RE = re.compile(r"dsh web:\s+(https?://[^\s]+)")
 
-PROMPT_VERSION = "1.11.0"
+PROMPT_VERSION = "1.12.0"
 
 PROMPT_TYPES = (
     "initial_onboarding",
@@ -803,6 +803,39 @@ def complete_manifest(run_dir, generated, *, session_ref=None):
     return derived
 
 
+def prepare_retained_package(run_dir, generated):
+    """Run the finish path's package preparation on a retained, session-less run.
+
+    A ceiling or a crash can kill the Creator session before its finish path
+    runs, leaving a complete package that still carries the Creator's minimal
+    manifest: neither the acceptance request nor `verify_manifest_hashes` can
+    bind it, and the first `finalize` over such a package crashed with
+    `KeyError('artifacts')` (gen-2c9fb042bac6, 2026-11-12). This mirrors the
+    finish path's sequence — scaffold check, deterministic injection, manifest
+    completion — without the session pieces, and is a no-op on a manifest the
+    normal finish already enriched.
+    """
+    run_dir = Path(run_dir)
+    generated = Path(generated)
+    manifest_path = generated / "generation-manifest.json"
+    if manifest_path.is_file() and not manifest_path.is_symlink():
+        try:
+            manifest = _read_json(manifest_path)
+        except ValueError:
+            manifest = None
+        if isinstance(manifest, dict) and isinstance(
+                manifest.get("artifacts"), list):
+            return manifest
+    placeholders = _unfilled_scaffold(generated)
+    if placeholders:
+        raise ValueError(
+            "Scaffold sin completar (purpose/description sigue siendo "
+            "marcador): " + ", ".join(sorted(placeholders)))
+    inject_deterministic_mode_parts(run_dir, generated)
+    return complete_manifest(run_dir, generated,
+                             session_ref=_persisted_session_id(run_dir))
+
+
 def build_creator_prompt(run_dir, run_doc, project_manifest, instructions_index, *, prompt_type="initial_onboarding", context=None):
     """Build the versioned Creator prompt from run inputs (§4.5).
 
@@ -1124,7 +1157,10 @@ Escribe bajo `{run_dir}/generated/`:
 - `skills/` (skills justificadas)
 - `contracts/`
 - `acceptance-plan.json`
-- `generation-report.md`
+- `generation-report.md` (sin rutas absolutas del mantenedor — `/home/`,
+  `/Users/`, `C:\\Users`: la capa de portabilidad retiene el paquete por
+  ellas. Cita rutas relativas al workspace o basenames; nunca transcribas
+  el bloque de invocación de `accept` con sus rutas absolutas)
 
 ## Contratos exactos de salida (sin formas ad hoc)
 
