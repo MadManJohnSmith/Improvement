@@ -47,6 +47,36 @@ One rule governs everything: **the agents never commit, never push, and never to
 product's tree.** They leave a verified candidate and the recorded evidence — the
 decision, the commit, and the push are yours. That boundary is tested, not promised.
 
+## What the agents know how to do
+
+The agents are composed from a library of **23 immutable skills** — each one a procedure
+with invariants and limits, not a paragraph of advice — covering the whole engineering
+loop:
+
+- **Software quality:** test-driven development, verification before declaring something
+  done, requesting and receiving code review, complexity reduction protected by tests,
+  incremental implementation.
+- **Investigation:** systematic debugging (a minimal reproduction first — a failure that
+  cannot be reproduced is not fixed blind), source-driven reasoning, where every
+  operational claim carries a source and a state: OBSERVED, INFERRED, or ASSUMED,
+  context curation, and a retrospective that turns a session's failures into permanent
+  environment changes.
+- **Security:** hardening minimums (secrets, boundaries, least privilege, reviewed
+  dependencies), plus specialized audit patterns that activate only on signals in your
+  repo: static review of AWS IAM policies with unjustified wildcards flagged, HTTP
+  security headers (CSP, CORS, cookies, HSTS) distinguishing what is declared from what
+  is effective, FastAPI OpenAPI contract checks classifying each difference as
+  compatible, breaking, or ambiguous, and WCAG 2.2 accessibility with evidence per
+  criterion.
+- **Planning and delivery:** plans made of verifiable units with a per-unit budget and
+  idempotent resumption, specs with invariants and anti-goals, deprecations with a
+  declared migration window, launch preparation with a declared rollback and staged
+  rollout.
+
+From software quality to cybersecurity, investigation, and shipping: what your audit or
+your repair needs is already in the library, and every reuse is declared and verified
+against the frozen snapshot.
+
 ## How it works: the cycle
 
 ![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
@@ -111,7 +141,9 @@ python3 -B scripts/bootstrap.py install \
 That discovers your project and requests the generation of the presets and their skills;
 when Creator completes the package, the Host validates it in 10 layers, backs up,
 installs, and activates. If anything fails, it rolls back leaving a recoverable state.
-Your product is not touched during installation.
+Your product is not touched during installation. Before the first change request, the
+agents onboard your project from an explicit profile — objective, allowed commands,
+excluded data, budget — instead of improvising.
 
 And if you try it: hitting something odd is exactly what the beta is for. [Open an
 issue](https://github.com/MadManJohnSmith/Improvement/issues) with your `mode-state`
@@ -172,6 +204,29 @@ The vocabulary you will see:
 | RETAINED | A turn that ended with a readable result without stepping outside its contract. |
 | VERIFIED / RESOLVED | Work verified against real commands; defects closed with evidence. |
 | Skills library | The 23 immutable base skills the modes are composed from, with recorded sources. |
+
+## Your project is never the test bench
+
+Improvement is built so that a bad day for the agents is not a bad day for your
+repository:
+
+- **The repairer edits a shadow repository** with its own `.git` — not a branch, not a
+  worktree of your product. There is no shared ancestry to merge wrong, and your
+  product's tree stays clean.
+- **The auditor can be locked out at the kernel level.** With the policy pointed at the
+  workspace, bash gets a real `EROFS` when it tries to write your product — and the
+  auditor still persists its findings.
+- **Escalation is structurally forbidden.** The agents never send permission-escalation
+  arguments, with any value; a first-party guard blocks them in bash before approval,
+  with a regression against the real runtime.
+- **Installation backs up and rolls back.** If anything fails, you get a recoverable
+  state; your product is not touched during installation.
+- **The workspace is a sibling directory**, never inside your repo — and without
+  authority, the turn abstains. Measured, not promised.
+- **A dead session is not lost work.** An interrupted candidate resumes by verifying the
+  exact recorded identity (same shadow, same base, same findings digest), and
+  `bootstrap.py state` reconciles the workspace with your repository, with receipts
+  instead of silences.
 
 ## Real stories
 
@@ -244,21 +299,15 @@ told with its figures in the
   is retained is said, and why.
 - **It does not install providers or credentials.** DSH and your provider are
   prerequisites.
-- **The repairer does not run inside a kernel sandbox.** The write boundary is
-  contractual and tested; mechanical confinement exists today for the auditor, not the
-  repairer — it needs two writable roots and the runtime only accepts one.
+- **The repairer's confinement is contractual, not mechanical.** The kernel lockout
+  covers the auditor today; the repairer needs two writable roots and the runtime only
+  accepts one — so its boundary is the tested contract.
 
 **Still ahead for the stable release** — each item with its date and evidence in the
 [verified status](docs/status.md), the whole sequence in the
 [launch plan](docs/plans/10-lanzamiento-publico.md): the Creator closing end-to-end under
 real token ceilings, the corpus gate scoring a real mode, and a full Creator run with the
 Host-provisioned shadow.
-
-And if a session dies mid-turn — in a developer preview it does — the work is not lost:
-an interrupted candidate resumes by verifying the exact recorded identity (same shadow,
-same base, same findings digest) without discarding the diff, and `bootstrap.py state`
-reconciles the workspace with your repository when something moved outside it, with
-receipts instead of silences.
 
 ## For the technically minded
 
@@ -268,7 +317,8 @@ skills** (test-driven development, systematic debugging, security hardening, cod
 writing plans…) reimplemented with MIT attribution, plus **4 catalog patterns** that
 activate only when their signal really appears in your repo (static review of AWS IAM
 policies, HTTP security headers verification, FastAPI OpenAPI contract checks, WCAG 2.2
-accessibility), backed by **50 pinned external sources** with URL, revision, and license
+accessibility), backed by **79 pinned external sources** (of 104 registered) — skill
+repositories, standards, and platform guidance — with URL, revision, and license
 recorded for each one. Selection follows a mandatory order: a base skill first; then a
 catalog pattern, only if the signal is really there; then compositions; and a brand-new
 extension only as a last resort, forced to demonstrate the previous layers do not apply.

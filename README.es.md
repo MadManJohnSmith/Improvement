@@ -49,6 +49,36 @@ el árbol de tu producto.** Dejan una candidata verificada y la evidencia regist
 decisión, el commit y el push son tuyos. Esa frontera está probada con tests, no
 prometida.
 
+## Lo que los agentes saben hacer
+
+Los agentes se componen desde una biblioteca de **23 skills inmutables** — cada una es
+un procedimiento con invariantes y límites, no un párrafo de consejos — que cubre el
+ciclo completo de ingeniería:
+
+- **Calidad de software:** desarrollo guiado por tests, verificación antes de declarar
+  algo completo, pedir y recibir revisión de código, reducción de complejidad protegida
+  por tests, implementación incremental.
+- **Investigación:** depuración sistemática (primero una reproducción mínima — un fallo
+  que no se puede reproducir no se corrige a ciegas), razonamiento anclado en fuentes,
+  donde cada afirmación operativa lleva fuente y estado: OBSERVED, INFERRED o ASSUMED,
+  curación de contexto, y una retrospectiva que convierte los fallos de una sesión en
+  cambios permanentes del entorno.
+- **Seguridad:** mínimos de hardening (secretos, fronteras, privilegio mínimo,
+  dependencias revisadas), más patrones de auditoría especializados que se activan solo
+  con señales de tu repo: revisión estática de políticas IAM de AWS marcando wildcards
+  sin justificación, cabeceras HTTP de seguridad (CSP, CORS, cookies, HSTS) distinguiendo
+  lo declarado de lo efectivo, comprobación de contratos OpenAPI de FastAPI clasificando
+  cada diferencia como compatible, breaking o ambigua, y accesibilidad WCAG 2.2 con
+  evidencia por criterio.
+- **Planificación y entrega:** planes de unidades verificables con presupuesto por
+  unidad y reanudación idempotente, especificaciones con invariantes y anti-goals,
+  deprecaciones con ventana de migración declarada, preparación de lanzamiento con
+  rollback declarado y rollout por etapas.
+
+De la calidad del software a la ciberseguridad, la investigación y la entrega: lo que tu
+auditoría o tu reparación necesite ya está en la biblioteca, y cada reutilización se
+declara y se verifica contra la instantánea congelada.
+
 ## Cómo funciona: el ciclo
 
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.es.png)
@@ -114,7 +144,9 @@ python3 -B scripts/bootstrap.py install \
 Eso descubre tu proyecto y pide la generación de los presets y sus skills; cuando
 Creator completa el paquete, el Host lo valida en 10 capas, hace copia de seguridad,
 instala y activa. Si algo falla, revierte dejando un estado recuperable. Tu producto no
-se toca durante la instalación.
+se toca durante la instalación. Antes del primer encargo, los agentes incorporan tu
+proyecto desde un perfil explícito — objetivo, comandos permitidos, datos excluidos,
+presupuesto — en vez de improvisar.
 
 Y si lo pruebas: topar con algo raro es exactamente para lo que existe la beta. [Abre un
 issue](https://github.com/MadManJohnSmith/Improvement/issues) con tus archivos de
@@ -176,6 +208,29 @@ El vocabulario que verás:
 | RETAINED | Un turno que terminó con un resultado legible sin salirse de su contrato. |
 | VERIFIED / RESOLVED | Trabajo verificado contra comandos reales; defectos cerrados con evidencia. |
 | Biblioteca de skills | Las 23 skills base inmutables de las que se componen los modos, con fuentes registradas. |
+
+## Tu proyecto no es el banco de pruebas
+
+Improvement está construido para que un mal día de los agentes no sea un mal día de tu
+repositorio:
+
+- **El reparador edita un repositorio sombra** con su propio `.git` — no una rama, no un
+  worktree de tu producto. No hay ascendencia compartida que mezclar mal, y el árbol de
+  tu producto permanece limpio.
+- **El auditor puede quedar bloqueado a nivel kernel.** Con la política apuntando al
+  workspace, bash recibe un `EROFS` real al intentar escribir tu producto — y el auditor
+  aún persiste sus hallazgos.
+- **La escalación está prohibida por estructura.** Los agentes nunca envían argumentos
+  de escalación de permisos, con ningún valor; una guardia de primera parte los bloquea
+  en bash antes de la aprobación, con regresión contra el runtime real.
+- **La instalación hace backup y revierte.** Si algo falla, queda un estado recuperable;
+  tu producto no se toca durante la instalación.
+- **El workspace es un directorio hermano**, nunca dentro de tu repo — y sin autoridad,
+  el turno se abstiene. Medido, no prometido.
+- **Una sesión muerta no es trabajo perdido.** Una candidata interrumpida se reanuda
+  verificando la identidad exacta registrada (misma sombra, misma base, mismo digest de
+  hallazgos), y `bootstrap.py state` reconcilia el workspace con tu repositorio, con
+  recibos en vez de silencios.
 
 ## Historias reales
 
@@ -249,21 +304,15 @@ gate puntuando un modo real — está medido y contado con sus cifras en el
 - **No es autónomo en las sombras.** Cada turno termina con un resultado legible; lo que
   queda retenido se dice, y por qué.
 - **No instala providers ni credenciales.** DSH y tu provider son prerequisitos.
-- **El reparador no corre dentro de un sandbox de kernel.** La frontera de escritura es
-  contractual y está probada; el confinamiento mecánico existe hoy para el auditor, no
-  para el reparador — necesita dos raíces escribibles y el runtime solo acepta una.
+- **El confinamiento del reparador es contractual, no mecánico.** El bloqueo a nivel
+  kernel cubre hoy al auditor; el reparador necesita dos raíces escribibles y el runtime
+  solo acepta una — así que su frontera es el contrato, probado.
 
 **Falta para la versión estable** — cada elemento con su fecha y evidencia en el
 [estado comprobado](docs/status.es.md), la secuencia completa en el [plan de
 lanzamiento](docs/plans/10-lanzamiento-publico.es.md): Creator cerrando de extremo a
 extremo bajo techos de tokens reales, el corpus gate puntuando un modo real, y una
 corrida completa de Creator con la sombra aprovisionada por el Host.
-
-Y si una sesión muere a mitad de turno — en una developer preview pasa — el trabajo no
-se pierde: una candidata interrumpida se reanuda verificando la identidad exacta
-registrada (misma sombra, misma base, mismo digest de hallazgos) sin descartar el diff, y
-`bootstrap.py state` reconcilia el workspace con tu repositorio cuando algo se movió
-fuera de él, con recibos en vez de silencios.
 
 ## Para perfiles técnicos
 
@@ -274,8 +323,9 @@ seguridad, revisión de código, escritura de planes…) reimplementadas con atr
 más **4 patrones de catálogo** que se activan solo cuando su señal aparece de verdad en
 tu repo (revisión estática de políticas AWS IAM, verificación de cabeceras HTTP de
 seguridad, comprobación de contratos OpenAPI de FastAPI, accesibilidad WCAG 2.2),
-respaldados por **50 fuentes externas fijadas** con URL, revisión y licencia registradas
-para cada una. La selección sigue un orden obligatorio: primero una skill base; luego un
+respaldados por **79 fuentes externas fijadas** (de 104 registradas) — repositorios de
+skills, estándares y guías de plataforma — con URL, revisión y licencia registradas para
+cada una. La selección sigue un orden obligatorio: primero una skill base; luego un
 patrón de catálogo, solo si la señal está realmente ahí; luego composiciones; y una
 extensión nueva solo como último recurso, obligada a demostrar que las capas anteriores
 no aplican. Cada reutilización se declara, y el Host la verifica contra la instantánea de
