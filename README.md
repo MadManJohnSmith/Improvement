@@ -14,39 +14,89 @@ lives in the head of whoever made it. Improvement turns that routine into a cycl
 memory: you talk to it in one-line prompts, the framework does the heavy lifting, and you
 decide what gets integrated.
 
-A new generation can include **three modes tailored to your project**; the
-implementer is optional, and existing two-role generations remain valid. The **auditor**
-examines the code and records every finding with its evidence (`file:line`) and severity.
-The **repairer** fixes findings in an isolated shadow repository. The **implementer**
-handles a separate change request in its own shadow candidate. Verification is gated by
-the project's declared commands; neither candidate reaches your branch without your decision.
+Everything in this README was measured, not promised: the framework has run three full
+campaigns on real repositories — Syncify (a music app in Rust/Tauri/Vue), RehabWeb (a
+clinical app in Django/Vue) and LoboApp (a Flutter app installed from a GitHub clone) —
+and a fourth on itself.
 
-It is a framework proven in three full campaigns on real repositories: Syncify (a music
-app in Rust/Tauri/Vue), RehabWeb (a clinical app in Django/Vue), and LoboApp (a Flutter
-app, with the framework installed from a GitHub clone). The metrics below come from those
-campaigns, not promises.
+## The problem it solves
 
-## Quick start
+- **Bugs come back.** Nobody remembers the previous fix, so nobody checks for it.
+- **Audits never happen.** They are big, interruptive, and easy to postpone.
+- **Knowledge evaporates.** The fix ships; the evidence, the test, and the reason do not
+  survive the session.
 
-### What is DSH?
+Improvement answers each with something that persists on disk: findings with evidence, a
+work queue that survives between sessions, and a memory that recognizes when that exact
+defect was closed before — and what fixed it.
 
-Improvement does not bring its own AI: it works on top of **DSH (DeepSeek Harness)**,
-DeepSeek's open source agent runtime (MIT license, more than 240,000 stars on GitHub).
-Its architecture is *everything is a plugin*: models, tools, skills, sessions, and the
-sandbox compose as plugins. It runs on your machine and opens a local web app in the
-browser (`npx @deepseek-ai/dsh web`); its
-[documentation](https://deepseek-harness.github.io/deepseek-harness/) tells the rest. It
-is in *developer preview* and iterates fast.
+## What your project gets
 
-Improvement installs the modes generated for your project into DSH as agent presets:
-it is the app where you talk to them. Your provider credentials live in DSH; Improvement
-never reads them or asks for them, it only checks that the provider you configured
-exists.
+On install, Improvement generates **three agent presets tailored to your repository** and
+installs them into DSH, where you talk to them:
+
+| Agent | What it does |
+|---|---|
+| `<YourProject>-auditor` | Examines your code and records every finding with its evidence (`file:line`), severity, cause, and prevention. |
+| `<YourProject>-continuous-repair` | Takes the findings, fixes them in an isolated shadow repository, and verifies each fix against your project's real tests. |
+| `<YourProject>-implementer` *(optional)* | Handles a separate change request in its own shadow candidate. |
+
+Two-role generations (auditor + repairer) remain valid; the implementer is opt-in.
+
+One rule governs everything: **the agents never commit, never push, and never touch your
+product's tree.** They leave a verified candidate and the recorded evidence — the
+decision, the commit, and the push are yours. That boundary is tested, not promised.
+
+## How it works: the cycle
+
+![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
+
+*Conceptual operating cycle. Explorable version, every relationship traceable:
+[interactive diagram](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
+
+### 1 · You write one line
+
+«Audita este flujo, característica o componente.» The auditor examines your project and
+persists what it finds — not as chat text that scrolls away, but as records on disk whose
+evidence is a literal code snippet. A snippet that cannot be located in your code
+**rejects the write** instead of guessing a line number.
+
+### 2 · The repairer works in a shadow
+
+«Repara A-SEC-01 y A-SEC-02; no publiques.» The repairer claims an isolated **shadow
+repository** — a full copy with its own `.git`, provisioned by the Host — and edits
+there. Your product's tree is untouched while it works.
+
+### 3 · Verification is real, never stubs
+
+The fix is verified with **your project's own commands** — the ones a signed capability
+plan read from your repository at install time, monorepos included. An invented command,
+a mock, or a copy of the product's code is investigation material, never a result. If a
+tool is missing, the record is `BLOCKED` naming exactly what to install — never an
+invented `PASS`.
+
+### 4 · You integrate
+
+Every audit leaves a handoff with the next prompt ready to copy; every repair leaves the
+diff and the recorded verification next to it. You review, you commit, you push.
+[Operator procedure](docs/usage.md#integration-and-space-recovery-operator).
+
+## Getting started
 
 ### Requirements
 
 Linux, `git`, and Python 3, plus [DSH](docs/setup-dsh.md) already configured with at
 least one provider/model of your own. Nothing else.
+
+**What is DSH?** Improvement does not bring its own AI: it works on top of **DSH (DeepSeek
+Harness)**, DeepSeek's open source agent runtime (MIT license, more than 240,000 stars on
+GitHub). Its architecture is *everything is a plugin*; it runs on your machine and opens a
+local web app in the browser (`npx @deepseek-ai/dsh web`); its
+[documentation](https://deepseek-harness.github.io/deepseek-harness/) tells the rest. The
+generated agents live there as presets, and your provider credentials live there too —
+Improvement never reads them or asks for them.
+
+### Install
 
 Clone the framework **next to your project, never inside it**, and run one command:
 
@@ -58,62 +108,20 @@ python3 -B scripts/bootstrap.py install \
   --launch-dsh
 ```
 
-That discovers your project and requests generation of `<YourProject>-auditor` and
-`<YourProject>-continuous-repair`, with an optional `<YourProject>-implementer` and their skills;
-when Creator completes the package, the Host validates it in 10 layers,
-backs up, installs, and activates; if anything fails, it rolls back leaving a recoverable
-state. Your product is not touched during installation.
+That discovers your project and requests the generation of the presets and their skills;
+when Creator completes the package, the Host validates it in 10 layers, backs up,
+installs, and activates. If anything fails, it rolls back leaving a recoverable state.
+Your product is not touched during installation.
 
-## The problem it solves
+And if you try it: hitting something odd is exactly what the beta is for. [Open an
+issue](https://github.com/MadManJohnSmith/Improvement/issues) with your `mode-state`
+files (`findings.jsonl`, `handoffs.jsonl`, `verification-results.jsonl`, without your
+product's code) and the turns that ended retained and why. That is the most useful report
+possible, and it is the format the framework already produces.
 
-In long-lived projects, auditing and repair become hard for three reasons: context fills
-up, errors happen again because nobody remembers the previous one, and every fix is done
-with different criteria. Improvement puts that into a structure that survives the cycles:
+## Everyday use
 
-- an **auditor** that examines your project and persists findings with evidence
-  (`file:line`), severity, and deduplication by `(finding, revision)`;
-- a **repairer** that takes the findings, claims an isolated work candidate in a sibling
-  workspace, fixes it, verifies it, and **leaves your product's tree intact**;
-- a **memory on disk** (`<project>-workspace/mode-state`) with strict caps per file and
-  per record: it grows up to its limit and compacts, it does not saturate;
-- a **clear integration boundary**: the mode leaves the verified candidate and you make
-  the commit and the push. Nothing reaches your branch without going through you.
-
-## Where the modes come from
-
-The modes do not come out of an empty template: on generation they are composed
-from a **skills library** with recorded provenance. The base is 21 immutable skills —
-test-driven development, systematic debugging, security hardening, code review, writing
-plans…— reimplemented with MIT attribution. On top, 4 specialized catalog patterns that
-activate only on signals observed in your project: static review of IAM policies,
-security HTTP headers verification, FastAPI OpenAPI contract checks, and WCAG 2.2
-accessibility. Behind them stand 50 pinned external sources — skill repositories, W3C
-standards, AWS and MDN guides — with URL, revision, and license recorded for each one.
-
-Creator selects following a mandatory order: first a base skill; then a catalog pattern,
-only if its signal really appears in your repo; then compositions; and only as a last
-resort a brand-new extension, which has to demonstrate the previous layers do not apply.
-Every reuse is declared, and the Host verifies it against the library snapshot frozen
-with its digest at install time: what your mode reuses is exactly what the digest signed,
-not a version that drifted afterwards. This is the flow that generated the modes of
-RehabWeb, LoboApp, and the framework itself.
-
-**Library changes need evidence, not opinions.** The 59 cases target 27 skills, not
-the generated auditor or repairer modes. The Host owns their expected verdicts; a mode's
-free-form answer or a classifier cannot score them. `compile-corpus` and the bound
-holdout gate exist, but the CLI `skill-gate-run` currently **ABSTAINS before creating a
-DSH session**: it has no compatible Host evaluator adapter to verify each case's
-layout and effective target skill. A prior real attempt on SC-123 returned `NOT_COVERED`
-after dispatching a skill case to an auditor mode with the wrong layout, not a passing
-corpus score. Only observations bound to this corpus and candidate by a verified
-evaluator could be submitted to `bound-skill-gate`; until then no operational library
-improvement has been demonstrated. See [the gate procedure](docs/usage.md#compiling-the-corpus-and-tying-the-gate-to-what-was-measured).
-
-## How to use it
-
-### Simple prompts
-
-With the two presets active in DSH, you operate with short messages:
+With the presets active in DSH, you operate with short messages:
 
 | You want… | You write |
 |---|---|
@@ -122,257 +130,15 @@ With the two presets active in DSH, you operate with short messages:
 | Repair what was audited | «Repara los hallazgos de la auditoría; no publiques.» |
 | Repair specific findings | «Repara A-SEC-01 y A-SEC-02; no publiques.» |
 
-Every audit leaves a handoff with the next prompt ready to copy. The current repair
-candidate is a Host-provisioned shadow repository with its own `.git`, not a branch of
-your project: there is no shared ancestry to merge. Review and validate the complete
-diff/patch against the recorded verification before applying it in your project; commit
-and publish only by your decision. [Operator procedure](docs/usage.md#integration-and-space-recovery-operator).
-
-![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
-
-*Conceptual operating cycle. The learning close-out is not yet operational: campaign
-observations do not automatically score the 25-skill corpus. It is an explorable diagram:
-every relationship can be traced, and the theme switches light/dark, in the
-[interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html).*
-
-## Terms you will see
-
-| Term | What it is |
-|---|---|
-| DSH (DeepSeek Harness) | DeepSeek's open source agent runtime, where the generated modes and your provider credentials live. |
-| Mode | A project-specific agent preset: auditor, continuous-repair, or (in new generations) implementer. |
-| Finding | A defect recorded with evidence (`file:line`), severity, cause, and prevention. |
-| Handoff | The record every audit leaves behind, with the next prompt ready to copy. |
-| Candidate | The isolated shadow repository in the workspace where the repairer changes code. |
-| `mode-state` | The workspace's on-disk memory: findings, handoffs, verifications, and receipts. |
-| Capability plan | The inventory of your project's real test and analysis commands, signed at install. |
-| RETAINED | A retained turn: it ended with a readable result and without stepping outside the contract. |
-| VERIFIED / RESOLVED | The verified work and the closed defects, each with its evidence. |
-| Skills library | The 23 immutable base skills the modes are composed from, with executable scenarios and recorded sources. |
-| Evidence anchor | The literal code snippet that pins where a finding lives; the tool computes the location and rejects what it cannot place. |
-| Holdout gate | The bound decision on complete, verified case observations; the default runner currently abstains without a compatible Host evaluator adapter. |
-
-## Verification against your real project, never with stubs
-
-On install, Improvement reads your project and writes a **capability plan** to
-`<project>-workspace/.dsh-managed/capability-plan.json`: which technologies make up your
-project (monorepos included), which **test and analysis commands belong to each one**,
-and whether this machine already has what it takes to run them.
-
-That plan is the only evidence the repairer can record. An invented command, a mock, or a
-copy of the product's code is investigation material, never a result. If the command
-cannot run because a tool is missing, the record is `BLOCKED`, naming exactly what is
-missing and how to install it; never an invented `PASS`.
-
-```
-stacks:
-  dart-flutter  listo  (/home/your-user/.local/share/flutter/bin/flutter test)
-  java-gradle   falta java   (instalar un JDK 17+ fuera del producto y anteponerlo al PATH)
-```
-
-The plan's own output is Spanish, like the rest of the framework: `ready` is
-`listo`, and a missing tool is reported as `falta <capability>` — never an invented
-`PASS`.
-
-A detail the beta uncovered the hard way: if the tool is installed but outside the
-default `PATH`, the plan names it **by its absolute path**. A bare name that the mode's
-shell cannot invoke turns a working suite into a false `BLOCKED`.
-
-A finding's evidence is verifiable, not prose. A finding can anchor its location with a
-**literal code snippet** (`path` + `excerpt`): it is the write tool that locates the
-snippet and computes the line, and if the snippet is absent, or appears more than once,
-the write **is rejected** instead of guessing — an anchor that cannot be placed is an
-anchor pointing at the wrong line. `bootstrap.py state` reports how many findings are
-anchored and how many are not.
-
-Memory consults memory: when a finding is persisted, the episode index is checked, and if
-that exact signature was closed before, the record carries `prior_episode` with the unit
-that closed it and the fix that worked. `bootstrap.py state` counts the **repeats**: a
-prevention that failed is a different defect from the first one.
-
-### Stacks proven and stacks declared
-
-| Stack | Verification | Status |
-|---|---|---|
-| Rust | `cargo test`, `cargo clippy` | **proven** — Syncify, CI green in 3 jobs |
-| Django | `python manage.py test`, `django check` | **proven** — RehabWeb, 108 real tests |
-| Flutter | `flutter test`, `flutter analyze` | **proven** — LoboApp, 166 real tests |
-| Python | `pytest -q`, `compileall` | **proven** — the framework on itself |
-| Node · Bun · Deno | `npm test` · `bun test` · `deno test` | declared |
-| Go | `go test ./...`, `go vet ./...` | declared |
-| Java · Scala: Maven · Gradle · Android · sbt | `mvn test` · `./gradlew test` · `./gradlew testDebugUnitTest` · `sbt test` | declared |
-| .NET · PHP · Ruby | `dotnet test` · `vendor/bin/phpunit` · `bundle exec rspec` | declared |
-| Swift · C/C++ (CMake) · Meson | `swift test` · `ctest` · `meson test` | declared |
-| Elixir · Erlang · Clojure · Perl | `mix test` · `rebar3 eunit` · `clojure -M:test` · `prove` | declared |
-| Zig · Crystal · Nim · Julia · R | `zig build test` · `crystal spec` · `nimble test` · `Pkg.test()` · `R CMD check` | declared |
-| Haskell (Cabal · Stack) · OCaml (Dune) | `cabal test` · `stack test` · `dune runtest` | declared |
-
-The twenty-six declared ones are the beta's real gap: the plan resolves their command just the
-same, and if a tool is missing the result is `BLOCKED` naming it — never an invented
-`PASS`. Exercising them on real repositories is exactly what the beta exists for. The
-complete table, one row per stack, is in the [verified status](docs/status.md).
-
-## Real-world cases
-
-### Syncify: from red CI to green CI
-
-A music app (Rust/Tauri/Vue) with a failing suite. Over the campaign, the modes found and
-fixed real defects, not only test ones: a WebP validator that rejected legal files, an
-album count that tagged a 10-track disc as a 1-track one, a SQLite deadlock that hung the
-CI at 0% CPU, a download bridge that signed requests with an empty secret.
-
-| Metric | Result |
-|---|---|
-| Distinct findings persisted | 77 (114 records with their history) |
-| Verified work | 78 VERIFIED items |
-| Verifications persisted | 67 (61 PASS, 6 declared BLOCKED) |
-| Commits generated by the modes and integrated | 15 |
-| Result | CI green in all 3 jobs (Rust, frontend, Python) |
-
-### RehabWeb: 45 security findings, a six-word prompt
-
-A clean install from start to finish with a single command. The first audit found
-**45 findings (6 CRITICAL, 16 HIGH, 23 MEDIUM)**, among them: any authenticated user
-could read the clinical history of the entire population, and one patient could rewrite
-another's diagnosis. The prompt «Repara A-SEC-01 y A-SEC-02; no publiques.» produced the
-fix for both, with its regression test (3 files, 220 lines), without touching the
-product's tree until integration.
-
-### LoboApp: the campaign that actually found the limits
-
-A Flutter app (Android) installed **from a GitHub clone of the framework**, on a freshly
-cloned product with no prior contamination: exactly the scenario a tester walks into. The
-audit with a simple prompt persisted 9 findings (1 CRITICAL, 2 HIGH, 4 MEDIUM, 2 LOW).
-
-The CRITICAL was a broken promise: the privacy notice said that logging out erases from
-the device what you saved, but the code only removed one key; progress and notes were
-still there and reappeared when you logged back in. «Repara F-01 y F-02; no
-publiques.» produced the fix with its regression tests in 7 files and 353 lines,
-verified with **a real `flutter test`** (125 tests green) and `flutter analyze` with no
-issues, and integrated by the operator (candidate worktree, commit, fast-forward, push):
-`bb01cba..eb25ec3`. That campaign predates the shadow design — today the framework would
-deliver a patch instead, and merging is no longer part of it.
-
-This campaign found the two failures no synthetic test would have seen: the framework
-emitted a verification command its own shell could not execute, and the sandbox left the
-SDK mounted read-only while the tool rewrites itself on every run. Both are fixed, with
-regression tests, and they are the reason verification is real instead of declarative.
-
-The campaign ran to the end. The 9 findings were fixed and integrated across four turns,
-each one verified with a real `flutter test`; the follow-up re-audit confirmed the 9 as
-**RESOLVED** with evidence and found 5 more, which were also fixed. At the end:
-**14 findings, 166 Flutter tests green**, and four commits integrated with
-`bb01cba..4c0bb30`. Among them, a finding the previous fix had created: when comparing
-namespaces, a legacy backup without a namespace stopped being restored.
-
-### The framework itself
-
-Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH,
-5 MEDIUM) and the repairer fixed all of them with their tests: limit-based compaction
-discarded records **without a receipt** (the silent loss G3 was supposed to have closed
-and only half covered); the write tool did not confine managed state to its root, leaving
-the auditor's read-only boundary resting only on a later `git status`; the validator's
-`graph` layer checked nothing; the `lifecycle` layer skipped the per-role contract; the
-G7 gate read the capability plan without checking its signature; and `install` only
-linked the Host verdict to the candidate when it received a path.
-
-The framework's re-audit confirmed the seven as **RESOLVED** and found the most
-uncomfortable one of all: **a verification result did not identify the tree it
-verified**. The contract forbids committing a candidate, so the verified tree is a dirty
-worktree whose HEAD is still its base and the fix lives in the uncommitted diff;
-`candidate_head` does not distinguish it from the revision before the fix. Measured on
-the real state, the seven records carried two heads, both older than the changes they
-claimed to verify. Now every record carries the digest of the verified diff and three
-places check it.
-The framework's own suite at that point: **743 tests green**.
-
-The memory applies to itself too: the hardening units were born from the pilots'
-failures (claiming a candidate before editing, reconciliation without an operator,
-mechanical anti-escalation, documented candidate retirement, a stale base that re-anchors
-by testing kinship…), and an audit of the memory itself discovered a silent loss of
-records in the preflight, fixed with a regression test. The memory's second audit found
-that the register of already-closed defects **was written and nobody read it**: the
-documentation said the auditor consulted it and no product path did, so the same defect
-came back every session. Now the consultation is mechanical and `bootstrap.py state`
-counts the repeats.
-Framework suite: **1345 tests green** (12 skipped: 11 without the external DSH module, 1 without `jsonschema`; measured 2026-11-12).
-
-### The most recent one: the modes driven by a real DSH session (2026-10-10)
-
-Syncify, RehabWeb, LoboApp and the framework itself were campaigns on real
-repositories. The pass of **2026-10-10** was something narrower and worth
-separating: a **fictional product** with real git and one known defect, driven by a
-real DSH session in an isolated campaign home. Nothing touched the operator's real
-product.
-
-What was walked through from one-line prompts to the verified outcome:
-
-| Step | What happened |
-|---|---|
-| The audit prompt | the auditor found the defect and persisted `evidence/audit-finding.md` with the literal code and the test output |
-| "Repáralo" as a six-word prompt | the repairer left an external candidate, commit `ab5c0c6`, diff `+1 -3`, tests green, product untouched |
-| 「Implement X」 | the implementer left candidate `candidate-implement-nivel`, commit `95aa9b2`, 6 new tests |
-| The audit → repair → pass cycle | run `r-5d7d11…` `RETAINED cause: gate-abort:gate-producto`; run `r-7761c0…` `COMPLETED` |
-| Skills | the auditor loaded 3, the repairer 2, the implementer 1; a trivial turn loaded none |
-| Authority | when authorization was missing, the turn abstained — `Decision: I abstain` — and a write probe confirmed the product stayed intact |
-| Host validator | `READY_FOR_ACCEPTANCE`, 10 of 10 layers PASS over a real package |
-| Memory of the campaign | `MEMORY_RECONCILED`, 6 entries invalidated in block when a file changed |
-
-What was **not** proven, and is not claimed: the **Creator end-to-end** did not
-finish in the 2026-10-10 pass — a real headless turn with the whole prompt (29 tool calls,
-734,064 tokens, correct cwd) did not persist `generated/generation-manifest.json` and the run
-ended `RETAINED`. A later X3 trial did generate 19 artifacts and reached `ACTIVE`, but
-**before** the Creator per-run budget-accounting correction; it is not evidence for the
-current budget gate. The **X3 post-budget** trials ended `RETAINED`, neither of them `ACTIVE`. The
-first stopped at 1,127,176 `totalTokens` against a 1.25M-token budget on the
-predictive guard, with 122,824 of headroom deliberately left unspent. A second
-run crossed the ceiling outright: 1,270,969 billable `totalTokens` over 1.25M,
-of which 1,009,664 were cache reads. DSH bills a model step atomically, so a
-journal observer cannot preempt at the exact ceiling — the last indivisible
-step is what carried it over. Cache was 79% of both bills, which is why the
-accounting sums `totalTokens` rather than `inputTokens + outputTokens`: that
-sum would have reported 261,305 and understated the real cost fivefold. In both
-runs the model was still reading schemas with no manifest and no `turn/end`.
-Each figure was re-derived independently from the compressed durable journal
-and matched the live fold exactly. The
-**corpus gate** did not score a real mode — the 2026-10-10 pass
-abstained without a usable DSH session, and the later SC-123 skill case, dispatched
-to an auditor mode with the wrong layout, returned `NOT_COVERED`. The copied campaign
-profile had an empty `node_modules/`, but `dsh web` did start with a fresh home;
-DSH 0.2.0-rc.2 has no `evaluator` endpoint, and today's CLI lacks the compatible
-Host adapter needed to verify case layout and effective skills before `session/create`.
-Separately, `git worktree add` was denied by the session sandbox
-(`Read-only file system` plus `no approval channel is available`), so the candidates
-were in-workspace clones. The contract answered that measurement: the candidate is now
-a **shadow repository the Host provisions under the workspace**, with its own `.git` and
-a receipt the mode only verifies — proven in code and fixture, still waiting for a full
-Creator run. The later `x1-preset-real` web campaign did resolve the real preset, load its
-skill and run the sentinels. The three turns at a 120,000 per-turn ceiling
-billed 243,165 `totalTokens`; two of them were stopped **before editing anything**:
-99,022 measured / 128,213 projected, then 97,973 / 127,227. Skill, layout and
-provisioning alone cost 48,694 tokens. A fourth turn at a 200,000 ceiling
-**did reach the edit**:
-180,107 tokens across 11 steps, the shadow left dirty with the canonical defect
-repaired. The product was left untouched. A later turn — once the commands shipped as
-digest-verified files instead of inline blobs the agent had to retype — closed the
-cycle: the mode recorded `DIRTY` with its digest, persisted it in `work-items.json`
-and ran the product entrypoint against the shadow 3/3. The full cycle under a real
-preset is now exercised in both legs. The
-full procedure for preparing that kind of real session is a permanent skill:
-`skills/dsh-maintenance-session/SKILL.md`.
-
-## What you get in your repo
+## What it leaves on your machine
 
 ![What Improvement installs on your machine](docs/diagrams/arquitectura-instalacion.png)
 
-*The provenance-tracked library feeding generation, the anti-escalation guard, the auditor
-and repairer, bounded memory, and the integration boundary (this view omits the third
-implementer role in new generations). The diagram now also
-separates the Host-published SHA-256-verified helpers (implemented) from the System 1
-advisory channel (designed, not implemented). Also
-explorable: [interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
+*The library that feeds generation, the agents, the bounded memory, and the integration
+boundary. Pieces designed but not yet implemented are marked as such. Explorable:
+[interactive version](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html).*
 
-```
+```text
 your-project/
 your-project-workspace/
 ├── mode-state/
@@ -386,78 +152,164 @@ your-project-workspace/
 └── creator-runs/                 # what Creator generated, with its validations
 ```
 
-All of it with caps per file and per record, and compaction when they are reached: the
-memory can grow a lot, but not without limit. What compaction discards does not disappear
-silently: a receipt is left in `overflows.jsonl` saying what was lost and why.
+All of it is plain files you can read. The memory has strict caps per file and per
+record: it compacts when it reaches them, and what compaction discards leaves a receipt
+in `overflows.jsonl` — nothing disappears silently. The memory also consults itself: when
+a finding matches one closed before, the record carries `prior_episode` with the unit
+that closed it and the fix that worked, and `bootstrap.py state` counts the repeats,
+because a prevention that failed is a different defect from the first one.
 
-## What it does NOT do (on purpose)
+The vocabulary you will see:
 
-- **It does not commit or push.** The repairer leaves the verified candidate and your
-  product's tree clean; integrating is on you. That is the security boundary, and it is
-  tested.
+| Term | What it is |
+|---|---|
+| Mode | The internal name for one of the agents: a project-specific preset — auditor, continuous-repair, or implementer. |
+| Finding | A defect recorded with evidence (`file:line`), severity, cause, and prevention. |
+| Handoff | The record every audit leaves behind, with the next prompt ready to copy. |
+| Candidate | The isolated shadow repository where the repairer changes code. |
+| `mode-state` | The workspace's on-disk memory: findings, handoffs, verifications, receipts. |
+| Capability plan | The inventory of your project's real test and analysis commands, signed at install. |
+| RETAINED | A turn that ended with a readable result without stepping outside its contract. |
+| VERIFIED / RESOLVED | Work verified against real commands; defects closed with evidence. |
+| Skills library | The 23 immutable base skills the modes are composed from, with recorded sources. |
+
+## Real stories
+
+### Syncify: from red CI to green CI
+
+A music app (Rust/Tauri/Vue) with a failing suite. Over the campaign the agents found and
+fixed real defects, not only test ones: a WebP validator that rejected legal files, an
+album count that tagged a 10-track disc as a 1-track one, a SQLite deadlock that hung the
+CI at 0% CPU, a download bridge that signed requests with an empty secret.
+
+| Metric | Result |
+|---|---|
+| Distinct findings persisted | 77 (114 records with their history) |
+| Verified work | 78 VERIFIED items |
+| Verifications persisted | 67 (61 PASS, 6 declared BLOCKED) |
+| Commits generated and integrated | 15 |
+| Result | CI green in all 3 jobs (Rust, frontend, Python) |
+
+### RehabWeb: 45 security findings, a six-word prompt
+
+A clinical app (Django/Vue), installed clean from a single command. The first audit found
+**45 findings (6 CRITICAL, 16 HIGH, 23 MEDIUM)** — among them: any authenticated user
+could read the clinical history of the entire population, and one patient could rewrite
+another's diagnosis. The prompt «Repara A-SEC-01 y A-SEC-02; no publiques.» produced the
+fix for both, with its regression test (3 files, 220 lines), without touching the
+product's tree until integration.
+
+### LoboApp: the campaign that found the limits
+
+A Flutter app installed **from a GitHub clone of the framework** onto a freshly cloned
+product with no prior contamination — exactly the scenario a tester walks into. The audit
+persisted 9 findings (1 CRITICAL: the privacy notice promised that logging out erases
+saved data, and the code did not). «Repara F-01 y F-02; no publiques.» produced the fix
+with its regression tests, verified with a real `flutter test` (125 green). The campaign
+closed at **14 findings resolved, 166 Flutter tests green, 4 commits integrated** — and
+it surfaced two framework failures no synthetic test would have caught: a verification
+command its own shell could not execute, and a sandbox that left the SDK mounted
+read-only while the tool rewrites itself. Both are fixed with regression tests, and they
+are the reason verification here is real instead of declarative.
+
+### The framework, on itself
+
+Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH,
+5 MEDIUM) and the repairer fixed all of them with their tests. The re-audit then found
+the most uncomfortable one: **a verification result did not identify the tree it
+verified** — now every record carries the digest of the verified diff, checked in three
+places. The memory applies to itself too: an audit of the memory found a register of
+already-closed defects that was written but never consulted, so the same defect could
+return every session; the consultation is now mechanical. Framework suite: **1345 tests
+green** (12 skipped, measured 2026-11-12).
+
+### Driven by a real DSH session (2026-10-10)
+
+The campaigns above ran on real repositories; this pass was narrower — a fictional
+product with one known defect, driven by a **real DSH session**: the audit persisted its
+finding with evidence, a six-word prompt left commit `ab5c0c6` with tests green and the
+product untouched, the implementer left candidate `95aa9b2` with 6 new tests, skills
+loaded per role, the turn abstained when authority was missing, and the Host validator
+passed 10 of 10 layers on the real package. What that pass did **not** prove — Creator
+end-to-end under token ceilings, the corpus gate scoring a real mode — is measured and
+told with its figures in the
+[verified status](docs/status.md#comprehensive-pass-on-real-dsh-2026-10-10-what-was-measured-and-what-was-not).
+
+## What it does not do — and what is still ahead
+
+**On purpose:**
+
+- **It does not commit or push.** Integration is the security boundary, and it is tested.
 - **It is not autonomous in the shadows.** Every turn ends with a readable result; what
   is retained is said, and why.
 - **It does not install providers or credentials.** DSH and your provider are
   prerequisites.
 - **The repairer does not run inside a kernel sandbox.** The write boundary is
-  contractual and tested; mechanical confinement exists today for the auditor (see
-  below), not for the repairer: it needs two writable roots and the runtime only accepts
-  one.
+  contractual and tested; mechanical confinement exists today for the auditor, not the
+  repairer — it needs two writable roots and the runtime only accepts one.
 
-## What is hardened
+**Still ahead for the stable release** — each item with its date and evidence in the
+[verified status](docs/status.md), the whole sequence in the
+[launch plan](docs/plans/10-lanzamiento-publico.md): the Creator closing end-to-end under
+real token ceilings, the corpus gate scoring a real mode, and a full Creator run with the
+Host-provisioned shadow.
 
-- **Escalation is truly forbidden.** The modes never send `sandbox_permissions` or
-  `justification` — with any value — and a first-party guard intercepts those arguments
-  in bash before approval. There is a regression against the real runtime that mounts the
-  exact composition and blocks `workspace-write` and `danger-full-access` flat.
-- **The auditor can be confined in the kernel.** With the policy pointing at the
-  workspace, your product sits outside the writable roots: bash gets a real `EROFS` when
-  it tries to write it, and the auditor can still persist its findings. Measured against
-  the runtime, with a regression.
-- **The count is not the mode's claim.** A central command recomputes the persisted
-  findings from the files and requires the handoff to cover them exactly; a partial or
-  contradictory result is never written.
-
-## Status: public beta
-
-This ships for testing. What is already proven: end-to-end installation with no
-intervention, from a GitHub clone and with no prior contamination; the
-auditor→repairer→integration cycle in three real campaigns; verification executed
-against the product's real entrypoint (Flutter and Django, no stubs) with the evidence
-persisted and mechanically validated; and the audit → repair → pass cycle, the persisted
-finding, the repair left verified in an external candidate and the abstention under no
-authority, all driven by a **real DSH session** on 2026-10-10. The Apache-2.0 license
-and the `v0.1.0-beta` tag are already published.
-What is left for the stable release is in the
-[launch plan](docs/plans/10-lanzamiento-publico.md), and what that pass could not
-prove — Creator end-to-end, running the 25-skill corpus against a real mode, a full
-Creator run with the Host-provisioned shadow — is listed as such in the
-[verified status](docs/status.md), always as history with its date.
-
-If the session dies mid-turn — and in a developer preview it does — the work is not lost:
+And if a session dies mid-turn — in a developer preview it does — the work is not lost:
 an interrupted candidate resumes by verifying the exact recorded identity (same shadow,
 same base, same findings digest) without discarding the diff, and `bootstrap.py state`
-reconciles the state with your repository when something moved outside it, with receipts
-instead of silences.
+reconciles the workspace with your repository when something moved outside it, with
+receipts instead of silences.
 
-## Want to try it?
+## For the technically minded
 
-The command from the [quick start](#quick-start) is all it takes. To report your
-experience, share your `mode-state` (`findings.jsonl`, `handoffs.jsonl`,
-`verification-results.jsonl`, without your product's code), the turns that ended up
-retained and why: [open an issue](https://github.com/MadManJohnSmith/Improvement/issues).
-That is the most useful report possible, and it is exactly the format the framework
-already produces.
+**Where the agents come from.** They are not stamped from an empty template: generation
+composes them from a skills library with recorded provenance — **23 immutable base
+skills** (test-driven development, systematic debugging, security hardening, code review,
+writing plans…) reimplemented with MIT attribution, plus **4 catalog patterns** that
+activate only when their signal really appears in your repo (static review of AWS IAM
+policies, HTTP security headers verification, FastAPI OpenAPI contract checks, WCAG 2.2
+accessibility), backed by **50 pinned external sources** with URL, revision, and license
+recorded for each one. Selection follows a mandatory order: a base skill first; then a
+catalog pattern, only if the signal is really there; then compositions; and a brand-new
+extension only as a last resort, forced to demonstrate the previous layers do not apply.
+Every reuse is declared, and the Host verifies it against the library snapshot frozen
+with its digest at install time: what your agent reuses is exactly what the digest
+signed.
+
+**Verification that cannot lie by accident.** The capability plan is signed, and the
+repairer cannot record a result from a command outside it. A finding anchors its location
+with a literal code snippet (`path` + `excerpt`): the write tool locates the snippet,
+computes the line, and rejects the write when the snippet is absent or appears more than
+once — an anchor that cannot be placed is an anchor pointing at the wrong line.
+`bootstrap.py state` reports how many findings are anchored. The persisted count is
+recomputed by a central command that requires the handoff to cover the findings exactly;
+a partial or contradictory result is never written.
+
+**What is hardened.** The modes never send `sandbox_permissions` or `justification` —
+with any value — and a first-party guard intercepts those arguments in bash before
+approval; a regression against the real runtime mounts the exact composition and blocks
+`workspace-write` and `danger-full-access` flat. The auditor can be confined in the
+kernel: with the policy pointing at the workspace, bash gets a real `EROFS` when it tries
+to write your product, and the auditor can still persist its findings. Measured against
+the runtime, with regressions.
+
+**Stacks.** Proven on real campaigns: Rust (`cargo test`, `cargo clippy`), Django
+(`python manage.py test`, `django check`), Flutter (`flutter test`, `flutter analyze`),
+and Python (`pytest -q`, `compileall` — the framework on itself). Twenty-six more are
+declared: the plan resolves their commands just the same, and a missing tool yields
+`BLOCKED` naming it — never an invented `PASS`. Exercising them on real repositories is
+exactly what the beta exists for. The complete table, one row per stack, is in the
+[verified status](docs/status.md).
 
 ## Documentation
 
 - [Operational usage](docs/usage.md) — the full cycle, integration, and space recovery
 - [Interactive diagrams](https://madmanjohnsmith.github.io/Improvement/diagrams/ciclo-operativo.html) — the operating cycle and the [installed architecture](https://madmanjohnsmith.github.io/Improvement/diagrams/arquitectura-instalacion.html), as explorable HTML
 - [DSH setup](docs/setup-dsh.md)
-- [Verified status](docs/status.md)
+- [Verified status](docs/status.md) — what is proven and what is not, always as history with its date
 - [Milestone progress, one page](docs/progreso-agentico.md) — every C/D/E/F/G/M/P/U milestone with its derived state and its evidence
 - [Normative architecture](ARQUITECTURA_FLUJO_AGENTES.md)
-- [Agent skills and repository rules](AGENTS.md) — for maintainers: the issue tracker, triage labels and domain docs the engineering skills assume, configured with `/setup-matt-pocock-skills`; skill and flow selection is routed with `/ask-matt`
+- [Agent skills and repository rules](AGENTS.md) — for maintainers
 - [Implementation plans](docs/plans/README.md) · [Launch plan](docs/plans/10-lanzamiento-publico.md)
 - [Changes](CHANGELOG.md) · [Third-party attributions](THIRD_PARTY_NOTICES.md)
 - [v0.1.0 beta notes](docs/plans/11-notas-beta-v0.1.0.md) (published 2026-09-30)
