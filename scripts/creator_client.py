@@ -1492,6 +1492,15 @@ class DshLocalClient:
         """Request cancellation of the active turn without dropping its inbox."""
         return self.rpc("session/cancel", {"request": {"sessionId": session_id}})
 
+    def rename_session(self, session_id, title):
+        """Rename a session through the session-title service (zero tokens).
+
+        The title is durable and visible in the web session list; the service
+        caps its length (80 bytes) and may normalize the proposal.
+        """
+        return self.rpc("session/rename", {"request": {
+            "sessionId": session_id, "title": title}})
+
     def session_page(self, session_id, *, through_seq, before_seq=None,
                      max_messages=200):
         """Read a durable, message-aligned page from the real DSH journal."""
@@ -3191,6 +3200,10 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
             reason = (f"Límite de tokens Creator excedido: {used} >= "
                       f"{session.max_tokens}; cancelación confirmada y sesión "
                       "quiescente")
+            _rename_session_terminal(
+                client, state["session_id"],
+                _terminal_title("PRESUPUESTO", state.get("generation_id"),
+                                f"{used}/{session.max_tokens}"))
             return _await_confirmed_quiescence(
                 session, client, state, reason,
                 cancel_deadline=now_fn() + cancel_grace_seconds,
@@ -3211,16 +3224,27 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
                     _save_session_state(
                         session.run_dir, state,
                         reason="READY_FOR_HOST_REJECTION")
+                    _rename_session_terminal(
+                        client, state["session_id"],
+                        _terminal_title("RETENIDO-PREVALIDACION",
+                                        state.get("generation_id")))
                     return {
                         "result": "READY_FOR_HOST_REJECTION",
                         "generation_id": state.get("generation_id", "unknown"),
                         "dsh_session_id": state.get("session_id"),
                         "reason": str(exc),
                     }
+                _rename_session_terminal(
+                    client, state["session_id"],
+                    _terminal_title("GENERADO", state.get("generation_id")))
                 return session.create_finish(manifest)
             reason = "Creator terminó y quedó quiescente sin generation-manifest.json"
             _save_session_state(session.run_dir, state,
                                 reason="TERMINAL_WITHOUT_MANIFEST")
+            _rename_session_terminal(
+                client, state["session_id"],
+                _terminal_title("RETENIDO-SIN-MANIFEST",
+                                state.get("generation_id")))
             return session.retain(reason)
 
         now = now_fn()
@@ -3229,6 +3253,9 @@ def _supervise_creator(session, client, state, *, poll_seconds=5,
             _save_session_state(session.run_dir, state, reason="CANCELLING_TIMEOUT")
             try:
                 client.cancel_session(state["session_id"])
+                _rename_session_terminal(
+                    client, state["session_id"],
+                    _terminal_title("TIMEOUT", state.get("generation_id")))
             except Exception as exc:
                 return _mark_recovery_required(
                     session, state, f"Timeout; cancelación DSH no confirmada: {exc}")
@@ -3400,6 +3427,37 @@ def build_host_generated_package(run_dir):
             "message", "Paquete producido por herramientas deterministas "
                        "del Host; sin turno de Creator")
     return outcome
+
+
+def _terminal_title(tag, generation_id, detail=""):
+    """A ≤80-byte session title naming the terminal state.
+
+    The session-title service caps the title at 80 bytes: the state tag and
+    the generation id go first, the detail only while it fits.
+    """
+    base = f"[{tag}] {generation_id}"
+    room = 80 - len(base.encode("utf-8")) - 1
+    if detail and room > 0:
+        base = f"{base} {str(detail)[:room]}"
+    return base[:80]
+
+
+def _rename_session_terminal(client, session_id, title):
+    """Name the terminal state on the session surface itself (best effort).
+
+    The dispatch JSON and the run state know the outcome, but the surface a
+    user watches — the DSH web session — ended silently in every terminal
+    state of the measured campaign, which reads as an error to anyone who
+    does not know the flow (flagged by the maintainer, 2026-11-13). The
+    title is durable, zero-token and visible in the session list
+    (`session/rename` through the session-title service); a failed rename
+    is logged and never changes the outcome.
+    """
+    try:
+        client.rename_session(session_id, title)
+        progress(f"Creator: sesión titulada «{title}»")
+    except Exception as exc:
+        progress(f"Creator: renombrado de sesión no aplicado: {exc}")
 
 
 def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,

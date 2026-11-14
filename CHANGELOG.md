@@ -1,5 +1,28 @@
 # Cambios
 
+## creator: la sesión nombra su estado terminal — superficie del usuario — 2026-11-13
+
+Campaña completa medida: la superficie que un usuario mira — la sesión en la web de
+DSH — terminó en seco en **todos** los estados terminales (cancelación por presupuesto,
+prevalidación fallida, cierre sin manifiesto): el JSON del despacho y el estado del run
+lo sabían, pero la sesión no decía nada, y eso se lee como un error para quien no
+conoce el flujo (señalado por el mantenedor al revisar la campaña).
+
+- **Canal sin tokens ni turnos**: `session/rename` vía el servicio session-title —
+  el título es durable, visible en la lista y cabecera de la sesión, y no dispara
+  inferencia. `DshLocalClient.rename_session` lo envuelve con la convención de sobre
+  del resto del cliente.
+- **Cinco puntos terminales de la supervisión titulan la sesión** (best-effort: un
+  rename fallido se registra en el progreso y jamás cambia el resultado):
+  `[PRESUPUESTO 568498/500000] gen-…`, `[TIMEOUT] gen-…`,
+  `[RETENIDO-PREVALIDACION] gen-…`, `[RETENIDO-SIN-MANIFEST] gen-…`,
+  `[GENERADO] gen-…`. El helper `_terminal_title` respeta el tope de 80 bytes del
+  servicio (estado + id primero, detalle solo si cabe).
+- **Regresión** (`tests/test_creator_and_validator.py`): el RPC lleva sesión y título
+  al servicio correcto; el título respeta el tope de bytes con y sin detalle; y un
+  rename que falla se registra en el progreso sin cambiar el resultado. Módulo
+  enfocado: 195 tests OK; suite completa 1364 (1 skipped).
+
 ## soporte: suite verde sobre el runtime rc.2 — deriva de API y cifras vivas — 2026-11-13
 
 La suite completa quedó en **1361 tests, 1 skipped, 0 fallos** después de adaptar el

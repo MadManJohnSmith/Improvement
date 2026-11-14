@@ -2153,6 +2153,49 @@ def _write_dsh_home_022(home, *, credentials=True):
     return home
 
 
+class TerminalSessionTitleTests(unittest.TestCase):
+    """El título de sesión nombra el estado terminal sobre la superficie del usuario.
+
+    En toda la campaña medida la sesión de DSH terminó en seco (cancelación por
+    presupuesto, prevalidación fallida, cierre sin manifiesto): el JSON del
+    despacho y el estado del run lo sabían, pero la superficie que un usuario
+    mira — la sesión en la web de DSH — no decía nada, y eso se lee como un
+    error. El canal es `session/rename` vía el servicio session-title: título
+    durable, cero tokens, visible en la lista de sesiones.
+    """
+
+    def test_rename_session_targets_the_session_title_service(self):
+        client = cc.DshLocalClient("http://127.0.0.1:3080/?token=t")
+        with unittest.mock.patch.object(client, "rpc", return_value={}) as rpc:
+            client.rename_session("sid-1", "[GENERADO] gen-x")
+        rpc.assert_called_once_with("session/rename", {"request": {
+            "sessionId": "sid-1", "title": "[GENERADO] gen-x"}})
+
+    def test_terminal_title_fits_the_service_byte_cap(self):
+        title = cc._terminal_title("PRESUPUESTO", "gen-e9b8a23da747",
+                                   "568498/500000")
+        self.assertLessEqual(len(title.encode("utf-8")), 80)
+        self.assertTrue(title.startswith("[PRESUPUESTO] gen-e9b8a23da747"))
+        self.assertIn("568498/500000", title)
+        truncated = cc._terminal_title("PRESUPUESTO", "gen-" + "x" * 90,
+                                       "detalle " * 30)
+        self.assertLessEqual(len(truncated.encode("utf-8")), 80)
+        self.assertTrue(truncated.startswith("[PRESUPUESTO] gen-"))
+
+    def test_rename_session_terminal_never_changes_the_outcome(self):
+        """Un rename que falla se registra y no levanta: es best-effort."""
+        class Boom:
+            def rename_session(self, session_id, title):
+                raise RuntimeError("rpc down")
+
+        env = {k: v for k, v in os.environ.items() if k != "IMPROVEMENT_QUIET"}
+        stderr = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, env, clear=True), \
+                contextlib.redirect_stderr(stderr):
+            cc._rename_session_terminal(Boom(), "sid", "[GENERADO] gen-x")
+        self.assertIn("renombrado", stderr.getvalue())
+
+
 class DshLifecycleTests(unittest.TestCase):
     """Ciclo de vida DSH: instancias previas y puerta de llave API."""
 
