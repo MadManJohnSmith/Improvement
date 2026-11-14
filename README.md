@@ -77,6 +77,43 @@ From software quality to cybersecurity, investigation, and shipping: what your a
 your repair needs is already in the library, and every reuse is declared and verified
 against the frozen snapshot.
 
+## What Creator builds for you
+
+The agents are not written by hand — they are **generated for your repository** by
+Creator, a dedicated generator agent working in a confined session: your product and the
+framework are mounted read-only for it, it writes only inside its run directory, and it
+never sees your API keys. From reading your repo it composes the presets, their skills,
+contracts, templates, and an acceptance plan — a complete, auditable package kept in
+`creator-runs/` with its own generation id. The whole pipeline is a deterministic command
+line (`bootstrap.py`: install, accept, finalize, repair, update, uninstall, state,
+metrics, workflow), and every step leaves files you can inspect.
+
+- **Least privilege by construction.** Every generated agent ships with a capability
+  contract: what it may do — `product_read`, `candidate_write`, `test_execute`,
+  `report` — and what it can never do. The RehabWeb generation, for instance, forbids
+  `network` and `credential_access` outright, and no mode package may request
+  delegation, subagents, or escalation. The validator also rejects any absolute path
+  (nothing that only works on your machine) and any network call inside the generated
+  artifacts.
+- **Validated before anything touches your machine.** The Host runs 10 deterministic
+  layers over the package — schema, manifest, dependency graph, per-skill contracts,
+  capabilities, portability, context budget, name collisions, licenses, and mode
+  lifecycle — and acceptance then rehearses the hard parts for real: a red→green repair
+  on a candidate, a semantic re-audit, and a rollback drill. Only then does the
+  transaction move the generation through `GENERATED → VALIDATING → BACKED_UP → STAGED
+  → ACCEPTING → ACTIVE`.
+- **Failure is a state, not a mess.** If any gate fails, the run ends `RETAINED` or
+  `ROLLED_BACK` with a readable reason and a recoverable state; checkpoints make every
+  phase resumable, and a retained run can be finalized later instead of starting over.
+  Nothing installs halfway: it is backup, stage, accept, activate — or roll back.
+- **Deterministic where it matters.** The Host recomputes the derived half of the
+  manifest — artifacts, hashes, provenance, routing digest — and writes the mechanical
+  parts of every mode itself; only the project-specific decisions come from the model.
+  The default generation budget is 500,000 billable tokens / 30 minutes / 3 attempts,
+  and a fully deterministic path (`--host-package`) can build the package without
+  spending a single one. And the Creator cannot approve itself: it can only declare the
+  package `GENERATED` — the verdict belongs to the Host.
+
 ## How it works: the cycle
 
 ![The operating cycle: audit, repair, integrate](docs/diagrams/ciclo-operativo.png)
@@ -228,6 +265,25 @@ repository:
   `bootstrap.py state` reconciles the workspace with your repository, with receipts
   instead of silences.
 
+## Beyond audit and repair
+
+- **Whole campaigns in one command.** The Host carries a plan executor (`bootstrap
+  workflow run`): the default campaign walks preflight, audit, pre-repair verification,
+  repair, post-repair verification, a second repair if needed, final verification, and
+  close-out — each step with its checkpoint, resumable when a session dies. Exercised
+  end to end in a real DSH session on a fictional product (a failing repair came back
+  PASS after repair); a campaign on a live product is part of what the beta is for.
+- **Documentation that cannot rot silently.** `bootstrap drift` evaluates how far your
+  docs have drifted from the code — deterministically, with no network and no model: a
+  contract hash over each public function signature, a fingerprint over function
+  bodies, and a drift classification (contract drift, stale reference, source drift) at
+  turn close. When it finds drift, it files a sync proposal — sync proposes; only an
+  authorized install replaces.
+- **Honest evaluation.** The evaluation harness scores runs offline, deterministically,
+  and without a model: a pre-registered criterion checks the run journal against
+  external evidence, and nothing can self-approve — only a pre-registered verification
+  run can end in the versioned corpus.
+
 ## Real stories
 
 ### Syncify: from red CI to green CI
@@ -309,6 +365,23 @@ told with its figures in the
 real token ceilings, the corpus gate scoring a real mode, and a full Creator run with the
 Host-provisioned shadow.
 
+**Where this is going** — already designed and versioned in the repo:
+
+- An installer that brings its own DSH: no terminal, no config files, guided provider
+  access, a snapshot of your project if it has no git yet, and **one approval for the
+  whole package** — with the first audit run for you and every failure explained in
+  plain language ([the designed install experience](workflows/product-install.md)).
+- **Your recurring loops as approved specs**: describe a loop once ("when a test fails,
+  audit, repair, and verify"), get a versioned spec with trigger, steps, and success
+  criteria; any change to it requires re-approval, and what it leaves you is the
+  decision ready to make, not raw output
+  ([the designed workflow experience](workflows/user-workflow-design.md)).
+- A **System 1 advisory channel**: a fast model proposes, the reasoning mode endorses or
+  vetoes — designed, with its prerequisite verified; not implemented yet.
+- The **library learning loop**: campaign observations feeding back into the skills
+  library through the holdout gate — the gate is implemented; what is missing is the
+  first operational run against a real mode.
+
 ## For the technically minded
 
 **Where the agents come from.** They are not stamped from an empty template: generation
@@ -359,6 +432,7 @@ exactly what the beta exists for. The complete table, one row per stack, is in t
 - [Verified status](docs/status.md) — what is proven and what is not, always as history with its date
 - [Milestone progress, one page](docs/progreso-agentico.md) — every C/D/E/F/G/M/P/U milestone with its derived state and its evidence
 - [Normative architecture](ARQUITECTURA_FLUJO_AGENTES.md)
+- [Designed install experience](workflows/product-install.md) · [Designed user workflows](workflows/user-workflow-design.md) — the next experiences, as versioned specs
 - [Agent skills and repository rules](AGENTS.md) — for maintainers
 - [Implementation plans](docs/plans/README.md) · [Launch plan](docs/plans/10-lanzamiento-publico.md)
 - [Changes](CHANGELOG.md) · [Third-party attributions](THIRD_PARTY_NOTICES.md)

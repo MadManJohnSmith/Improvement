@@ -79,6 +79,44 @@ De la calidad del software a la ciberseguridad, la investigación y la entrega: 
 auditoría o tu reparación necesite ya está en la biblioteca, y cada reutilización se
 declara y se verifica contra la instantánea congelada.
 
+## Lo que Creator construye para ti
+
+Los agentes no se escriben a mano — se **generan para tu repositorio** con Creator, un
+agente generador dedicado que trabaja en una sesión confinada: tu producto y el
+framework están montados en solo lectura para él, escribe solo dentro de su directorio
+de corrida, y nunca ve tus claves de API. Leyendo tu repo compone los presets, sus
+skills, contratos, plantillas y un plan de aceptación — un paquete completo y auditable
+guardado en `creator-runs/` con su propio id de generación. Todo el pipeline es una línea
+de comandos determinista (`bootstrap.py`: install, accept, finalize, repair, update,
+uninstall, state, metrics, workflow), y cada paso deja archivos que puedes inspeccionar.
+
+- **Mínimo privilegio por construcción.** Cada agente generado lleva un contrato de
+  capacidades: lo que puede hacer — `product_read`, `candidate_write`, `test_execute`,
+  `report` — y lo que nunca puede hacer. La generación de RehabWeb, por ejemplo,
+  prohíbe `network` y `credential_access` de plano, y ningún paquete de modos puede
+  pedir delegación, subagentes ni escalación. El validador además rechaza cualquier
+  ruta absoluta (nada que solo funcione en tu máquina) y cualquier llamada de red dentro
+  de los artefactos generados.
+- **Validado antes de tocar tu máquina.** El Host corre 10 capas deterministas sobre el
+  paquete — esquema, manifiesto, grafo de dependencias, contratos por skill,
+  capacidades, portabilidad, presupuesto de contexto, colisiones de nombres, licencias y
+  ciclo de vida de los modos — y la aceptación ensaya luego las partes duras de verdad:
+  una reparación rojo→verde sobre una candidata, una re-auditoría semántica y un ensayo
+  de rollback. Solo entonces la transacción mueve la generación por `GENERATED →
+  VALIDATING → BACKED_UP → STAGED → ACCEPTING → ACTIVE`.
+- **El fallo es un estado, no un desastre.** Si cualquier gate falla, la corrida termina
+  `RETAINED` o `ROLLED_BACK` con un motivo legible y un estado recuperable; los
+  checkpoints hacen cada fase reanudable, y una corrida retenida puede finalizarse
+  después en vez de empezar de cero. Nada se instala a medias: es backup, stage, accept,
+  activate — o rollback.
+- **Determinista donde importa.** El Host recalcula la mitad derivada del manifiesto —
+  artefactos, hashes, procedencia, digest de routing — y escribe él mismo las partes
+  mecánicas de cada modo; solo las decisiones específicas del proyecto salen del modelo.
+  El presupuesto por defecto de generación es 500.000 tokens facturables / 30 minutos /
+  3 intentos, y una vía totalmente determinista (`--host-package`) puede construir el
+  paquete sin gastar uno solo. Y Creator no puede aprobarse a sí mismo: solo puede
+  declarar el paquete `GENERATED` — el veredicto es del Host.
+
 ## Cómo funciona: el ciclo
 
 ![El ciclo operativo: auditar, reparar, integrar](docs/diagrams/ciclo-operativo.es.png)
@@ -232,6 +270,26 @@ repositorio:
   hallazgos), y `bootstrap.py state` reconcilia el workspace con tu repositorio, con
   recibos en vez de silencios.
 
+## Más allá de auditar y reparar
+
+- **Campañas completas con un comando.** El Host lleva un ejecutor de planes (`bootstrap
+  workflow run`): la campaña por defecto recorre preflight, auditoría, verificación
+  pre-reparación, reparación, verificación post-reparación, una segunda reparación si
+  hace falta, verificación final y cierre — cada paso con su checkpoint, reanudable si
+  una sesión muere. Ejercitado de extremo a extremo en una sesión DSH real sobre un
+  producto ficticio (una reparación en rojo volvió PASS tras reparar); una campaña sobre
+  un producto vivo es parte de para lo que existe la beta.
+- **Documentación que no puede pudrirse en silencio.** `bootstrap drift` evalúa cuánto
+  se han desviado tus docs del código — de forma determinista, sin red y sin modelo: un
+  hash de contrato sobre cada firma pública de función, una huella sobre los cuerpos de
+  las funciones, y una clasificación de deriva (deriva de contrato, referencia obsoleta,
+  deriva de fuente) al cierre del turno. Cuando encuentra deriva, presenta una propuesta
+  de sincronización — sync propone; solo una instalación autorizada reemplaza.
+- **Evaluación honesta.** El harness de evaluación puntúa corridas offline, de forma
+  determinista y sin modelo: un criterio pre-registrado comprueba el journal de la
+  corrida contra evidencia externa, y nada puede auto-aprobarse — solo una corrida de
+  verificación pre-registrada puede entrar en el corpus versionado.
+
 ## Historias reales
 
 ### Syncify: de CI en rojo a CI en verde
@@ -314,6 +372,24 @@ lanzamiento](docs/plans/10-lanzamiento-publico.es.md): Creator cerrando de extre
 extremo bajo techos de tokens reales, el corpus gate puntuando un modo real, y una
 corrida completa de Creator con la sombra aprovisionada por el Host.
 
+**Hacia dónde va** — ya diseñado y versionado en el repo:
+
+- Un instalador que trae su propio DSH: sin terminal, sin archivos de configuración,
+  acceso guiado al provider, una instantánea de tu proyecto si aún no tiene git, y **una
+  sola aprobación para todo el paquete** — con la primera auditoría corrida por el
+  framework y cada fallo explicado en lenguaje llano ([la experiencia de instalación
+  diseñada](workflows/product-install.md)).
+- **Tus bucles recurrentes como specs aprobados**: describes un bucle una vez («cuando
+  falla un test, audita, repara y verifica»), obtienes un spec versionado con disparador,
+  pasos y criterio de éxito; cualquier cambio exige re-aprobación, y lo que te deja es
+  la decisión lista para tomar, no salida cruda ([la experiencia de workflows
+  diseñada](workflows/user-workflow-design.md)).
+- Un **canal asesor System 1**: un modelo rápido propone, el modo de razonamiento
+  endosa o veta — diseñado, con su prerrequisito verificado; aún sin implementar.
+- El **bucle de aprendizaje de la biblioteca**: las observaciones de campaña alimentando
+  de vuelta la biblioteca de skills por el gate de holdout — el gate está implementado;
+  falta la primera corrida operativa contra un modo real.
+
 ## Para perfiles técnicos
 
 **De dónde salen los agentes.** No se estampan desde una plantilla vacía: la generación
@@ -366,6 +442,7 @@ exactamente para lo que existe la beta. La tabla completa, una fila por stack, e
 - [Estado comprobado](docs/status.es.md) — qué está probado y qué no, siempre como historia con su fecha
 - [Progreso de hitos, una página](docs/progreso-agentico.es.md) — cada hito C/D/E/F/G/M/P/U con su estado derivado y su evidencia
 - [Arquitectura normativa](ARQUITECTURA_FLUJO_AGENTES.es.md)
+- [Experiencia de instalación diseñada](workflows/product-install.md) · [Workflows de usuario diseñados](workflows/user-workflow-design.md) — las siguientes experiencias, como specs versionados
 - [Skills de agentes y reglas del repositorio](AGENTS.md) — para mantenedores
 - [Planes de implementación](docs/plans/README.es.md) · [Plan de lanzamiento](docs/plans/10-lanzamiento-publico.es.md)
 - [Cambios](CHANGELOG.md) · [Atribuciones de terceros](THIRD_PARTY_NOTICES.es.md)
