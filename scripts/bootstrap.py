@@ -809,6 +809,33 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     return result
 
 
+def _failed_layer_details(run_dir, limit=12):
+    """The failed validation layers' findings, for the repair prompt.
+
+    The retention verdict names the stage, not the findings: without them a
+    repair turn re-reads the whole package hunting for the defect (three
+    measured turns of the 2026-11-13 campaign burned their ceilings on a
+    single remaining violation). Only failed layers' details travel, capped.
+    """
+    summary_path = Path(run_dir) / "validation" / "summary.json"
+    if not summary_path.is_file():
+        return []
+    try:
+        summary = _read_json(summary_path)
+    except ValueError:
+        return []
+    layers = summary.get("layers")
+    if not isinstance(layers, dict):
+        return []
+    details = []
+    for layer, result in sorted(layers.items()):
+        if isinstance(result, dict) and not result.get("passed", True):
+            for detail in (result.get("details") or []):
+                if isinstance(detail, str) and detail.strip():
+                    details.append(f"{layer}: {detail.strip()}")
+    return details[:limit]
+
+
 def repair_run(workspace, *, generation_id=None, launch_dsh=False,
                creator_max_tokens=500000, dispatch_creator=True,
                finalize_host=True):
@@ -839,6 +866,12 @@ def repair_run(workspace, *, generation_id=None, launch_dsh=False,
             "acceptance/static-retained.json ausente: sin causa retenida "
             "grabada no hay reparación que despachar")
     reason = _read_json(retained_path).get("reason")
+    details = _failed_layer_details(run_dir)
+    if details:
+        # The repair turn re-reads the whole package before acting, and the
+        # measured campaign burned full ceilings on generic causes: naming the
+        # exact failed findings lets it go straight to the affected files.
+        reason = f"{reason}; hallazgos: " + "; ".join(details[:12])
 
     if creator_max_tokens:
         run_doc.setdefault("budget", {})["max_tokens"] = int(creator_max_tokens)

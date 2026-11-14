@@ -1867,6 +1867,38 @@ class RetainedRepairDispatchTests(Base):
             encoding="utf-8"))
         self.assertEqual(run_doc["budget"]["max_tokens"], 400000)
 
+    def test_repair_reason_carries_the_exact_failed_findings(self):
+        """La causa del turno incluye los hallazgos de las capas fallidas.
+
+        Tres turnos medidos quemaron su techo releyendo el paquete por una
+        causa genérica: los detalles de la validación (el fichero afectado y
+        el patrón exacto) viajan en el prompt para que la reparación vaya
+        directa al hallazgo.
+        """
+        self._retain(reason="Static Host validation failed: RETAINED")
+        summary = self.run_dir / "validation" / "summary.json"
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(json.dumps({
+            "schema_version": 1,
+            "verdict": "RETAINED",
+            "passed": False,
+            "layers": {
+                "schema": {"passed": True, "details": []},
+                "portability": {"passed": False, "details": [
+                    "Portability issue in "
+                    "skills/project-libreta-integration/SKILL.md: "
+                    "contains 'subprocess.run'",
+                ]},
+            },
+        }, indent=2) + "\n", encoding="utf-8")
+
+        result = bootstrap.repair_run(
+            self.workspace, generation_id=self.gen_id,
+            dispatch_creator=False)
+        self.assertIn("skills/project-libreta-integration/SKILL.md",
+                      result["message"])
+        self.assertIn("subprocess.run", result["message"])
+
     def test_repair_run_demands_a_retained_run_with_a_recorded_cause(self):
         """Sin run RETAINED o sin causa grabada, repair falla loud."""
         with self.assertRaises(ValueError) as caught:
