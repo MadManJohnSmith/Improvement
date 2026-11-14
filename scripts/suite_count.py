@@ -41,10 +41,17 @@ def discovered_count(root=ROOT):
 def rewrite(root=ROOT, write=True, today=None):
     """Ajusta las cifras vivas al total descubierto.
 
-    Devuelve la lista de (fichero, línea vieja, línea nueva) que necesitó
+    Devuelve la lista de (fichero, párrafo viejo, párrafo nuevo) que necesitó
     cambio. Con write=False solo informa. La fecha de medida se estampa solo
-    en las líneas que se reescriben: un recuento sin cambios conserva su
+    en los párrafos que se reescriben: un recuento sin cambios conserva su
     fecha, porque la medición es de ese día.
+
+    El matching opera por párrafo con espacios normalizados — la misma regla
+    del gate `test_the_published_suite_count_is_the_count_that_runs` — porque
+    la cifra viva puede partirse entre líneas («1345 tests\ngreen») y una
+    búsqueda por línea divergiría del gate en silencio (medido 2026-11-13: el
+    reescritor daba «coincide» con el gate en rojo). El párrafo reescrito se
+    graba normalizado: el markdown renderiza igual.
     """
     today = today or date.today().isoformat()
     count = discovered_count(root)
@@ -53,20 +60,21 @@ def rewrite(root=ROOT, write=True, today=None):
         path = root / relative
         if not path.exists():
             continue
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        paragraphs = path.read_text(encoding="utf-8").split("\n\n")
         changed = False
-        for index, line in enumerate(lines):
-            said = claim.search(line)
-            if not said or historical in line or int(said.group(1)) == count:
+        for index, paragraph in enumerate(paragraphs):
+            normalized = re.sub(r"\s+", " ", paragraph)
+            said = claim.search(normalized)
+            if not said or historical in normalized.lower() or int(said.group(1)) == count:
                 continue
-            new = claim.sub(lambda m: m.group(0).replace(m.group(1), str(count)), line)
+            new = claim.sub(lambda m: m.group(0).replace(m.group(1), str(count)), normalized)
             if measured.search(new):
                 new = measured.sub(lambda m: m.group(0).replace(m.group(1), today), new)
-            changes.append((relative, line, new))
-            lines[index] = new
+            changes.append((relative, paragraph, new))
+            paragraphs[index] = new
             changed = True
         if changed and write:
-            path.write_text("".join(lines), encoding="utf-8")
+            path.write_text("\n\n".join(paragraphs), encoding="utf-8")
     return changes
 
 

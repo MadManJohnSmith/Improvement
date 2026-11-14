@@ -52,8 +52,9 @@ prometida.
 ## Lo que los agentes saben hacer
 
 Los agentes se componen desde una biblioteca de **23 skills inmutables** — cada una es
-un procedimiento con invariantes y límites, no un párrafo de consejos — que cubre el
-ciclo completo de ingeniería:
+un procedimiento con invariantes y límites, no un párrafo de consejos — compilada en un
+corpus ejecutable de **59 casos** que gatea cada cambio de aprendizaje — cubre el ciclo
+completo de ingeniería:
 
 - **Calidad de software:** desarrollo guiado por tests, verificación antes de declarar
   algo completo, pedir y recibir revisión de código, reducción de complejidad protegida
@@ -340,7 +341,7 @@ que verificó** — ahora cada registro lleva el digest del diff verificado, com
 tres sitios. La memoria también se aplica a sí misma: una auditoría de la memoria
 encontró un registro de defectos ya cerrados que se escribía pero nadie consultaba, así
 que el mismo defecto podía volver cada sesión; la consulta ahora es mecánica. Suite del
-framework: **1345 tests en verde** (12 saltados, medido el 2026-11-12).
+framework: **1361 pruebas en verde** (1 saltado, medida el 2026-11-13).
 
 ### Pilotado por una sesión DSH real (2026-10-10)
 
@@ -353,6 +354,17 @@ faltaba autoridad, y el validador del Host pasó 10 de 10 capas sobre el paquete
 que ese pase **no** probó — Creator de extremo a extremo bajo techos de tokens, el corpus
 gate puntuando un modo real — está medido y contado con sus cifras en el
 [estado comprobado](docs/status.es.md).
+
+### Creator de extremo a extremo en el fixture (2026-11-13)
+
+Esa puerta abierta se cerró por el diseño del propio flujo: una sesión real de Creator
+(prompt 1.12.0) produjo el paquete completo sobre el workspace fixture versionado, el
+Host lo retuvo por hallazgos de portability, un turno de reparación los limpió, y la
+activación transaccional dejó `gen-e9b8a23da747` **ACTIVE** — tres presets publicados,
+mode-state provisionado, verificado con `verify-acceptance`. La aceptación del Host aquí
+es estática más materialización (`dynamic_evaluation: NOT_RUN`): la aceptación por un
+operador de producción sobre un producto real, y la aceptación completa de escritorio,
+no se afirma por él.
 
 ## Lo que NO hace — y lo que falta
 

@@ -50,7 +50,8 @@ decision, the commit, and the push are yours. That boundary is tested, not promi
 ## What the agents know how to do
 
 The agents are composed from a library of **23 immutable skills** — each one a procedure
-with invariants and limits, not a paragraph of advice — covering the whole engineering
+with invariants and limits, not a paragraph of advice — compiled into an executable
+corpus of **59 cases** that gates every learning change — covering the whole engineering
 loop:
 
 - **Software quality:** test-driven development, verification before declaring something
@@ -325,14 +326,7 @@ are the reason verification here is real instead of declarative.
 
 ### The framework, on itself
 
-Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH,
-5 MEDIUM) and the repairer fixed all of them with their tests. The re-audit then found
-the most uncomfortable one: **a verification result did not identify the tree it
-verified** — now every record carries the digest of the verified diff, checked in three
-places. The memory applies to itself too: an audit of the memory found a register of
-already-closed defects that was written but never consulted, so the same defect could
-return every session; the consultation is now mechanical. Framework suite: **1345 tests
-green** (12 skipped, measured 2026-11-12).
+Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH, 5 MEDIUM) and the repairer fixed all of them with their tests. The re-audit then found the most uncomfortable one: **a verification result did not identify the tree it verified** — now every record carries the digest of the verified diff, checked in three places. The memory applies to itself too: an audit of the memory found a register of already-closed defects that was written but never consulted, so the same defect could return every session; the consultation is now mechanical. Framework suite: **1361 tests green** (1 skipped, measured 2026-11-13).
 
 ### Driven by a real DSH session (2026-10-10)
 
@@ -345,6 +339,16 @@ passed 10 of 10 layers on the real package. What that pass did **not** prove —
 end-to-end under token ceilings, the corpus gate scoring a real mode — is measured and
 told with its figures in the
 [verified status](docs/status.md#comprehensive-pass-on-real-dsh-2026-10-10-what-was-measured-and-what-was-not).
+
+### Creator end-to-end on the fixture (2026-11-13)
+
+That open gate is closed through the flow's own design: a real Creator session
+(prompt 1.12.0) produced the complete package on the versioned fixture workspace, the
+Host retained it on portability findings, a repair turn cleared them, and the
+transactional activation left `gen-e9b8a23da747` **ACTIVE** — three presets published,
+mode state provisioned, verified with `verify-acceptance`. The Host acceptance here is
+static plus materialization (`dynamic_evaluation: NOT_RUN`): production-operator and
+full-desktop acceptance are not claimed by it.
 
 ## What it does not do — and what is still ahead
 

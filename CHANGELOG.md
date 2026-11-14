@@ -1,5 +1,50 @@
 # Cambios
 
+## soporte: suite verde sobre el runtime rc.2 — deriva de API y cifras vivas — 2026-11-13
+
+La suite completa quedó en **1361 tests, 1 skipped, 0 fallos** después de adaptar el
+árbol al runtime que el repo ya había decidido (rc.2, commit `357c15c`): la máquina había
+derivado a rc.1 (`latest` de npm) y la API de tools había movido piezas.
+
+- **El selfcheck del plugin workflow-write ya no rota en silencio.**
+  `jsonSchemaToTs` ya no vive en `dsh-tools`: el runtime actual lo exporta desde
+  `dsh-tool-executor-ptc`. El script lo importa de `DSH_TOOL_PTC` (la misma convención
+  que `DSH_TOOL_BASH`) o del paquete hermano del índice de tools, y falla cerrado sin
+  renderizador. El check M9 compara el `required` de bash como conjunto: rc.2 compila el
+  spec y puede emitir otro orden, y el contrato es el conjunto, no la secuencia.
+- **La sonda del sandbox habla el lote de rc.2.** El runtime ya no autorreferencia
+  `@deepseek-ai/dsh` dentro de su propio `node_modules`: la raíz del paquete se monta
+  como input propio (`dsh-package`), la sonda ejecuta con la forma de lote de rc.2
+  (`calls` como array, resultados por settlement) y reporta la cadena completa de
+  `error.cause` — el envolvente `ToolBatchExecutionError` escondía la causa raíz.
+- **Los dos checks de loader real se reescriben sobre el boot del perfil.** El harness
+  mínimo (montar a mano un subconjunto de plugins) ya no satisface el grafo de
+  servicios de rc.2 (la tool skill resuelve el directorio de trabajo vía
+  working-directory → fs → maquinaria de sesión). Ambos arrancan ahora el perfil web
+  real en host contra un DSH home de fixture con `HOME` hermético (el catálogo
+  `~/.agents` del usuario no puede filtrarse) y mantienen intacta la prueba: el
+  `': '` sin comillas se descarta en silencio, el citado carga con su cuerpo exacto,
+  dos raíces con el mismo nombre no cruzan cuerpos, y un nombre exclusivo de proyecto
+  no se filtra al scope global (el perfil completo sirve legítimamente las skills del
+  propio framework en él).
+- **`suite_count.py` iguala la regla del gate.** El reescritor buscaba por línea y la
+  cifra viva puede partirse entre líneas: decía «coincide» con el gate en rojo (medido).
+  Ahora normaliza por párrafo, como el gate, y graba el párrafo normalizado.
+- **Las cifras vivas actualizadas con la herramienta oficial**: suite 1361
+  (1 skipped, medido 2026-11-13); README.md publica la cifra de corpus (59 cases) que
+  le exigía el gate; README.es.md vuelve a «pruebas en verde» (el texto derivado decía
+  «tests en verde», fuera del patrón compartido); el contrato de honestidad de las
+  portadas evoluciona con el hito real: el Creator de extremo a extremo en el fixture
+  se publica como logrado (`gen-e9b8a23da747` ACTIVE) y el límite que sigue sin
+  afirmarse es la aceptación por un operador de producción y la de escritorio completo
+  (la aceptación del Host en esta campaña es estática más materialización,
+  `dynamic_evaluation: NOT_RUN`). El gate atrapó también la forma numérica
+  («15 scenarios») en la narrativa de campaña de `docs/status.md`: reformulada a
+  palabra, porque ese patrón es de la cifra de corpus.
+- Entorno de máquina: el runtime global queda en **rc.2** con los scripts nativos
+  permitidos (`--allow-scripts`); los despachos deben fijar
+  `DSH_NPM_SPEC='@deepseek-ai/dsh@0.2.2-rc.2'`.
+
 ## creator: primera generación ACTIVE — la puerta se cierra por el flujo propio — 2026-11-13
 
 `gen-e9b8a23da747` es la primera generación **ACTIVE** post-presupuesto,

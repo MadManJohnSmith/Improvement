@@ -92,26 +92,33 @@ class ArchitectureConsistencyTest(unittest.TestCase):
         self.assertNotIn('El contrato v0.1 sigue siendo', last_section)
 
     def test_the_readmes_publish_the_real_session_both_ways(self):
-        """The 2026-10-10 pass is published as real work, and as unproven work.
+        """The real-session pass and the Creator milestone are published with their limits.
 
         The README is the public face, so it has to say both: what the real
         DSH session actually did, and what it did not. A claim that only lists
         the wins would read as a full pass, and the run that carries them ended
-        `RETAINED` on the Creator.
+        `RETAINED` on the Creator. The 2026-11-13 campaign closed that gate —
+        the Creator flow reached an ACTIVE generation through the designed
+        retention → repair → activation path — so the READMEs now publish the
+        milestone AND the limit that still holds: the Host acceptance is static
+        plus materialization, and no production-operator or desktop acceptance
+        is claimed.
         """
-        for name, proved, blocked, claim in (
-                ('README.md', 'real DSH session', 'Creator end-to-end',
-                 'and is not claimed'),
-                ('README.es.md', 'sesión DSH real', 'Creator end-to-end',
-                 'no se afirma')):
+        for name, proved, milestone, blocked, claim in (
+                ('README.md', 'real DSH session', 'gen-e9b8a23da747',
+                 'production-operator', 'not claimed by it'),
+                ('README.es.md', 'sesión DSH real', 'gen-e9b8a23da747',
+                 'operador de producción', 'no se afirma')):
             with self.subTest(readme=name):
                 text = self.read(name)
                 self.assertIn(proved, text,
                               f"{name} no publica el caso real")
+                self.assertIn(milestone, text,
+                              f"{name} no publica el hito del Creator")
                 self.assertIn(blocked, text,
                               f"{name} omite el límite que no se probó")
                 self.assertIn(claim, text,
-                              f"{name} nombra el caso real pero no dice qué "
+                              f"{name} nombra el hito pero no dice qué "
                               f"queda sin probar")
                 self.assertIn('ab5c0c6', text, "el commit verificado del reparador")
                 progress_path = ('docs/progreso-agentico.es.md' if name.endswith('.es.md')

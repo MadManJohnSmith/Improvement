@@ -62,7 +62,9 @@ import yaml from '/inputs/node_modules/yaml/dist/index.js';
 // being hardcoded: 0.1.5-alpha.1 ships content-hashed chunk names only
 // (profile-boot-<hash>.js) while 0.2.x adds the stable lib/profile-boot.js, so a
 // fixed path silently breaks the probe on whichever version it does not match.
-const DSH_LIB = '/inputs/node_modules/@deepseek-ai/dsh/lib';
+// The dsh package root is mounted as its own input (runtime rc.2 no longer
+// self-references @deepseek-ai/dsh inside its internal node_modules).
+const DSH_LIB = '/inputs/dsh-package/lib';
 const profileBoot = ['profile-boot.js',
   ...fs.readdirSync(DSH_LIB).filter((n) => n.startsWith('profile-boot-'))
     .map((n) => `${DSH_LIB}/${n}`)]
@@ -118,8 +120,11 @@ try {
   const created = await rpc('session/create', {request: {cwd: '/state/ws', agentPreset: 'write-fixture'}});
   if (!created.ok) throw new Error('session: ' + JSON.stringify(created.error));
   const agent = boot.ctx.agents.get(created.value.sessionId);
-  const callTool = (name, args) => boot.ctx.tools.execute({callId: 'probe-' + (seq++), name,
-    arguments: args, agent, signal: AbortSignal.timeout(20000)});
+  // El runtime rc.2 ejecuta lotes: la llamada lleva `calls` (array de bloques
+  // con arguments como texto JSON) y el settlement devuelve results por callId.
+  const callTool = (name, args) => boot.ctx.tools.execute({calls: [{
+      id: 'probe-' + (seq++), name, arguments: JSON.stringify(args)}],
+    agent, signal: AbortSignal.timeout(20000)}).then((batch) => batch.results[0].result);
   const call = args => callTool('workflow_write', args);
   const text = r => String(r.error?.message || (r.content || []).map(p => p.text).join(' ') || '').slice(0, 220);
   const preset = await rpc('agentPresets/read', {agentPreset: 'write-fixture'});
@@ -160,7 +165,19 @@ try {
     /RETAINED with no retry/.test(report['bash_danger-full-access'].err) && r4.isError &&
     report.productWrite.isError && report.productWrite.unchanged;
 } catch (error) {
-  report.fatal = String(error && error.stack || error).slice(0, 1200);
+  // La causa raíz vive en error.cause (p. ej. ToolBatchExecutionError envuelve
+  // el fallo real del ejecutor nativo): se recorre la cadena, no solo el stack
+  // del envolvente.
+  const chainText = (e) => {
+    const parts = [];
+    let cur = e, depth = 0;
+    while (cur && depth < 6) {
+      parts.push(String(cur.stack || cur).split('\n').slice(0, 4).join('\n'));
+      cur = cur.cause; depth += 1;
+    }
+    return parts.join('\n  ── causa ──\n');
+  };
+  report.fatal = chainText(error).slice(0, 2000);
   report.ok = false;
 }
 fs.writeFileSync('/state/probe.json', JSON.stringify(report, null, 1));
@@ -1467,6 +1484,11 @@ class WorkflowWritePluginTest(unittest.TestCase):
             '      config:\n        id: write-fixture\n        name: workflow-write fixture\n'
             '        plugins:\n' + plugins)
         state, code = launch(reads={'node_modules': Path(runtime), 'presets': presets,
+                                    # El paquete dsh raíz ya no está autorreferido
+                                    # dentro de su propio node_modules (runtime
+                                    # rc.2): se monta como input propio para que
+                                    # la sonda resuelva profile-boot desde su lib/.
+                                    'dsh-package': Path(runtime).parent,
                                     'check': check,
                                     'plugins': FRAMEWORK / 'scripts/dsh-plugins'},
                              state_parent=root / 'runs', cwd=check,
@@ -1516,6 +1538,14 @@ class WorkflowWritePluginTest(unittest.TestCase):
             env['DSH_TOOL_BASH'] = str(bash_index)
         else:
             env.pop('DSH_TOOL_BASH', None)
+        ptc_index = Path(runtime_root) / '@deepseek-ai/dsh-tool-executor-ptc/lib/index.js'
+        if ptc_index.is_file():
+            # El renderizador de firmas model-facing (jsonSchemaToTs) vive en
+            # dsh-tool-executor-ptc desde la deriva del runtime; sin esta
+            # ruta el selfcheck falla cerrado por diseño.
+            env['DSH_TOOL_PTC'] = str(ptc_index)
+        else:
+            env.pop('DSH_TOOL_PTC', None)
         finished = subprocess.run(
             [node, str(FRAMEWORK / 'scripts/dsh-plugins/verify-workflow-write.mjs')],
             capture_output=True, text=True, timeout=180, env=env)

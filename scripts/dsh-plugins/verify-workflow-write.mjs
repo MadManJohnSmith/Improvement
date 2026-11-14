@@ -16,7 +16,26 @@ if (!existsSync(TOOLS)) {
   process.exit(2);
 }
 const PLUGIN = new URL('./workflow-write.mjs', import.meta.url).href;
-const { assertSupportedJsonSchema, validateJsonSchemaValue, jsonSchemaToTs } = await import(pathToFileURL(TOOLS).href);
+const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(TOOLS).href);
+
+// El renderizador de firmas model-facing (`jsonSchemaToTs`) ya no vive en
+// dsh-tools: el runtime actual lo exporta desde dsh-tool-executor-ptc. Se
+// resuelve del env (DSH_TOOL_PTC, la misma convención que DSH_TOOL_BASH) o
+// del paquete hermano del índice de tools; sin renderizador el selfcheck
+// falla cerrado en vez de rotar en silencio.
+const PTC = process.env.DSH_TOOL_PTC
+  || new URL('../../dsh-tool-executor-ptc/lib/index.js', pathToFileURL(TOOLS)).href;
+let jsonSchemaToTs;
+try {
+  ({ jsonSchemaToTs } = await import(pathToFileURL(PTC).href));
+} catch (e) {
+  console.error(`FAIL CLOSED: el renderizador de firmas no se pudo importar desde ${PTC}: ${e.message}`);
+  process.exit(2);
+}
+if (typeof jsonSchemaToTs !== 'function') {
+  console.error(`FAIL CLOSED: ${PTC} no exporta jsonSchemaToTs (el runtime movió el renderizador; ajusta el import del selfcheck)`);
+  process.exit(2);
+}
 
 let failures = 0;
 function check(label, cond, detail = '') {
@@ -272,7 +291,9 @@ check('M9: bash real sin sandbox_permissions en esquema', !('sandbox_permissions
 check('M9: bash real sin justification en esquema', !('justification' in after.parameters.properties));
 check('M9: descripción de bash saneada (sin narrativa de escalada)', !/escalat|sandbox_permissions|justification/i.test(after.description), after.description.slice(0, 80));
 check('M9: output schema de bash intacto', after.output.schema.oneOf !== undefined);
-check('M9: required de bash preservado', JSON.stringify(after.parameters.required) === JSON.stringify(['command', 'description']), JSON.stringify(after.parameters.required));
+// El contrato es el CONJUNTO de campos requeridos, no su orden: el runtime
+// compila el spec de parámetros y puede emitir el required en otro orden.
+check('M9: required de bash preservado', JSON.stringify([...(after.parameters.required || [])].sort()) === JSON.stringify(['command', 'description']), JSON.stringify(after.parameters.required));
 
 const rBash = await after.execute({ command: 'echo hi', description: 'Saluda' }, { signal, agent: undefined });
 check('M9: bash real sigue ejecutando tras la mutación', rBash.kind === 'foreground' && rBash.stdout.text === 'hi', JSON.stringify(rBash).slice(0, 120));
@@ -312,7 +333,7 @@ const bashWire = assembled.tools.find((t) => t.name === 'bash');
 const readWire = assembled.tools.find((t) => t.name === 'read');
 check('M9 waterfall: bash sin sandbox_permissions', bashWire && !('sandbox_permissions' in bashWire.parameters.properties));
 check('M9 waterfall: bash sin justification', bashWire && !('justification' in bashWire.parameters.properties));
-check('M9 waterfall: required sin campos de escalada', JSON.stringify(bashWire.parameters.required) === JSON.stringify(['command', 'description']), JSON.stringify(bashWire.parameters.required));
+check('M9 waterfall: required sin campos de escalada', JSON.stringify([...(bashWire.parameters.required || [])].sort()) === JSON.stringify(['command', 'description']), JSON.stringify(bashWire.parameters.required));
 check('M9 waterfall: descripción de bash saneada', !/escalat|sandbox_permissions|justification/i.test(bashWire.description), bashWire.description);
 check('M9 waterfall: read NO alterada', readWire === assemblyInput.tools[1]);
 check('M9 waterfall: input original no mutado', 'sandbox_permissions' in assemblyInput.tools[0].parameters.properties);
