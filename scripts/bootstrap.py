@@ -809,14 +809,36 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
     return result
 
 
-def _failed_layer_details(run_dir, limit=12):
+def _failed_layer_details(run_dir, generated=None, limit=12):
     """The failed validation layers' findings, for the repair prompt.
 
     The retention verdict names the stage, not the findings: without them a
-    repair turn re-reads the whole package hunting for the defect (three
-    measured turns of the 2026-11-13 campaign burned their ceilings on a
-    single remaining violation). Only failed layers' details travel, capped.
+    repair turn re-reads the whole package hunting for the defect (measured
+    turns of the 2026-11-13 campaign burned their ceilings on findings they
+    had already fixed). The findings come from a FRESH read-only validation
+    of the current package — the snapshot in `validation/summary.json`
+    predates any repair turn that changed it; the snapshot is only the
+    fallback when there is no manifest to validate yet. Only failed layers'
+    details travel, capped.
     """
+    generated = Path(generated) if generated is not None else None
+    if (generated is not None
+            and (generated / "generation-manifest.json").is_file()):
+        try:
+            import host_validator as hv
+            report = hv.validate_package(generated, run_dir=Path(run_dir))
+            layers = report.layers
+        except Exception:
+            layers = None
+        if layers:
+            details = []
+            for layer, result in sorted(layers.items()):
+                if isinstance(result, dict) and not result.get("passed", True):
+                    for detail in (result.get("details") or []):
+                        if isinstance(detail, str) and detail.strip():
+                            details.append(f"{layer}: {detail.strip()}")
+            if details:
+                return details[:limit]
     summary_path = Path(run_dir) / "validation" / "summary.json"
     if not summary_path.is_file():
         return []
@@ -866,7 +888,7 @@ def repair_run(workspace, *, generation_id=None, launch_dsh=False,
             "acceptance/static-retained.json ausente: sin causa retenida "
             "grabada no hay reparación que despachar")
     reason = _read_json(retained_path).get("reason")
-    details = _failed_layer_details(run_dir)
+    details = _failed_layer_details(run_dir, generated=run_dir / "generated")
     if details:
         # The repair turn re-reads the whole package before acting, and the
         # measured campaign burned full ceilings on generic causes: naming the
