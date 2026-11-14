@@ -1767,6 +1767,94 @@ class CreatorTests(Base):
             prompt)
         self.assertIn("nunca transcribas", prompt)
 
+
+class RetainedRepairDispatchTests(Base):
+    """El despacho repair_retained sobre un run RETAINED.
+
+    La campaña local de 2026-11-13 midió la restricción vinculante del gate:
+    la capa de portability retiene paquetes completos del Creator por rutas
+    absolutas y menciones de subprocess, y las reglas de prosa no controlan
+    el patrón de escritura. El escenario repair_retained (un turno Creator
+    que edita su propio paquete retenido) existía como tipo de prompt sin
+    despachador; este bloque fija su cable.
+    """
+
+    def _retain(self, reason="Portability issue in generation-report.md: "
+                             "contains '/home/'"):
+        run_path = self.run_dir / "run.json"
+        run_doc = json.loads(run_path.read_text(encoding="utf-8"))
+        run_doc["status"] = "RETAINED"
+        run_doc["updated_at"] = "2026-11-13T00:00:00+00:00"
+        run_path.write_text(json.dumps(run_doc, indent=2) + "\n",
+                            encoding="utf-8")
+        acceptance = self.run_dir / "acceptance"
+        acceptance.mkdir(parents=True, exist_ok=True)
+        (acceptance / "static-retained.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "generation_id": self.gen_id,
+                "verdict": "RETAINED",
+                "stage": "STATIC_VALIDATION",
+                "reason": reason,
+            }, indent=2) + "\n", encoding="utf-8")
+
+    def test_repair_session_replaces_prompt_and_moves_to_repairing(self):
+        """El turno de reparación archiva el prompt inicial y pasa a REPAIRING."""
+        self._retain()
+        initial = self.run_dir / "creator-prompt.md"
+        initial.write_text("# Prompt inicial de la primera sesión\n",
+                           encoding="utf-8")
+
+        session = cc.CreatorSession(
+            self.run_dir, prompt_type="repair_retained",
+            prompt_context={"reason": "portability: contiene '/home/'"})
+        session.prepare()
+
+        prompt = initial.read_text(encoding="utf-8")
+        self.assertIn("Corrección de generación RETAINED", prompt)
+        self.assertIn("portability: contiene '/home/'", prompt)
+        archive = (self.run_dir / "retained" / "creator-prompt-initial.md")
+        self.assertEqual(
+            archive.read_text(encoding="utf-8"),
+            "# Prompt inicial de la primera sesión\n",
+            "el prompt del primer intento no quedó archivado")
+        run_doc = json.loads((self.run_dir / "run.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(run_doc["status"], "REPAIRING")
+
+    def test_normal_dispatch_refuses_a_retained_run(self):
+        """El despacho normal no retoma un run RETAINED: solo lo repara."""
+        self._retain()
+        with self.assertRaises(ValueError) as caught:
+            cc.CreatorSession(self.run_dir).validate_preconditions()
+        self.assertIn("debe ser CREATED o GENERATING", str(caught.exception))
+
+    def test_repair_run_without_dispatch_records_cause_and_budget(self):
+        """repair con --no-dispatch valida, fija el techo y reporta la causa."""
+        self._retain(reason="portability: contiene '/home/'")
+        result = bootstrap.repair_run(
+            self.workspace, generation_id=self.gen_id,
+            dispatch_creator=False, creator_max_tokens=400000)
+        self.assertEqual(result["result"], "REPAIR_PREPARED")
+        self.assertIn("portability: contiene '/home/'", result["message"])
+        run_doc = json.loads((self.run_dir / "run.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(run_doc["budget"]["max_tokens"], 400000)
+
+    def test_repair_run_demands_a_retained_run_with_a_recorded_cause(self):
+        """Sin run RETAINED o sin causa grabada, repair falla loud."""
+        with self.assertRaises(ValueError) as caught:
+            bootstrap.repair_run(self.workspace, generation_id=self.gen_id,
+                                 dispatch_creator=False)
+        self.assertIn("RETAINED", str(caught.exception))
+
+        self._retain()
+        (self.run_dir / "acceptance" / "static-retained.json").unlink()
+        with self.assertRaises(ValueError) as caught:
+            bootstrap.repair_run(self.workspace, generation_id=self.gen_id,
+                                 dispatch_creator=False)
+        self.assertIn("static-retained.json", str(caught.exception))
+
     def test_yaml_quoting_rule_lives_in_the_shared_output_section(self):
         """A plain ': ' is discarded by DSH's YAML parser.
 

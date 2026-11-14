@@ -1,5 +1,33 @@
 # Cambios
 
+## creator: el despacho repair_retained queda cableado — 2026-11-13
+
+El escenario `repair_retained` existía como tipo de prompt sin despachador;
+la campaña local lo dejó como el camino indicado tras medir que la prosa no
+controla el patrón de escritura (la capa de portability retiene paquetes
+completos por rutas absolutas y menciones de `subprocess` pese a las reglas
+del prompt).
+
+- **`CreatorSession` acepta `prompt_type`/`prompt_context`**: la puerta de
+  precondiciones admite RETAINED/REPAIRING solo para `repair_retained` (el
+  despacho normal sigue exigiendo CREATED/GENERATING), `prepare()` archiva
+  el prompt inicial en `retained/creator-prompt-initial.md` antes de
+  sustituirlo por el de reparación, y el estado pasa a `REPAIRING`. El
+  scaffold reescrito por `prepare()` deja intacto todo modo con `mode.json`
+  existente: la reparación edita el paquete del Creator, no lo reinicia.
+- **`bootstrap.py repair`** (subcomando nuevo): exige un run RETAINED con
+  causa grabada en `acceptance/static-retained.json`, fija el techo propio
+  del turno (default 500000; el techo original congelado no se relaja en
+  reanudación — eso sigue siendo trabajo de un `install` nuevo) y reusa la
+  misma cadena de despacho (supervisión → cierre → prevalidación → aceptación
+  Host → activación). `creator_client.py --repair` ofrece el mismo turno
+  leyendo la causa del propio run.
+- **Regresión** (`tests/test_creator_and_validator.py`): la sesión de
+  reparación sustituye el prompt (con la causa) y archiva el inicial;
+  `REPAIRING` queda grabado; el despacho normal rechaza RETAINED;
+  `repair_run` sin despacho graba la causa y el techo; y exige run RETAINED
+  con `static-retained.json` presente. Módulo enfocado: 191 tests OK.
+
 ## creator: la reanudación completa el manifiesto mínimo antes de aceptar — 2026-11-13
 
 Fallo convertido desde la evidencia real de `gen-2c9fb042bac6` (campaña local

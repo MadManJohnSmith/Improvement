@@ -5,6 +5,7 @@ Subcomandos:
     install     Flujo completo: preflight, Creator, aceptación Host y activación
     accept      Solicitar validación Host de un paquete generado (invocado por Creator)
     finalize    Reanudar aceptación Host y activar si el veredicto es ACTIVE
+    repair      Despachar un turno repair_retained sobre un run RETAINED
     verify-acceptance  Consultar veredicto, evidencia y despliegue activo
     update      Regenerar sobre base material cambiada
     uninstall   Retirar modos/skills gestionados sin tocar producto
@@ -411,7 +412,8 @@ def _chain_host_finalize(result, run_dir, launch_dsh):
         result["message"] += f" ({host_detail})"
 
 
-def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
+def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True,
+                            prompt_type=None, prompt_context=None):
     """Dispatch Creator, then let deterministic Host code accept and activate.
 
     Creator remains unable to self-approve: it can only produce GENERATED and
@@ -424,7 +426,9 @@ def _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host=True):
               "(la supervisión puede durar hasta el presupuesto)")
     try:
         result["creator"] = cc.run_creator(
-            run_dir, acquire=True, launch=launch_dsh)
+            run_dir, acquire=True, launch=launch_dsh,
+            prompt_type=prompt_type or "initial_onboarding",
+            prompt_context=prompt_context)
     except Exception as e:
         result["creator"] = {
             "result": "PREPARED",
@@ -802,6 +806,60 @@ def install(project, workspace, *, budget=None, dispatch_creator=False,
         else:
             _dispatch_creator_chain(
                 result, run_dir, launch_dsh, finalize_host)
+    return result
+
+
+def repair_run(workspace, *, generation_id=None, launch_dsh=False,
+               creator_max_tokens=500000, dispatch_creator=True,
+               finalize_host=True):
+    """Dispatch a repair_retained turn over a retained, session-less run.
+
+    The retained package is the Creator's own work: the repair session edits
+    it in place (the scaffold writer leaves every existing mode alone) and the
+    same finish path, prevalidation and Host chain apply afterwards. The
+    retention cause travels into the prompt from the run's own
+    `acceptance/static-retained.json`; the repair budget is a new Host claim
+    about this run, smaller than the generation ceiling by default — the
+    original frozen ceiling is not relaxed on resume, which stays the job of
+    a fresh `install`.
+    """
+    workspace = checked(workspace)
+    if workspace.name == RUN_DIR_NAME:
+        workspace = workspace.parent
+    run_dir = _resolve_run_dir(workspace, generation_id)
+    run_doc = _read_json(run_dir / "run.json")
+    if run_doc.get("status") != "RETAINED":
+        raise ValueError(
+            "repair exige un run RETAINED; el estado actual es "
+            f"{run_doc.get('status')}")
+
+    retained_path = run_dir / "acceptance" / "static-retained.json"
+    if not retained_path.is_file():
+        raise ValueError(
+            "acceptance/static-retained.json ausente: sin causa retenida "
+            "grabada no hay reparación que despachar")
+    reason = _read_json(retained_path).get("reason")
+
+    if creator_max_tokens:
+        run_doc.setdefault("budget", {})["max_tokens"] = int(creator_max_tokens)
+        run_doc["updated_at"] = _now_iso()
+        run_path = run_dir / "run.json"
+        run_path.unlink()
+        _write_json(run_path, run_doc)
+
+    result = {
+        "result": "REPAIR_PREPARED" if not dispatch_creator else "REPAIRING",
+        "generation_id": run_doc.get("generation_id"),
+        "run_dir": str(run_dir),
+        "status": run_doc.get("status"),
+        "message": (f"Turno de reparación (repair_retained) con causa: {reason}"
+                    if not dispatch_creator else
+                    f"Despachando reparación (repair_retained); causa: {reason}"),
+    }
+    if dispatch_creator:
+        _dispatch_creator_chain(result, run_dir, launch_dsh, finalize_host,
+                                prompt_type="repair_retained",
+                                prompt_context={"reason": reason})
     return result
 
 
@@ -1617,6 +1675,23 @@ def main():
     p_finalize.add_argument("--reevaluate", action="store_true",
                             help="Invalidar solo evidencia Host derivada y volver a evaluar")
 
+    # repair
+    p_repair = sub.add_parser(
+        "repair",
+        help="Despachar un turno repair_retained sobre un run RETAINED")
+    p_repair.add_argument("--workspace", required=True)
+    p_repair.add_argument("--generation-id", default=None,
+                          help="ID de generación opcional (default: activa o última)")
+    p_repair.add_argument("--launch-dsh", action="store_true",
+                          help="Arrancar 'dsh web' como hijo si no hay sesión autenticada")
+    p_repair.add_argument("--creator-max-tokens", type=int, default=500000,
+                          help="Techo de tokens facturables del turno de reparación "
+                               "(default: 500000)")
+    p_repair.add_argument("--no-dispatch", action="store_true",
+                          help="Solo preparar el turno; no despachar la reparación")
+    p_repair.add_argument("--no-finalize", action="store_true",
+                          help="No encadenar aceptación Host ni activación tras la reparación")
+
     # update
     p_update = sub.add_parser("update", help="Regenerar sobre base cambiada")
     p_update.add_argument("--project", default=None,
@@ -1786,6 +1861,15 @@ def main():
         elif args.command == "accept":
             result = accept(Path(args.workspace).resolve(),
                             Path(args.generated).resolve())
+
+        elif args.command == "repair":
+            result = repair_run(
+                Path(args.workspace).resolve(),
+                generation_id=args.generation_id,
+                launch_dsh=args.launch_dsh,
+                creator_max_tokens=args.creator_max_tokens,
+                dispatch_creator=not args.no_dispatch,
+                finalize_host=not args.no_finalize)
 
         elif args.command == "verify-acceptance":
             result = verify_acceptance(

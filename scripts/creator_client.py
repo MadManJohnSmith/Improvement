@@ -1636,10 +1636,13 @@ class CreatorSession:
     this provides the structural contract and supervision framework.
     """
 
-    def __init__(self, run_dir, *, timeout_seconds=1800, max_tokens=500000):
+    def __init__(self, run_dir, *, timeout_seconds=1800, max_tokens=500000,
+                 prompt_type="initial_onboarding", prompt_context=None):
         self.run_dir = Path(run_dir)
         self.timeout_seconds = timeout_seconds
         self.max_tokens = max_tokens
+        self.prompt_type = prompt_type
+        self.prompt_context = prompt_context or {}
         self.start_time = None
         self.token_count = 0
         self.status = "IDLE"
@@ -1655,9 +1658,19 @@ class CreatorSession:
             raise ValueError("run.json no encontrado")
 
         run_doc = _read_json(run_json)
-        if run_doc.get("status") not in ("CREATED", "GENERATING"):
+        status = run_doc.get("status")
+        if self.prompt_type == "repair_retained":
+            # Un run retenido es reparable solo por un turno de reparación:
+            # el despacho normal no puede retomarlo (instal lo trata como
+            # terminal y crea un run nuevo).
+            if status not in ("RETAINED", "REPAIRING"):
+                raise ValueError(
+                    f"Run en estado inesperado: {status}; "
+                    "repair_retained exige RETAINED o REPAIRING"
+                )
+        elif status not in ("CREATED", "GENERATING"):
             raise ValueError(
-                f"Run en estado inesperado: {run_doc.get('status')}; "
+                f"Run en estado inesperado: {status}; "
                 "debe ser CREATED o GENERATING"
             )
 
@@ -1693,7 +1706,8 @@ class CreatorSession:
 
         # Build prompt
         prompt = build_creator_prompt(
-            self.run_dir, run_doc, project_manifest, instructions_index
+            self.run_dir, run_doc, project_manifest, instructions_index,
+            prompt_type=self.prompt_type, context=self.prompt_context
         )
 
         # Materialize the deterministic role contracts before the prompt names
@@ -1711,9 +1725,18 @@ class CreatorSession:
                                run_doc["project"]["name"], layout,
                                project_manifest)
 
-        # Save prompt
+        # Save prompt. A repair session replaces the initial prompt: the
+        # original is archived under retained/ first, so the first attempt's
+        # instruction stays part of the run's evidence.
         prompt_path = self.run_dir / "creator-prompt.md"
-        if not prompt_path.exists():
+        if self.prompt_type == "repair_retained":
+            if prompt_path.exists():
+                archive = self.run_dir / "retained" / "creator-prompt-initial.md"
+                archive.parent.mkdir(parents=True, exist_ok=True)
+                if not archive.exists():
+                    shutil.copy(prompt_path, archive)
+            prompt_path.write_text(prompt, encoding="utf-8")
+        elif not prompt_path.exists():
             prompt_path.write_text(prompt, encoding="utf-8")
 
         # Save generation request
@@ -1731,8 +1754,12 @@ class CreatorSession:
                 "timestamp": _now_iso(),
             })
 
-        # Update run status to GENERATING
-        run_doc["status"] = "GENERATING"
+        # Update run status: REPAIRING for a repair session, GENERATING for a
+        # fresh one. Both are resumable states; the repair keeps editing the
+        # same package instead of creating a new run.
+        new_status = ("REPAIRING" if self.prompt_type == "repair_retained"
+                      else "GENERATING")
+        run_doc["status"] = new_status
         run_doc["updated_at"] = _now_iso()
         _update_json(self.run_dir / "run.json", run_doc)
 
@@ -1740,7 +1767,7 @@ class CreatorSession:
         _update_json(self.run_dir / "checkpoint.json", {
             "schema_version": SCHEMA_VERSION,
             "generation_id": gen_id,
-            "phase": "GENERATING",
+            "phase": new_status,
             "completed_phases": [
                 "preflight", "snapshot", "inventory", "skills",
                 "prompt_build",
@@ -3361,7 +3388,8 @@ def build_host_generated_package(run_dir):
 
 def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
                 poll_seconds=5, cancel_grace_seconds=30, now_fn=time.time,
-                sleep_fn=time.sleep):
+                sleep_fn=time.sleep, prompt_type="initial_onboarding",
+                prompt_context=None):
     """Execute or idempotently resume one durably supervised Creator run."""
     run_dir = Path(run_dir)
     with _run_lock(run_dir):
@@ -3371,6 +3399,8 @@ def run_creator(run_dir, *, client=None, acquire=False, launch=False, wait=True,
             run_dir,
             timeout_seconds=int(budget.get("max_seconds", 1800)),
             max_tokens=int(budget.get("max_tokens", 500000)),
+            prompt_type=prompt_type,
+            prompt_context=prompt_context,
         )
         try:
             # A completed valid run is immutable from Creator's perspective.
@@ -3505,9 +3535,28 @@ def main():
     parser.add_argument("--launch-dsh", action="store_true",
                         help="Arrancar 'dsh web' como proceso hijo si no hay "
                              "sesión autenticada (DSH debe estar instalado)")
+    parser.add_argument("--repair", action="store_true",
+                        help="Despachar un turno repair_retained sobre un run "
+                             "RETAINED; la causa se lee del propio run "
+                             "(acceptance/static-retained.json)")
     args = parser.parse_args()
 
-    result = run_creator(args.run_dir, acquire=True, launch=args.launch_dsh)
+    prompt_type = "initial_onboarding"
+    prompt_context = None
+    if args.repair:
+        prompt_type = "repair_retained"
+        reason = None
+        retained = Path(args.run_dir) / "acceptance" / "static-retained.json"
+        if retained.is_file():
+            try:
+                reason = _read_json(retained).get("reason")
+            except ValueError:
+                reason = None
+        prompt_context = {"reason": reason or "Hallazgos retenidos en "
+                          "validación previa"}
+
+    result = run_creator(args.run_dir, acquire=True, launch=args.launch_dsh,
+                         prompt_type=prompt_type, prompt_context=prompt_context)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("result") == "RETAINED":
         sys.exit(1)
