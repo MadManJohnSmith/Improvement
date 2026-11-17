@@ -3,8 +3,13 @@
 **English:** [system-one-decision-channel.md](system-one-decision-channel.md) | **Español**
 
 
-**Estado:** diseño aprobado para implementación por fases. Ninguna fase está
-implementada todavía salvo la Fase 0, que ya está en el árbol.
+**Estado:** diseño aprobado para implementación por fases. La Fase 0 está en el árbol. El
+artefacto de la Fase 1 —la rúbrica versionada— aterrizó el 2026-11-17
+(`schemas/decision-rubric.schema.json` más su validador en la unión E16, la receta de digest de
+`capabilities.fingerprint`, y el reporte gateado extendido con
+`rubric_sha256`/`threshold_echo`/`provenance`, verificado fail-closed por
+`corpus_compiler.verify_rubric_binding`): el criterio y su superficie de auditoría existen, pero
+ningún canal de la Fase 2 está implementado y ningún modelo ha decidido nada.
 
 **Qué es y qué no es.** Un *modelo de decisión* (System 1) no es un LLM barato ni
 un modo rápido del que ya usamos: es otra arquitectura. No genera texto. Recibe
@@ -128,7 +133,7 @@ caro o al operador. El umbral es un dato del plan, no una constante escondida.
   ya no clasifica: el ledger lo marca (`MAX_PER_SIGNATURE = 3`,
   `scripts/episodes.py`).
 
-## Anexo de contrato (2026-11-05): qué deben declarar las Fases 1-2 (diseño, sin construir)
+## Anexo de contrato (2026-11-05): qué deben declarar las Fases 1-2 (el reporte de tres estados con eco de umbral y procedencia está exigido desde el 2026-11-17; el resto es diseño)
 
 Ratificado en la minería del 2026-11-04/05 (70 fichas; ver el espacio externo de
 conciliación). Solo detalles de contrato: este anexo no implementa ninguna fase.

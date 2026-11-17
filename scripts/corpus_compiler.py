@@ -277,10 +277,26 @@ def load_bound_observations(path, corpus, candidate_digest):
     return value, seen
 
 
+# The rubric fields a gated System 1 proposal may carry on top of the v1
+# report. They travel together or not at all: a proposal citing a rubric
+# without echoing the threshold it applied, or echoing a threshold without
+# naming the provenance of its confidence, is not auditable -- the exact
+# incompleteness the digest exists to prevent.
+RUBRIC_REPORT_FIELDS = ("rubric_sha256", "threshold_echo", "provenance")
+PROVENANCES = frozenset({"logits", "declared"})
+
+
 def validate_bound_report(report, corpus_digest, candidate_digest):
     fields = {"schema_version", "compiler_version", "corpus_digest",
-              "baseline_candidate_digest", "candidate_digest", "action", "reasons"}
-    _strict_object(report, fields, fields, "gate report")
+              "baseline_candidate_digest", "candidate_digest", "action",
+              "reasons", *RUBRIC_REPORT_FIELDS}
+    # The v1 fields stay required and the rubric fields stay optional: an old
+    # report still validates untouched (compatible extension, not a break).
+    _require(isinstance(report, dict), "gate report must be an object")
+    _require(not (set(report) - fields), "gate report has unknown fields")
+    _require({"schema_version", "compiler_version", "corpus_digest",
+              "baseline_candidate_digest", "candidate_digest", "action",
+              "reasons"} <= set(report), "gate report misses required fields")
     _require(report["schema_version"] == SCHEMA_VERSION, "wrong report schema_version")
     _require(report["compiler_version"] == COMPILER_VERSION, "wrong report compiler identity")
     _require(report["corpus_digest"] == corpus_digest, "report corpus identity mismatch")
@@ -292,4 +308,60 @@ def validate_bound_report(report, corpus_digest, candidate_digest):
     _require(isinstance(report["reasons"], list) and
              all(isinstance(x, str) and x for x in report["reasons"]),
              "invalid report reasons")
+    # The rubric extensions are optional (old reports keep validating) but
+    # inseparable: a half-cited rubric is not a versioned criterion.
+    cited = [field for field in RUBRIC_REPORT_FIELDS if field in report]
+    _require(not cited or len(cited) == len(RUBRIC_REPORT_FIELDS),
+             "gate report cites the rubric incompletely: rubric_sha256, "
+             "threshold_echo and provenance travel together")
+    if "rubric_sha256" in report:
+        _require(_is_digest(report["rubric_sha256"]), "invalid rubric_sha256")
+        echo = report["threshold_echo"]
+        _require(isinstance(echo, (int, float)) and not isinstance(echo, bool)
+                 and 0 <= echo <= 1, "invalid threshold_echo")
+        _require(report["provenance"] in PROVENANCES, "invalid provenance")
     return report
+
+
+def verify_rubric_binding(report, rubric):
+    """Bind a gated proposal to the rubric version that produced it.
+
+    The audit verifies three things (contract annex 2026-11-05): (1) the
+    report's digest is the digest of the rubric version the Host holds --
+    a digest that does not match the current rubric is a criterion nobody can
+    name, and fails closed; (2) the echoed threshold is the one the rubric
+    decides for the report's bucket, so the threshold is plan data echoed
+    back, not a constant the channel chose; (3) only calibrated confidence
+    authorizes fusion -- `declared` proposes and never merges. Everything
+    else (missing rubric citation, invalid rubric, unreachable bucket) raises
+    with the citable reason.
+    """
+    _require("rubric_sha256" in report,
+             "gate report without rubric_sha256: a proposal without the "
+             "criterion that produced it is not auditable")
+    # Shape pass only: the corpus/candidate identities are already bound by
+    # the caller's validate_bound_report with its own digests, so this one is
+    # called with the report's values and re-checks shape and rubric fields.
+    validate_bound_report(report, report["corpus_digest"],
+                          report["candidate_digest"])
+    import generation_contracts as gc
+
+    gc.validate_decision_rubric(rubric)
+    digest = gc.rubric_fingerprint(rubric)
+    _require(report["rubric_sha256"] == digest,
+             f"report rubric digest does not match the current rubric "
+             f"({digest}): the proposal was produced by another version")
+    bucket = f"{rubric['question']}:{len(rubric['options'])}"
+    threshold = rubric["thresholds"].get(bucket, rubric["thresholds"]["default"])
+    _require(report["threshold_echo"] == threshold,
+             f"threshold echo {report['threshold_echo']} is not the threshold "
+             f"the rubric decides for {bucket} ({threshold})")
+    return {
+        "rubric_sha256": digest,
+        "bucket": bucket,
+        "threshold_echo": report["threshold_echo"],
+        "provenance": report["provenance"],
+        # `declared` confidence is a number the model reported as text: it
+        # never calibrated, so it proposes and never authorizes a merge.
+        "fusion_authorized": report["provenance"] == "logits",
+    }

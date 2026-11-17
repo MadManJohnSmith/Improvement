@@ -1,5 +1,50 @@
 # Cambios
 
+## canal: rúbrica versionada del Canal Sistema 1 con digest y reporte gateado extendido — 2026-11-17
+
+Aplica la Fase 1 del diseño (propuesta-canal-sistema-1.md, handoff 2026-11-16;
+issue #29) con la variante mínima que el árbol ya soporta, más la casilla de
+consumo del reporte gateado. Sin ejecutar campañas y sin modelo de decisión:
+lo que aterriza es el criterio y su superficie de auditoría, no una decisión.
+
+- **Rúbrica** (`schemas/decision-rubric.schema.json`, nuevo): pregunta tipada
+  `same_defect`, opciones cerradas `same`/`different`, abstención nombrada
+  `insufficient` (no una tercera opción de contenido), umbrales por bucket
+  `<pregunta>:<option_count>` con `default` y validación de alcanzabilidad (un
+  bucket que ninguna respuesta puede producir se rechaza). La regla de
+  procedencia es estructural: una rúbrica que declara `declared` como
+  procedencia calibrada se rechaza — solo `logits` calibra y solo calibrado
+  autoriza fusión. Validador `validate_decision_rubric` registrado en la unión
+  E16 (`VALIDATORS`/`SCHEMA_VALIDATORS`): publicar la rúbrica sin validador no
+  compila (canary gratuito de `schema_enforcement`).
+- **Digest** (`rubric_fingerprint` en `generation_contracts.py`): la receta de
+  `capabilities.fingerprint` — sha256 sobre JSON canónico del documento sin el
+  campo digest, que no puede entrar en su propia entrada. El digest declarado
+  debe cuadrar con el contenido: la rúbrica no puede cambiar de contenido sin
+  cambiar de digest. Regresiones: estable ante re-serialización, distinto ante
+  cualquier cambio de contenido.
+- **Reporte gateado extendido** (`schemas/bound-gate-report.schema.json` +
+  `corpus_compiler.validate_bound_report`): `rubric_sha256`,
+  `threshold_echo` y `provenance` (`logits|declared`) son opcionales —los
+  reportes v1 siguen validando intactos— pero inseparables: citar la rúbrica a
+  medias no es un criterio versionado, se rechaza.
+- **Consumo fail-closed** (`corpus_compiler.verify_rubric_binding`): la
+  auditoría liga la propuesta a la rúbrica vigente — falla citable si falta la
+  cita, si el digest no es el de la rúbrica actual o si el umbral ecoado no es
+  el que la rúbrica decide para el bucket del reporte; `provenance: declared`
+  devuelve `fusion_authorized: false`: propone, nunca fusiona. Es la casilla
+  que el diseño fija; no hay prosa nueva en prompts.
+- **Pilotaje en seco como regresión** (`tests/test_decision_rubric.py`): la
+  capa determinista del pilotaje (3 hallazgos sintéticos, 3 firmas, 0
+  colisiones; repetición de la 2ª ronda clasificada repetida 3/3 con 0 falsos
+  nuevos) queda pineada sobre el ledger — la clasifica la memoria
+  (`episodes.signature`/`recall`), sin canal. La capa semántica «¿mismo
+  defecto?» sobre firmas distintas queda como diseño: requiere modelo de
+  decisión y el árbol no fabrica ese juicio. La cifra viva de los README se
+  refresca vía `scripts/suite_count.py`. Suite: **1407 tests green** (12
+  skips ambientales de la máquina, sin runtime DSH ni `jsonschema`; sin skips
+  nuevos).
+
 ## workflow: techo de lectura por intento ask — presupuesto forzado fail-closed — 2026-11-17
 
 Aplica la opción (b) de propuesta-presupuesto-lectura.md (misión de diseño del

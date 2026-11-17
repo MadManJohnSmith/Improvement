@@ -500,6 +500,90 @@ def validate_capabilities(doc):
     _require_type(doc["scope"], list, f"{schema}.scope")
 
 
+RUBRIC_QUESTIONS = frozenset(["same_defect"])
+RUBRIC_OPTIONS = frozenset(["same", "different"])
+RUBRIC_ABSTENTION = "insufficient"
+# The provenance class a rubric's thresholds calibrate on. Only 'logits' (a
+# direct read) calibrates, and only calibrated confidence authorizes fusion;
+# 'declared' (the model reported a number as text) never does, so it is not a
+# rule a rubric may declare -- by construction, not by reviewer diligence.
+RUBRIC_CALIBRATED_PROVENANCE = "logits"
+
+
+def rubric_fingerprint(doc):
+    """The rubric's digest: the `capabilities.fingerprint` recipe.
+
+    sha256 over the canonical JSON serialization (`ensure_ascii=False`,
+    `sort_keys=True`, `separators=(',', ':')`) of the document without the
+    digest field -- a digest cannot enter its own input. Changing any content
+    changes the digest; re-serializing (key order, whitespace) does not. The
+    same family as `episodes.signature` and `mode_lifecycle.repair_identity`:
+    sha256 over a fixed serialization, never over prose.
+    """
+    clean = {k: v for k, v in doc.items() if k != "digest"}
+    payload = json.dumps(clean, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def validate_decision_rubric(doc):
+    """Validate the versioned rubric of the System 1 decision channel.
+
+    The rubric is plan data, not a hidden constant: the threshold it decides
+    travels echoed in every gated proposal (`threshold_echo`) and the proposal
+    cites this rubric by `rubric_sha256`, so its content is auditable. The
+    abstention is a named state ('insufficient'), never a third content
+    option. Bucket keys are `<question>:<option_count>` plus `default`; a key
+    no answer can produce is a bucket the caller believes gated and is not,
+    which is rejected (contract annex 2026-11-05, reachability).
+    """
+    schema = "decision-rubric"
+    _require_type(doc, dict, schema)
+    required = [
+        "schema_version", "rubric_id", "question", "options", "abstention",
+        "thresholds", "confidence_provenance",
+    ]
+    known = required + ["digest"]
+    _require_fields(doc, required, schema)
+    _reject_unknown(doc, known, schema)
+    _require(doc["schema_version"] == SCHEMA_VERSION,
+             f"{schema}: unsupported schema_version")
+    _require(_is_nonempty_str(doc["rubric_id"]), f"{schema}.rubric_id")
+    _require(doc["question"] in RUBRIC_QUESTIONS, f"{schema}.question")
+
+    options = doc["options"]
+    _require_type(options, list, f"{schema}.options")
+    _require(len(options) == 2, f"{schema}.options must be closed: 2 options")
+    _require(set(options) == RUBRIC_OPTIONS,
+             f"{schema}.options must be {sorted(RUBRIC_OPTIONS)}")
+    _require(doc["abstention"] == RUBRIC_ABSTENTION,
+             f"{schema}.abstention must be the named abstention "
+             f"{RUBRIC_ABSTENTION!r}")
+
+    thresholds = doc["thresholds"]
+    _require_type(thresholds, dict, f"{schema}.thresholds")
+    _require("default" in thresholds, f"{schema}.thresholds needs 'default'")
+    reachable = {"default", f"{doc['question']}:{len(options)}"}
+    for key, value in thresholds.items():
+        _require(key in reachable,
+                 f"{schema}.thresholds: bucket {key!r} is unreachable "
+                 f"(reachable: {sorted(reachable)})")
+        _require(isinstance(value, (int, float)) and not isinstance(value, bool)
+                 and 0 <= value <= 1,
+                 f"{schema}.thresholds.{key} must be a number in [0, 1]")
+
+    _require(doc["confidence_provenance"] == RUBRIC_CALIBRATED_PROVENANCE,
+             f"{schema}.confidence_provenance: only "
+             f"{RUBRIC_CALIBRATED_PROVENANCE!r} calibrates and authorizes "
+             "fusion; 'declared' never does")
+
+    if "digest" in doc:
+        _require(_is_sha256(doc["digest"]), f"{schema}.digest")
+        _require(doc["digest"] == rubric_fingerprint(doc),
+                 f"{schema}.digest does not match the content: the rubric "
+                 "cannot change content without changing digest")
+
+
 def validate_scenario(doc):
     """Validate a scenario entry from scenarios.jsonl."""
     schema = "scenario"
@@ -1477,6 +1561,7 @@ VALIDATORS = {
     "project-manifest": validate_project_manifest,
     "instructions-index": validate_instructions_index,
     "capabilities": validate_capabilities,
+    "decision-rubric": validate_decision_rubric,
     "scenario": validate_scenario,
     "acceptance-plan": validate_acceptance_plan,
     "handoff": validate_handoff,
@@ -1514,6 +1599,7 @@ SCHEMA_VALIDATORS = {
     "project-manifest": "validate_project_manifest",
     "instructions-index": "validate_instructions_index",
     "capabilities": "validate_capabilities",
+    "decision-rubric": "validate_decision_rubric",
     "scenario": "validate_scenario",
     "acceptance-plan": "validate_acceptance_plan",
     "handoff": "validate_handoff",

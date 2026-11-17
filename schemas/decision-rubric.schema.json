@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-flow:decision-rubric:1",
+  "title": "Versioned decision rubric (System 1 channel)",
+  "description": "Host-issued rubric that determines a gated proposal's decision. It is plan data, not a hidden constant: the threshold is declared here and every gated proposal echoes it. The digest (rubric_sha256) is the capabilities.fingerprint recipe over this document without the digest field, so the rubric cannot change content without changing digest. Options are closed; the abstention is named, never a third content option. Only 'logits' calibrates and only calibrated confidence authorizes fusion — 'declared' never does.",
+  "x-owner": "host",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "rubric_id",
+    "question",
+    "options",
+    "abstention",
+    "thresholds",
+    "confidence_provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "rubric_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identity of the rubric version, stable while its content is."
+    },
+    "question": {
+      "enum": ["same_defect"],
+      "description": "Typed question shape. Phase 2 pilot: given a new finding and an existing one, are they the same defect?"
+    },
+    "options": {
+      "type": "array",
+      "items": { "enum": ["same", "different"] },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "Closed answer set. The channel proposes over these; anything else is the named abstention."
+    },
+    "abstention": {
+      "enum": ["insufficient"],
+      "description": "The named abstention: the gate ran and there was no usable number. Below threshold is this, never a guess."
+    },
+    "thresholds": {
+      "type": "object",
+      "required": ["default"],
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 },
+      "properties": {
+        "default": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "description": "Per-bucket thresholds keyed by '<question>:<option_count>' with a 'default' fallback. A key no answer can produce is rejected (reachability)."
+    },
+    "confidence_provenance": {
+      "enum": ["logits"],
+      "description": "The provenance class this rubric's thresholds calibrate on. Only 'logits' (direct read) calibrates and only calibrated confidence authorizes fusion; 'declared' (the model reported a number as text) never does, so it is not a valid rule here."
+    },
+    "digest": {
+      "$ref": "#/$defs/digest",
+      "description": "Optional self-declared digest over the document without this field. If present it must match the recomputed rubric_sha256."
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

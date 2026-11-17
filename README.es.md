@@ -334,7 +334,7 @@ son la razón de que la verificación aquí sea real en vez de declarativa.
 
 ### El framework, sobre sí mismo
 
-Instalado sobre un clon de sí mismo, el auditor encontró 7 defectos reales del framework (2 HIGH, 5 MEDIUM) y el reparador los arregló todos con sus tests. La re-auditoría encontró después el más incómodo: **un resultado de verificación no identificaba el árbol que verificó** — ahora cada registro lleva el digest del diff verificado, comprobado en tres sitios. La memoria también se aplica a sí misma: una auditoría de la memoria encontró un registro de defectos ya cerrados que se escribía pero nadie consultaba, así que el mismo defecto podía volver cada sesión; la consulta ahora es mecánica. Suite del framework: **1383 pruebas en verde** (1 saltado, medida el 2026-11-17).
+Instalado sobre un clon de sí mismo, el auditor encontró 7 defectos reales del framework (2 HIGH, 5 MEDIUM) y el reparador los arregló todos con sus tests. La re-auditoría encontró después el más incómodo: **un resultado de verificación no identificaba el árbol que verificó** — ahora cada registro lleva el digest del diff verificado, comprobado en tres sitios. La memoria también se aplica a sí misma: una auditoría de la memoria encontró un registro de defectos ya cerrados que se escribía pero nadie consultaba, así que el mismo defecto podía volver cada sesión; la consulta ahora es mecánica. Suite del framework: **1407 pruebas en verde** (12 saltadas en una máquina sin el runtime DSH externo ni `jsonschema`, medida el 2026-11-17).
 
 ### Pilotado por una sesión DSH real (2026-10-10)
 

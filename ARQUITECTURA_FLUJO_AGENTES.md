@@ -1660,6 +1660,17 @@ with the digest of his signature; the Host verifies it, registers it and can rev
 reads `session/projections.modelSelection`, both read from the installed DSH tree.
 That was the blocker that kept even the reasoning level from being exercised: without it a System 1 would be integrated into a client that cannot select a session.
 
+**Versioned rubric implemented (2026-11-17):** the criterion is a tree artifact, not a hidden
+string — `schemas/decision-rubric.schema.json` with its validator in the E16 union, the digest
+calculated with the `capabilities.fingerprint` recipe (`rubric_fingerprint`, the digest field
+excluded from its own input), and the gated report extended compatibly with
+`rubric_sha256`/`threshold_echo`/`provenance`, verified fail-closed by
+`corpus_compiler.verify_rubric_binding` (a proposal without the citation, with a digest that is
+not the current rubric's, or echoing a threshold the rubric did not decide, fails closed;
+`declared` confidence never authorizes fusion). The deterministic layer of the dedup pilot is
+pinned by regression; the semantic layer and the channel itself remain design-only: no model has
+decided anything yet.
+
 **Risk that determines the design:** the calibration measured in a task is not
 transferred to another (0.011 ECE in claims verification, 0.108 in legal, in the
 independent evaluation of Vals AI). The dangerous failure mode is success

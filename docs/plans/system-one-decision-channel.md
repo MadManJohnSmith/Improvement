@@ -1,7 +1,11 @@
 # Design: System 1 decision-model channel as an advisory proposal
 
-**Status:** design approved for phased implementation. No phase is implemented yet except Phase 0,
-which is already in the tree.
+**Status:** design approved for phased implementation. Phase 0 is in the tree. Phase 1's
+versioned-rubric artifact landed 2026-11-17 (`schemas/decision-rubric.schema.json` + its
+validator in the E16 union, the `capabilities.fingerprint` digest recipe, and the gated report
+extended with `rubric_sha256`/`threshold_echo`/`provenance`, verified fail-closed by
+`corpus_compiler.verify_rubric_binding`): the criterion and its audit surface exist, but no
+phase 2 channel is implemented and no model has decided anything.
 
 **English** | [Español](system-one-decision-channel.es.md)
 
@@ -114,7 +118,7 @@ is plan data, not a hidden constant.
 - **Loop detection:** if the same defect returns after N approaches, the channel stops
   classifying: the ledger marks it (`MAX_PER_SIGNATURE = 3`, `scripts/episodes.py`).
 
-## Contract annex (2026-11-05): what Phases 1-2 must declare (design, not built)
+## Contract annex (2026-11-05): what Phases 1-2 must declare (the three-state report with threshold echo and provenance is enforced since 2026-11-17; the rest is design)
 
 Ratified from the 2026-11-04/05 source mining (70 fichas; see the external conciliation
 workspace). Contract details only: this annex implements no phase.
