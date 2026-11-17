@@ -23,7 +23,29 @@ conoce el flujo (señalado por el mantenedor al revisar la campaña).
   rename que falla se registra en el progreso sin cambiar el resultado. Módulo
   enfocado: 195 tests OK; suite completa 1364 (1 skipped).
 
-## soporte: suite verde sobre el runtime rc.2 — deriva de API y cifras vivas — 2026-11-13
+## creator: los tres modos probados en operación real — campaña completa — 2026-11-16
+
+El despacho operativo del implementer cerró el ciclo completo del flujo sobre el
+despliegue ACTIVE `gen-e9b8a23da747`: **RUN_COMPLETED** (24 eventos, journal
+verificado por replay, cuatro turnos reales por la ruta gratuita).
+
+- **El implementer operó**: 46 pasos en un turno, su primera herramienta cargó
+  `project-implementer` desde el bundle del despliegue ACTIVE en el mismo turno
+  (la observación «same-turn skill tool call» que la aceptación exigía), y el
+  cambio pedido (`contar_notas()` + 3 tests) existe en la candidata provisionada,
+  DIRTY, con el producto canónico intacto.
+- **El Host verificó el comportamiento pedido**: `verificar-implement` PASS
+  (7/7 tests de la sombra, `request_sha256` enlazado a la petición exacta,
+  alcance declarado `requested-behavior-case-only-not-full-acceptance`), y la
+  evidencia (`implementation.json`, `work-items.json` con `kind=implement`,
+  `status: PATCH_READY`) quedó completa.
+- Procesado el reporte del delegado: su hallazgo «generate(change_request) roto»
+  quedó **refutado empíricamente** contra el estado confirmado (`8f4a0af` ya
+  reenviaba la petición y emitía implementar.md); la divergencia de recetas del
+  diff digest (parche del implementer vs per-file del Host) queda documentada
+  como unidad futura: hoy nadie compara ambas mediciones.
+
+## creator: la sesión nombra su estado terminal — superficie del usuario — 2026-11-13
 
 La suite completa quedó en **1361 tests, 1 skipped, 0 fallos** después de adaptar el
 árbol al runtime que el repo ya había decidido (rc.2, commit `357c15c`): la máquina había
