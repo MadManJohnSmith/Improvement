@@ -1,5 +1,59 @@
 # Cambios
 
+## ciclo: ruta de operador para INTEGRATED, retire de sombras implement/ y recibo del slot candidate — 2026-11-17
+
+Cierra los issues #33 y #34 (hallazgo operativo del 2026-11-17, integración de
+las candidatas de gen-e9b8a23da747): una candidata integrada por el operador
+quedaba PATCH_READY para siempre y el registro desplazado del slot único
+`candidate` se perdía sin traza. Mantenimiento del framework, sin campaña.
+
+- **Marca INTEGRATED por el operador** (`state_reconcile.mark_integrated`,
+  `bootstrap.py state --integrate`): solo una PATCH_READY se marca; antes de
+  escribir, la contención del contenido de la candidata en el árbol canónico
+  se prueba con la misma disciplina del reconcile — comparación por ruta de
+  árbol antes/después para sombras (nunca un SHA común, historias
+  independientes), ascendencia de la cabeza commiteada para worktrees legacy.
+  Falla citable sin prueba, y el producto canónico debe estar limpio. La
+  escritura es un `status` y nada más: la identidad de la sombra queda intacta
+  para el retire que sigue.
+- **Retire alcanza las sombras `implement/candidates/`**
+  (`state_reconcile._implement_retire`): el dispatch por namespace ya no cae
+  en la rama legacy-worktree; la identidad implement se liga a su marcador
+  Host (`implement-<digest16>.json` de `provision_implementation`) y las
+  puertas de contenido son las mismas de siempre (gitdir propio, refs exactas,
+  fsck limpio, sin alternates/commondir, inventario igual al patch, huella
+  igual al digest). El recibo en `overflows.jsonl` aterriza **antes** del
+  borrado (`implement-shadow-retired`), que es la decisión manual del operador
+  que el bloque de 2026-10-11 exige; la retirada del namespace de reparación
+  (`workspace/candidates/`) sigue deshabilitada exactamente igual.
+- **Refactor de puertas compartidas**: `_shadow_retire` se factoriza en
+  `_host_layout` + `_repair_shadow_identity` + `_shadow_git_identity` +
+  `_canonical_contains_patch` sin cambiar una sola decisión: el flujo legacy y
+  la abstención del 2026-10-11 están pineados por las mismas regresiones de
+  antes, ahora sobre la factorización.
+- **Recibo al reemplazar el slot candidate** (`workflow-write.mjs`,
+  `appendCandidateSlotReceipt`): cuando una escritura gestionada de
+  `work-items.json` reemplaza un candidate no nulo por otro distinto (incluido
+  borrarlo), la herramienta appendea el registro saliente completo con fecha
+  (`replaced_at`) y cause (`candidate-slot-replaced`) en `overflows.jsonl`
+  **antes** de escribir el slot, bajo el mismo lease. Fail-closed: si el
+  append falla, la escritura del slot no aterriza; si el archivo actual no es
+  JSON o `overflows.jsonl` existe y no se puede leer, se deniega sin
+  reintento — no se puede probar qué se perdería. El recibo cumple el esquema
+  del estado (4 campos, tope de registro), la reescritura verbatim del mismo
+  candidate no deja recibo y una primera reclamación (slot vacío) tampoco.
+- **Regresiones**: 7 nuevas (6 en `tests/test_state_reconcile.py`: marca+retira
+  implement con producto temporal externo, marca sin contención y con estado
+  o contenido ajeno citables, marca legacy por ascendencia, retire implement
+  con recibo y borrado verificado, retire implement no probado, end-to-end
+  `bootstrap.py state --integrate --retire`; 1 en
+  `tests/test_workflow_write_plugin.py`: recibo legible y conforme al esquema,
+  sin recibo en reescritura idéntica ni primera reclamación, append roto y
+  ledger ilegible ⇒ slot intacto y error citable). Suite: **1414 tests
+  green** (12 skips ambientales de la máquina, sin runtime DSH ni
+  `jsonschema`; sin skips nuevos). Cifra viva de los README refrescada vía
+  `scripts/suite_count.py`.
+
 ## canal: rúbrica versionada del Canal Sistema 1 con digest y reporte gateado extendido — 2026-11-17
 
 Aplica la Fase 1 del diseño (propuesta-canal-sistema-1.md, handoff 2026-11-16;

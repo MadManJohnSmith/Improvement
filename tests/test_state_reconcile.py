@@ -405,6 +405,144 @@ class StateReconcileTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(self.product), "rev-list", "--count", "HEAD"],
                            capture_output=True, text=True, check=True).stdout.strip(), "2")
 
+    def _implement_candidate(self, status="PATCH_READY"):
+        """Provision through Host (kind=implement), edit, record its exact patch."""
+        base = self._rev("HEAD")
+        receipt = mode_lifecycle.provision_implementation(
+            self.product, self.workspace, "Cambiar el texto de a.txt",
+            declared_base=base)
+        shadow = Path(receipt["path"])
+        (shadow / "a.txt").write_text("fixed\n")
+        raw = b"a.txt"
+        data = b"fixed\n"
+        digest = hashlib.sha256(len(raw).to_bytes(8, "big") + raw + b"F" +
+                                len(data).to_bytes(8, "big") + data).hexdigest()
+        record = {"base_revision": receipt["base_revision"],
+                  "finding_ids_digest": receipt["request_sha256"],
+                  "path": f"{self.workspace.name}/implement/candidates/{shadow.name}",
+                  "branch": "candidate", "head": self._head_of(shadow),
+                  "status": status, "candidate_diff_digest": digest,
+                  "changed_paths": ["a.txt"]}
+        self._write_state(record)
+        return shadow, record
+
+    def test_mark_integrated_closes_an_implement_candidate_the_canonical_holds(self):
+        """The operator route writes INTEGRATED only after the patch is proven.
+
+        Issue #33: the status was host-or-operator-only and nothing wrote it,
+        so an integrated candidate stayed PATCH_READY forever. Marking without
+        containment is refused with the same citable abstention retire uses;
+        with the patch committed into the canonical tree, the record closes.
+        """
+        shadow, record = self._implement_candidate()
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "no se prueba la integración exacta"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(json.loads(
+            (self.state / "work-items.json").read_text())["candidate"]["status"],
+            "PATCH_READY")
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        marked = state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(marked["status"], "INTEGRATED")
+        recorded = json.loads(
+            (self.state / "work-items.json").read_text())["candidate"]
+        self.assertEqual(recorded["status"], "INTEGRATED")
+        # The record keeps the shadow identity that retire will verify again;
+        # only the status moved.
+        self.assertEqual(recorded["head"], record["head"])
+        self.assertEqual(recorded["path"], record["path"])
+
+    def test_mark_integrated_refuses_a_status_or_tree_it_cannot_close(self):
+        shadow, _ = self._implement_candidate(status="DIRTY")
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "solo se marca una PATCH_READY"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        # An integration that changed something other than the recorded patch
+        # is not the candidate's content in the canonical tree.
+        (self.product / "a.txt").write_text("other patch\n")
+        _git(self.product, "commit", "-qam", "different patch")
+        self._write_state(dict(
+            self._implement_candidate(status="PATCH_READY")[1]))
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "no se prueba la integración exacta"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(json.loads(
+            (self.state / "work-items.json").read_text())["candidate"]["status"],
+            "PATCH_READY")
+
+    def test_mark_integrated_closes_a_legacy_candidate_by_ancestry(self):
+        """A legacy worktree's patch was committed, so containment is ancestry."""
+        branch = "dsh/repair-0123456789abcdef"
+        name = "Product-repair-0123456789abcdef"
+        worktree = self.session / name
+        _git(self.product, "worktree", "add", "-q", "-b", branch, str(worktree))
+        (worktree / "a.txt").write_text("fixed\n")
+        _git(worktree, "commit", "-qam", "fix")
+        head = self._head_of(worktree)
+        self._write_state({"base_revision": self.base,
+                           "finding_ids_digest": "b" * 64, "path": name,
+                           "branch": branch, "head": head,
+                           "status": "PATCH_READY",
+                           "candidate_diff_digest": "c" * 64,
+                           "changed_paths": ["a.txt"]})
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "no está en la rama canónica"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        _git(self.product, "merge", "-q", "--ff-only", branch)
+        marked = state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(marked["status"], "INTEGRATED")
+
+    def test_retire_reaches_implement_shadows_and_leaves_a_receipt(self):
+        """Issue #33: the retire dispatch fell to the legacy branch and abstained.
+
+        With the patch integrated, the explicit operator command marks and
+        retires the implement shadow: the deletion is recorded in
+        overflows.jsonl *before* it happens, and the canonical product keeps
+        exactly what it gained from the integration.
+        """
+        shadow, record = self._implement_candidate()
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "solo se retira una INTEGRATED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        state_reconcile.mark_integrated(self.product, self.workspace)
+        retired = state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(retired["retired"])
+        self.assertFalse(shadow.exists())
+        marker = self.workspace / f"implement-{record['finding_ids_digest'][:16]}.json"
+        self.assertFalse(marker.exists())
+        receipts = [json.loads(line) for line
+                    in (self.state / "overflows.jsonl").read_text().splitlines()]
+        self.assertEqual(receipts[-1]["reason"], "implement-shadow-retired")
+        self.assertIn(record["path"], receipts[-1]["dropped_records"][0])
+        self.assertEqual((self.product / "a.txt").read_text(), "fixed\n")
+        self.assertFalse(_git(self.product, "status", "--porcelain=v1").stdout)
+
+    def test_retire_refuses_an_implement_shadow_the_canonical_tree_lacks(self):
+        """An INTEGRATED status declared without the patch proving it."""
+        shadow, _ = self._implement_candidate(status="INTEGRATED")
+        with self.assertRaisesRegex(state_reconcile.ReconcileError, "ABSTAINED"):
+            state_reconcile.retire(self.product, self.workspace)
+        self.assertTrue(shadow.exists())
+
+    def test_bootstrap_state_marks_and_retires_an_implement_candidate(self):
+        """The operator command chains --integrate and --retire in one exit-0 run."""
+        shadow, _ = self._implement_candidate()
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        process = subprocess.run(
+            ["/usr/bin/python3", "-B", str(ROOT / "scripts" / "bootstrap.py"),
+             "state", "--project", str(self.product), "--integrate", "--retire"],
+            capture_output=True, text=True, timeout=180)
+        self.assertEqual(process.returncode, 0, process.stderr[-3000:])
+        performed = json.loads(process.stdout)["performed"]
+        self.assertEqual(performed[0]["status"], "INTEGRATED")
+        self.assertTrue(performed[1]["retired"])
+        self.assertFalse(shadow.exists())
+
     def test_audit_scope_is_counted_from_the_handoff_id(self):
         """A complete audit that starts from the queue re-reports the queue.
 

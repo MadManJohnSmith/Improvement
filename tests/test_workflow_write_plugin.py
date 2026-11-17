@@ -19,6 +19,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from host_launcher import launch
+import mode_lifecycle
 import stack
 from transaction import Transaction
 
@@ -818,7 +819,7 @@ process.stdout.write(JSON.stringify(report));
 '''
 
 
-class WorkflowWritePluginTest(unittest.TestCase):
+class WorkflowWritePluginFixture(unittest.TestCase):
     def _signed_plan(self, workspace, stacks, product=None):
         """Plan bytes signed the way the Host signs them and read back by the Host.
 
@@ -835,6 +836,8 @@ class WorkflowWritePluginTest(unittest.TestCase):
         stack.load(workspace)
         return (workspace / stack.PLAN_RELATIVE).read_text()
 
+
+class WorkflowWritePluginTest(WorkflowWritePluginFixture):
     def test_state_write_is_confined_to_the_managed_state_root(self):
         """SR-3 is only true if the tool itself refuses a product path.
 
@@ -1610,6 +1613,226 @@ class WorkflowWritePluginTest(unittest.TestCase):
         # The 33 context-only checks must run with node alone; losing them to a
         # missing runtime path is how verification goes quiet.
         self.assertGreaterEqual(output.count('PASS  '), 33, output[-2000:])
+
+
+SLOT_DRIVER = r"""
+import fs from 'node:fs';
+import path from 'node:path';
+import {apply} from 'PLUGIN_PATH';
+
+const canonical = (raw) => {
+  const absolute = path.resolve(raw);
+  let probe = absolute;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return absolute;
+    probe = parent;
+  }
+  return path.join(fs.realpathSync(probe), path.relative(probe, absolute));
+};
+
+function makeCtx(root, failOverflowWrite) {
+  let registered;
+  const ctx = {
+    get: (name) => (name === 'sandboxPolicy'
+      ? {resolve: () => ({mode: 'workspace-write', workspaceRoot: root})} : undefined),
+    on: () => {},
+    emit: () => {},
+    tools: {register: (definition) => { registered = definition; }, guard: () => {}, get: () => undefined},
+    waterfall: async (...args) => {
+      const next = args[args.length - 1];
+      return typeof next === 'function' ? next() : undefined;
+    },
+    fs: {
+      resolve: async (raw, opts = {}) => {
+        if (typeof raw !== 'string' || raw.trim() === '') throw new Error('file_path must be a non-empty string');
+        const absolute = canonical(path.isAbsolute(raw) ? raw : path.join(opts.cwd ?? root, raw));
+        return {targetKey: absolute, displayPath: absolute};
+      },
+      processPath: (target) => target.targetKey,
+      stat: async (target) => {
+        try {
+          const info = fs.lstatSync(target.targetKey);
+          return {version: String(info.mtimeMs), size: info.size,
+            type: info.isDirectory() ? 'directory' : info.isFile() ? 'file' : 'other'};
+        } catch { return undefined; }
+      },
+      listDir: async (target) => fs.readdirSync(target.targetKey, {withFileTypes: true}).map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+        target: {targetKey: path.join(target.targetKey, entry.name), displayPath: path.join(target.targetKey, entry.name)},
+      })),
+      readText: async (target) => fs.readFileSync(target.targetKey, 'utf8'),
+      writeText: async (target, content, intent, signal, policy) => {
+        if (failOverflowWrite && target.targetKey.endsWith('/mode-state/overflows.jsonl')) {
+          throw new Error('EACCES: overflows write broken on purpose');
+        }
+        const before = fs.existsSync(target.targetKey) ? fs.readFileSync(target.targetKey, 'utf8') : null;
+        fs.mkdirSync(path.dirname(target.targetKey), {recursive: true});
+        fs.writeFileSync(target.targetKey, content, 'utf8');
+        return {version: 'v1', operation: before === null ? 'create' : 'update', before, after: content};
+      },
+    },
+  };
+  apply(ctx, {});
+  return registered;
+}
+
+async function attempt(root, filePath, content, failOverflowWrite) {
+  const definition = makeCtx(root, failOverflowWrite);
+  const exec = {agent: {session: {header: {cwd: root}}}, callId: 'probe'};
+  try {
+    return {ok: true, value: await definition.execute({file_path: filePath, content}, exec)};
+  } catch (error) {
+    return {ok: false, error: String(error?.message || error)};
+  }
+}
+
+const session = process.argv[2];
+const spec = JSON.parse(fs.readFileSync(path.join(session, 'fixture.json'), 'utf8'));
+const relative = 'Improvement-workspace/mode-state/work-items.json';
+const workItems = path.join(session, relative);
+const overflows = path.join(session, 'Improvement-workspace/mode-state/overflows.jsonl');
+const report = {};
+for (const [name, item] of Object.entries(spec)) {
+  fs.rmSync(workItems, {force: true});
+  fs.rmSync(overflows, {force: true, recursive: true});
+  if (item.stored !== null) fs.writeFileSync(workItems, item.stored, 'utf8');
+  if (item.overflowsDir === true) fs.mkdirSync(overflows, {recursive: true});
+  else if (item.overflows !== null) fs.writeFileSync(overflows, item.overflows, 'utf8');
+  const outcome = await attempt(session, relative, item.content, item.breakOverflow === true);
+  report[name] = {ok: outcome.ok, error: outcome.error || '',
+    onDisk: fs.existsSync(workItems) ? fs.readFileSync(workItems, 'utf8') : null,
+    overflows: fs.existsSync(overflows) && fs.statSync(overflows).isFile()
+      ? fs.readFileSync(overflows, 'utf8') : null};
+}
+process.stdout.write(JSON.stringify(report));
+"""
+
+
+class CandidateSlotReceiptTest(WorkflowWritePluginFixture):
+    """Issue #34: the single `candidate` slot is a replacement, not an append.
+
+    The repairer's DIRTY record was overwritten by the implementer's
+    PROVISIONED record and overflows.jsonl stayed empty: the displaced record
+    lost its trace and only the wiki and the shadow kept it. The tool now
+    writes the dated receipt itself, before the slot write lands, and a broken
+    receipt fails the write.
+    """
+
+    def _receipt_schema(self):
+        return mode_lifecycle.state_schema()["files"]["overflows.jsonl"]["record"]
+
+    def test_candidate_slot_replacement_leaves_a_dated_receipt(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        root = Path(tempfile.mkdtemp(prefix='workflow-write-slot-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        (session / 'Improvement' / 'scripts').mkdir(parents=True)
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            self._signed_plan(workspace, [], product=str(session / 'Improvement')))
+
+        base = 'a' * 40
+        dirty = {'base_revision': base, 'finding_ids_digest': 'b' * 64,
+                 'path': 'Improvement-workspace/candidates/repair-bbbbbbbbbbbbbbbb',
+                 'branch': 'candidate', 'head': 'd' * 40, 'status': 'DIRTY',
+                 'candidate_diff_digest': 'c' * 64,
+                 'changed_paths': ['src/example.py']}
+        provisioned = {key: dirty[key] for key in
+                       ('base_revision', 'finding_ids_digest', 'path', 'branch', 'head')}
+        provisioned.update({'status': 'PROVISIONED',
+                            'path': 'Improvement-workspace/implement/candidates/'
+                                    'repair-5555555555555555'})
+
+        def work_items(candidate):
+            return json.dumps({'schema_version': 1, 'candidate': candidate, 'items': []})
+
+        cases = {
+            # The exact operational loss: repairer DIRTY replaced by
+            # implementer PROVISIONED.
+            "replace": {'stored': work_items(dirty),
+                        'overflows': None, 'breakOverflow': False,
+                        'content': work_items(provisioned)},
+            # Persisting the same candidate verbatim is not a replacement.
+            "same_record": {'stored': work_items(dirty),
+                            'overflows': None, 'breakOverflow': False,
+                            'content': work_items(dirty)},
+            # Clearing the slot also removes a record from the live state.
+            "slot_cleared": {'stored': work_items(dirty),
+                             'overflows': None, 'breakOverflow': False,
+                             'content': work_items(None)},
+            # First claim: nothing leaves the state, no receipt.
+            "no_stored": {'stored': None,
+                          'overflows': None, 'breakOverflow': False,
+                          'content': work_items(provisioned)},
+            # A broken overflow ledger fails the write fail-closed.
+            "append_broken": {'stored': work_items(dirty),
+                              'overflows': None, 'breakOverflow': True,
+                              'content': work_items(provisioned)},
+            # A ledger that exists but cannot be read proves nothing about
+            # what it holds, so the replacement is refused outright.
+            "overflows_unreadable": {'stored': work_items(dirty),
+                                     'overflowsDir': True, 'breakOverflow': False,
+                                     'content': work_items(provisioned)},
+            # An unreadable ledger cannot prove what would be lost.
+            "stored_unreadable": {'stored': '{"schema_version":1,"candidate":',
+                                  'overflows': None, 'breakOverflow': False,
+                                  'content': work_items(provisioned)},
+        }
+        (session / 'fixture.json').write_text(json.dumps(cases))
+        driver = root / 'slot-driver.mjs'
+        driver.write_text(SLOT_DRIVER.replace('PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run([node, driver.as_posix(), session.as_posix()],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+
+        replaced = json.loads(report["replace"]["overflows"])
+        self.assertTrue(report["replace"]["ok"], report["replace"])
+        self.assertEqual(replaced["overflow_id"], 'OV-candidate-slot-replaced-0001')
+        self.assertEqual(replaced["file"], 'work-items.json')
+        self.assertEqual(replaced["reason"], 'candidate-slot-replaced')
+        self.assertEqual(json.loads(replaced["dropped_records"][0]), dirty)
+        self.assertRegex(replaced["dropped_records"][1], r'^replaced_at=\d{4}-\d{2}-\d{2}T')
+        # The receipt record is one the state schema accepts verbatim: a
+        # receipt the next preflight would drop is not a receipt.
+        self.assertTrue(mode_lifecycle._is_valid(
+            replaced, self._receipt_schema(), "overflows.jsonl[0]"))
+        self.assertEqual(json.loads(report["replace"]["onDisk"])["candidate"], provisioned)
+        self.assertTrue(mode_lifecycle._is_valid(
+            json.loads(report["replace"]["onDisk"])["candidate"],
+            mode_lifecycle.state_schema()["files"]["work-items.json"]["candidate"],
+            "work-items.json.candidate"))
+
+        for name in ("same_record", "no_stored"):
+            self.assertTrue(report[name]["ok"], report[name])
+            self.assertEqual(report[name]["overflows"], None, report[name])
+        self.assertTrue(report["slot_cleared"]["ok"], report["slot_cleared"])
+        self.assertEqual(json.loads(
+            report["slot_cleared"]["overflows"])["dropped_records"][0],
+            json.dumps(dirty, ensure_ascii=False, separators=(',', ':')))
+
+        # The receipt write failing (here, the backend error itself) must fail
+        # the whole write: the slot never lands without its receipt.
+        self.assertFalse(report["append_broken"]["ok"], report["append_broken"])
+        self.assertTrue(report["append_broken"]["error"], report["append_broken"])
+        self.assertEqual(json.loads(report["append_broken"]["onDisk"])["candidate"], dirty)
+        self.assertEqual(report["append_broken"]["overflows"], None)
+
+        self.assertFalse(report["overflows_unreadable"]["ok"], report["overflows_unreadable"])
+        self.assertIn("no se puede garantizar", report["overflows_unreadable"]["error"])
+        self.assertEqual(json.loads(
+            report["overflows_unreadable"]["onDisk"])["candidate"], dirty)
+
+        self.assertFalse(report["stored_unreadable"]["ok"], report["stored_unreadable"])
+        self.assertIn("no es JSON", report["stored_unreadable"]["error"])
+        self.assertEqual(report["stored_unreadable"]["onDisk"],
+                         cases["stored_unreadable"]["stored"])
 
 
 if __name__ == '__main__':

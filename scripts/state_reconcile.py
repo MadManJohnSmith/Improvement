@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -476,17 +477,8 @@ def _shadow_status(shadow):
     return paths
 
 
-def _shadow_retire(product, workspace, candidate):
-    """Refuse to delete a Host shadow, even when the patch is proven exactly.
-
-    Histories are independent. A common SHA or an INTEGRATED status cannot prove
-    anything, so every gate below compares each changed path's *before* tree at
-    the product's recorded base with shadow-base, and its *after* tree at the
-    canonical HEAD with the recorded, still-dirty candidate. The gates are kept
-    and unchanged: they prove the patch reached the canonical tree. They cannot
-    prove the converse, that the shadow is nothing *but* that patch, so nothing
-    here deletes — see the retirement block at the end.
-    """
+def _host_layout(product, workspace):
+    """The Host session shape every shadow gate assumes, checked fail-closed."""
     from onboard import checked
 
     try:
@@ -498,6 +490,11 @@ def _shadow_retire(product, workspace, candidate):
             (workspace / "mode-state").is_symlink() or
             (workspace / "mode-state" / "work-items.json").is_symlink()):
         _abstain("producto/workspace/estado fuera del layout Host")
+
+
+def _repair_shadow_identity(product, workspace, candidate):
+    """Layout, identity and Host receipt of a repair shadow; shared by mark and retire."""
+    _host_layout(product, workspace)
     digest = candidate.get("finding_ids_digest")
     if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         _abstain("digest de hallazgos inválido")
@@ -507,6 +504,7 @@ def _shadow_retire(product, workspace, candidate):
         _abstain("ruta o rama no coinciden con la identidad Host")
     shadow = workspace / "candidates" / name
     receipt = workspace / f"{name}.receipt"
+    from onboard import checked
     try:
         checked(shadow)
         checked(receipt)
@@ -529,6 +527,11 @@ def _shadow_retire(product, workspace, candidate):
         _abstain("recibo Host ilegible")
     if contents != f"{base}\n{digest}\n{head}\n":
         _abstain("recibo Host no corresponde exactamente al estado")
+    return shadow, base, head
+
+
+def _shadow_git_identity(shadow, base, head):
+    """The shadow's Git metadata must say exactly what the record says it says."""
     if (_git(shadow, "rev-parse", "--absolute-git-dir").stdout.strip() != str(shadow / ".git") or
             _git(shadow, "rev-parse", "--show-toplevel").stdout.strip() != str(shadow) or
             _git(shadow, "symbolic-ref", "--short", "HEAD").stdout.strip() != "candidate" or
@@ -544,13 +547,23 @@ def _shadow_retire(product, workspace, candidate):
     worktrees = _git(shadow, "worktree", "list", "--porcelain").stdout.count("worktree ")
     if worktrees != 1:
         _abstain("sombra contiene worktrees Git registrados además del principal")
+
+
+def _canonical_contains_patch(product, shadow, base, head, paths, digest_recorded):
+    """Prove, path by path, that the canonical tree holds exactly the patch.
+
+    Histories are independent. A common SHA or an INTEGRATED status cannot prove
+    anything, so every gate below compares each changed path's *before* tree at
+    the product's recorded base with shadow-base, and its *after* tree at the
+    canonical HEAD with the recorded, still-dirty candidate. The gates prove the
+    patch reached the canonical tree; they cannot prove the converse, that the
+    shadow is nothing *but* that patch. Returns the canonical head observed.
+    """
     canonical = _git(product, "rev-parse", "HEAD").stdout.strip()
     if (not _is_ancestor(product, base, canonical) or
             _git(product, "rev-parse", "--show-toplevel").stdout.strip() != str(product) or
             _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout):
         _abstain("producto no está limpio o su base no pertenece a la historia canónica")
-    paths = candidate.get("changed_paths")
-    digest_recorded = candidate.get("candidate_diff_digest")
     if (not isinstance(paths, list) or not paths or len(paths) != len(set(paths)) or
             not isinstance(digest_recorded, str) or
             not re.fullmatch(r"[0-9a-f]{64}", digest_recorded)):
@@ -589,7 +602,60 @@ def _shadow_retire(product, workspace, candidate):
             _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout or
             set(_shadow_status(shadow)) != set(paths)):
         _abstain("producto o sombra cambiaron durante la comprobación")
-    # Reject symlinks and mounted subtrees, even though retirement abstains.
+    return canonical
+
+
+def _implement_identity(product, workspace, candidate):
+    """Bind an implement shadow to its Host marker, independent of repair receipts.
+
+    A kind=implement candidate shares the shadow shape (own `.git`, branch
+    `candidate`, tag `shadow-base`) but not the identity of a repair: its Host
+    receipt is the JSON marker `implement-<digest16>.json` that
+    `provision_implementation` writes, and the gates here re-derive exactly
+    what provisioning proved — same base, same request digest, own gitdir.
+    """
+    _host_layout(product, workspace)
+    recorded_path = candidate.get("path")
+    match = (isinstance(recorded_path, str) and re.fullmatch(
+        rf"{re.escape(workspace.name)}/implement/candidates/(repair-[0-9a-f]{{16}})",
+        recorded_path))
+    if not match or candidate.get("branch") != "candidate":
+        _abstain("ruta o rama no coinciden con la identidad implement")
+    name = match.group(1)
+    digest16 = name[len("repair-"):]
+    shadow = workspace / "implement" / "candidates" / name
+    marker = workspace / f"implement-{digest16}.json"
+    from onboard import checked
+    try:
+        checked(shadow)
+        checked(marker)
+    except ValueError:
+        _abstain("enlace simbólico en candidata o identificador")
+    if (not shadow.is_dir() or not marker.is_file() or
+            marker.stat().st_size > 256 or
+            not (shadow / ".git").is_dir() or (shadow / ".git").is_symlink() or
+            (shadow / ".gitmodules").exists() or (shadow / ".gitmodules").is_symlink() or
+            (shadow / ".git" / "objects" / "info" / "alternates").exists() or
+            (shadow / ".git" / "commondir").exists()):
+        _abstain("sombra/identificador ausente o Git no independiente")
+    base, head = candidate.get("base_revision"), candidate.get("head")
+    if (not isinstance(base, str) or not re.fullmatch(r"[0-9a-f]{40,64}", base) or
+            not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head)):
+        _abstain("revisiones de candidata inválidas")
+    try:
+        recorded = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        _abstain("identificador implement ilegible")
+    if (not isinstance(recorded, dict) or recorded.get("base_revision") != base or
+            not isinstance(recorded.get("request_sha256"), str) or
+            not re.fullmatch(r"[0-9a-f]{64}", recorded["request_sha256"]) or
+            recorded["request_sha256"][:16] != digest16):
+        _abstain("identificador implement no corresponde exactamente a la candidata")
+    return shadow, base, head, marker
+
+
+def _shadow_tree_is_regular(shadow):
+    """Reject symlinks, specials and mounted subtrees before any deletion."""
     root_device = shadow.stat().st_dev
     for directory, names, files in os.walk(shadow, followlinks=False):
         for name in names + files:
@@ -598,6 +664,85 @@ def _shadow_retire(product, workspace, candidate):
             if (not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)) or
                     member.lstat().st_dev != root_device or os.path.ismount(member)):
                 _abstain("sombra contiene enlace, entrada especial o montaje")
+
+
+def mark_integrated(product, workspace):
+    """Close a verified candidate's cycle: the explicit operator route to INTEGRATED.
+
+    The status was declared host-or-operator-only and no route ever wrote it,
+    so a candidate the operator integrated by hand stayed PATCH_READY forever
+    and the retire gate refused it. Writing the status is the operator's
+    decision and it is earned, not declared: before the state moves, the
+    canonical tree must already contain the candidate's content, proven the
+    same way retire proves it — per-path tree comparison for shadows, ancestry
+    of the committed head for legacy worktrees, never a shared SHA (independent
+    histories make a common SHA a coincidence, not a proof).
+    """
+    product, workspace = Path(product), Path(workspace)
+    state = workspace / "mode-state"
+    value = _work_items(state)
+    candidate = value.get("candidate")
+    if not isinstance(candidate, dict):
+        raise ReconcileError("no hay candidata registrada que marcar")
+    status = candidate.get("status")
+    if status == "INTEGRATED":
+        raise ReconcileError("la candidata ya está INTEGRATED; el ciclo ya está cerrado")
+    if status != "PATCH_READY":
+        raise ReconcileError(
+            f"la candidata está en {status!r}; solo se marca una PATCH_READY")
+    recorded_path = candidate.get("path")
+    if not isinstance(recorded_path, str):
+        _abstain("ruta registrada inválida")
+    if recorded_path.startswith(f"{workspace.name}/candidates/"):
+        shadow, base, head = _repair_shadow_identity(product, workspace, candidate)
+        _shadow_git_identity(shadow, base, head)
+        canonical = _canonical_contains_patch(
+            product, shadow, base, head,
+            candidate.get("changed_paths"), candidate.get("candidate_diff_digest"))
+    elif recorded_path.startswith(f"{workspace.name}/implement/candidates/"):
+        shadow, base, head, _ = _implement_identity(product, workspace, candidate)
+        _shadow_git_identity(shadow, base, head)
+        canonical = _canonical_contains_patch(
+            product, shadow, base, head,
+            candidate.get("changed_paths"), candidate.get("candidate_diff_digest"))
+    else:
+        name = Path(recorded_path).name
+        if (recorded_path != name or
+                not re.fullmatch(r"[A-Za-z0-9_.-]+-repair-[0-9a-f]{16}", name) or
+                not isinstance(candidate.get("branch"), str) or
+                not re.fullmatch(r"dsh/repair-[0-9a-f]{16}", candidate["branch"])):
+            raise ReconcileError(
+                f"ruta de candidata no reconocida para el ciclo de integración: {recorded_path}")
+        head = candidate.get("head")
+        if not isinstance(head, str) or not _commit_exists(product, head):
+            raise ReconcileError(f"la cabeza registrada no existe: {head}")
+        if not _is_ancestor(product, head):
+            raise ReconcileError(
+                f"{head} no está en la rama canónica; el contenido de la candidata "
+                "no está integrado y no se marca INTEGRATED")
+        if _git(product, "status", "--porcelain=v1", "--untracked-files=all").stdout:
+            raise ReconcileError("el producto canónico no está limpio")
+        canonical = _git(product, "rev-parse", "HEAD").stdout.strip()
+    candidate["status"] = "INTEGRATED"
+    _replace_bytes(state / "work-items.json", _encode_json(value))
+    return {"marked": True, "previous": status, "status": "INTEGRATED",
+            "canonical_head": canonical, "path": recorded_path}
+
+
+def _shadow_retire(product, workspace, candidate):
+    """Refuse to delete a Host repair shadow, even when the patch is proven exactly.
+
+    The gates run and are unchanged: they prove the patch reached the canonical
+    tree. They cannot prove the converse, that the shadow is nothing *but* that
+    patch, so nothing here deletes — see the retirement block at the end.
+    """
+    shadow, base, head = _repair_shadow_identity(product, workspace, candidate)
+    _shadow_git_identity(shadow, base, head)
+    _canonical_contains_patch(
+        product, shadow, base, head,
+        candidate.get("changed_paths"), candidate.get("candidate_diff_digest"))
+    # Reject symlinks and mounted subtrees, even though retirement abstains.
+    _shadow_tree_is_regular(shadow)
     # ------------------------------------------------------------------
     # Retirada automática DESHABILITADA (2026-10-11).
     #
@@ -628,6 +773,35 @@ def _shadow_retire(product, workspace, candidate):
              "cuando se confirme que no hay nada que conservar")
 
 
+def _implement_retire(product, workspace, candidate):
+    """Retire an integrated implement shadow: the operator's explicit deletion.
+
+    The 2026-10-11 decision above stays untouched: the repair namespace never
+    deletes, not even verified. A kind=implement shadow retired here is
+    different in exactly one respect that matters — the operator named this
+    deletion by running `--retire`, which is the manual decision that block
+    asks for, and every content gate below has to pass first. What those gates
+    cannot see (private files inside the shadow's own `.git/`) is bounded by
+    the same checks the repair gate runs — no alternate object stores, no
+    borrowed gitdir, fsck clean, exact ref set — and the receipt in
+    `overflows.jsonl` lands *before* the deletion, so the state names what it
+    lost even if the deletion itself fails.
+    """
+    shadow, base, head, marker = _implement_identity(product, workspace, candidate)
+    _shadow_git_identity(shadow, base, head)
+    _canonical_contains_patch(
+        product, shadow, base, head,
+        candidate.get("changed_paths"), candidate.get("candidate_diff_digest"))
+    _shadow_tree_is_regular(shadow)
+    state = workspace / "mode-state"
+    _receipt(state, "implement-shadow-retired",
+             [f"retirada {candidate.get('path')}", f"base {base}", f"head {head}"])
+    shutil.rmtree(shadow)
+    marker.unlink()
+    return {"retired": True, "path": str(shadow),
+            "canonical_head": _git(product, "rev-parse", "HEAD").stdout.strip()}
+
+
 def retire(product, workspace):
     """Check recorded integration; never automatically delete a candidate."""
     product, workspace = Path(product), Path(workspace)
@@ -646,6 +820,8 @@ def retire(product, workspace):
     # with the same suffix cannot be adopted as a shadow (or vice versa).
     if recorded_path.startswith(f"{workspace.name}/candidates/"):
         return _shadow_retire(product, workspace, candidate)
+    if recorded_path.startswith(f"{workspace.name}/implement/candidates/"):
+        return _implement_retire(product, workspace, candidate)
 
     name = Path(recorded_path).name
     if (recorded_path != name or not re.fullmatch(r"[A-Za-z0-9_.-]+-repair-[0-9a-f]{16}", name) or

@@ -92,6 +92,11 @@ const PREVENTION_MAX_BYTES = 256;
 const SEVERITIES = ['CRITICAL', 'HIGH', 'LOW', 'MEDIUM'];
 const STATUSES = ['OPEN', 'RESOLVED', 'RETAINED'];
 const TRAVERSAL = /(?:^|\/)\.\.(?:\/|$)/u;
+const WORK_ITEMS_NAME = 'work-items.json';
+const OVERFLOWS_NAME = 'overflows.jsonl';
+const OVERFLOWS_RECORD_LIMIT = 100;
+const OVERFLOW_RECORD_BYTE_LIMIT = 4096;
+const OVERFLOW_REASON = 'candidate-slot-replaced';
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -763,6 +768,98 @@ async function validateManagedHandoff(ctx, target, content, signal) {
   }
 }
 
+/**
+ * The `candidate` slot of work-items.json, or null when the file carries none.
+ *
+ * Reading is lenient about the shapes the activation flow normalizes (a bare
+ * list, a pre-schema object), but a stored file that is not JSON at all is
+ * refused: the tool could not then know whether a record is about to leave
+ * the live state, and "cannot know" must fail the write instead of guessing.
+ */
+function parseCandidateSlot(text, label) {
+  let value;
+  try { value = JSON.parse(text); } catch {
+    throw new Error(`workflow_write: work-items.json ${label} no es JSON; el recibo `
+      + 'del slot candidate no se puede garantizar; denegado sin reintento');
+  }
+  if (Array.isArray(value)) return null;
+  if (value && typeof value === 'object' && 'candidate' in value) {
+    return (value.candidate && typeof value.candidate === 'object'
+            && !Array.isArray(value.candidate)) ? value.candidate : null;
+  }
+  return null;
+}
+
+/**
+ * Receipt for the outgoing record when the single `candidate` slot is replaced.
+ *
+ * The slot is a replacement, not an append: the repairer's DIRTY record
+ * vanished without a trace the day the implementer claimed the slot, and only
+ * the wiki and the shadow kept it. Any differing outgoing candidate therefore
+ * leaves a dated receipt in overflows.jsonl *before* the slot write lands —
+ * the same receipt-before-dropping discipline the evidence budget uses — and
+ * a failed receipt fails the write, so the record can never leave the live
+ * state without its trace. A receipt without the replacement that follows it
+ * is over-recording, which is visible; a replacement without the receipt is
+ * the silent loss this exists to prevent.
+ */
+async function appendCandidateSlotReceipt(ctx, stateRoot, target, incomingContent, policy) {
+  if (typeof ctx.fs.readText !== 'function' || typeof ctx.fs.writeText !== 'function') return;
+  let storedText = null;
+  try {
+    storedText = await ctx.fs.readText(target);
+  } catch {
+    storedText = null; // creation: nothing leaves the live state
+  }
+  const outgoing = storedText === null ? null : parseCandidateSlot(storedText, 'actual');
+  const incoming = parseCandidateSlot(incomingContent, 'entrante');
+  // Clearing the slot also removes a record from the live state, so a null
+  // incoming candidate is a replacement like any other.
+  if (outgoing === null
+      || (incoming !== null && canonicalJson(outgoing) === canonicalJson(incoming))) return;
+  const overflowsTarget = await ctx.fs.resolve(OVERFLOWS_NAME, {cwd: `${stateRoot}/`});
+  let existing = '';
+  try {
+    existing = await ctx.fs.readText(overflowsTarget);
+  } catch {
+    const info = await ctx.fs.stat(overflowsTarget).catch(() => null);
+    if (info) {
+      throw new Error('workflow_write: overflows.jsonl existe y no se puede leer; el '
+        + 'recibo del slot candidate no se puede garantizar; denegado sin reintento');
+    }
+  }
+  const lines = existing.split('\n').filter((line) => line.trim() !== '');
+  const sameReason = lines.filter((line) => {
+    try { return JSON.parse(line)?.reason === OVERFLOW_REASON; } catch { return false; }
+  }).length;
+  // A record the state loses is named in full when it fits the ledger's own
+  // record cap, and by its identifying fields when it does not: a receipt
+  // that cannot be read back later is not a receipt.
+  const full = JSON.stringify(outgoing);
+  const dropped = [full.length <= 2800 ? full : JSON.stringify({
+    base_revision: outgoing.base_revision ?? null,
+    branch: typeof outgoing.branch === 'string' ? outgoing.branch : null,
+    head: typeof outgoing.head === 'string' ? outgoing.head : null,
+    path: typeof outgoing.path === 'string' ? outgoing.path : null,
+    status: typeof outgoing.status === 'string' ? outgoing.status : null,
+    candidate_diff_digest:
+      typeof outgoing.candidate_diff_digest === 'string' ? outgoing.candidate_diff_digest : null,
+  }), `replaced_at=${new Date().toISOString()}`];
+  const record = {
+    overflow_id: `OV-${OVERFLOW_REASON}-${String(sameReason + 1).padStart(4, '0')}`,
+    file: 'work-items.json',
+    reason: OVERFLOW_REASON,
+    dropped_records: dropped,
+  };
+  if (Buffer.byteLength(JSON.stringify(record), 'utf8') > OVERFLOW_RECORD_BYTE_LIMIT) {
+    throw new Error('workflow_write: el recibo del slot candidate excede el tope de '
+      + `${OVERFLOW_RECORD_BYTE_LIMIT} bytes del registro; denegado sin reintento`);
+  }
+  const kept = lines.slice(-Math.max(0, OVERFLOWS_RECORD_LIMIT - 1));
+  const receipt = [...kept, JSON.stringify(record)].join('\n') + '\n';
+  await ctx.fs.writeText(overflowsTarget, receipt, undefined, undefined, policy);
+}
+
 export function apply(ctx, config) {
   const MODES = ['workspace-write', 'danger-full-access'];
   const policyService = () => ctx.get('sandboxPolicy');
@@ -967,6 +1064,11 @@ export function apply(ctx, config) {
       // fallo los falsearía como denegaciones de política.
       let outcome;
       try {
+        if (relative === WORK_ITEMS_NAME) {
+          // Fail-closed: a failed receipt leaves the slot untouched. The
+          // receipt lands under the same lease, before the replacement.
+          await appendCandidateSlotReceipt(ctx, stateRoot, target, content, policy);
+        }
         outcome = await ctx.fs.writeText(target, content, intent, exec.signal, policy);
         if (relative && session) {
           await recordCommitWrite(ctx, stateRoot, relative, content, policy);

@@ -1856,11 +1856,15 @@ def main():
     p_state = sub.add_parser(
         "state",
         help="Reconciliar el mode-state con el repositorio real (informe, "
-             "re-apuntado de cabeza integrada, retirada de candidata)")
+             "re-apuntado de cabeza integrada, cierre INTEGRATED de candidata, "
+             "retirada de candidata)")
     p_state.add_argument("--project", default=None,
                          help="Ruta al proyecto (default: el único checkout "
                               "git junto al clon del framework)")
     p_state.add_argument("--workspace", default=None)
+    p_state.add_argument("--integrate", action="store_true",
+                         help="Marcar INTEGRATED la candidata PATCH_READY verificada "
+                              "(ruta de operador; falla si la contención no está probada)")
     p_state.add_argument("--retire", action="store_true",
                          help="Retirar la candidata INTEGRATED verificada")
     p_state.add_argument("--repoint", default=None,
@@ -2113,6 +2117,9 @@ def main():
             if args.repoint:
                 performed.append(state_reconcile.repoint(
                     project, workspace, args.repoint))
+            if args.integrate:
+                performed.append(state_reconcile.mark_integrated(
+                    project, workspace))
             if args.retire:
                 performed.append(state_reconcile.retire(project, workspace))
             result = {"result": "RESOLVED",
