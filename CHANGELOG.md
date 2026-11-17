@@ -1,5 +1,17 @@
 # Cambios
 
+## workflow: el margen decisivo alcanza a reparar tras la cuarta retención — 2026-11-17
+
+La corrida r-d35845c2 (2026-11-17) completó `auditar` con 434.378 tokens
+(29% del techo de 1.5M — el régimen de `e061ac1` lo sostiene; cuarta muestra:
+545k/852k/1.044k/434k) y retuvo `reparar-1` con causa
+`ask-techo-tokens:reparar-1:719206/700000`. Segunda muestra de `reparar`
+(521.780 y 719.206, ambas con trabajo convergente medido en sesión): la misma
+patología de varianza de `auditar`. `BUDGET_REPAIR_TOKENS` 700000 → **1000000**
+(+39% sobre el peor observado, mismo régimen guarda-anti-bucle). Si una
+corrida supera 1M en reparar, el guarda queda falsificado para esa fase y el
+diagnóstico pasa a ser estructural (lecturas delta, opción (a) de la propuesta).
+
 ## workflow: los techos se fijan con margen decisivo tras la tercera retención — 2026-11-17
 
 La corrida r-808ef81d (2026-11-17) retuvo `auditar` de nuevo:
