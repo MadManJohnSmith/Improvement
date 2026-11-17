@@ -201,6 +201,7 @@ class WorkflowExecutorTests(unittest.TestCase):
         plan_path = self.write_plan([
             self.gate('g1', ['true']),
             {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+             'budget_tokens': 1000000,
              'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
                              'field': 'estado', 'equals': 'SI'}},
             {'id': 'j', 'type': 'join', 'depends': ['a1']}], preset='cordis')
@@ -451,7 +452,8 @@ class WorkflowExecutorTests(unittest.TestCase):
 
     def test_plan_con_ask_sin_cliente_abstiene(self):
         plan_path = self.write_plan([self.gate('g1', ['true']),
-                                     {'id': 'a1', 'type': 'ask', 'prompt': 'resume'}])
+                                     {'id': 'a1', 'type': 'ask', 'prompt': 'resume',
+                                      'budget_tokens': 1000000}])
         outcome = run_plan(plan_path)
         self.assertEqual(outcome['result'], 'ABSTAINED')
         self.assertIn('ask', outcome['reason'])
@@ -461,7 +463,8 @@ class WorkflowExecutorTests(unittest.TestCase):
         # de run dir), así que el fichero debe existir para llegar a la
         # abstención por falta de cliente.
         (self.tmp / 'prompt.txt').write_text('resume el informe', encoding='utf-8')
-        plan_path = self.write_plan([{'id': 'a1', 'type': 'ask', 'prompt_file': 'prompt.txt'}],
+        plan_path = self.write_plan([{'id': 'a1', 'type': 'ask', 'prompt_file': 'prompt.txt',
+                                      'budget_tokens': 1000000}],
                                     filename='ask-file.json')
         proc = self.cli('run', str(plan_path))
         self.assertEqual(proc.returncode, 1)
@@ -472,7 +475,8 @@ class WorkflowExecutorTests(unittest.TestCase):
         self.assertFalse(self.run_root.exists())
 
         # prompt_file ausente: error de plan antes de run dir (U3).
-        plan_path = self.write_plan([{'id': 'a1', 'type': 'ask', 'prompt_file': 'ausente.txt'}],
+        plan_path = self.write_plan([{'id': 'a1', 'type': 'ask', 'prompt_file': 'ausente.txt',
+                                      'budget_tokens': 1000000}],
                                     filename='ask-ausente.json')
         with self.assertRaises(WorkflowError):
             run_plan(plan_path)
@@ -562,6 +566,7 @@ class WorkflowExecutorTests(unittest.TestCase):
             p3 = self.write_plan([
                 self.gate('g1', ['true']),
                 {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'budget_tokens': 1000000,
                  'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
                                  'field': 'verdict', 'equals': 'PASS'}},
             ], preset='cordis', filename='ask-skip-incoh.json')
@@ -589,6 +594,7 @@ class WorkflowExecutorTests(unittest.TestCase):
             p4 = self.write_plan([
                 self.gate('g1', ['true']),
                 {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'budget_tokens': 1000000,
                  'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
                                  'field': 'verdict', 'equals': 'FAIL'}},
             ], preset='cordis', filename='ask-skip-digest.json')
@@ -614,6 +620,7 @@ class WorkflowExecutorTests(unittest.TestCase):
             p5 = self.write_plan([
                 self.gate('g1', ['true']),
                 {'id': 'a1', 'type': 'ask', 'preset': 'cordis', 'prompt': 'prueba',
+                 'budget_tokens': 1000000,
                  'if_veredicto': {'from': 'g1', 'path': 'veredicto.json',
                                  'field': 'verdict', 'equals': 'FAIL'}},
             ], preset='cordis', filename='step-comp-incoh.json')

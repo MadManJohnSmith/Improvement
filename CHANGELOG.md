@@ -1,5 +1,44 @@
 # Cambios
 
+## workflow: techo de lectura por intento ask — presupuesto forzado fail-closed — 2026-11-17
+
+Aplica la opción (b) de propuesta-presupuesto-lectura.md (misión de diseño del
+handoff 2026-11-16, decisión abierta #2 de lecciones-runtime.md). La evidencia
+medida (7 turnos de campaña ask, 3,92M billed, cache leído 73–91%): el paquete
+se relee entero en cada petición y el despilfarro real es la re-verificación
+sin delta — reparar-2 de r-7b069c26 gastó 877k re-verificando lo que reparar-1
+ya había arreglado en la misma sombra.
+
+- **Plan** (`campaign_plan.py`): cada paso ask lleva `budget_tokens`
+  (constantes `BUDGET_AUDIT_TOKENS` 850.000, `BUDGET_REPAIR_TOKENS` 500.000,
+  `BUDGET_IMPLEMENT_TOKENS` 900.000 junto a `ROUNDS_DEFAULT`), derivados del
+  máximo legítimo medido por fase (692k / 401k / 728k) con margen ~20%; el
+  877k de reparar-2 era la excedencia redundante que el techo de 500k corta.
+  Los bytes del plan —y su digest— cambian: comportamiento esperado, los
+  planes se regeneran al despachar campañas.
+- **Runner** (`workflow.py`): `_validate_step` exige `budget_tokens` entero
+  ≥ 1 para ask —obligatorio, un plan viejo sin techo no se ejecuta— y lo
+  rechaza fuera de ask. `_poll_ask` pliega el usage de la sesión con la
+  maquinaria existente de creator_client (`_event_usage` /
+  `_normalise_usage`, desduplicado por seq durable) y al superar el techo
+  cierra la sesión y retiene con causa `ask-techo-tokens:<paso>:<facturado>/
+  <techo>:<quiescencia>`, el mismo patrón que ask-deadline. La reanudación
+  pliega la página completa del transcript con el mismo desduplicado. El
+  total queda en la observación ask (`usage_tokens`, JSON libre), sin tocar
+  el schema del payload STEP_COMPLETED.
+- **Fail-closed en ambos sentidos**: usage ambiguo —ausente en un
+  assistant/message, contradictorio (total < in+out+cache) o el mismo seq
+  re-facturado con otra cifra— retiene con `ask-uso-ambiguo:…`: el coste real
+  desconocido jamás se estima ni se continúa mudo.
+- **Regresiones** (`tests/test_workflow_ask.py`): la excedencia retiene con el
+  cause exacto (con quiescencia confirmada y sin ella, sesión cerrada),
+  dentro del techo completa y registra el uso, usage ambiguo retiene sin
+  seguir, un plan ask sin techo o inválido se rechaza sin run dir (y un gate
+  con techo también), y el pliegue desduplica las páginas re-enviadas por
+  seq. Fixtures de ask actualizados (techo en los pasos, usage en las
+  sesiones falsas). Suite: **1383 tests green** (1 skipped con el runtime DSH
+  instalado; 12 en una máquina sin runtime ni `jsonschema`).
+
 ## campaign: el ciclo de memoria se ejercita desde el gate y la firma del episodio es una sola receta — 2026-11-17
 
 La campaña `verificacion-1.11.0-1` cerró una reparación con verificación PASS y

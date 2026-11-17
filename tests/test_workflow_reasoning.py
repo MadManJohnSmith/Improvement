@@ -167,7 +167,7 @@ class PlanValidationTests(unittest.TestCase):
     @staticmethod
     def ask_step(step_id, prompt='hola', **extra):
         step = {'id': step_id, 'type': 'ask', 'preset': 'cordis',
-                'prompt': prompt, 'timeout_s': 30}
+                'prompt': prompt, 'timeout_s': 30, 'budget_tokens': 1000000}
         step.update(extra)
         return step
 
@@ -231,7 +231,8 @@ class AskRuntimeTests(unittest.TestCase):
 
     @staticmethod
     def ask_step(step_id='a1', prompt='hola', **extra):
-        step = {'id': step_id, 'type': 'ask', 'prompt': prompt, 'timeout_s': 30}
+        step = {'id': step_id, 'type': 'ask', 'prompt': prompt, 'timeout_s': 30,
+                'budget_tokens': 1000000}
         step.update(extra)
         return step
 
@@ -480,7 +481,9 @@ class FakeSession:
             return
         self.completed = True
         self.add_event('assistant/message', turn=self.turn,
-                       message={'text': self.client.text})
+                       message={'text': self.client.text},
+                       usage={'inputTokens': 120, 'outputTokens': 40,
+                              'cacheReadTokens': 300, 'totalTokens': 460})
         self.add_event('turn/end', turn=self.turn, reason='completed')
         self.running = False
 
@@ -711,7 +714,8 @@ class RealRuntimeNotVerifiedTests(unittest.TestCase):
         plan = {'schema_version': 1, 'name': 'prueba', 'preset': 'cordis',
                 'workspace': str(workspace),
                 'steps': [{'id': 'a1', 'type': 'ask', 'prompt': 'hola',
-                           'timeout_s': 30, 'reasoning_effort': 'low'}]}
+                           'timeout_s': 30, 'budget_tokens': 1000000,
+                           'reasoning_effort': 'low'}]}
         path = tmp_path / 'plan.json'
         path.write_bytes(json.dumps(plan, sort_keys=True,
                                     separators=(',', ':')).encode('utf-8') + b'\n')
@@ -742,7 +746,8 @@ class LevelChangeIsADifferentRunTests(unittest.TestCase):
         self.addCleanup(grace.stop)
 
     def test_changing_the_level_produces_another_run_dir_and_level(self):
-        steps = [{'id': 'a1', 'type': 'ask', 'prompt': 'hola', 'timeout_s': 30}]
+        steps = [{'id': 'a1', 'type': 'ask', 'prompt': 'hola', 'timeout_s': 30,
+                  'budget_tokens': 1000000}]
         levels = ['low', 'high']
         for level in levels:
             plan = {'schema_version': 1, 'name': 'p', 'preset': 'cordis',

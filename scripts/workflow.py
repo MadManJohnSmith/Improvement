@@ -74,6 +74,10 @@ from composition_contract import (ANTI_ESCALATION_PLUGIN,
                                   REQUIRED_MODE_PLUGINS)
 import workflow_evidence
 import workflow_reasoning
+# La cuenta de lectura del ask reutiliza la norma de uso de las sesiones
+# Creator: extracción fail-closed del usage por registro (CreatorUsageAmbiguous)
+# en vez de una réplica que pudiera relajarse por su cuenta.
+from creator_client import CreatorUsageAmbiguous, _event_usage
 from support import digest_bytes
 
 MAX_RECORD = 4096
@@ -262,7 +266,7 @@ def _validate_step(raw, previous_ids, index):
     unknown = set(raw) - {'id', 'type', 'depends', 'command', 'on_fail',
                           'name', 'max_rounds', 'prompt', 'prompt_file', 'timeout_s',
                           'result_contract', 'preset', 'if_veredicto',
-                          'reasoning_effort'}
+                          'reasoning_effort', 'budget_tokens'}
     if unknown:
         raise WorkflowError('paso inválido: claves desconocidas: ' + ', '.join(sorted(unknown)) + where)
     step_id = raw.get('id')
@@ -287,8 +291,10 @@ def _validate_step(raw, previous_ids, index):
         if dep not in previous_ids:
             raise WorkflowError('paso inválido: dependencia no previa: ' + dep + where)
     step = {'id': step_id, 'type': step_type, 'depends': tuple(depends)}
-    if step_type != 'ask' and ('preset' in raw or 'if_veredicto' in raw):
-        raise WorkflowError('paso inválido: preset/if_veredicto solo para ask' + where)
+    if step_type != 'ask' and ('preset' in raw or 'if_veredicto' in raw
+                               or 'budget_tokens' in raw):
+        raise WorkflowError('paso inválido: preset/if_veredicto/budget_tokens '
+                            'solo para ask' + where)
     if step_type == 'gate':
         command = raw.get('command')
         if (not isinstance(command, list) or not command
@@ -354,6 +360,15 @@ def _validate_step(raw, previous_ids, index):
         timeout = raw.get('timeout_s', 1800)
         if not _is_int(timeout) or timeout < 1:
             raise WorkflowError('paso inválido: timeout_s debe ser entero >= 1' + where)
+        # Techo de lectura fail-closed: OBLIGATORIO para ask. Un plan viejo sin
+        # techo no se ejecuta, igual que el resto del esquema estricto; así la
+        # excedencia de lectura nunca continúa muda (retención con causa
+        # `ask-techo-tokens` citable en el journal).
+        budget = raw.get('budget_tokens')
+        if isinstance(budget, bool) or not isinstance(budget, int) or budget < 1:
+            raise WorkflowError('paso inválido: ask requiere budget_tokens '
+                                'entero >= 1' + where)
+        step['budget_tokens'] = budget
         contract = raw.get('result_contract')
         if contract is not None:
             if (not isinstance(contract, dict) or 'path' not in contract
@@ -935,7 +950,8 @@ def _assistant_text(data):
 
 def _new_ask_state():
     return {'cursor': -1, 'open_turn': None, 'request_turn': None,
-            'terminal': False, 'texts': []}
+            'terminal': False, 'texts': [],
+            'usage_by_seq': {}, 'usage_tokens': 0}
 
 
 def _fold_ask(observation, state, request_id):
@@ -1007,6 +1023,40 @@ def _fold_ask(observation, state, request_id):
                   'terminal': terminal,
                   'quiescent': (not observation['running'] and not child_running
                                 and not active_jobs)})
+    return state
+
+
+def _fold_ask_usage(observation, state):
+    """Acumula en state el uso facturable de la sesión del intento.
+
+    La sesión es NUEVA por intento (_ask), así que todo lo facturado en ella
+    pertenece al intento. Misma norma que creator_client._event_usage: el
+    usage viaja en assistant/message; un registro de ese tipo sin usage, con
+    un total contradictorio o re-facturado con otra cifra es ambiguo y falla
+    cerrada (CreatorUsageAmbiguous) — el coste real desconocido nunca se
+    estima. La cuenta va por seq durable: una re-observación que re-envía
+    registros ya plegados (reanudación con cursor=-1) no suma dos veces.
+    """
+    usage_by_seq = state.setdefault('usage_by_seq', {})
+    for event in observation.get('events') or []:
+        usage = _event_usage(event)
+        if usage is None:
+            continue
+        seq = event.get('seq')
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise CreatorUsageAmbiguous(
+                'assistant/message con usage sin seq durable; '
+                'no se puede desduplicar')
+        key = str(seq)
+        previous = usage_by_seq.get(key)
+        if previous is not None:
+            if previous != usage:
+                raise CreatorUsageAmbiguous(
+                    'mismo seq con usage distinto en DSH; coste real '
+                    'ambiguo en seq %d' % seq)
+            continue
+        usage_by_seq[key] = usage
+        state['usage_tokens'] += usage['totalTokens']
     return state
 
 
@@ -1753,6 +1803,11 @@ class _Run:
         try:
             observation = self.ask_client.creator_observation(session_id, cursor=-1)
             state = _fold_ask(observation, state, request_id)
+            # La página completa del reanudado no pasa por _poll_ask: su uso
+            # se pliega aquí, desduplicado por seq como en cada sondeo.
+            _fold_ask_usage(observation, state)
+        except CreatorUsageAmbiguous as error:
+            self._retain('ask-uso-ambiguo:' + step_id + ':' + _brief(error))
         except (ValueError, OSError, urllib.error.URLError) as error:
             self._retain('ask-sesion-perdida:' + step_id + ':' + _brief(error))
         if state['request_turn'] is None:
@@ -1772,6 +1827,7 @@ class _Run:
     def _poll_ask(self, step, attempt, session_id, request_id, prompt_sha256,
                   state=None, reasoning=None):
         step_id = step['id']
+        budget = step['budget_tokens']
         if state is None:
             state = _new_ask_state()
         deadline = time.monotonic() + step['timeout_s']
@@ -1785,11 +1841,26 @@ class _Run:
                 observation = self.ask_client.creator_observation(
                     session_id, cursor=state['cursor'])
                 state = _fold_ask(observation, state, request_id)
+                _fold_ask_usage(observation, state)
+            except CreatorUsageAmbiguous as error:
+                # Uso ambiguo: coste real desconocido, no se continúa mudo.
+                self._close_ask(session_id, state)
+                self._retain('ask-uso-ambiguo:' + step_id + ':' + _brief(error))
             except (ValueError, OSError, urllib.error.URLError) as error:
                 # Trampa de red: nunca una excepción sin retención; antes de
                 # retener se intenta no abandonar la sesión sin cierre.
                 self._close_ask(session_id, state)
                 self._retain('ask-observacion-fallo:' + step_id + ':' + _brief(error))
+            # Techo de lectura: la excedencia retiene con causa citable (patrón
+            # ask-deadline), incluso si el turno ya terminó — el techo acota el
+            # coste estructuralmente y la retención no pierde trabajo.
+            if state['usage_tokens'] > budget:
+                confirmed = self._close_ask(session_id, state)
+                if confirmed:
+                    self._retain('ask-techo-tokens:%s:%d/%d:cancelada y quiescente'
+                                 % (step_id, state['usage_tokens'], budget))
+                self._retain('ask-techo-tokens:%s:%d/%d:sin quiescencia confirmada'
+                             % (step_id, state['usage_tokens'], budget))
             if state['terminal'] and state['quiescent']:
                 break
             time.sleep(ASK_POLL_SECONDS)
@@ -1805,7 +1876,8 @@ class _Run:
                 step['result_contract']['evidence_name'])
         relative, data = self._write_ask_state(
             step_id, attempt, session_id, request_id, prompt_sha256, 'completed',
-            text=text, result=result_payload, result_path=result_path)
+            text=text, result=result_payload, result_path=result_path,
+            usage_tokens=state['usage_tokens'])
         deps = {}
         cond = step.get('if_veredicto')
         if cond is not None:

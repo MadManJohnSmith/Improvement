@@ -58,6 +58,10 @@ class FakeSession:
         self.sent = []  # request_ids encolados
         self.queue_only = False  # no registrar el mensaje en el transcript
         self.assistant_text = 'texto del asistente'
+        # Uso facturable del turno, como DSH lo persiste en assistant/message;
+        # totalTokens >= input + output + cacheRead (norma de _normalise_usage).
+        self.usage = {'inputTokens': 120, 'outputTokens': 40,
+                      'cacheReadTokens': 300, 'totalTokens': 460}
         self.completed = False
         self.observed = 0
 
@@ -87,8 +91,9 @@ class FakeSession:
         if self.completed or not self.turn:
             return
         self.completed = True
+        extra = {} if self.usage is None else {'usage': dict(self.usage)}
         self.add_event('assistant/message', turn=self.turn,
-                       message={'text': self.assistant_text})
+                       message={'text': self.assistant_text}, **extra)
         self.add_event('turn/end', turn=self.turn, reason='completed')
         self.running = False
         if self.on_complete is not None:
@@ -234,7 +239,10 @@ class WorkflowAskTests(unittest.TestCase):
 
     @staticmethod
     def ask(step_id='a1', prompt='resume el estado', **extra):
-        step = {'id': step_id, 'type': 'ask', 'prompt': prompt, 'timeout_s': 1}
+        # Techo alto por defecto: el uso diminuto del fake no lo toca; los
+        # tests del techo lo reducen por paso.
+        step = {'id': step_id, 'type': 'ask', 'prompt': prompt, 'timeout_s': 1,
+                'budget_tokens': 1000000}
         step.update(extra)
         return step
 
@@ -842,6 +850,124 @@ class WorkflowAskTests(unittest.TestCase):
         self.assertFalse(any(item['kind'] == 'STEP_COMPLETED' for item in
                              self.payloads(outcome['run_dir'])))
         self.assertEqual(verify(outcome['run_dir'])['events'], len(self.payloads(outcome['run_dir'])))
+
+    # -- techo de lectura: presupuesto forzado fail-closed por intento ask
+
+    def test_techo_de_lectura_retiene_con_causa_citable(self):
+        client = FakeAskClient()
+        client.complete_after = 1
+        plan_path = self.write_plan([self.ask(budget_tokens=10)])
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'RETAINED')
+        # El cause lleva paso, total facturado y techo: citable sin cargar el
+        # plan (regla R2: el techo solo sube si el reason lo dice).
+        self.assertEqual(outcome['cause'],
+                         'ask-techo-tokens:a1:460/10:cancelada y quiescente')
+        self.assertEqual(client.cancels, [client.created[0][0]],
+                         'la sesión excedida no se abandona sin cierre')
+        payloads = self.payloads(outcome['run_dir'])
+        self.assertEqual(payloads[-1]['kind'], 'RUN_RETAINED')
+        self.assertEqual(payloads[-1]['payload']['cause'], outcome['cause'])
+        self.assertNotIn('STEP_COMPLETED', [p['kind'] for p in payloads])
+
+        client = FakeAskClient()
+        client.cancel_clears = False  # la cancelación no logra quiescencia
+        # Uso sobre el techo sin terminal: la sesión sigue viva al retener.
+        client.on_send = lambda session: session.add_event(
+            'assistant/message', turn=session.turn, message={'text': 'intermedio'},
+            usage={'inputTokens': 10, 'outputTokens': 5, 'cacheReadTokens': 0,
+                   'totalTokens': 5000})
+        plan_path = self.write_plan([self.ask(prompt='otra cosa', budget_tokens=10)],
+                                    filename='techo-sin-cierre.json')
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'RETAINED')
+        self.assertEqual(outcome['cause'],
+                         'ask-techo-tokens:a1:5000/10:sin quiescencia confirmada')
+
+    def test_dentro_del_techo_completa_y_registra_el_uso(self):
+        client = FakeAskClient()
+        client.complete_after = 1
+        plan_path = self.write_plan([self.ask(budget_tokens=1000000)])
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'COMPLETED')
+        payloads = self.payloads(outcome['run_dir'])
+        self.assertEqual(payloads[-1]['kind'], 'RUN_COMPLETED')
+        self.assertNotIn('RUN_RETAINED', [p['kind'] for p in payloads],
+                         'el techo no penaliza el caso sano')
+        completed = next(p['payload'] for p in payloads if p['kind'] == 'STEP_COMPLETED')
+        body = json.loads((Path(outcome['run_dir']) / completed['observation']).read_bytes())
+        self.assertEqual(body['usage_tokens'], 460)
+        self.assertEqual(verify(outcome['run_dir'])['events'], len(payloads))
+
+    def test_usage_ambiguo_retiene_sin_seguir(self):
+        # total < input + output + cacheRead: la cifra persistida se contradice
+        # y el registro sin usage deja el coste real desconocido. Ambos
+        # retienen con causa citable; jamás se estima ni se continúa mudo.
+        for index, usage in enumerate((
+                {'inputTokens': 10, 'outputTokens': 5, 'cacheReadTokens': 20,
+                 'totalTokens': 5},
+                None)):
+            with self.subTest(case=index):
+                client = FakeAskClient()
+                client.complete_after = 1
+                client.on_send = lambda session, u=usage: setattr(session, 'usage', u)
+                plan_path = self.write_plan(
+                    [self.ask(prompt='turno ambiguo %d' % index)],
+                    filename='uso-ambiguo-%d.json' % index)
+                outcome = run_plan(plan_path, ask_client=client)
+                self.assertEqual(outcome['result'], 'RETAINED')
+                self.assertIn('ask-uso-ambiguo:a1', outcome['cause'])
+                self.assertEqual(client.cancels, [client.created[0][0]])
+                self.assertNotIn('STEP_COMPLETED',
+                                 [p['kind'] for p in self.payloads(outcome['run_dir'])])
+
+    def test_ask_sin_budget_tokens_rechazado_sin_run_dir(self):
+        base = {'id': 'a1', 'type': 'ask', 'prompt': 'p'}
+        cases = [
+            ({**base}, 'budget_tokens'),      # plan viejo sin techo: no se ejecuta
+            ({**base, 'budget_tokens': 0}, 'budget_tokens'),
+            ({**base, 'budget_tokens': -5}, 'budget_tokens'),
+            ({**base, 'budget_tokens': 'mucho'}, 'budget_tokens'),
+            ({**base, 'budget_tokens': True}, 'budget_tokens'),
+        ]
+        for index, (step, fragment) in enumerate(cases):
+            with self.subTest(case=index):
+                path = self.write_plan([step], filename='budget-invalido-%d.json' % index)
+                with self.assertRaisesRegex(WorkflowError, fragment):
+                    run_plan(path, ask_client=FakeAskClient())
+                self.assertFalse(self.run_root.exists())
+        # Un gate NUNCA recibe techo: la política de inferencia no le da autoridad.
+        path = self.write_plan([{'id': 'g1', 'type': 'gate', 'command': ['true'],
+                                 'on_fail': {'action': 'abort', 'rounds': 1},
+                                 'budget_tokens': 10}], filename='budget-gate.json')
+        with self.assertRaisesRegex(WorkflowError, 'solo para ask'):
+            run_plan(path)
+        self.assertFalse(self.run_root.exists())
+
+    def test_fold_ask_usage_deduplica_por_seq_y_falla_cerrada(self):
+        state = workflow._new_ask_state()
+        usage = {'inputTokens': 10, 'outputTokens': 5, 'cacheReadTokens': 20,
+                 'totalTokens': 35}
+        observation = {'running': False, 'events': [
+            {'seq': 1, 'type': 'turn/start', 'data': {'turn': 1}},
+            {'seq': 2, 'type': 'assistant/message',
+             'data': {'turn': 1, 'usage': usage}},
+        ]}
+        workflow._fold_ask_usage(observation, state)
+        workflow._fold_ask_usage(observation, state)  # página re-enviada
+        self.assertEqual(state['usage_tokens'], 35)
+        # Mismo seq con otra cifra: cuenta ambigua, no reconciliación silenciosa.
+        replay = {'running': False, 'events': [
+            {'seq': 2, 'type': 'assistant/message',
+             'data': {'turn': 1, 'usage': {**usage, 'totalTokens': 99}}}],
+        }
+        with self.assertRaises(workflow.CreatorUsageAmbiguous):
+            workflow._fold_ask_usage(replay, state)
+        # usage sin seq durable: no se puede desduplicar una re-observación.
+        with self.assertRaises(workflow.CreatorUsageAmbiguous):
+            workflow._fold_ask_usage({'running': False, 'events': [
+                {'type': 'assistant/message', 'data': {'usage': usage}}]},
+                workflow._new_ask_state())
 
 
 def _write_result(workspace, relative, value):

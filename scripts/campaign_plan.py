@@ -45,6 +45,17 @@ REPAIR_RESULT = 'reparar.json'
 VERDICT_NAME = 'veredicto.json'
 VERDICT_FIELD = 'verdict'
 ROUNDS_DEFAULT = 2
+# Techos de lectura por intento ask, en tokens facturados por la sesión DSH
+# (input + cacheRead + output; la cifra totalTokens que reporta cada
+# petición). Derivados de la medición de las campañas r-b3765472 y
+# r-7b069c26 (2026-11-17, propuesta-presupuesto-lectura.md) con margen ~20%
+# sobre el máximo legítimo observado por fase: auditar midió 692k, reparar
+# 401k legítimos (el 877k de reparar-2 fue re-verificación redundante que el
+# techo corta) e implementar 728k. El runner retiene al superarlos con causa
+# `ask-techo-tokens` citable; el techo solo sube si el reason lo dice (R2).
+BUDGET_AUDIT_TOKENS = 850000
+BUDGET_REPAIR_TOKENS = 500000
+BUDGET_IMPLEMENT_TOKENS = 900000
 # Las dos primeras rondas llevan nombre propio porque son las que el operador
 # reconoce al leer el journal; a partir de ahí el nombre ya solo ordena.
 ROUND_LABELS = ('pre', 'post')
@@ -213,10 +224,16 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
                   change_request=None):
     """Documento de plan v1 exacto, sin escribir nada en disco.
 
+    Cada paso `ask` lleva su `budget_tokens` (techo de lectura fail-closed que
+    el runner aplica en el sondeo; sin él el esquema estricto del workflow
+    rechaza el plan). Desde la unidad del techo esto cambia los bytes del plan
+    — y su digest — frente a versiones anteriores: los planes se regeneran al
+    despachar campañas y no se compensa con trucos.
+
     `esfuerzos` es la política del operador por etapa de campaña
-    (`workflow_reasoning.STAGES`). SIN opt-in el documento es byte-idéntico al
-    de siempre: no se añade ningún campo. Con opt-in, cada paso `ask` recibe
-    `reasoning_effort` y los gates/joints no cambian en absoluto.
+    (`workflow_reasoning.STAGES`). SIN opt-in no se añade ningún campo más:
+    con opt-in, cada paso `ask` recibe `reasoning_effort` y los gates/joints
+    no cambian en absoluto.
     """
     workspace = Path(workspace).resolve()
     if not workspace.is_dir():
@@ -263,7 +280,8 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
          'on_fail': {'action': 'abort', 'rounds': 1}},
         {'id': 'auditar', 'type': 'ask', 'preset': auditor,
          'prompt_file': PROMPTS_DIRNAME + '/' + AUDIT_PROMPT,
-         'result_contract': {'path': AUDIT_RESULT, 'evidence_name': EVIDENCE_NAME}},
+         'result_contract': {'path': AUDIT_RESULT, 'evidence_name': EVIDENCE_NAME},
+         'budget_tokens': BUDGET_AUDIT_TOKENS},
     ]
     for index in range(1, rondas_max + 1):
         label = _round_label(index)
@@ -274,7 +292,8 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
         steps.append({'id': 'reparar-%d' % index, 'type': 'ask', 'preset': repair,
                       'prompt_file': PROMPTS_DIRNAME + '/' + REPAIR_PROMPT,
                       'result_contract': {'path': REPAIR_RESULT,
-                                          'evidence_name': EVIDENCE_NAME}})
+                                          'evidence_name': EVIDENCE_NAME},
+                      'budget_tokens': BUDGET_REPAIR_TOKENS})
     steps.append({'id': 'verificar-final', 'type': 'gate',
                   'command': _gate_command(workspace, python, script, 'final'),
                   'on_fail': {'action': 'abort', 'rounds': 1}})
@@ -295,7 +314,8 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
         steps.append({'id': 'implementar', 'type': 'ask', 'preset': implementer,
                       'prompt_file': PROMPTS_DIRNAME + '/' + IMPLEMENT_PROMPT,
                       'result_contract': {'path': IMPLEMENT_RESULT,
-                                          'evidence_name': EVIDENCE_NAME}})
+                                          'evidence_name': EVIDENCE_NAME},
+                      'budget_tokens': BUDGET_IMPLEMENT_TOKENS})
         steps.append({'id': 'verificar-implement', 'type': 'gate',
                       'command': _gate_command(workspace, python, script,
                                                'verificar-implement')

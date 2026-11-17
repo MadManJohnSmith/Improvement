@@ -106,7 +106,8 @@ class WorkflowBootstrapTests(unittest.TestCase):
 
     def test_plan_con_ask_sin_cliente_dsh_abstiene(self):
         plan_path = self.write_plan([self.gate('g1', ['true']),
-                                     {'id': 'a1', 'type': 'ask', 'prompt': 'resume'}])
+                                     {'id': 'a1', 'type': 'ask', 'prompt': 'resume',
+                                      'budget_tokens': 1000000}])
         code, out, err = self.entry('run', str(plan_path))
         self.assertEqual(code, 1)
         self.assertEqual(out, '', 'la abstención no emite resultado a stdout')
