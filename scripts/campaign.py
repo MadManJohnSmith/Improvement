@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 import audit
+import capabilities
 import state_reconcile
 import stack as capability_plan
 
@@ -42,6 +43,8 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_BLOCKED = EXIT_FAIL  # veredicto con artefacto: el runner solo conoce 0/1
 STATE_DIRNAME = 'mode-state'
+MANAGED_DIRNAME = '.dsh-managed'
+CAPABILITY_IMPLEMENT_NAME = 'capability-implement.json'
 EVIDENCE_DIRNAME = 'evidence'
 VERDICT_NAME = 'veredicto.json'
 EVIDENCE_NAME = 'campana'
@@ -212,46 +215,47 @@ def _product_head(product):
     return out.stdout.strip()
 
 
-def _register_candidate(workspace, candidate):
-    """Registra/actualiza la candidata en work-items.json, sin seguir enlaces.
+def _atomic_json_write(directory, name, value):
+    """Escribe JSON en <directory>/<name> sin seguir enlaces, atómicamente.
 
-    Reemplazo atómico (temporal + os.replace con O_NOFOLLOW), el mismo
-    disciplinamiento que write_verdict aplica a su veredicto.
+    El mismo disciplinamiento que write_verdict aplica a su veredicto:
+    temporal exclusivo + fsync + os.replace con O_NOFOLLOW en ambos extremos.
     """
-    state = workspace / STATE_DIRNAME
-    work_items = _read_bounded(state / WORK_ITEMS_NAME,
-                               BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
-    if not isinstance(work_items, dict):
-        raise CampaignBlocked(WORK_ITEMS_NAME + " no tiene la forma del contrato")
-    work_items["candidate"] = candidate
-    payload = json.dumps(work_items, ensure_ascii=False, indent=2) + "\n"
-    state_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    directory = Path(directory)
+    payload = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+    dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        temporary = ".work-items-" + secrets.token_hex(12)
+        temporary = "." + name + "-" + secrets.token_hex(12)
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                     os.O_NOFOLLOW, 0o600, dir_fd=state_fd)
+                     os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
         try:
             with os.fdopen(fd, "wb") as stream:
                 stream.write(payload.encode("utf-8"))
                 stream.flush()
                 os.fsync(stream.fileno())
             try:
-                current = os.stat(WORK_ITEMS_NAME, dir_fd=state_fd,
-                                  follow_symlinks=False)
+                current = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
             except FileNotFoundError:
                 current = None
             if current is not None and not stat.S_ISREG(current.st_mode):
-                raise CampaignBlocked("work-items.json no es un fichero regular")
-            os.replace(temporary, WORK_ITEMS_NAME, src_dir_fd=state_fd,
-                       dst_dir_fd=state_fd)
+                raise CampaignBlocked(name + " no es un fichero regular")
+            os.replace(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
         except BaseException:
             try:
-                os.unlink(temporary, dir_fd=state_fd)
+                os.unlink(temporary, dir_fd=dir_fd)
             except OSError:
                 pass
             raise
     finally:
-        os.close(state_fd)
+        os.close(dir_fd)
+
+
+def _register_candidate(workspace, candidate):
+    """Registra/actualiza la candidata en work-items.json, sin seguir enlaces."""
+    _atomic_json_write(Path(workspace) / STATE_DIRNAME, WORK_ITEMS_NAME,
+                       {**(_read_bounded(Path(workspace) / STATE_DIRNAME / WORK_ITEMS_NAME,
+                                         BYTE_LIMITS[WORK_ITEMS_NAME]) or {}),
+                         "candidate": candidate})
 
 
 def provision_implement(workspace, request):
@@ -296,8 +300,31 @@ def provision_implement(workspace, request):
         "changed_paths": [],
     }
     _register_candidate(workspace, candidate)
+    # La capability que autoriza este turno: sesión = la candidata provisionada
+    # (su path es único por petición+base), raíces acotadas a lo que el modo
+    # puede tocar. El fingerprint idéntico es lo que permite el reuso en la
+    # reanudación — el mismo mecanismo que el exact-resume de los runs.
+    framework = Path(__file__).resolve().parents[1]
+    shadow_absolute = str((Path(workspace).parent / candidate["path"]).resolve())
+    capability = {
+        "version": 1,
+        "capability_id": "implement-" + candidate["finding_ids_digest"][:16],
+        "session_id": candidate["path"],
+        "project": str(product),
+        "executor": "campaign-runner",
+        "roots": {"product_read": [str(product)],
+                  "framework_execute": [str(framework)],
+                  "workspace_write": [shadow_absolute,
+                                      str(Path(workspace) / STATE_DIRNAME),
+                                      str(Path(workspace) / EVIDENCE_DIRNAME)]},
+        "scope": ["implementar"],
+    }
+    _atomic_json_write(Path(workspace) / MANAGED_DIRNAME,
+                       CAPABILITY_IMPLEMENT_NAME, capability)
     return EXIT_PASS, {"fase": "provision-implement", "verdict": "PASS",
-                       "candidate": candidate}
+                       "candidate": candidate,
+                       "capability_fingerprint":
+                           capabilities.fingerprint(capability)}
 
 
 def verify_implement(workspace, request):
@@ -325,6 +352,22 @@ def verify_implement(workspace, request):
                "base_revision": candidate.get("base_revision") or base,
                "request_sha256": mode_lifecycle.implementation_identity(
                    base, request)}
+    # La autoridad del turno se valida antes de aceptar comportamiento: una
+    # capability de otra sesión/proyecto/ejecutor, con raíces fuera de la
+    # candidata o ausente, bloquea la aceptación (la emisión fue en el
+    # provision del propio run; el fingerprint de reuso es el del exact-resume).
+    shadow_absolute = str(receipt_path)
+    try:
+        capabilities.validate(
+            Path(workspace) / MANAGED_DIRNAME / CAPABILITY_IMPLEMENT_NAME,
+            session_id=candidate.get("path") or str(receipt_path),
+            project=str(product), executor="campaign-runner",
+            roots={"workspace_write": [shadow_absolute,
+                                       str(Path(workspace) / STATE_DIRNAME),
+                                       str(Path(workspace) / EVIDENCE_DIRNAME)]})
+    except (ValueError, OSError) as error:
+        return EXIT_FAIL, {"fase": "verificar-implement", "verdict": "BLOCKED",
+                           "reason": "capability: " + str(error)}
     ready = [entry for entry in plan.get("stacks", [])
              if entry.get("verification_ready")]
     if not ready:
