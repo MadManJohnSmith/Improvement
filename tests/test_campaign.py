@@ -4,8 +4,10 @@ el plan de capacidades es ilegible, abstención del preflight sin cliente DSH, y
 la garantía de que el wrapper nunca escribe el ledger de verificación. Todo el
 trabajo ocurre en /tmp."""
 import contextlib
+import hashlib
 import io
 import json
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -18,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import campaign
+import episodes
 import stack
 
 
@@ -85,6 +88,27 @@ class CampaignGateTests(unittest.TestCase):
         path.write_text(''.join(lines), encoding='utf-8')
         return path
 
+    def write_finding(self, finding_id='A-01', path='manage.py',
+                      excerpt='#!/usr/bin/env python3\n  \n', **evidence_extra):
+        """Hallazgo con ancla en findings.jsonl, tal como lo aterriza el plugin.
+
+        El excerpt conserva la whitespace final de una copia: la firma tiene
+        que salir idéntica con la receta unificada (trimEnd/rstrip), que es
+        lo que la Unidad del ciclo de memoria exige."""
+        evidence = {'path': path, 'excerpt': excerpt}
+        evidence['fingerprint'] = hashlib.sha256(
+            f"{path}\n{excerpt.rstrip()}".encode('utf-8')).hexdigest()
+        evidence.update(evidence_extra)
+        record = {'finding_id': finding_id, 'base_revision': 'c' * 40,
+                  'severity': 'HIGH', 'summary': 'Sin validación',
+                  'status': 'OPEN', 'evidence': evidence}
+        ledger = self.state / 'findings.jsonl'
+        records = [line for line in ledger.read_text(encoding='utf-8').splitlines()
+                   if line.strip()] if ledger.exists() else []
+        records.append(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        ledger.write_text('\n'.join(records) + '\n', encoding='utf-8')
+        return record
+
     def run_gate(self, fase='pre'):
         stream = io.StringIO()
         with contextlib.redirect_stderr(stream):
@@ -136,6 +160,129 @@ class CampaignGateTests(unittest.TestCase):
         self.assertEqual(code, campaign.EXIT_FAIL)
         self.assertEqual(self.verdict()['verdict'], 'FAIL')
         self.assertEqual(self.verdict()['counts']['FAIL'], 1)
+
+    # -- el ciclo de memoria en campaña (E2 desde el gate, issue de la
+    #    campaña verificacion-1.11.0-1: memory {signatures: 0, episodes: 0})
+
+    def memory_campaign_fixture(self):
+        """Producto git real y workspace hermano, el layout documentado."""
+        product = self.tmp / 'producto-git'
+        (product / 'tests').mkdir(parents=True)
+        (product / 'improvement-verification.json').write_text(
+            json.dumps({'version': stack.VERSION, 'stacks': [{
+                'stack': 'python-fixture', 'root': '',
+                'verify': ['python3', '-B', '-m', 'unittest', 'discover',
+                           '-s', 'tests'],
+                'capabilities': ['python3']}]}, ensure_ascii=False) + '\n',
+            encoding='utf-8')
+        (product / 'tests' / 'test_base.py').write_text(
+            'import unittest\n\n\nclass T(unittest.TestCase):\n'
+            '    def test_base(self):\n        self.assertEqual(1, 1)\n',
+            encoding='utf-8')
+        for args in (('init', '-q'),
+                     ('-c', 'user.email=a@b', '-c', 'user.name=a',
+                      'add', '-A'),
+                     ('-c', 'user.email=a@b', '-c', 'user.name=a',
+                      'commit', '-q', '-m', 'base')):
+            subprocess.run(['git', '-C', str(product), *args],
+                           capture_output=True, check=True)
+        workspace = self.tmp / 'producto-git-workspace'
+        (workspace / 'mode-state').mkdir(parents=True)
+        self.workspace = workspace
+        self.state = workspace / 'mode-state'
+        self.write_candidate()
+        # El plan de capacidades se lee del producto git, no del workspace.
+        value = stack.plan(product, workspace=workspace)
+        stack.write(value, workspace)
+        self.plan_value = value
+        return product
+
+    def test_una_reparacion_verificada_deja_episodio_con_la_receta_unificada(self):
+        self.write_finding()
+        self.write_ledger()
+        code, _output = self.run_gate('post')
+        self.assertEqual(code, campaign.EXIT_PASS, self.verdict())
+        self.assertEqual(self.verdict()['episodes_registered'], ['A-01'])
+        records = episodes.read_episodes(self.workspace)
+        self.assertEqual(len(records), 1, 'el PASS de campaña registra el episodio')
+        episode = records[0]
+        self.assertEqual(episode['unit'], 'campana.' + HEAD[:16])
+        self.assertEqual(episode['verdict'], 'PASS')
+        # La firma es la receta del lector (sha256 de path + '\n' + excerpt
+        # trimEnd), no la del excerpt crudo que divergía: con la whitespace
+        # final de la copia, ambas recetas han de caer en la misma clave.
+        self.assertEqual(
+            episode['signature'],
+            hashlib.sha256(b"manage.py\n#!/usr/bin/env python3").hexdigest())
+        self.assertEqual(episode['signature'],
+                         episodes.signature('manage.py', '#!/usr/bin/env python3\n  \n'))
+        # El índice que el plugin consulta recuerda por esa clave.
+        found = episodes.recall(self.workspace, fingerprint=episode['signature'])
+        self.assertEqual([entry['unit'] for entry in found], [episode['unit']])
+        self.assertEqual(found[0]['repair'],
+                         'candidata producto-repair-dddddddddddddddd diff ' + DIFF)
+
+    def test_verificar_post_y_final_no_duplican_el_episodio(self):
+        self.write_finding()
+        self.write_ledger()
+        self.run_gate('post')
+        code, _output = self.run_gate('final')
+        self.assertEqual(code, campaign.EXIT_PASS)
+        self.assertNotIn('episodes_registered', self.verdict(),
+                         'la misma candidata no cierra dos veces')
+        self.assertEqual(len(episodes.read_episodes(self.workspace)), 1)
+
+    def test_el_hallazgo_sin_identidad_se_nombra_y_no_se_inventa(self):
+        # Sin findings.jsonl no hay firma posible: el veredicto PASS lo dice
+        # en lugar de dejar el episodio perdido en silencio.
+        self.write_ledger()
+        code, _output = self.run_gate('pre')
+        self.assertEqual(code, campaign.EXIT_PASS)
+        self.assertEqual(self.verdict()['episodes_unfiled'], ['A-01'])
+        self.assertEqual(episodes.read_episodes(self.workspace), [])
+
+    def test_fallo_de_registro_no_miente_pass(self):
+        """Fail-closed: sin memoria escribible, el PASS se retiene con causa."""
+        self.write_finding()
+        self.write_ledger()
+        self.state.chmod(0o500)
+        self.addCleanup(self.state.chmod, 0o700)
+        code, output = self.run_gate('post')
+        self.assertEqual(code, campaign.EXIT_BLOCKED, output)
+        verdict = self.verdict()
+        self.assertEqual(verdict['verdict'], 'BLOCKED')
+        self.assertTrue(verdict['reason'].startswith('episodio de memoria no registrado'),
+                        verdict['reason'])
+        self.assertFalse((self.state / 'episodes.jsonl').exists())
+
+    def test_bootstrap_state_refleja_la_memoria_de_campana(self):
+        """El caso de la campaña que motivó el puente: reparación verificada
+        deja `memory.signatures > 0` y un repeat cita la unidad registrada."""
+        product = self.memory_campaign_fixture()
+        prior_unit = 'campana.' + HEAD[:16]
+        self.write_finding('A-01')
+        self.write_finding(
+            'B-02',
+            prior_episode={'unit': prior_unit, 'evidence': 'evidence/veredicto.json',
+                           'repair': 'candidata'})
+        self.write_ledger()
+        code, _output = self.run_gate('post')
+        self.assertEqual(code, campaign.EXIT_PASS, self.verdict())
+        finished = subprocess.run(
+            [shutil.which('python3'), '-B',
+             str(REPO_ROOT / 'scripts' / 'bootstrap.py'), 'state',
+             '--project', str(product), '--workspace', str(self.workspace)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-800:])
+        report = json.loads(finished.stdout)['reconciled']
+        self.assertEqual(report['memory']['signatures'], 1)
+        self.assertEqual(report['memory']['episodes'], 1)
+        self.assertIn(prior_unit, report['memory']['units'])
+        # La cita del hallazgo re-matado apunta a una unidad real y a la firma
+        # bajo la que la candidata cerró: no es un claim que nadie probó.
+        self.assertEqual(report['repeats']['open'], 1)
+        self.assertEqual(report['memory']['unknown_claimed_units'], [])
+        self.assertEqual(report['memory']['contradicted_claims'], [])
 
     def test_sin_registros_no_declara_pass(self):
         code, _output = self.run_gate('pre')

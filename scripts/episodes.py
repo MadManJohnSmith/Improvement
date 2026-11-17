@@ -47,12 +47,23 @@ VERDICTS = ("PASS", "FAIL", "BLOCKED", "NOT_COVERED")
 
 def signature(path, excerpt, fingerprint=None):
     """A stable identity for a defect: its fingerprint when the tool gave one,
-    otherwise the same pair the fingerprint is computed from."""
+    otherwise the same pair the fingerprint is computed from.
+
+    The recipe is the reader's, not this module's: `workflow_write` stamps
+    `evidence.fingerprint` as sha256(path + "\\n" + excerpt.trimEnd()) and
+    looks the index up by exactly that key, so a fallback computed any other
+    way files the episode under a name the auditor's next finding never
+    matches -- a memory that is empty precisely for the quote that kept
+    trailing whitespace when it was copied. The fallback therefore reproduces
+    the reader's recipe; `str.rstrip()` is its Python twin for the trailing
+    whitespace a copied excerpt can carry. The canary that pins the two
+    routes together is `test_workflow_write_plugin.py` (issue #35).
+    """
     if isinstance(fingerprint, str) and fingerprint:
         return fingerprint
     if not isinstance(path, str) or not isinstance(excerpt, str):
         raise ValueError("firma de episodio necesita ruta y fragmento")
-    return digest_bytes(f"{path}\n{excerpt}".encode("utf-8"))
+    return digest_bytes(f"{path}\n{excerpt.rstrip()}".encode("utf-8"))
 
 
 def _checked(workspace):

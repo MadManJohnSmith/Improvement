@@ -1295,6 +1295,60 @@ class WorkflowWritePluginTest(unittest.TestCase):
                 self.assertIn(expected, report[name]["error"])
                 self.assertFalse(report[name]["written"])
 
+    def test_the_python_signature_recipe_and_the_plugin_recipe_are_one(self):
+        """Issue #35: two signature recipes are a memory the reader never hits.
+
+        `workflow_write` stamps `evidence.fingerprint` as
+        sha256(path + '\\n' + excerpt.trimEnd()) and looks the episodes index
+        up by exactly that key; `episodes.signature` files the episode under
+        its own fallback when no fingerprint travels. While the fallback
+        hashed the raw excerpt, an episode recorded from a quote that kept
+        trailing whitespace landed under a key the auditor's next finding
+        never matched: the cycle registered an episode and the memory stayed
+        empty for precisely the defect it exists to remember. This canary
+        lands one finding through the real plugin and demands the Python side
+        produce the same key for the same quote; diverging either route
+        breaks it again.
+        """
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Set node on PATH to drive the plugin module')
+        import episodes
+        root = Path(tempfile.mkdtemp(prefix='signature-recipe-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        session = root / 'selftest'
+        product = session / 'Improvement'
+        (product / 'src').mkdir(parents=True)
+        (product / 'src' / 'api.py').write_text(
+            'def create_user(payload):\n    return payload\n')
+        workspace = session / 'Improvement-workspace'
+        (workspace / '.dsh-managed').mkdir(parents=True)
+        (workspace / 'mode-state').mkdir()
+        (workspace / '.dsh-managed' / 'capability-plan.json').write_text(
+            self._signed_plan(workspace, [], product=str(product)))
+        # The quote keeps the trailing whitespace a copy can carry: this is
+        # the input under which the two recipes used to diverge.
+        excerpt = 'def create_user(payload):\n    return payload\n  \n'
+        finding = json.dumps({
+            'finding_id': 'R-01', 'base_revision': 'a' * 40,
+            'severity': 'HIGH', 'summary': 'Missing validation',
+            'status': 'OPEN',
+            'evidence': {'path': 'src/api.py', 'excerpt': excerpt}},
+            ensure_ascii=False) + '\n'
+        (session / 'fixture.json').write_text(json.dumps(
+            {'quote': {'index': None, 'content': finding}}))
+        driver = root / 'recipe-driver.mjs'
+        driver.write_text(MEMORY_DRIVER.replace('PLUGIN_PATH', (PLUGIN).as_posix()))
+        finished = subprocess.run([node, driver.as_posix(), session.as_posix()],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(finished.returncode, 0, finished.stderr[-3000:])
+        report = json.loads(finished.stdout)
+        self.assertTrue(report['quote']['ok'], report['quote'])
+        landed = json.loads(report['quote']['onDisk'])
+        self.assertEqual(landed['evidence']['fingerprint'],
+                         episodes.signature('src/api.py', excerpt),
+                         'la firma del episodio y la del plugin divergen')
+
     def test_a_live_lease_from_another_session_denies_the_replacement(self):
         """D1: the write was never atomic, and a concurrent one could interleave.
 

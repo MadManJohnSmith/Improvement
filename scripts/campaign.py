@@ -11,6 +11,14 @@ Reglas que este archivo no rompe:
 - NUNCA escribe en `mode-state/verification-results.jsonl`. Ese ledger lo escribe
   el plugin desde la sesión y lo poda la instalación; un gate que lo tocara
   fabricaría la evidencia que después va a leer.
+- SÍ registra episodios en `mode-state/episodes.jsonl` cuando el veredicto
+  derivado es PASS: el registro es Host-owned (`episodes.py`), y una campaña
+  que cierra una reparación verificada sin dejar episodio deja el ciclo de
+  memoria vacío — el auditor siguiente repite el hallazgo que la candidata
+  acaba de cerrar. La firma es la receta única (`episodes.signature`, la que
+  el plugin consume); el hallazgo sin identidad se nombra en el veredicto en
+  lugar de desaparecer, y un registro que falla convierte el PASS en
+  BLOCKED con la causa citable: la fase nunca miente.
 - BLOCKED significa "falta una pieza": una capability ausente o un plan
   ilegible. FAIL significa "hay evidencia y no dice PASS". Nunca PASS por no
   tener nada que mirar.
@@ -33,6 +41,7 @@ from pathlib import Path
 
 import audit
 import capabilities
+import episodes
 import state_reconcile
 import stack as capability_plan
 
@@ -384,6 +393,66 @@ def verify_implement(workspace, request):
     return code, {"fase": "verificar-implement", **verdict}
 
 
+def _episode_unit(candidate):
+    """La unidad que cierra el hallazgo: la candidata verificada de campaña.
+
+    Mismo rol que el `unit_id` del cierre E2 del Host: nombra a quien cerró,
+    y `state_reconcile.memory` valida las citas `prior_episode` contra las
+    unidades que el ledger realmente conserva."""
+    return 'campana.' + candidate['head'][:16]
+
+
+def _register_closed_episodes(workspace, fase, candidate):
+    """Registra el episodio de cada hallazgo que la candidata verificada cerró.
+
+    El ciclo de memoria quedaba vacío en campaña: `episodes.record` solo tenía
+    un llamador (el cierre E2 de misiones del Host, `host_controller.
+    _record_episode`), así que una campaña con reparaciones verificadas dejaba
+    `memory: {signatures: 0, episodes: 0}` en `bootstrap.py state` y el
+    auditor siguiente volvía a presentar el hallazgo que la candidata acaba de
+    cerrar. Este es el puente mínimo por la maquinaria existente: el mismo
+    contrato del payload `episode`, la misma receta de firma única y la misma
+    superficie (`mode-state/episodes.jsonl`) que el lector del plugin consulta.
+
+    Un hallazgo sin registro en `findings.jsonl` o sin ancla no tiene firma
+    posible: no se inventa identidad, se nombra en el veredicto. Un registro
+    que falla no se traga — el llamador convierte el PASS en retención con la
+    causa citable. Y una fase que re-deriva el mismo PASS (reintento del gate,
+    verificar-post y verificar-final sobre la misma candidata) no duplica: el
+    par (firma, unidad) ya en el ledger basta para no escribir de nuevo.
+    """
+    usable = [record for record in _ledger(workspace / STATE_DIRNAME)
+              if isinstance(record.get('finding_id'), str)
+              and isinstance(record.get('candidate_head'), str)
+              and record.get('result') in ('PASS', 'BLOCKED', 'FAIL')]
+    derived = capability_plan.derived_verdicts(usable)
+    findings = state_reconcile.latest_findings(workspace / STATE_DIRNAME)
+    unit = _episode_unit(candidate)
+    registered, unfiled = [], []
+    for (finding_id, head), group in derived.items():
+        if group['verdict'] != 'PASS' or head != candidate.get('head'):
+            continue
+        evidence = (findings.get(finding_id) or {}).get('evidence')
+        if not isinstance(evidence, dict) or not isinstance(evidence.get('path'), str) \
+                or not isinstance(evidence.get('excerpt'), str):
+            unfiled.append(finding_id)
+            continue
+        fingerprint = episodes.signature(evidence['path'], evidence['excerpt'],
+                                         evidence.get('fingerprint'))
+        if any(entry.get('unit') == unit
+               for entry in episodes.recall(workspace, fingerprint=fingerprint)):
+            continue
+        episodes.record(
+            workspace, unit=unit, path=evidence['path'],
+            excerpt=evidence['excerpt'], fingerprint=evidence.get('fingerprint'),
+            verdict='PASS',
+            evidence='evidence/veredicto.json fase=%s head=%s' % (fase, head),
+            repair='candidata %s diff %s' % (candidate.get('path'),
+                                             candidate.get('candidate_diff_digest')))
+        registered.append(finding_id)
+    return registered, unfiled
+
+
 def verification_verdict(workspace, fase):
     """PASS / FAIL / BLOCKED desde la evidencia real, más el código de salida."""
     try:
@@ -420,7 +489,22 @@ def verification_verdict(workspace, fase):
             reason='sin registros de verificación utilizables')
     if unverified or counts['FAIL'] or counts['BLOCKED'] or counts['PARTIAL']:
         return EXIT_FAIL, _verdict_payload(fase, 'FAIL', derived, candidate)
-    return EXIT_PASS, _verdict_payload(fase, 'PASS', derived, candidate)
+    # El PASS solo se emite si la memoria recoge lo que la candidata cerró:
+    # un registro que falla no es un PASS con episodio perdido en silencio.
+    # FAIL diría "hay evidencia y no dice PASS", que es falso aquí; BLOCKED
+    # es exactamente "falta una pieza", y la pieza que falta se nombra.
+    try:
+        registered, unfiled = _register_closed_episodes(workspace, fase, candidate)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        return EXIT_BLOCKED, _verdict_payload(
+            fase, 'BLOCKED', derived, candidate,
+            reason='episodio de memoria no registrado: ' + str(error))
+    payload = _verdict_payload(fase, 'PASS', derived, candidate)
+    if registered:
+        payload['episodes_registered'] = registered
+    if unfiled:
+        payload['episodes_unfiled'] = unfiled
+    return EXIT_PASS, payload
 
 
 def preflight(workspace):

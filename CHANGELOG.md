@@ -1,5 +1,40 @@
 # Cambios
 
+## campaign: el ciclo de memoria se ejercita desde el gate y la firma del episodio es una sola receta — 2026-11-17
+
+La campaña `verificacion-1.11.0-1` cerró una reparación con verificación PASS y
+`bootstrap.py state` dio `memory: {signatures: 0, episodes: 0}`: `episodes.record`
+solo tenía un llamador (el cierre E2 de misiones del Host), así que el ciclo de
+memoria quedaba vacío justo donde más importa — y la divergencia de receta de
+firma (#35) hacía que un episodio registrado desde un excerpt con whitespace
+final cayera en una clave que el lector del plugin jamás consulta.
+
+- **Puente mínimo en el gate** (`campaign.py`): cuando una fase de verificación
+  deriva PASS, registra un episodio por hallazgo que su candidata verificada
+  cerró, por la maquinaria existente (`episodes.record`, el mismo contrato del
+  payload `episode` de `_record_episode`) en la superficie existente
+  (`mode-state/episodes.jsonl`, el mismo ledger que el plugin consulta). Una
+  segunda derivación del mismo PASS no duplica (par firma+unidad ya en el
+  ledger).
+- **Fail-closed**: un registro que falla convierte el PASS en BLOCKED con la
+  causa citable (`episodio de memoria no registrado: …`) — la fase nunca dice
+  PASS con un episodio perdido en silencio. El hallazgo sin ancla no inventa
+  identidad: se nombra en el veredicto (`episodes_unfiled`).
+- **Receta única** (`episodes.py`): el fallback de `episodes.signature`
+  reproduce la receta del lector autoritativo (`workflow_write`):
+  `sha256(path + "\n" + excerpt.trimEnd())` — la clave que el plugin estampa en
+  `evidence.fingerprint` y con la que consulta el índice.
+- **Canary de divergencia** (`tests/test_workflow_write_plugin.py`): aterriza
+  un hallazgo cuya cita lleva whitespace final por el plugin real (driver node)
+  y exige que la ruta Python (`episodes.signature`) produzca la misma clave;
+  si cualquiera de las dos rutas vuelve a divergir, la suite rompe.
+- **Regresión de campaña** (`tests/test_campaign.py`): reparación verificada
+  deja episodio con la firma unificada, `verificar-post`/`verificar-final` no
+  duplican, el fallo de registro retiene con causa, y `bootstrap.py state`
+  refleja la memoria (`memory.signatures`/`episodes` > 0) con el repeat citando
+  la unidad registrada. Suite: **1378 tests green** (1 skipped con el runtime
+  DSH instalado; 12 en una máquina sin runtime ni `jsonschema`).
+
 ## campaign: el plano de capabilities cableado — emisión y consumo reales — 2026-11-16
 
 Cierra #31 (la unidad de diseño decidida el 2026-11-10: cablear, no borrar).
