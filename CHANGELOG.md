@@ -1,5 +1,26 @@
 # Cambios
 
+## campaign: el plano de capabilities cableado — emisión y consumo reales — 2026-11-16
+
+Cierra #31 (la unidad de diseño decidida el 2026-11-10: cablear, no borrar).
+`scripts/capabilities.py` tenía el contrato de capability emitida por el Host
+(cero llamadores) y la propia arquitectura anticipaba su pieza («it would
+require a separate Host capability with scope and budget»).
+
+- **Emisión**: la fase `provision-implement` de la campaña emite la capability
+  ligada a la candidata provisionada (`session_id` = el path de la candidata,
+  `executor: campaign-runner`, raíces acotadas a producto/sombra/mode-state/
+  evidence), escrita atómicamente en `.dsh-managed/capability-implement.json`.
+- **Consumo**: `verificar-implement` valida la capability (`capabilities.validate`
+  contra sesión/proyecto/ejecutor/raíces) **antes** de la aceptación de
+  comportamiento — una capability de otra sesión/proyecto, con raíces fuera de
+  la candidata o ausente, bloquea legible.
+- **Reúso unificado**: el fingerprint idéntico es el mismo mecanismo que el
+  exact-resume de los runs (pregunta 3 de #31, respondida y documentada en
+  `ARQUITECTURA_FLUJO_AGENTES.md`).
+- Regresiones: emisión atómica + validación + rechazo de candidata ajena, con
+  producto git real en `tests/test_campaign.py`.
+
 ## creator: la sesión nombra su estado terminal — superficie del usuario — 2026-11-13
 
 Campaña completa medida: la superficie que un usuario mira — la sesión en la web de
