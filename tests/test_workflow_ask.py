@@ -948,6 +948,27 @@ class WorkflowAskTests(unittest.TestCase):
                          if p['kind'] == 'STEP_COMPLETED'
                          and p['payload'].get('step_id') == 'auditar'])
 
+    def test_handoff_aterrizado_convive_con_el_historico_derivado(self):
+        """El handoff histórico derivado (-6, issue #38) no bloquea al sano.
+
+        El -6 real aterrizó con «no públicas» y el guarda compara el prompt
+        reclamado con el aterrizado del registro RECLAMADO, no con el ledger
+        entero: una campaña que aterriza su -7 con el prompt del contrato y lo
+        reclama tal cual completa, con el derivado conviviendo en el disco.
+        """
+        self._write_handoff('audit-complete-b40829ad-6', ['A-05'],
+                            prompt='Repara los hallazgos de la auditoría; no públicas.')
+        self._write_handoff('audit-complete-b40829ad-7', ['A-05'])
+        client, plan_path = self._audit_plan_and_result({
+            'handoff_id': 'audit-complete-b40829ad-7', 'persisted_count': 1,
+            'next_prompt': 'Repara los hallazgos de la auditoría; no publiques.',
+            'audit_scope': 'complete'})
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'COMPLETED', outcome.get('cause'))
+        self.assertTrue([p for p in self.payloads(outcome['run_dir'])
+                         if p['kind'] == 'STEP_COMPLETED'
+                         and p['payload'].get('step_id') == 'auditar'])
+
     # -- techo de lectura: presupuesto forzado fail-closed por intento ask
 
     def test_techo_de_lectura_retiene_con_causa_citable(self):

@@ -1,5 +1,78 @@
 # Cambios
 
+## workflow: el handoff de auditoría aterriza contrato-exacto y el dedup es visible — 2026-11-17
+
+Issue #38, de la confirmación de la aceptación 2/2 (run r-e03534cc en
+`workspace-workflow-aceptacion3`, RUN_RETAINED con causa citable
+`ask-persistencia-sin-aterrizaje:…el next_prompt del handoff
+audit-complete-b40829ad-6 difiere del reclamado`): el guarda de 8053a81
+funcionó, pero el bloqueo de fondo quedaba — con el guarda activo, ninguna
+campaña completa sobre la misma `base_revision`, porque los audits reclaman
+persistencias que no aterrizan coincidentes. Repro primero, tres preguntas con
+evidencia:
+
+1. **¿El plugin refusa writes sobre una base con handoff previo?** Ni refusa
+   ni dedup: con la tool real `workflow_write` y un ctx simulado (fixture con
+   el `-6` derivado en disco, como el estado real), un handoff nuevo aterriza
+   y el write **reemplaza el archivo entero** — el `-6` desaparece del disco
+   si el modelo no lo re-echo — y un mismo `handoff_id` con otras
+   `finding_ids` también aterriza (solo lo paraba la cobertura, no la
+   identidad). La nota forense de M6 era la otra mitad del mismo hueco: un
+   `next_prompt` derivado saltaba la cobertura porque el validador solo la
+   exigía con el prompt exacto.
+2. **¿Quién escribió el `-6` derivado y por qué pasó?** La sesión
+   `ac05352d…` del workspace (reconstruida de `session.v4.jsonl.zstd`) emitió
+   tres writes consecutivos: `-5` con el contrato, `-5` con el derivado y el
+   `-6` final con el derivado; el resultado del audit reclamaba el contrato
+   (`no publiques`) y `persisted_count: 1`. El validador dejó pasar el
+   derivado por la holgura del prompt libre; el `count_command` (filtro por
+   prompt exacto) y `_verify_persisted_claims` no podían verlo.
+3. **¿El prompt del auditor instruye el write del handoff?** No: `AUDIT_PROMPT_TEXT`
+   (`campaign_plan.py`) no menciona handoffs — el contrato solo vive en la
+   persona de `mode_lifecycle`, y el turno improvisó id, prompt y forma.
+
+Diseño elegido: **se permite el handoff nuevo sobre una base con handoff
+previo** (cada auditoría real merece su registro; el propio convenio
+`audit-complete-<base8>-<n>` numera auditorías sobre la misma base) **y el
+dedup es visible**: un `handoff_id` ya aterrizado se re-emite solo con la
+misma base y `finding_ids` (idempotente), y reescribirlo con otros se refusa
+citable — un id aterrizado es la identidad de una reclamación. El
+`next_prompt` de un handoff de auditoría (id de la convención) **se normaliza
+al contrato en el write**: lo aterrizado es exactamente lo que el contrato
+declara, la cobertura no tiene hueco de prompt libre y todo registro de
+auditoría es contable por el `count_command` — el derivado no puede aterrizar
+con el id de la convención. Un handoff fuera de la convención es el de
+reparación: conserva su prompt propio y su cobertura parcial (A1 ya lo
+codificaba; negarla dejaría varada toda candidata que no cierre la cola
+completa). El `-6` histórico **se deja intacto** — su cadena de reclamación
+vive en journals de runs pasados — y tiene ruta soportada de curación sin
+edición a mano: cualquier write completo que lo re-emita aterriza
+normalizado; el conteo no lo ve y no se rompe (regresión con el estado real
+reproducido: derivado + contrato en disco ⇒ `__IMPROVEMENT_AUDIT_COUNT__ 1`).
+
+Cambios:
+
+- `scripts/dsh-plugins/workflow-write.mjs` (`validateManagedHandoff`): lee el
+  ledger aterrizado (un ledger ilegible refusa el write — el dedup no
+  adivina), normaliza el `next_prompt` de los handoffs de convención de
+  auditoría al `AUDIT_NEXT_PROMPT`, aplica la cobertura exacta de OPEN a todo
+  registro de auditoría, y refusa citable la reescritura de un id aterrizado.
+  El contenido normalizado es el que aterriza; el verificador offline
+  `verify-workflow-handoff.mjs` (nuevo, patrón `verify-doc-drift`) lo ejercita
+  contra la tool real.
+- `scripts/campaign_plan.py`: el prompt del auditor lleva el bloque del
+  contrato del handoff (mecanismo existente, como el bloque de registros de
+  verificación): forma exacta del registro, id de convención y el
+  `next_prompt` byte a byte desde `mode_lifecycle` — nunca una frase propia.
+- `scripts/workflow.py`: sin cambios — el guarda de M6 ya acepta la campaña
+  bien-portada; regresión nueva con el `-6` derivado conviviendo en disco.
+
+Regresiones (+4, suite 1428 en verde): el verificador offline del gate
+(`tests/test_workflow_handoff_plugin.py`), el conteo con el histórico derivado
+(`test_mode_lifecycle`), la convivencia derivado+contrato ante el guarda
+(`test_workflow_ask`) y el contrato del handoff en el prompt del auditor
+(`test_campaign_plan`). Los READMEs publican la cifra que corre.
+
 ## workflow: el repeat se deriva del índice en el reconcile y la persistencia reclamada aterriza o retiene — 2026-11-17
 
 Issue #37, de la aceptación 2/2 del día (run r-e03534cc en

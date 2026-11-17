@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / 'scripts'))
 
 import campaign_plan
+import mode_lifecycle
 import workflow
 
 from campaign_plan import CampaignPlanError
@@ -481,6 +482,21 @@ elif args.fase in ('final', 'cerrar'):
         # El prompt_file se resolvió desde el directorio del plan, sin tocarlo.
         self.assertTrue(plan['steps'][1]['prompt'].startswith('# Auditar'))
         self.assertEqual(raw, plan_path.read_bytes())
+
+    def test_prompt_del_auditor_lleva_el_contrato_del_handoff(self):
+        """El write del handoff no se improvisa: el prompt reproduce el contrato.
+
+        Los audits de campaña escribieron el handoff sin instrucción ninguna en
+        `auditar.md` — el -6 aterrizó con un next_prompt derivado que ni el
+        count_command ni el guarda del Host podían ver (issue #38). El bloque
+        del contrato viaja con el prompt, byte a byte desde mode_lifecycle.
+        """
+        prompt = campaign_plan.prompts(self.stack_value)['auditar.md']
+        self.assertIn('mode-state/handoffs.jsonl', prompt)
+        self.assertIn('audit-complete-<base8>-<n>', prompt)
+        self.assertIn(json.dumps(mode_lifecycle.AUDIT_NEXT_PROMPT, ensure_ascii=False),
+                      prompt)
+        self.assertNotIn('no públicas', prompt)
 
     def test_manifest_ata_el_plan_a_su_sha256(self):
         bundle = self.generate()

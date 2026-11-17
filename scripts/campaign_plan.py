@@ -28,6 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from mode_lifecycle import AUDIT_NEXT_PROMPT
+
 import workflow_reasoning
 from support import digest_bytes
 
@@ -162,6 +164,34 @@ def _verification_records_block(stack_value):
                                separators=(',', ':'))
             block += f"  - {entry.get('stack')}: {exact}\n"
     return block
+
+
+def _audit_handoff_block():
+    """El contrato EXACTO del handoff de auditoría, para el prompt.
+
+    Los audits de campaña improvisaron el handoff: el -6 aterrizó con un
+    next_prompt derivado («no públicas» por «no publiques») que el count_command
+    (filtro por prompt exacto) y el guarda del Host no podían ver, y toda
+    campaña sobre la misma base se retuvo (issue #38). El prompt reproduce el
+    contrato byte a byte, como hace el bloque de registros de verificación, para
+    que el write no dependa de recordar la cadena ni de leerla del estado.
+    """
+    return (
+        "- Persiste el handoff de la auditoría en `mode-state/handoffs.jsonl` "
+        "mediante el plugin, después de los hallazgos y antes del resultado. "
+        "Formato EXACTO del registro (una línea JSONL; ningún campo de más ni de "
+        "menos — el plugin refusa un handoff que no cubra exactamente los "
+        "hallazgos OPEN de la base, o que reescriba un handoff ya aterrizado con "
+        "otro id):\n"
+        '  {"handoff_id": "audit-complete-<base8>-<n>", "base_revision": "<base '
+        '40-64 hex>", "finding_ids": [<los hallazgos OPEN de esa base>], '
+        '"next_prompt": ' + json.dumps(AUDIT_NEXT_PROMPT, ensure_ascii=False) + "}\n"
+        "- `next_prompt` es la cadena del contrato, no una frase tuya: cópiala "
+        "byte a byte (arriba) tanto en el write como en el campo `next_prompt` "
+        "del resultado. El plugin la normaliza al contrato y el count_command "
+        "filtra por prompt exacto: un prompt derivado es un handoff que nadie "
+        "puede contar y la campaña se retiene.\n"
+    )
 
 
 IMPLEMENT_PROMPT_TEXT = """\
@@ -402,7 +432,8 @@ def prompts(stack_value=None, change_request=None):
                  .replace('{implementation_path}',
                           f"evidence/{EVIDENCE_NAME}/{IMPLEMENT_RESULT}")
                  .replace('{change_request}', change_request or '(sin petición)'))
-    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT, REPAIR_PROMPT: repair,
+    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT + _audit_handoff_block(),
+            REPAIR_PROMPT: repair,
             IMPLEMENT_PROMPT: implement}
 
 

@@ -56,6 +56,12 @@
  *     así la herramienta y no el Git posterior. Una sesión sin workspace
  *     gestionado conserva el comportamiento anterior: el revisor de aceptación
  *     sigue escribiendo su result.json.
+ *  7. El handoff de auditoría aterriza con el next_prompt del CONTRATO
+ *     (normalización en el write) y el dedup es visible: un handoff_id ya
+ *     aterrizado solo se re-emite con la misma base y finding_ids; con otros
+ *     se refusa citable. El derivado «no públicas» aterrizó invisible para el
+ *     count_command y para el guarda del Host y retuvo toda campaña sobre la
+ *     misma base (issue #38).
  *
  * Sin aprobación, falla cerrado; el aislamiento no se debilita: la ejecución
  * siempre pasa por ctx.fs.writeText con la política resuelta, igual que upstream.
@@ -676,19 +682,39 @@ async function validateManagedFindings(ctx, target, content, signal) {
 /**
  * A handoff is the claim that the audit happened, so it is checked against the
  * findings the state actually carries: every id it names must exist at the same
- * base, and the audit handoff (the one carrying the exact contract next_prompt)
- * must name every finding left OPEN at that base. Syncify is the case this
- * closes — six consecutive findings had a work item and no repair handoff
- * covering them, because nothing compared the two files before accepting the
- * turn. Refusing the write keeps the unclaimed findings in the state instead of
- * in a response nobody can re-derive.
+ * base, and an audit handoff must name every finding left OPEN at that base.
+ * Syncify is the case this closes — six consecutive findings had a work item
+ * and no repair handoff covering them, because nothing compared the two files
+ * before accepting the turn. Refusing the write keeps the unclaimed findings in
+ * the state instead of in a response nobody can re-derive.
+ *
+ * Issue #38 (2026-11-17): the model paraphrased the audit contract's
+ * next_prompt ("no públicas" for "no publiques") and the write landed because
+ * a non-contract prompt skipped the coverage check; the record was then
+ * invisible to every consumer — the count_command filters by exact prompt and
+ * the Host guard compares the claimed prompt against the landed one — and the
+ * campaign deadlocked on a handoff nobody could count. The audit handoff is
+ * the one whose handoff_id follows the declared convention
+ * (audit-complete-<base8>-<n> or audit-<base8>-<n>): for those the write
+ * NORMALIZES next_prompt to the contract instead of trusting the paraphrase,
+ * and the coverage rule has no free-form escape. A handoff outside the
+ * convention is the repair kind — it names the findings it took, with its own
+ * next_prompt and partial coverage, because refusing a partial repair would
+ * strand every candidate that cannot close the queue at once. A historical
+ * derived audit handoff heals through this same supported route when a later
+ * full-file write re-includes it. Each real audit still gets its own record:
+ * a handoff_id already landed re-emits only with the same base and finding_ids
+ * (idempotent), and re-emitting it with different content is refused citably —
+ * a landed id is the identity of a claim, not a slot to overwrite.
  */
-async function validateManagedHandoff(ctx, target, content, signal) {
-  if (typeof ctx.fs.processPath !== 'function' || typeof ctx.fs.readText !== 'function') return;
+const AUDIT_HANDOFF_ID = /^(?:audit-complete-[0-9a-f]{8}|audit-[0-9a-f]{8})-\d+$/u;
+
+export async function validateManagedHandoff(ctx, target, content, signal) {
+  if (typeof ctx.fs.processPath !== 'function' || typeof ctx.fs.readText !== 'function') return undefined;
   const rawTargetPath = await ctx.fs.processPath(target);
-  if (typeof rawTargetPath !== 'string') return;
+  if (typeof rawTargetPath !== 'string') return undefined;
   const targetPath = rawTargetPath.replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!targetPath.endsWith(MANAGED_HANDOFFS_SUFFIX)) return;
+  if (!targetPath.endsWith(MANAGED_HANDOFFS_SUFFIX)) return undefined;
 
   const workspacePath = targetPath.slice(0, -MANAGED_HANDOFFS_SUFFIX.length);
   const expectedTarget = await ctx.fs.resolve('mode-state/handoffs.jsonl', {
@@ -696,6 +722,37 @@ async function validateManagedHandoff(ctx, target, content, signal) {
   });
   if (!expectedTarget || expectedTarget.targetKey !== target.targetKey) {
     throw new Error('handoffs target no coincide con el mode-state gestionado');
+  }
+  // The landed ledger is what the dedup compares against. A ledger that is
+  // present but unreadable leaves the write unable to tell a re-emission from
+  // a rewrite of a landed claim, so it refuses instead of guessing; an absent
+  // ledger is the first write and compares against nothing.
+  const landed = [];
+  let ledgerPresent = false;
+  try {
+    if (typeof ctx.fs.stat === 'function') {
+      ledgerPresent = Boolean(await ctx.fs.stat(expectedTarget, signal));
+    }
+  } catch {
+    ledgerPresent = false;
+  }
+  if (ledgerPresent) {
+    let landedText;
+    try {
+      landedText = await ctx.fs.readText(expectedTarget, signal);
+    } catch (error) {
+      throw new Error(`handoffs.jsonl aterrizado no se puede leer para el `
+        + `dedup: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const [index, line] of landedText.split('\n').entries()) {
+      if (line.trim() === '') continue;
+      let record;
+      try { record = JSON.parse(line); } catch {
+        throw new Error(`handoffs.jsonl aterrizado:${index + 1} no es JSON; `
+          + 'el dedup no puede distinguir una re-emisión de una reescritura');
+      }
+      if (record && typeof record === 'object' && !Array.isArray(record)) landed.push(record);
+    }
   }
   const findingsTarget = await ctx.fs.resolve('mode-state/findings.jsonl', {
     cwd: workspacePath, signal,
@@ -726,8 +783,9 @@ async function validateManagedHandoff(ctx, target, content, signal) {
   }
 
   const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
-  if (lines.length === 1 && lines[0] === '') return;
+  if (lines.length === 1 && lines[0] === '') return undefined;
   if (lines.some((line) => line.trim() === '')) throw new Error('handoffs contiene línea vacía');
+  const normalized = [];
   for (let index = 0; index < lines.length; index++) {
     let record;
     try { record = JSON.parse(lines[index]); } catch { throw new Error(`handoff ${index} inválido`); }
@@ -747,6 +805,17 @@ async function validateManagedHandoff(ctx, target, content, signal) {
     if (new Set(record.finding_ids).size !== record.finding_ids.length) {
       throw new Error(`handoff ${index} repite finding_id`);
     }
+    const prior = landed.find((entry) => entry.handoff_id === record.handoff_id);
+    if (prior) {
+      const sameBase = prior.base_revision === record.base_revision;
+      const sameIds = canonicalJson([...(prior.finding_ids || [])].sort())
+        === canonicalJson([...record.finding_ids].sort());
+      if (!sameBase || !sameIds) {
+        throw new Error(`handoff ${index} reescribe el handoff aterrizado `
+          + `${record.handoff_id} (base o finding_ids distintos): un id aterrizado es `
+          + 'la identidad de una reclamación; emite un id nuevo para esta auditoría');
+      }
+    }
     const persisted = new Set(findings.filter((finding) => (
       finding.base_revision === record.base_revision
       && typeof finding.finding_id === 'string')).map((finding) => finding.finding_id));
@@ -754,18 +823,28 @@ async function validateManagedHandoff(ctx, target, content, signal) {
     if (missing.length > 0) {
       throw new Error(`handoff ${index} nombra hallazgos no persistidos en esa base: ${missing.join(',')}`);
     }
-    if (record.next_prompt !== AUDIT_NEXT_PROMPT) continue;
-    const open = new Set(findings.filter((finding) => (
-      finding.base_revision === record.base_revision && finding.status === 'OPEN'
-      && typeof finding.finding_id === 'string')).map((finding) => finding.finding_id));
-    const uncovered = [...open].filter((id) => !record.finding_ids.includes(id)).sort();
-    const extraneous = record.finding_ids.filter((id) => !open.has(id)).sort();
-    if (uncovered.length > 0 || extraneous.length > 0) {
-      throw new Error(`handoff ${index} no cubre exactamente los hallazgos OPEN de la base`
-        + `${uncovered.length > 0 ? `; sin nombrar: ${uncovered.join(',')}` : ''}`
-        + `${extraneous.length > 0 ? `; no OPEN: ${extraneous.join(',')}` : ''}`);
+    // An audit handoff (the declared id convention) lands with the contract's
+    // next_prompt, so the coverage rule has no free-form escape and the record
+    // stays countable. A repair handoff keeps its own prompt: the coverage
+    // rule applies to it exactly when that prompt IS the contract.
+    if (AUDIT_HANDOFF_ID.test(record.handoff_id)) {
+      record.next_prompt = AUDIT_NEXT_PROMPT;
     }
+    if (record.next_prompt === AUDIT_NEXT_PROMPT) {
+      const open = new Set(findings.filter((finding) => (
+        finding.base_revision === record.base_revision && finding.status === 'OPEN'
+        && typeof finding.finding_id === 'string')).map((finding) => finding.finding_id));
+      const uncovered = [...open].filter((id) => !record.finding_ids.includes(id)).sort();
+      const extraneous = record.finding_ids.filter((id) => !open.has(id)).sort();
+      if (uncovered.length > 0 || extraneous.length > 0) {
+        throw new Error(`handoff ${index} no cubre exactamente los hallazgos OPEN de la base`
+          + `${uncovered.length > 0 ? `; sin nombrar: ${uncovered.join(',')}` : ''}`
+          + `${extraneous.length > 0 ? `; no OPEN: ${extraneous.join(',')}` : ''}`);
+      }
+    }
+    normalized.push(record);
   }
+  return normalized.map((record) => JSON.stringify(record)).join('\n') + '\n';
 }
 
 /**
@@ -1035,12 +1114,15 @@ export function apply(ctx, config) {
           args.content);
       }
       await validateManagedVerification(ctx, target, args.content, exec.signal);
-      await validateManagedHandoff(ctx, target, args.content, exec.signal);
+      // The handoff gate returns the normalized content, because the
+      // next_prompt that lands is the contract's, not the one the model
+      // paraphrased (issue #38).
+      const handoff = await validateManagedHandoff(ctx, target, args.content, exec.signal);
       // The findings gate resolves every anchor and returns the rewritten
       // content, because the line a finding claims is the line the tool
       // computed, not the one the mode wrote.
       const anchored = await validateManagedFindings(ctx, target, args.content, exec.signal);
-      const content = anchored ?? args.content;
+      const content = handoff ?? anchored ?? args.content;
       // The lease only covers a replacement of one state file: an unidentified
       // session takes no lease rather than a shared one, because a lock
       // everybody holds is a lock nobody holds.

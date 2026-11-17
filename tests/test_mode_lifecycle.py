@@ -426,6 +426,63 @@ class ModeLifecycleTests(unittest.TestCase):
             self.assertNotEqual(other_base.returncode, 0)
             self.assertNotIn("__IMPROVEMENT_AUDIT_COUNT__", other_base.stdout)
 
+    def test_audit_count_command_counts_the_records_it_imports(self):
+        """El handoff histórico derivado (issue #38) no rompe el conteo.
+
+        El -6 real aterrizó con el next_prompt derivado «no públicas», que el
+        filtro exacto del count_command no ve. La campaña nueva aterriza su
+        propio handoff con el prompt del contrato (el plugin lo normaliza en el
+        write), y el conteo sale de los registros que el filtro importa: el
+        derivado queda fuera sin romper nada, y solo un ledger sin ningún
+        registro del contrato es 'no hay handoff'.
+        """
+        layout = {"session_root": "Syncify", "product_root": "Syncify",
+                  "workspace_root": "Syncify-workspace",
+                  "state_root": "Syncify-workspace/mode-state"}
+        base = "a" * 40
+        command = audit_count_command(layout).replace("<base-revision>", base)
+
+        def write(name, records):
+            path = Path(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n"
+                                    for record in records), encoding="utf-8")
+
+        def finding(finding_id, status="OPEN", revision=base):
+            return {"finding_id": finding_id, "base_revision": revision,
+                    "severity": "HIGH", "summary": "Missing validation",
+                    "status": status}
+
+        derived = {"handoff_id": "audit-complete-%s-6" % base[:8],
+                   "base_revision": base, "finding_ids": ["A-01"],
+                   "next_prompt": AUDIT_NEXT_PROMPT.replace("no publiques",
+                                                            "no públicas")}
+        contract = {"handoff_id": "audit-complete-%s-7" % base[:8],
+                    "base_revision": base, "finding_ids": ["A-01"],
+                    "next_prompt": AUDIT_NEXT_PROMPT}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session = Path(tmp) / "Syncify"
+            state = session / "Syncify-workspace" / "mode-state"
+            state.mkdir(parents=True)
+            run = lambda: subprocess.run(command, cwd=session, shell=True,
+                                         capture_output=True, text=True)
+
+            write(state / "findings.jsonl", [finding("A-01")])
+            write(state / "handoffs.jsonl", [derived])
+            solo_derivado = run()
+            self.assertNotEqual(solo_derivado.returncode, 0,
+                                'el derivado no es contable: sin registro del '
+                                'contrato el conteo no puede salir del disco')
+            self.assertNotIn("__IMPROVEMENT_AUDIT_COUNT__", solo_derivado.stdout)
+
+            write(state / "handoffs.jsonl", [derived, contract])
+            convive = run()
+            self.assertEqual(convive.returncode, 0, convive.stderr)
+            self.assertEqual(convive.stdout.splitlines(), [
+                "__IMPROVEMENT_AUDIT_COUNT__ 1",
+                "__IMPROVEMENT_AUDIT_IDS__ A-01"])
+
     def test_auditor_expected_lifecycle_keeps_session_cwd_for_all_bash_calls(self):
         layout = {"session_root": "parent", "product_root": "Syncify",
                   "workspace_root": "Syncify-workspace",
