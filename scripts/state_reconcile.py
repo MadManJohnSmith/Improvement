@@ -666,6 +666,44 @@ def _shadow_tree_is_regular(shadow):
                 _abstain("sombra contiene enlace, entrada especial o montaje")
 
 
+def _verification_pass_for_head(state, head):
+    """Prove usable PASS verification records are bound to this candidate head.
+
+    A DIRTY status is what the repair recording commands write by design, so it
+    carries no verification claim at all — `--integrate` cannot trust it and
+    cannot trust a hand-edited status either. The proof lives in the
+    plugin-written ledger (`verification-results.jsonl`), and the verdict is
+    derived from the records exactly as the campaign gate and the report derive
+    theirs: every (finding, head) group the head produced must derive PASS,
+    worst result wins. A head with no usable record, or one whose derived
+    verdict is not PASS, is a citable refusal.
+    """
+    if not isinstance(head, str) or not head:
+        raise ReconcileError(
+            "la candidata no tiene un head citable; --integrate no acepta una "
+            "DIRTY sin el head de candidata al que ligar la verificación")
+    records = [record for record in _read_jsonl(state / "verification-results.jsonl")
+               if isinstance(record.get("finding_id"), str)
+               and record.get("candidate_head") == head
+               and record.get("result") in ("PASS", "BLOCKED", "FAIL")]
+    if not records:
+        raise ReconcileError(
+            f"la candidata DIRTY no tiene registros de verificación usable "
+            f"ligados a su head {head[:16]}…; --integrate no acepta el enum a "
+            "ciegas ni una verificación declarada a mano")
+    unproven = sorted((finding, key_head) for (finding, key_head), group
+                      in stack.derived_verdicts(records).items()
+                      if group["verdict"] != "PASS")
+    if unproven:
+        named = ", ".join(f"{finding}@{key_head[:16]}…"
+                          for finding, key_head in unproven)
+        raise ReconcileError(
+            f"la verificación derivada de la candidata DIRTY no es PASS "
+            f"({named}); el peor resultado manda y el PASS derivado es el que "
+            "el gate de campaña habría emitido")
+    return len(records)
+
+
 def mark_integrated(product, workspace):
     """Close a verified candidate's cycle: the explicit operator route to INTEGRATED.
 
@@ -677,6 +715,14 @@ def mark_integrated(product, workspace):
     same way retire proves it — per-path tree comparison for shadows, ancestry
     of the committed head for legacy worktrees, never a shared SHA (independent
     histories make a common SHA a coincidence, not a proof).
+
+    A DIRTY candidate takes the same content gates plus one more: the repair
+    recording commands only ever write PROVISIONED/DIRTY (issue #36), so the
+    enum alone proves nothing about verification. Before the status moves, the
+    candidate's head must carry usable PASS verification records derived PASS
+    from the plugin-written ledger (`_verification_pass_for_head`); PATCH_READY
+    keeps meaning "verified and ready for integration" without re-deriving it,
+    because the Host gate that emitted that status already held the evidence.
     """
     product, workspace = Path(product), Path(workspace)
     state = workspace / "mode-state"
@@ -687,9 +733,12 @@ def mark_integrated(product, workspace):
     status = candidate.get("status")
     if status == "INTEGRATED":
         raise ReconcileError("la candidata ya está INTEGRATED; el ciclo ya está cerrado")
-    if status != "PATCH_READY":
+    if status not in ("PATCH_READY", "DIRTY"):
         raise ReconcileError(
-            f"la candidata está en {status!r}; solo se marca una PATCH_READY")
+            f"la candidata está en {status!r}; solo se marca una PATCH_READY "
+            "verificada o una DIRTY con contenido y verificación probados")
+    if status == "DIRTY":
+        _verification_pass_for_head(state, candidate.get("head"))
     recorded_path = candidate.get("path")
     if not isinstance(recorded_path, str):
         _abstain("ruta registrada inválida")

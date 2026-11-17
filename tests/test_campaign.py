@@ -137,6 +137,66 @@ class CampaignGateTests(unittest.TestCase):
         self.assertEqual(self.verdict()['unverified'], [])
         self.assertEqual(ledger.read_bytes(), antes)
 
+    def test_pass_promueve_dirty_a_patch_ready(self):
+        """Issue #36: el PASS del gate promueve DIRTY→PATCH_READY.
+
+        Los comandos Host de reparación solo saben escribir PROVISIONED/DIRTY;
+        sin la promoción, una reparación verificada quedaba DIRTY para siempre
+        y --integrate (que exige PATCH_READY) era inalcanzable. La promoción
+        usa el mismo contrato Host del registro de candidata y comparte flujo
+        con el registro de episodios de 4d4d413; la identidad de la candidata
+        no se toca.
+        """
+        self.write_finding('A-01')
+        self.write_ledger()
+        code, _output = self.run_gate('post')
+        self.assertEqual(code, campaign.EXIT_PASS, self.verdict())
+        self.assertEqual(self.verdict().get('candidate_status_promoted'),
+                         'PATCH_READY')
+        candidate = json.loads((self.state / 'work-items.json').read_text(
+            encoding='utf-8'))['candidate']
+        self.assertEqual(candidate['status'], 'PATCH_READY')
+        self.assertEqual(candidate['head'], HEAD)
+        self.assertEqual(candidate['candidate_diff_digest'], DIFF)
+        self.assertEqual(candidate['changed_paths'], ['manage.py'])
+        # El registro de episodio sigue funcionando en el mismo flujo.
+        registered = episodes.read_episodes(self.workspace)
+        self.assertEqual(len(registered), 1)
+        self.assertEqual(registered[0]['verdict'], 'PASS')
+
+    def test_promocion_que_falla_no_miente_pass(self):
+        """Fail-closed: sin work-items escribible, el PASS se retiene BLOCKED."""
+        self.write_ledger()
+        with mock.patch.object(campaign, '_register_candidate',
+                               side_effect=OSError('disco lleno')):
+            code, _output = self.run_gate('pre')
+        self.assertEqual(code, campaign.EXIT_BLOCKED)
+        verdict = self.verdict()
+        self.assertEqual(verdict['verdict'], 'BLOCKED')
+        self.assertTrue(
+            verdict['reason'].startswith('promoción PATCH_READY no registrada'),
+            verdict['reason'])
+        self.assertEqual(json.loads((self.state / 'work-items.json').read_text(
+            encoding='utf-8'))['candidate']['status'], 'DIRTY')
+
+    def test_pass_sobre_patch_ready_no_reescribe_el_registro(self):
+        """Camino legacy intacto: una candidata que ya es PATCH_READY no se toca.
+
+        El implementer que ya escribe PATCH_READY no atraviesa promoción
+        alguna: el gate solo actúa sobre DIRTY y el fichero queda byte a
+        byte."""
+        self.write_ledger()
+        path = self.state / 'work-items.json'
+        value = json.loads(path.read_text(encoding='utf-8'))
+        value['candidate']['status'] = 'PATCH_READY'
+        path.write_text(json.dumps(value, ensure_ascii=False) + '\n',
+                        encoding='utf-8')
+        antes = path.read_bytes()
+        code, _output = self.run_gate('pre')
+        self.assertEqual(code, campaign.EXIT_PASS)
+        self.assertNotIn('candidate_status_promoted', self.verdict())
+        self.assertEqual(path.read_bytes(), antes)
+
     def test_ledger_sin_candidato_no_acredita_pass(self):
         (self.state / 'work-items.json').unlink()
         self.write_ledger()

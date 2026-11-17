@@ -326,7 +326,7 @@ are the reason verification here is real instead of declarative.
 
 ### The framework, on itself
 
-Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH, 5 MEDIUM) and the repairer fixed all of them with their tests. The re-audit then found the most uncomfortable one: **a verification result did not identify the tree it verified** — now every record carries the digest of the verified diff, checked in three places. The memory applies to itself too: an audit of the memory found a register of already-closed defects that was written but never consulted, so the same defect could return every session; the consultation is now mechanical. Framework suite: **1414 tests green** (12 skipped on a machine without the external DSH runtime and `jsonschema`, measured 2026-11-17).
+Installed on a clone of itself, the auditor found 7 real framework defects (2 HIGH, 5 MEDIUM) and the repairer fixed all of them with their tests. The re-audit then found the most uncomfortable one: **a verification result did not identify the tree it verified** — now every record carries the digest of the verified diff, checked in three places. The memory applies to itself too: an audit of the memory found a register of already-closed defects that was written but never consulted, so the same defect could return every session; the consultation is now mechanical. Framework suite: **1420 tests green** (12 skipped on a machine without the external DSH runtime and `jsonschema`, measured 2026-11-17).
 
 ### Driven by a real DSH session (2026-10-10)
 

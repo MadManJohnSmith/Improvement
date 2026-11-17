@@ -1863,8 +1863,10 @@ def main():
                               "git junto al clon del framework)")
     p_state.add_argument("--workspace", default=None)
     p_state.add_argument("--integrate", action="store_true",
-                         help="Marcar INTEGRATED la candidata PATCH_READY verificada "
-                              "(ruta de operador; falla si la contención no está probada)")
+                         help="Marcar INTEGRATED la candidata PATCH_READY verificada, "
+                              "o una DIRTY con contención de contenido y registros de "
+                              "verificación PASS ligados a su head (ruta de operador; "
+                              "falla con causa citable si la prueba no está)")
     p_state.add_argument("--retire", action="store_true",
                          help="Retirar la candidata INTEGRATED verificada")
     p_state.add_argument("--repoint", default=None,

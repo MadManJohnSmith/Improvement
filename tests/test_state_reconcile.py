@@ -455,8 +455,10 @@ class StateReconcileTests(unittest.TestCase):
 
     def test_mark_integrated_refuses_a_status_or_tree_it_cannot_close(self):
         shadow, _ = self._implement_candidate(status="DIRTY")
+        # Issue #36: DIRTY es lo que los comandos Host de reparación escriben;
+        # sin registros PASS ligados al head, el enum no prueba verificación.
         with self.assertRaisesRegex(
-                state_reconcile.ReconcileError, "solo se marca una PATCH_READY"):
+                state_reconcile.ReconcileError, "registros de verificación usable"):
             state_reconcile.mark_integrated(self.product, self.workspace)
         # An integration that changed something other than the recorded patch
         # is not the candidate's content in the canonical tree.
@@ -492,6 +494,84 @@ class StateReconcileTests(unittest.TestCase):
         _git(self.product, "merge", "-q", "--ff-only", branch)
         marked = state_reconcile.mark_integrated(self.product, self.workspace)
         self.assertEqual(marked["status"], "INTEGRATED")
+
+    def _pass_records(self, head, result="PASS"):
+        return [{"finding_id": "A-01", "candidate_head": head,
+                 "result": result, "command": "python -m unittest"}]
+
+    def test_mark_integrated_closes_a_dirty_candidate_with_content_and_pass(self):
+        """Issue #36: a verified DIRTY candidate reaches INTEGRATED.
+
+        The repair recording commands only ever write PROVISIONED/DIRTY, so
+        the operator route accepts a DIRTY candidate when both proofs hold:
+        the patch is exactly in the canonical tree (the same per-path gate a
+        PATCH_READY passes) and usable PASS verification records are bound to
+        the candidate's head. Nobody edits the state by hand.
+        """
+        shadow, record = self._implement_candidate(status="DIRTY")
+        self._write_state(record, verifications=self._pass_records(record["head"]))
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        marked = state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(marked["previous"], "DIRTY")
+        self.assertEqual(marked["status"], "INTEGRATED")
+        recorded = json.loads(
+            (self.state / "work-items.json").read_text())["candidate"]
+        self.assertEqual(recorded["status"], "INTEGRATED")
+        self.assertEqual(recorded["head"], record["head"])
+        self.assertEqual(recorded["path"], record["path"])
+        self.assertTrue(shadow.exists())
+
+    def test_mark_integrated_closes_a_dirty_legacy_candidate_by_ancestry_and_pass(self):
+        """The DIRTY route proves the same things on the legacy worktree path."""
+        branch = "dsh/repair-0123456789abcdef"
+        name = "Product-repair-0123456789abcdef"
+        worktree = self.session / name
+        _git(self.product, "worktree", "add", "-q", "-b", branch, str(worktree))
+        (worktree / "a.txt").write_text("fixed\n")
+        _git(worktree, "commit", "-qam", "fix")
+        head = self._head_of(worktree)
+        self._write_state({"base_revision": self.base,
+                           "finding_ids_digest": "b" * 64, "path": name,
+                           "branch": branch, "head": head,
+                           "status": "DIRTY",
+                           "candidate_diff_digest": "c" * 64,
+                           "changed_paths": ["a.txt"]},
+                          verifications=self._pass_records(head))
+        _git(self.product, "merge", "-q", "--ff-only", branch)
+        marked = state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(marked["previous"], "DIRTY")
+        self.assertEqual(marked["status"], "INTEGRATED")
+
+    def test_mark_integrated_refuses_a_dirty_candidate_without_proven_pass(self):
+        """Issue #36: content containment alone does not verify a DIRTY candidate.
+
+        The patch is exactly in the canonical tree, but the ledger carries no
+        PASS bound to the candidate head — first nothing, then PASS records
+        bound to a different head, then a FAIL on the right head. The enum is
+        never trusted blindly and the record stays DIRTY with the cause named.
+        """
+        shadow, record = self._implement_candidate(status="DIRTY")
+        (self.product / "a.txt").write_text("fixed\n")
+        _git(self.product, "commit", "-qam", "integrated patch")
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "registros de verificación usable"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        self._write_state(record, verifications=self._pass_records("f" * 40))
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "registros de verificación usable"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        self._write_state(record, verifications=[
+            *self._pass_records(record["head"]),
+            {"finding_id": "A-01", "candidate_head": record["head"],
+             "result": "FAIL", "command": "python -m unittest"}])
+        with self.assertRaisesRegex(
+                state_reconcile.ReconcileError, "no es PASS"):
+            state_reconcile.mark_integrated(self.product, self.workspace)
+        self.assertEqual(json.loads(
+            (self.state / "work-items.json").read_text())["candidate"]["status"],
+            "DIRTY")
+        self.assertTrue(shadow.exists())
 
     def test_retire_reaches_implement_shadows_and_leaves_a_receipt(self):
         """Issue #33: the retire dispatch fell to the legacy branch and abstained.

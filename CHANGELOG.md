@@ -1,5 +1,42 @@
 # Cambios
 
+## workflow: la candidata de reparación verificada llega a INTEGRATED por ruta soportada — 2026-11-17
+
+Issue #36, del hallazgo operativo del día (aceptación 1/6, run r-e03534cc): una
+reparación verificada con gates PASS quedaba DIRTY para siempre y
+`bootstrap.py state --integrate` era inalcanzable — los comandos Host de
+reparación solo escriben PROVISIONED/DIRTY, `mark_integrated` exigía
+PATCH_READY, y la prueba de contenido por-ruta pasaba: solo el enum bloqueaba.
+Dos rutas soportadas cierran el ciclo, ambas estructura y no prosa.
+
+1. **El gate de campaña promueve**: `verification_verdict`
+   (`scripts/campaign.py`) promueve DIRTY→PATCH_READY cuando el veredicto
+   derivado es PASS sobre la candidata registrada, por el mismo contrato de
+   escritura Host del registro en provision-implement (`_register_candidate`,
+   atómico, sin enlaces). PATCH_READY pasa a significar exactamente
+   «verificada por el gate, lista para integración»; el registro de episodios
+   de 4d4d413 sigue funcionando en el mismo flujo, y una promoción que falla
+   retiene el veredicto como BLOCKED con causa citable — nunca un PASS con la
+   promoción perdida en silencio. Idempotente: un re-PASS sobre PATCH_READY no
+   reescribe nada.
+2. **La ruta de operador prueba**: `mark_integrated`
+   (`scripts/state_reconcile.py`) acepta también una DIRTY cuando se prueban
+   las dos cosas — la misma contención de contenido que pasa una PATCH_READY,
+   más registros de verificación PASS usable ligados al head de la candidata,
+   derivados PASS del ledger escrito por el plugin
+   (`_verification_pass_for_head`; el peor resultado manda). El enum nunca se
+   acepta a ciegas, un estado editado a mano no prueba nada, y cada rechazo es
+   citable: sin registros, registros ligados a otro head, o FAIL derivado.
+
+Los caminos legacy quedan fijados por regresión: un implementer que ya escribe
+PATCH_READY no atraviesa el gate (work-items.json byte a byte), y
+PATCH_READY→INTEGRATED sigue funcionando sin re-derivar la verificación,
+porque el gate que emitió ese estado ya sostuvo la evidencia. Los techos de
+presupuesto de la cadena del día (2fcb081..71a6e84), el fixture externo y los
+run dirs no se tocan. Suite: **1420 pruebas en verde** (12 saltadas
+ambientales, sin cambios; +6 regresiones de este trabajo; las cifras de los
+README se actualizan al número que corre).
+
 ## workflow: techo simétrico de reparar tras refutar la acumulación — 2026-11-17
 
 La corrida r-f667c2f3 (2026-11-17) retuvo `reparar-1` a 1.021.579/1.000.000.

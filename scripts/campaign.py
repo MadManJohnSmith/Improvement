@@ -22,6 +22,11 @@ Reglas que este archivo no rompe:
 - BLOCKED significa "falta una pieza": una capability ausente o un plan
   ilegible. FAIL significa "hay evidencia y no dice PASS". Nunca PASS por no
   tener nada que mirar.
+- SÍ promueve DIRTY→PATCH_READY cuando el veredicto derivado es PASS sobre la
+  candidata registrada: los comandos Host de reparación solo escriben
+  PROVISIONED/DIRTY, y sin la promoción una reparación verificada quedaba
+  DIRTY para siempre (issue #36). La escritura usa el registro de candidata
+  Host; falla cerrada a BLOCKED, nunca PASS con promoción perdida.
 - El veredicto se escribe en la raíz de evidencia, que es donde lo lee el
   `if_veredicto` del paso de reparación; el detalle de la auditoría y de cada
   reparación viven bajo `evidence/campana/`.
@@ -499,7 +504,28 @@ def verification_verdict(workspace, fase):
         return EXIT_BLOCKED, _verdict_payload(
             fase, 'BLOCKED', derived, candidate,
             reason='episodio de memoria no registrado: ' + str(error))
+    # Promoción DIRTY→PATCH_READY (issue #36): los comandos Host de reparación
+    # solo saben escribir PROVISIONED/DIRTY, así que sin esta promoción una
+    # candidata verificada quedaba DIRTY para siempre y --integrate (que exige
+    # PATCH_READY) era inalcanzable. PATCH_READY pasa a significar exactamente
+    # "verificada por este gate y lista para integración". La escritura es el
+    # mismo contrato Host que el registro en provision-implement
+    # (_register_candidate, escritura atómica sin enlaces); si falla, el
+    # veredicto no miente: BLOCKED citable, nunca un PASS con la promoción
+    # perdida en silencio. Re-PASS sobre la misma candidata es idempotente:
+    # en PATCH_READY no hay nada que promover.
+    promoted = False
+    if candidate.get('status') == 'DIRTY':
+        try:
+            _register_candidate(workspace, dict(candidate, status='PATCH_READY'))
+        except (CampaignBlocked, OSError) as error:
+            return EXIT_BLOCKED, _verdict_payload(
+                fase, 'BLOCKED', derived, candidate,
+                reason='promoción PATCH_READY no registrada: ' + str(error))
+        promoted = True
     payload = _verdict_payload(fase, 'PASS', derived, candidate)
+    if promoted:
+        payload['candidate_status_promoted'] = 'PATCH_READY'
     if registered:
         payload['episodes_registered'] = registered
     if unfiled:
