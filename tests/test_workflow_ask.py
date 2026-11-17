@@ -851,6 +851,103 @@ class WorkflowAskTests(unittest.TestCase):
                              self.payloads(outcome['run_dir'])))
         self.assertEqual(verify(outcome['run_dir'])['events'], len(self.payloads(outcome['run_dir'])))
 
+    # -- persistencia reclamada fail-closed (issue #37, síntoma b)
+
+    def _write_handoff(self, handoff_id, finding_ids,
+                       prompt='Repara los hallazgos de la auditoría; no publiques.',
+                       base='b' * 40):
+        """handoffs.jsonl en el mode-state, como el turno lo habría aterrizado."""
+        state = self.workspace / 'mode-state'
+        state.mkdir(parents=True, exist_ok=True)
+        record = {'handoff_id': handoff_id, 'base_revision': base,
+                  'finding_ids': finding_ids, 'next_prompt': prompt}
+        path = state / 'handoffs.jsonl'
+        existing = path.read_text() if path.exists() else ''
+        path.write_text(existing + json.dumps(record, ensure_ascii=False) + '\n')
+
+    def _audit_plan_and_result(self, result, filename='auditar.json',
+                               prompt='audita el producto'):
+        client = FakeAskClient()
+        client.complete_after = 1
+        plan_path = self.write_plan(
+            [self.ask('auditar', prompt=prompt,
+                      result_contract={'evidence_name': 'campana',
+                                       'path': 'auditoria.json'})],
+            filename=filename)
+        client.on_complete = lambda session: _write_result(
+            session.workspace, 'campana/auditoria.json', result)
+        return client, plan_path
+
+    def test_handoff_reclamado_sin_aterrizar_retiene(self):
+        """La observación del run r-e03534cc mentía y el journal la grabó igual.
+
+        El resultado del audit reclamó handoff_id audit-complete-b40829ad-7 y
+        persisted_count 1 que nunca aterrizó en handoffs.jsonl: ningún fichero
+        del mode-state tiene mtime dentro de la ventana del run — el turno no
+        emitió ninguna escritura gestionada y aun así reportó persistencia.
+        No hubo dedup (workflow_write escribe o lanza en voz alta) ni error
+        tragado; el autoreporte se journalizó sin cruzarlo contra el disco.
+        Fail-closed: sin aterrizaje el turno no reporta persistencia —
+        retención citable y sin STEP_COMPLETED que lo haga verdad.
+        """
+        client, plan_path = self._audit_plan_and_result({
+            'handoff_id': 'audit-complete-b40829ad-7', 'persisted_count': 1,
+            'next_prompt': 'Repara los hallazgos de la auditoría; no publiques.',
+            'audit_scope': 'complete'})
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'RETAINED')
+        self.assertIn('ask-persistencia-sin-aterrizaje', outcome['cause'])
+        self.assertIn('audit-complete-b40829ad-7', outcome['cause'])
+        payloads = self.payloads(outcome['run_dir'])
+        self.assertFalse([p for p in payloads if p['kind'] == 'STEP_COMPLETED'
+                          and p['payload'].get('step_id') == 'auditar'],
+                         'la observación que miente no se journaliza como paso completado')
+        self.assertEqual(verify(outcome['run_dir'])['events'], len(payloads))
+
+    def test_persisted_count_y_prompt_reclamados_deben_coincidir_con_el_disco(self):
+        """Un número o un prompt que el disco no dice es la misma mentira."""
+        cases = [
+            # El handoff aterrizó pero cubre dos hallazgos: persist 1 miente.
+            (lambda index: self._write_handoff('audit-caso-%d' % index,
+                                               ['A-05', 'A-06']),
+             {'persisted_count': 1}, 'no coincide'),
+            # El handoff aterrizó con otro next_prompt que el reclamado.
+            (lambda index: self._write_handoff(
+                 'audit-caso-%d' % index, ['A-05'],
+                 prompt='Repara los hallazgos; ya está.'),
+             {'persisted_count': 1,
+              'next_prompt': 'Repara los hallazgos de la auditoría; no publiques.'},
+             'next_prompt'),
+            # persisted_count ≥ 1 sin handoff_id reclamado ni aterrizado.
+            (lambda index: (self.workspace / 'mode-state' / 'handoffs.jsonl').unlink(
+                 missing_ok=True),
+             {'handoff_id': None, 'persisted_count': 1}, 'sin handoff'),
+        ]
+        for index, (seed, result_extra, fragment) in enumerate(cases):
+            with self.subTest(case=index):
+                seed(index)
+                client, plan_path = self._audit_plan_and_result(
+                    {'handoff_id': 'audit-caso-%d' % index, **result_extra},
+                    filename='auditar-%d.json' % index,
+                    prompt='audita el producto, caso %d' % index)
+                outcome = run_plan(plan_path, ask_client=client)
+                self.assertEqual(outcome['result'], 'RETAINED', outcome)
+                self.assertIn('ask-persistencia-sin-aterrizaje', outcome['cause'])
+                self.assertIn(fragment, outcome['cause'])
+
+    def test_handoff_reclamado_aterrizado_completa(self):
+        """El caso sano: lo reclamado está en disco, el paso completa igual."""
+        self._write_handoff('audit-complete-b40829ad-7', ['A-05'])
+        client, plan_path = self._audit_plan_and_result({
+            'handoff_id': 'audit-complete-b40829ad-7', 'persisted_count': 1,
+            'next_prompt': 'Repara los hallazgos de la auditoría; no publiques.',
+            'audit_scope': 'complete'})
+        outcome = run_plan(plan_path, ask_client=client)
+        self.assertEqual(outcome['result'], 'COMPLETED', outcome.get('cause'))
+        self.assertTrue([p for p in self.payloads(outcome['run_dir'])
+                         if p['kind'] == 'STEP_COMPLETED'
+                         and p['payload'].get('step_id') == 'auditar'])
+
     # -- techo de lectura: presupuesto forzado fail-closed por intento ask
 
     def test_techo_de_lectura_retiene_con_causa_citable(self):

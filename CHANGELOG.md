@@ -1,5 +1,58 @@
 # Cambios
 
+## workflow: el repeat se deriva del índice en el reconcile y la persistencia reclamada aterriza o retiene — 2026-11-17
+
+Issue #37, de la aceptación 2/2 del día (run r-e03534cc en
+`workspace-workflow-aceptacion2`), con repro primero en tests deterministas:
+la auditoría re-mató la firma exacta del episodio cerrado de A-04
+(`4c21c5c6…` en `episodes-index.json`) y sin embargo A-05 no llevaba
+`prior_episode` y `repeats.open` leía 0; y en el mismo run la observación del
+audit reclamaba `handoff_id: audit-complete-b40829ad-7` con
+`persisted_count: 1` que nunca aterrizó en `handoffs.jsonl`. Dos causas reales,
+ambas arregladas como estructura y no como prosa.
+
+1. **El índice es la verdad (síntoma a).** El estampado de `prior_episode` es
+   solo write-time (`recallEpisode` en `workflow_write`): un hallazgo escrito
+   ANTES del cierre del episodio no puede llevar el sello, y
+   `repeat_findings` (`scripts/state_reconcile.py`) contaba solo sellos. Ahora
+   deriva el repeat en el reconcile, a lectura, desde firmas × índice de
+   episodios — el fingerprint que calculó la herramienta, o la misma receta
+   `sha256(path + "\n" + excerpt)` sobre el ancla — independientemente del
+   orden temporal write/cierre, junto al sello write-time que queda como el
+   atajo optimista que es; un hallazgo cuenta una vez por cualquiera de las
+   dos rutas, la derivación no reescribe el ledger y es idempotente. Sobre la
+   evidencia real copiada, `bootstrap.py state` lee ahora
+   `repeats: {open: 1, prior_units: ["campana.b40829ad18a61a31"]}`.
+2. **Fail-closed del reporte (síntoma b).** No hubo dedup ni error tragado:
+   `workflow_write` escribe o lanza en voz alta, y ningún fichero del
+   mode-state tiene mtime dentro de la ventana del run — el turno nunca
+   emitió la escritura y aun así reportó persistencia; `_load_result`
+   (`scripts/workflow.py`) validaba forma y topes, nunca la verdad. El runner
+   cruza ahora el resultado del ask contra el disco antes de journalizar
+   STEP_COMPLETED (`_verify_persisted_claims`): un `handoff_id` reclamado debe
+   existir en `mode-state/handoffs.jsonl`, un `persisted_count ≥ 1` debe
+   coincidir con los `finding_ids` de ese registro y su `next_prompt` con el
+   reclamado. Sin aterrizaje el run retiene con causa citable
+   (`ask-persistencia-sin-aterrizaje:…`) y la observación que miente no se
+   journaliza nunca.
+
+Nota forense, reportada sin tocar: el handoff `-6` que sí aterrizó (12:33)
+lleva un `next_prompt` derivado (`no públicas` ≠ el contrato `no publiques`)
+porque el validador de escritura solo exige la cobertura de auditoría con el
+prompt exacto (`workflow-write.mjs`, la guarda del `AUDIT_NEXT_PROMPT`); esa
+deriva es evidencia de la misma holgura y el `count_command` — que filtra por
+prompt exacto — no puede ver ese registro. Queda para decisión de
+mantenimiento separada.
+
+El registro de episodios de campaña (4d4d413) y la promoción DIRTY→PATCH_READY
+(d612444) siguen intactos; los techos de presupuesto de la cadena del día
+(71a6e84..2fcb081), el fixture externo y los run dirs históricos no se tocan.
+Suite: **1424 pruebas en verde** (12 saltadas en una máquina sin el runtime
+DSH externo ni `jsonschema`; +4 regresiones de este trabajo, conteos de los
+READMEs actualizados al número que corre).
+
+
+
 ## workflow: la candidata de reparación verificada llega a INTEGRATED por ruta soportada — 2026-11-17
 
 Issue #36, del hallazgo operativo del día (aceptación 1/6, run r-e03534cc): una

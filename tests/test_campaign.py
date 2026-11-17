@@ -340,7 +340,11 @@ class CampaignGateTests(unittest.TestCase):
         self.assertIn(prior_unit, report['memory']['units'])
         # La cita del hallazgo re-matado apunta a una unidad real y a la firma
         # bajo la que la candidata cerró: no es un claim que nadie probó.
-        self.assertEqual(report['repeats']['open'], 1)
+        # A-01 no lleva sello (se escribió antes del cierre del gate) y B-02
+        # sí; el reconcile deriva ambos desde firmas × índice (issue #37), así
+        # que el repeat del hallazgo escrito antes del cierre ya no se esconde.
+        self.assertEqual(report['repeats']['open'], 2)
+        self.assertEqual(report['repeats']['prior_units'], [prior_unit])
         self.assertEqual(report['memory']['unknown_claimed_units'], [])
         self.assertEqual(report['memory']['contradicted_claims'], [])
 

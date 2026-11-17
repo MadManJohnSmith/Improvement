@@ -237,24 +237,56 @@ def verification_verdicts(state):
 def repeat_findings(state):
     """OPEN findings the memory had already closed by a verified repair.
 
-    `prior_episode` is stamped by the write tool, not claimed by the mode, from
-    the same fingerprint it uses to make a finding countable, so this counts
-    defects that came back rather than ones an auditor called new. A non-zero
-    number here is not a failure of the ledger: it is the prevention failing
-    where the repair worked, which is a different defect from the first one and
-    only visible because the memory is consulted.
+    Two routes reach the same count, and a finding counts once however it got
+    here:
+
+    * the write-time stamp: `prior_episode` is stamped by the write tool, not
+      claimed by the mode, from the same fingerprint it uses to make a finding
+      countable; and
+    * the derivation at read time: the finding's fingerprint — the one the
+      tool computed, or the same recipe over its path and excerpt — looked up
+      in the episode index. This route exists because the stamp cannot see
+      the future: a finding written BEFORE its episode closed (issue #37,
+      run r-e03534cc: A-05 written at 12:32, the episode closing its exact
+      fingerprint landed at 12:46) never carried a stamp, and a reader that
+      trusted the stamp alone hid a repetition the index had already proven.
+      The index is the truth; the stamp is the optimistic shortcut.
+
+    A non-zero number here is not a failure of the ledger: it is the
+    prevention failing where the repair worked, which is a different defect
+    from the first one and only visible because the memory is consulted.
     """
+    import episodes
+
+    signatures = episodes.read_index(Path(state).parent)["signatures"]
+
+    def closed_units(record):
+        """Units whose verified repair the index holds under this finding's identity."""
+        evidence = record.get("evidence")
+        if (not isinstance(evidence, dict)
+                or not isinstance(evidence.get("path"), str)
+                or not isinstance(evidence.get("excerpt"), str)):
+            return set()
+        fingerprint = evidence.get("fingerprint")
+        if not isinstance(fingerprint, str) or not fingerprint:
+            fingerprint = episodes.signature(evidence["path"], evidence["excerpt"])
+        return {entry["unit"] for entry in signatures.get(fingerprint, [])
+                if isinstance(entry, dict) and entry.get("verdict") == "PASS"
+                and isinstance(entry.get("unit"), str) and entry["unit"]}
+
     repeats, units = 0, set()
     for record in latest_findings(state).values():
         if record.get("status") != "OPEN":
             continue
         evidence = record.get("evidence")
-        if not isinstance(evidence, dict):
-            continue
-        prior = evidence.get("prior_episode")
-        if isinstance(prior, dict) and isinstance(prior.get("unit"), str) and prior["unit"]:
+        prior = evidence.get("prior_episode") if isinstance(evidence, dict) else None
+        stamped = ({prior["unit"]}
+                   if isinstance(prior, dict) and isinstance(prior.get("unit"), str)
+                   and prior["unit"] else set())
+        derived = closed_units(record)
+        if stamped or derived:
             repeats += 1
-            units.add(prior["unit"])
+            units |= stamped | derived
     return {"open": repeats, "prior_units": sorted(units)}
 
 

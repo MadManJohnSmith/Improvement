@@ -1874,6 +1874,8 @@ class _Run:
             result_path, result_payload, result_sha256 = self._load_result(
                 step_id, step['result_contract']['path'],
                 step['result_contract']['evidence_name'])
+        if result_payload is not None:
+            self._verify_persisted_claims(step_id, result_payload)
         relative, data = self._write_ask_state(
             step_id, attempt, session_id, request_id, prompt_sha256, 'completed',
             text=text, result=result_payload, result_path=result_path,
@@ -1904,6 +1906,68 @@ class _Run:
         self.last_ask_observation = ((self.workspace / 'evidence' / contract['evidence_name']
                                       / contract['path']) if contract is not None
                                      else self.run_dir / relative)
+
+    def _verify_persisted_claims(self, step_id, payload):
+        """Lo que el resultado reclama como persistido debe estar en el estado.
+
+        La observación del run r-e03534cc reclamó handoff_id
+        audit-complete-b40829ad-7 y persisted_count 1 que nunca aterrizó en
+        handoffs.jsonl — ningún fichero del mode-state tiene mtime dentro de
+        la ventana del run — y el journal la grabó tal cual. La causa no fue
+        dedup ni un error tragado: `workflow_write` escribe o lanza en voz
+        alta, y el turno nunca emitió la escritura; el resultado del ask es un
+        autoreporte y `_load_result` solo validaba forma y topes, nunca la
+        verdad. Fail-closed: un handoff_id reclamado debe existir en
+        mode-state/handoffs.jsonl, y un persisted_count ≥ 1 debe coincidir con
+        los finding_ids del registro reclamado, cuyo next_prompt debe ser el
+        reclamado. Sin aterrizaje el turno no reporta persistencia: retención
+        citable antes de journalizar STEP_COMPLETED.
+        """
+        if not isinstance(payload, dict):
+            return
+        handoff_id = payload.get('handoff_id')
+        persisted = payload.get('persisted_count')
+        claimed_prompt = payload.get('next_prompt')
+        if (not isinstance(handoff_id, str) or not handoff_id) and persisted is None:
+            return
+        from mode_lifecycle import BYTE_LIMITS
+
+        records = []
+        handoffs = self.workspace / 'mode-state' / 'handoffs.jsonl'
+        if handoffs.is_file() and not handoffs.is_symlink():
+            data = handoffs.read_bytes()
+            if len(data) > BYTE_LIMITS['handoffs.jsonl']:
+                self._retain('ask-persistencia-ilegible:' + step_id
+                             + ':handoffs.jsonl excede el límite gestionado')
+            for number, line in enumerate(data.decode('utf-8', 'replace').splitlines(), 1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    self._retain('ask-persistencia-ilegible:%s:handoffs.jsonl:%d '
+                                 'no es JSON' % (step_id, number))
+                records.append(record if isinstance(record, dict) else {})
+        landed = None
+        if isinstance(handoff_id, str) and handoff_id:
+            landed = next((record for record in records
+                           if record.get('handoff_id') == handoff_id), None)
+            if landed is None:
+                self._retain('ask-persistencia-sin-aterrizaje:%s:handoff %s '
+                             'no está en handoffs.jsonl' % (step_id, handoff_id))
+        if isinstance(persisted, int) and not isinstance(persisted, bool) \
+                and persisted >= 1:
+            ids = (landed or {}).get('finding_ids')
+            if landed is None:
+                self._retain('ask-persistencia-sin-aterrizaje:%s:persisted_count %d '
+                             'sin handoff en handoffs.jsonl' % (step_id, persisted))
+            if not isinstance(ids, list) or len(ids) != persisted:
+                self._retain('ask-persistencia-sin-aterrizaje:%s:persisted_count %d '
+                             'no coincide con handoffs.jsonl' % (step_id, persisted))
+        if (landed is not None and isinstance(claimed_prompt, str) and claimed_prompt
+                and landed.get('next_prompt') != claimed_prompt):
+            self._retain('ask-persistencia-sin-aterrizaje:%s:el next_prompt del '
+                         'handoff %s difiere del reclamado' % (step_id, handoff_id))
 
     def _load_result(self, step_id, relative, evidence_name='.', retain=True):
         """Valida el resultado estructurado y los topes de su raíz de evidencia.

@@ -808,6 +808,79 @@ class StateReconcileTests(unittest.TestCase):
         self.assertEqual(report["repeats"], {"open": 1, "prior_units": ["U-7"]})
         self.assertEqual((self.state / "findings.jsonl").read_text(), before)
 
+    def test_a_finding_written_before_the_closure_is_still_a_repeat(self):
+        """Issue #37, symptom (a): a write-time stamp cannot see the future.
+
+        `workflow_write` stamps `prior_episode` only while the finding is
+        being written (`recallEpisode`, dsh-plugins/workflow-write.mjs), and
+        the reconcile counted repeats from that stamp alone. In run
+        r-e03534cc the finding A-05 was written at 12:32 and the episode
+        closing its exact fingerprint landed at 12:46, so the repetition
+        existed in the index and nothing ever showed it: no `prior_episode`
+        (the stamp cannot consult a closure that has not happened yet) and
+        `repeats.open: 0` (the reader trusted the stamp instead of the index).
+        The index is the truth, so the reconcile now derives the repeat from
+        fingerprints × episode index, whichever came first in wall-clock
+        time; the write-time stamp stays as the optimistic shortcut it is.
+        """
+        import episodes
+
+        fingerprint = episodes.signature("src/libreta/storage.py",
+                                         "def buscar_notas(directorio, texto):")
+        self._write_state(
+            None,
+            findings=[
+                {"finding_id": "A-05", "base_revision": self.base,
+                 "severity": "HIGH", "summary": "repeat of a closed defect",
+                 "status": "OPEN",
+                 "evidence": {"path": "src/libreta/storage.py",
+                              "excerpt": "def buscar_notas(directorio, texto):",
+                              "line": 8, "located": True,
+                              "fingerprint": fingerprint}},
+                # The fallback recipe too: a finding whose evidence carries no
+                # fingerprint is still identified by the same
+                # sha256(path + newline + excerpt) the reader stamps.
+                {"finding_id": "A-06", "base_revision": self.base,
+                 "severity": "MEDIUM", "summary": "same defect, other words",
+                 "status": "OPEN",
+                 "evidence": {"path": "src/libreta/storage.py",
+                              "excerpt": "    aguja = texto.lower()",
+                              "line": 9, "located": True}}],
+            handoffs=[{"handoff_id": "audit-1", "base_revision": self.base,
+                       "finding_ids": ["A-05", "A-06"],
+                       "next_prompt": "Repara los hallazgos de la auditoría; no publiques."}])
+
+        # Before the closure the finding is just open work: no stamp could
+        # exist yet and the memory holds nothing, so zero repeats is honest.
+        self.assertEqual(state_reconcile.repeat_findings(self.state),
+                         {"open": 0, "prior_units": []})
+
+        # The episode closes AFTER the finding was written — the temporal
+        # order that broke the write-time-only stamping.
+        episodes.record(self.workspace, unit="campana.b40829ad18a61a31",
+                        path="src/libreta/storage.py",
+                        excerpt="def buscar_notas(directorio, texto):",
+                        verdict="PASS", evidence="veredicto.json fase=pre",
+                        fingerprint=fingerprint, repair="candidata repair-x")
+        episodes.record(self.workspace, unit="campana.b40829ad18a61a31",
+                        path="src/libreta/storage.py",
+                        excerpt="    aguja = texto.lower()",
+                        verdict="PASS", evidence="veredicto.json fase=pre",
+                        repair="candidata repair-x")
+
+        report = state_reconcile.reconcile(self.product, self.workspace)
+        self.assertEqual(report["repeats"],
+                         {"open": 2, "prior_units": ["campana.b40829ad18a61a31"]})
+        # Derivation, not write-back: the reconcile reports the truth and
+        # leaves the plugin-owned ledger byte-identical.
+        after = (self.state / "findings.jsonl").read_text()
+        self.assertNotIn("prior_episode", after)
+        # Idempotent: re-deriving adds nothing and duplicates nothing.
+        again = state_reconcile.reconcile(self.product, self.workspace)
+        self.assertEqual(again["repeats"], report["repeats"])
+        self.assertEqual(len(episodes.read_episodes(self.workspace)), 2)
+        self.assertEqual((self.state / "findings.jsonl").read_text(), after)
+
     def test_uncovered_findings_name_what_no_handoff_ever_took(self):
         self._write_state(
             None,
