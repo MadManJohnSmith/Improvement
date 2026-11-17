@@ -1,5 +1,21 @@
 # Cambios
 
+## workflow: techo simétrico de reparar tras refutar la acumulación — 2026-11-17
+
+La corrida r-f667c2f3 (2026-11-17) retuvo `reparar-1` a 1.021.579/1.000.000.
+Dos hipótesis se probaron con medición antes de recalibrar: (a) acumulación de
+estado entre corridas — REFUTADA, el paquete acumulado mide 6,7 KB
+(work-items.json 1.206 bytes, findings.jsonl 5 líneas); (b) bucle — REFUTADA,
+la sesión tiene 42 pasos (vs 25 en la de 522k) de trabajo convergente
+diferenciado, cortada escribiendo registros de verificación en la fase de
+cierre. La secuencia 522→719→1021 no es tendencia: `auditar` ya demostró que
+la distribución de conducta es ancha y no monótona (545→852→1044→434).
+`BUDGET_REPAIR_TOKENS` 1000000 → **1500000**, simétrico con `auditar`
+(mismos máximos observados: 1.044k vs 1.021k). El criterio de falsificación se
+reformula: una retención con 1.5M que muestre trabajo NO convergente (pasos
+repetidos, sin escrituras nuevas) es bucle estructural y el diagnóstico pasa a
+la opción (a) de la propuesta del presupuesto.
+
 ## workflow: el margen decisivo alcanza a reparar tras la cuarta retención — 2026-11-17
 
 La corrida r-d35845c2 (2026-11-17) completó `auditar` con 434.378 tokens

@@ -52,9 +52,11 @@ ROUNDS_DEFAULT = 2
 # cortadas estaban registrando hallazgos con workflow_write) muestran varianza
 # de conducta ~2×: perseguir el máximo con +20% nunca converge, así que el
 # margen se ensancha una vez con justificación (auditar +44% sobre el peor
-# observado, reparar +34% sobre 521.780 cortado a mitad de fix). reparar tiene
-# dos muestras (521.780 y 719.206, r-d35845c2, cancelada a +2,7% con trabajo
-# convergente): mismo régimen, margen decisivo +39% sobre su peor → 1M. A partir de
+# observado). reparar tiene tres muestras (521.780, 719.206, 1.021.579 —
+# convergente, en la fase de cierre escribiendo registros; el estado acumulado
+# se midió minúsculo, 6,7 KB, y auditar ya demostró que la distribución es
+# ancha y no monótona: 545→852→1044→434): mismo régimen, techo simétrico al
+# de auditar → 1.5M. A partir de
 # aquí el techo es guarda-anti-bucle, no presupuesto exacto: una corrida que
 # los supere ya no es varianza y la retención es la respuesta correcta.
 # Referencia histórica: auditar 692k (11-14), reparar 401k legítimos (el 877k
@@ -62,7 +64,7 @@ ROUNDS_DEFAULT = 2
 # 728k. El runner retiene con causa `ask-techo-tokens` citable; el techo solo
 # sube si el reason lo dice (R2).
 BUDGET_AUDIT_TOKENS = 1500000
-BUDGET_REPAIR_TOKENS = 1000000
+BUDGET_REPAIR_TOKENS = 1500000
 BUDGET_IMPLEMENT_TOKENS = 900000
 # Las dos primeras rondas llevan nombre propio porque son las que el operador
 # reconoce al leer el journal; a partir de ahí el nombre ya solo ordena.
