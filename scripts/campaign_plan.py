@@ -50,6 +50,9 @@ ROUNDS_DEFAULT = 2
 ROUND_LABELS = ('pre', 'post')
 AUDITOR_MARKERS = ('auditor',)
 REPAIR_MARKERS = ('repar', 'repair')
+IMPLEMENT_MARKERS = ('implement',)
+IMPLEMENT_PROMPT = 'implementar.md'
+IMPLEMENT_RESULT = 'implementation.json'
 # Cada etapa declarada por el operador aterriza en un paso ask concreto. Un
 # gate NUNCA recibe esfuerzo: la política de inferencia no le da autoridad.
 STAGE_TO_STEP = {
@@ -140,6 +143,34 @@ def _verification_records_block(stack_value):
     return block
 
 
+IMPLEMENT_PROMPT_TEXT = """\
+# Implementar el cambio solicitado por el usuario
+
+La candidata `kind=implement` la provisionó el Host y está registrada en
+`mode-state/work-items.json` (path, branch `candidate`, base_revision,
+request_sha256). Verifica su base contra la petición antes de tocar nada y
+trabaja DENTRO de la candidata: el producto canónico queda intacto.
+
+- Atiende EXACTAMENTE la petición de cambio que está al final de este prompt;
+  nada más es trabajo tuyo.
+- No publiques, no commitees y no abras publicación remota: la candidata vive
+  sucia y el Host decide.
+- La verificación usa el entrypoint propio del producto; un FAIL o BLOCKED
+  nunca se reporta como PASS.
+{registro_prompt}
+- Al terminar, actualiza la candidata en `mode-state/work-items.json`:
+  `status` y `candidate_diff_digest` medidos sobre tus cambios, y `changed_paths`
+  con lo que tocaste.
+- Escribe el resultado en `{implementation_path}` (ese fichero exacto es lo
+  que el runner valida; sin él el paso queda en fallo), con la identidad real
+  del candidato y el estado de la petición (implementada / BLOCKED con la causa).
+
+## Petición de cambio
+
+{change_request}
+"""
+
+
 class CampaignPlanError(ValueError):
     """El plan no se puede generar con lo recibido; nada se escribe."""
 
@@ -179,7 +210,8 @@ def _gate_command(workspace, python, script, phase):
 
 
 def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
-                  python=None, script=None, esfuerzos=None):
+                  python=None, script=None, esfuerzos=None,
+                  change_request=None):
     """Documento de plan v1 exacto, sin escribir nada en disco.
 
     `esfuerzos` es la política del operador por etapa de campaña
@@ -250,6 +282,26 @@ def plan_document(workspace, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
     steps.append({'id': 'cerrar', 'type': 'gate',
                   'command': _gate_command(workspace, python, script, 'cerrar'),
                   'on_fail': {'action': 'abort', 'rounds': 1}})
+    if change_request:
+        # El implementer atiende una petición de cambio del usuario: la
+        # candidata kind=implement la provisiona el Host (gate) y la aceptación
+        # del comportamiento la verifica el Host sobre la sombra. El ask solo
+        # toca la candidata provisionada; el producto canónico queda intacto.
+        implementer = _pick_preset(preset_ids, IMPLEMENT_MARKERS, 'implementador')
+        steps.append({'id': 'provision-implement', 'type': 'gate',
+                      'command': _gate_command(workspace, python, script,
+                                               'provision-implement')
+                                 + ['--request', change_request],
+                      'on_fail': {'action': 'abort', 'rounds': 1}})
+        steps.append({'id': 'implementar', 'type': 'ask', 'preset': implementer,
+                      'prompt_file': PROMPTS_DIRNAME + '/' + IMPLEMENT_PROMPT,
+                      'result_contract': {'path': IMPLEMENT_RESULT,
+                                          'evidence_name': EVIDENCE_NAME}})
+        steps.append({'id': 'verificar-implement', 'type': 'gate',
+                      'command': _gate_command(workspace, python, script,
+                                               'verificar-implement')
+                                 + ['--request', change_request],
+                      'on_fail': {'action': 'abort', 'rounds': 1}})
     for stage, prefix in STAGE_TO_STEP.items():
         if prefix is None or stage not in stage_efforts:
             continue
@@ -312,18 +364,26 @@ def manifest_document(plan_bytes, preset_ids, stacks, rondas_max, executables):
     }
 
 
-def prompts(stack_value=None):
+def prompts(stack_value=None, change_request=None):
     repair = (REPAIR_PROMPT_TEXT
               + _verification_records_block(stack_value))
-    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT, REPAIR_PROMPT: repair}
+    implement = (IMPLEMENT_PROMPT_TEXT
+                 .replace('{registro_prompt}',
+                          _verification_records_block(stack_value).rstrip())
+                 .replace('{implementation_path}',
+                          f"evidence/{EVIDENCE_NAME}/{IMPLEMENT_RESULT}")
+                 .replace('{change_request}', change_request or '(sin petición)'))
+    return {AUDIT_PROMPT: AUDIT_PROMPT_TEXT, REPAIR_PROMPT: repair,
+            IMPLEMENT_PROMPT: implement}
 
 
 def generate(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
-             python=None, script=None):
+             python=None, script=None, change_request=None):
     """Devuelve plan, manifiesto y prompts ya serializados, sin tocar disco."""
     workspace = Path(workspace).resolve()
     plan = plan_document(workspace, preset_ids, rondas_max=rondas_max,
-                         python=python, script=script)
+                         python=python, script=script,
+                         change_request=change_request)
     plan_bytes = _document(plan)
     if not isinstance(stack_value, dict) or not isinstance(stack_value.get('stacks'), list):
         raise CampaignPlanError('plan de capacidades inválido')
@@ -336,7 +396,7 @@ def generate(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
         'manifest': manifest,
         'manifest_bytes': _document(manifest),
         'prompts': {name: text.encode('utf-8')
-                    for name, text in prompts(stack_value).items()},
+                    for name, text in prompts(stack_value, change_request).items()},
         'workspace': workspace,
     }
 
@@ -369,9 +429,11 @@ def _write_if_changed(path, data):
     return True
 
 
-def write_campaign(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT):
+def write_campaign(workspace, stack_value, preset_ids, *, rondas_max=ROUNDS_DEFAULT,
+                   change_request=None):
     """Escribe bytes privados solo cuando difieren; nunca toca generated/."""
-    bundle = generate(workspace, stack_value, preset_ids, rondas_max=rondas_max)
+    bundle = generate(workspace, stack_value, preset_ids, rondas_max=rondas_max,
+                      change_request=change_request)
     root = bundle['workspace'] / CAMPAIGN_RELATIVE
     managed = root.parent
     prompts_dir = root / PROMPTS_DIRNAME

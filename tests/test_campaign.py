@@ -227,3 +227,94 @@ class CampaignGateTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class ImplementPhasesTests(unittest.TestCase):
+    """Las fases Host del modo implementador: aprovisionamiento y aceptación.
+
+    La candidata kind=implement la provisiona el Host (`mode_lifecycle.
+    provision_implementation`: sombra propia, base limpia, petición exacta) y
+    se registra en work-items.json para que la sesión del implementer la
+    verifique y trabaje dentro de ella. La aceptación de comportamiento la
+    ejecuta el Host con el entrypoint declarado del producto.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.product = self.tmp / 'product-git'
+        (self.product / 'tests').mkdir(parents=True)
+        (self.product / 'improvement-verification.json').write_text(
+            json.dumps({'version': stack.VERSION, 'stacks': [{
+                'stack': 'python-fixture', 'root': '',
+                'verify': ['python3', '-B', '-m', 'unittest', 'discover',
+                           '-s', 'tests'],
+                'capabilities': ['python3']}]}, ensure_ascii=False) + '\n',
+            encoding='utf-8')
+        (self.product / 'tests' / 'test_base.py').write_text(
+            'import unittest\n\n\nclass T(unittest.TestCase):\n'
+            '    def test_base(self):\n        self.assertEqual(1, 1)\n',
+            encoding='utf-8')
+        for args in (('init', '-q'), ('-c', 'user.email=a@b', '-c', 'user.name=a',
+                                      'add', '-A'), ('-c', 'user.email=a@b',
+                                                     '-c', 'user.name=a', 'commit',
+                                                     '-q', '-m', 'base')):
+            import subprocess
+            subprocess.run(['git', '-C', str(self.product), *args],
+                           capture_output=True, check=True)
+        self.workspace = self.tmp / 'workspace-git'
+        (self.workspace / 'mode-state').mkdir(parents=True)
+        value = stack.plan(self.product, workspace=self.workspace)
+        stack.write(value, self.workspace)
+        self.request = 'Añade un test que verifique el arranque del módulo.'
+
+    def run_phase(self, fase):
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            code = campaign.main(['--workspace', str(self.workspace),
+                                  '--fase', fase, '--request', self.request])
+        return code, stream.getvalue()
+
+    def registered(self):
+        return json.loads(
+            (self.workspace / 'mode-state' / 'work-items.json').read_text(
+                encoding='utf-8')).get('candidate')
+
+    def test_provision_registers_the_candidate_and_creates_the_shadow(self):
+        code, output = self.run_phase('provision-implement')
+        self.assertEqual(code, campaign.EXIT_PASS, output[-800:])
+        candidate = self.registered()
+        self.assertEqual(candidate['kind'], 'implement')
+        self.assertEqual(candidate['base_revision'], self.registered()['head'])
+        self.assertTrue(Path(candidate['path']).is_dir(), 'sombra no creada')
+        self.assertTrue((Path(candidate['path']) / '.git').is_dir())
+        self.assertEqual(candidate['status'], 'CLEAN')
+
+    def test_verify_blocks_while_the_shadow_has_no_changes(self):
+        self.run_phase('provision-implement')
+        code, output = self.run_phase('verificar-implement')
+        self.assertEqual(code, campaign.EXIT_FAIL)
+        self.assertIn('no-change', output)
+
+    def test_verify_passes_after_an_edit_inside_the_shadow(self):
+        self.run_phase('provision-implement')
+        candidate = self.registered()
+        (Path(candidate['path']) / 'tests' / 'test_change.py').write_text(
+            'import unittest\n\n\nclass Change(unittest.TestCase):\n'
+            '    def test_new(self):\n        self.assertTrue(True)\n',
+            encoding='utf-8')
+        code, output = self.run_phase('verificar-implement')
+        self.assertEqual(code, campaign.EXIT_PASS, output[-800:])
+        payload = json.loads(output.split(campaign.MARKER + ' ', 1)[1])
+        self.assertEqual(payload['verdict'], 'PASS')
+        self.assertTrue(payload.get('candidate_diff_digest'), 'diff no medido')
+
+    def test_verify_refuses_a_foreign_request(self):
+        self.run_phase('provision-implement')
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            code = campaign.main(['--workspace', str(self.workspace),
+                                  '--fase', 'verificar-implement',
+                                  '--request', 'otra petición distinta'])
+        self.assertEqual(code, campaign.EXIT_FAIL)
+        self.assertIn('candidata/producto derivó', stream.getvalue())

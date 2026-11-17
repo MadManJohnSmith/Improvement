@@ -397,6 +397,57 @@ elif args.fase in ('final', 'cerrar'):
             self.assertEqual(resumed_f['result'], 'COMPLETED')
             self.assertEqual(len(client_f.created), 3)
 
+    def test_the_change_request_appends_the_implementer_flow(self):
+        """La petición de cambio añade provision → implementar → verificar.
+
+        El implementer atiende una petición del usuario: la candidata
+        kind=implement la provisiona el Host (gate con --request), el ask
+        trabaja dentro de ella con el prompt que lleva la petición y el schema
+        estricto de registros, y el gate de aceptación verifica con --request.
+        Sin change_request, el plan por defecto no cambia.
+        """
+        request = 'Añade al producto un contador de notas.'
+        bundle = self.generate(presets=[*PRESETS, 'campana-implementador'],
+                               change_request=request)
+        by_id = self.steps_by_id(bundle)
+        for step_id in ('provision-implement', 'implementar',
+                        'verificar-implement'):
+            self.assertIn(step_id, by_id)
+        provision = by_id['provision-implement']
+        self.assertEqual(provision['type'], 'gate')
+        self.assertEqual(provision['on_fail'], {'action': 'abort', 'rounds': 1})
+        self.assertEqual(provision['command'][-4:],
+                         ['--fase', 'provision-implement', '--request', request])
+        implementar = by_id['implementar']
+        self.assertEqual(implementar['type'], 'ask')
+        self.assertIn('implement', implementar['preset'])
+        self.assertEqual(implementar['prompt_file'], 'prompts/implementar.md')
+        self.assertEqual(implementar['result_contract'],
+                         {'path': 'implementation.json',
+                          'evidence_name': 'campana'})
+        verificar = by_id['verificar-implement']
+        self.assertEqual(verificar['type'], 'gate')
+        self.assertEqual(verificar['command'][-4:],
+                         ['--fase', 'verificar-implement', '--request', request])
+        # Orden: los tres pasos van después de cerrar.
+        order = [step['id'] for step in bundle['plan']['steps']]
+        self.assertGreater(order.index('provision-implement'),
+                           order.index('cerrar'))
+        self.assertGreater(order.index('implementar'),
+                           order.index('provision-implement'))
+        self.assertGreater(order.index('verificar-implement'),
+                           order.index('implementar'))
+        # El prompt del implementer lleva la petición y el schema estricto.
+        prompt = bundle['prompts']['implementar.md'].decode('utf-8')
+        self.assertIn(request, prompt)
+        self.assertIn('evidence/campana/implementation.json', prompt)
+        self.assertIn('candidate_head', prompt)
+        self.assertIn('NUNCA en', prompt)
+        # El plan por defecto no cambia.
+        default_by_id = self.steps_by_id(self.generate())
+        self.assertNotIn('provision-implement', default_by_id)
+        self.assertNotIn('implementar', default_by_id)
+
     def test_rondas_max_tres_emite_tres_pares(self):
         bundle = self.generate(rondas_max=3)
         steps = bundle['plan']['steps']

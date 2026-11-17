@@ -26,6 +26,7 @@ import json
 import os
 import secrets
 import stat
+import subprocess
 import sys
 
 from pathlib import Path
@@ -202,6 +203,93 @@ def _verdict_payload(fase, verdict, derived, candidate, gaps=None, reason=None):
     return payload
 
 
+def _product_head(product):
+    """HEAD del producto canónico (la base limpia de la candidata implement)."""
+    out = subprocess.run(["git", "-C", str(product), "rev-parse", "HEAD"],
+                         capture_output=True, text=True, check=False)
+    if out.returncode:
+        raise CampaignBlocked("el producto no tiene HEAD de git: " + out.stderr[:200])
+    return out.stdout.strip()
+
+
+def _register_candidate(workspace, candidate):
+    """Registra/actualiza la candidata en work-items.json (escritura atómica)."""
+    state = workspace / STATE_DIRNAME
+    path = state / WORK_ITEMS_NAME
+    work_items = _read_bounded(path, BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
+    if not isinstance(work_items, dict):
+        raise CampaignBlocked(WORK_ITEMS_NAME + " no tiene la forma del contrato")
+    work_items["candidate"] = candidate
+    payload = json.dumps(work_items, ensure_ascii=False, indent=2) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(payload)
+
+
+def provision_implement(workspace, request):
+    """Aprovisiona la candidata kind=implement (solo el Host) y la registra.
+
+    La candidata la provisiona el Host, ligada a la petición exacta y a la base
+    limpia del producto (mode_lifecycle.provision_implementation); el registro
+    en work-items.json es lo que la sesión del implementer lee para verificar
+    su base y trabajar dentro de la sombra.
+    """
+    import mode_lifecycle
+    plan = capability_plan.load(workspace)
+    product = Path(plan["product"])
+    base = _product_head(product)
+    receipt = mode_lifecycle.provision_implementation(
+        Path(product), Path(workspace), request, declared_base=base)
+    candidate = {
+        "kind": "implement",
+        "request": request[:300],
+        "base_revision": receipt["base_revision"],
+        "request_sha256": receipt["request_sha256"],
+        "path": receipt["path"],
+        "branch": "candidate",
+        "head": base,
+        "status": "CLEAN",
+        "changed_paths": [],
+    }
+    _register_candidate(workspace, candidate)
+    return EXIT_PASS, {"fase": "provision-implement", "verdict": "PASS",
+                       "candidate": candidate}
+
+
+def verify_implement(workspace, request):
+    """Aceptación de comportamiento del cambio, sobre la candidata en su sombra.
+
+    mode_lifecycle.verify_implementation valida la identidad (petición + base),
+    revalida la frontera de aprovisionamiento, ejecuta el caso de aceptación con
+    el entrypoint del producto dentro de la sombra y mide el diff. PASS sale por
+    exit 0; FAIL y BLOCKED por exit 1 con el veredicto en el payload.
+    """
+    import mode_lifecycle
+    plan = capability_plan.load(workspace)
+    product = Path(plan["product"])
+    state = workspace / STATE_DIRNAME
+    work_items = _read_bounded(state / WORK_ITEMS_NAME,
+                               BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
+    candidate = work_items.get("candidate") or {}
+    receipt = {"path": candidate.get("path"),
+               "base_revision": candidate.get("base_revision"),
+               "request_sha256": candidate.get("request_sha256")}
+    ready = [entry for entry in plan.get("stacks", [])
+             if entry.get("verification_ready")]
+    if not ready:
+        return EXIT_FAIL, {"fase": "verificar-implement", "verdict": "BLOCKED",
+                           "reason": "sin stack con verificación disponible",
+                           "request": request[:200]}
+    try:
+        verdict = mode_lifecycle.verify_implementation(
+            product, Path(workspace), request, receipt,
+            acceptance_command=list(ready[0]["verify_command"]))
+    except ValueError as error:
+        raise CampaignBlocked("verificación de implementación: " + str(error))
+    code = EXIT_PASS if verdict.get("verdict") == "PASS" else EXIT_FAIL
+    return code, {"fase": "verificar-implement", **verdict}
+
+
 def verification_verdict(workspace, fase):
     """PASS / FAIL / BLOCKED desde la evidencia real, más el código de salida."""
     try:
@@ -284,6 +372,9 @@ def main(argv=None):
                         help='preflight, una ronda (pre/post/ronda-N), final o cerrar')
     parser.add_argument('--workspace', default=None,
                         help='workspace del producto (por defecto, el cwd del gate)')
+    parser.add_argument('--request', default=None,
+                        help='petición de cambio para provision-implement y '
+                             'verificar-implement')
     arguments = parser.parse_args(argv)
     workspace = Path(arguments.workspace or Path.cwd()).resolve()
     if not workspace.is_dir():
@@ -295,6 +386,16 @@ def main(argv=None):
             code, payload = preflight(workspace)
         elif arguments.fase == 'cerrar':
             code, payload = EXIT_PASS, {'fase': 'cerrar', 'verdict': 'PASS'}
+        elif arguments.fase == 'provision-implement':
+            if not arguments.request:
+                raise CampaignBlocked(
+                    'provision-implement exige --request con la petición de cambio')
+            code, payload = provision_implement(workspace, arguments.request)
+        elif arguments.fase == 'verificar-implement':
+            if not arguments.request:
+                raise CampaignBlocked(
+                    'verificar-implement exige --request con la petición de cambio')
+            code, payload = verify_implement(workspace, arguments.request)
         else:
             code, payload = verification_verdict(workspace, arguments.fase)
     except CampaignBlocked as blocked:
