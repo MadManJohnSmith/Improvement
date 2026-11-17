@@ -318,7 +318,8 @@ def grade(facts, events, criteria):
         integrity = "last_seq inválido en los hechos"
     elif ("journal_last_seq" in facts and
           facts["journal_last_seq"] != _last_seq(events) and
-          not _tail_is_post_terminal(events, facts["journal_last_seq"])):
+          not (_last_seq(events) > facts["journal_last_seq"] and
+               _tail_is_post_terminal(events, facts["journal_last_seq"]))):
         # Una corrida completada cierra su journal DESPUÉS del último cursor
         # observado por el runner: la cola post-terminal (turn/end, recibos de
         # workspace, jobs) es el cierre normal, no una corrida distinta
