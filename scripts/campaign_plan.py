@@ -47,17 +47,20 @@ VERDICT_FIELD = 'verdict'
 ROUNDS_DEFAULT = 2
 # Techos de lectura por intento ask, en tokens facturados por la sesión DSH
 # (input + cacheRead + output; la cifra totalTokens que reporta cada
-# petición). Derivados de la medición de las campañas r-b3765472 y
-# r-7b069c26 (2026-11-17, propuesta-presupuesto-lectura.md) con margen ~20%
-# sobre el máximo legítimo observado por fase: auditar midió 692k (11-14) y
-# 544.695/851.908 en corridas reales (11-17), reparar midió 401k legítimos
-# (11-14) y 521.780 (11-17, r-19f240b3: cancelada en el techo 500k a mitad de
-# aplicar el fix con edit — trabajo convergente, no bucle; el 877k de
-# reparar-2 fue re-verificación redundante que el techo corta) e implementar
-# 728k. El runner retiene al superarlos con causa `ask-techo-tokens` citable;
-# el techo solo sube si el reason lo dice (R2).
-BUDGET_AUDIT_TOKENS = 1020000
-BUDGET_REPAIR_TOKENS = 630000
+# petición). Tres corridas reales de auditar (11-17: 544.695 completada,
+# 851.908 y 1.043.676 canceladas en techo con trabajo convergente — las dos
+# cortadas estaban registrando hallazgos con workflow_write) muestran varianza
+# de conducta ~2×: perseguir el máximo con +20% nunca converge, así que el
+# margen se ensancha una vez con justificación (auditar +44% sobre el peor
+# observado, reparar +34% sobre 521.780 cortado a mitad de fix). A partir de
+# aquí el techo es guarda-anti-bucle, no presupuesto exacto: una corrida que
+# los supere ya no es varianza y la retención es la respuesta correcta.
+# Referencia histórica: auditar 692k (11-14), reparar 401k legítimos (el 877k
+# de reparar-2 fue re-verificación redundante que el techo corta), implementar
+# 728k. El runner retiene con causa `ask-techo-tokens` citable; el techo solo
+# sube si el reason lo dice (R2).
+BUDGET_AUDIT_TOKENS = 1500000
+BUDGET_REPAIR_TOKENS = 700000
 BUDGET_IMPLEMENT_TOKENS = 900000
 # Las dos primeras rondas llevan nombre propio porque son las que el operador
 # reconoce al leer el journal; a partir de ahí el nombre ya solo ordena.

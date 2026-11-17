@@ -1,5 +1,21 @@
 # Cambios
 
+## workflow: los techos se fijan con margen decisivo tras la tercera retención — 2026-11-17
+
+La corrida r-808ef81d (2026-11-17) retuvo `auditar` de nuevo:
+`ask-techo-tokens:auditar:1043676/1020000` — cancelada en el paso 45 escribiendo
+el último `workflow_write` de registro de hallazgos, convergente como las dos
+anteriores. Tres muestras reales de `auditar` (544.695 completada; 851.908 y
+1.043.676 canceladas en techo, ambas registrando hallazgos) muestran varianza
+de conducta ~2×: el margen del ~20% sobre el máximo observado nunca converge
+porque cada corrida nueva lo supera. Los techos se fijan una vez con margen
+decisivo — `BUDGET_AUDIT_TOKENS` 1020000 → **1500000** (+44% sobre el peor
+observado) y `BUDGET_REPAIR_TOKENS` 630000 → **700000** (+34% sobre 521.780,
+cortado a mitad de fix) — y cambian de rol: ya no son presupuesto exacto sino
+guarda-anti-bucle. Una corrida que supere 1.5M/700k ya no es varianza; la
+retención es la respuesta correcta y el diagnóstico pasa a ser estructural
+(la opción (a) de la propuesta del presupuesto: lecturas delta).
+
 ## workflow: el techo de reparar se recalibra con la segunda retención real — 2026-11-17
 
 La corrida r-19f240b3 (2026-11-17, aceptación tras la recalibración de
