@@ -128,18 +128,18 @@ def _verification_records_block(stack_value):
         "entero si un registro no cumple):\n"
         '  {"finding_id": "<id del hallazgo>", "candidate_head": "<head del '
         'candidato, 40-64 hex>", "candidate_diff_digest": "<digest del diff, 64 '
-        'hex>", "result": "PASS" | "FAIL" | "BLOCKED", "command": "<comando de '
-        'verificación EXACTO de este stack, tal como está en el plan de '
-        'capacidades>"}\n'
+        'hex>", "result": "PASS" | "FAIL" | "BLOCKED", "command": <el comando '
+        'de verificación de este stack, serializado EXACTAMENTE como abajo>}\n'
     )
     ready = [entry for entry in (stack_value or {}).get('stacks', [])
              if entry.get('verification_ready')]
     if ready:
-        block += "- Comandos de verificación EXACTOS del plan de capacidades:\n"
+        block += "- Comandos de verificación EXACTOS del plan de capacidades (la "                  "cadena `command` del registro es esta serialización JSON, byte "                  "a byte):\n"
         for entry in ready:
             command = entry.get('verify_command')
-            command = ' '.join(command) if isinstance(command, list) else command
-            block += f"  - {entry.get('stack')}: `{command}`\n"
+            exact = json.dumps(command, ensure_ascii=False,
+                               separators=(',', ':'))
+            block += f"  - {entry.get('stack')}: {exact}\n"
     return block
 
 
@@ -157,7 +157,6 @@ trabaja DENTRO de la candidata: el producto canónico queda intacto.
   sucia y el Host decide.
 - La verificación usa el entrypoint propio del producto; un FAIL o BLOCKED
   nunca se reporta como PASS.
-{registro_prompt}
 - Al terminar, actualiza la candidata en `mode-state/work-items.json`:
   `status` y `candidate_diff_digest` medidos sobre tus cambios, y `changed_paths`
   con lo que tocaste.

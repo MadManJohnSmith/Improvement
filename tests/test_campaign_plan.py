@@ -441,8 +441,11 @@ elif args.fase in ('final', 'cerrar'):
         prompt = bundle['prompts']['implementar.md'].decode('utf-8')
         self.assertIn(request, prompt)
         self.assertIn('evidence/campana/implementation.json', prompt)
-        self.assertIn('candidate_head', prompt)
-        self.assertIn('NUNCA en', prompt)
+        # El implementer no escribe ledger: su aceptación de comportamiento la
+        # ejecuta el Host (verify_implementation), así que el prompt no enseña
+        # el schema de registros del reparador.
+        self.assertNotIn('candidate_head', prompt)
+        self.assertNotIn('verification-results.jsonl', prompt)
         # El plan por defecto no cambia.
         default_by_id = self.steps_by_id(self.generate())
         self.assertNotIn('provision-implement', default_by_id)

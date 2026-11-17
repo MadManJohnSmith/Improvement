@@ -762,7 +762,8 @@ class Transaction:
                     pass
             raise
 
-    def install(self, generated_dir, generation_id, *, host_verdict=None):
+    def install(self, generated_dir, generation_id, *, host_verdict=None,
+                change_request=None):
         """Stage, publish two presets, verify roster, then activate."""
         self._require_host_verdict(host_verdict, generation_id)
         generated = Path(generated_dir)
@@ -806,7 +807,8 @@ class Transaction:
                             modes, receipt_bundle / "skills")):
                     import stack as stack_plan
                     campaign_receipt = write_campaign(
-                        self.workspace, stack_plan.load(self.workspace), expected_ids)
+                        self.workspace, stack_plan.load(self.workspace),
+                        expected_ids, change_request=change_request)
                     return {"result": "NO_OP", "generation_id": generation_id,
                             "published_presets": expected_ids,
                             "campaign_plan": campaign_receipt,
@@ -872,7 +874,9 @@ class Transaction:
                 raise TransactionError("Swap de puntero no verificable")
             if _inventory(target) != _inventory(generated):
                 raise TransactionError("Hashes post-swap no coinciden")
-            campaign_receipt = write_campaign(self.workspace, stack_value, expected_ids)
+            campaign_receipt = write_campaign(self.workspace, stack_value,
+                                              expected_ids,
+                                              change_request=change_request)
         except BaseException:
             self.rollback(generation_id)
             raise
@@ -977,7 +981,7 @@ class Transaction:
 
 
 def install(workspace, generated_dir, generation_id, *, host_verdict=None,
-            dsh_home=None, client=None):
+            dsh_home=None, client=None, change_request=None):
     return Transaction(workspace, dsh_home=dsh_home, client=client).install(
         generated_dir, generation_id, host_verdict=host_verdict)
 

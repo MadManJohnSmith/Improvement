@@ -147,7 +147,8 @@ class FinalizeTests(unittest.TestCase):
         install.assert_called_once_with(
             self.workspace, self.generated, "gen-test",
             host_verdict=verdict_path,
-            dsh_home=client.resolved_dsh_home, client=client)
+            dsh_home=client.resolved_dsh_home, client=client,
+            change_request=None)
         run = json.loads((self.run_dir / "run.json").read_text())
         checkpoint = json.loads((self.run_dir / "checkpoint.json").read_text())
         self.assertEqual(run["status"], "ACTIVE")

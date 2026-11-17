@@ -1200,7 +1200,7 @@ def verify_acceptance(workspace, generation_id=None):
 
 
 def finalize(workspace, generation_id=None, *, launch_dsh=False,
-             reevaluate=False):
+             reevaluate=False, change_request=None):
     """Run Host acceptance and activate only an explicit ACTIVE verdict.
 
     This is Host-side deterministic code, never part of the Creator session.
@@ -1334,7 +1334,8 @@ def finalize(workspace, generation_id=None, *, launch_dsh=False,
     import transaction
     activation = transaction.install(
         workspace, generated, gen_id, host_verdict=verdict_path,
-        dsh_home=resolved_dsh_home, client=client)
+        dsh_home=resolved_dsh_home, client=client,
+        change_request=change_request)
     if activation.get("result") == "RESTART_REQUIRED":
         run_path = run_dir / "run.json"
         current = _read_json(run_path)
@@ -1729,6 +1730,10 @@ def main():
                             help="Arrancar una instancia DSH limpia para evaluator/reviewer")
     p_finalize.add_argument("--reevaluate", action="store_true",
                             help="Invalidar solo evidencia Host derivada y volver a evaluar")
+    p_finalize.add_argument("--change-request", default=None,
+                            help="Petición de cambio del usuario: el plan de "
+                                 "campaña regenerado añade el flujo del modo "
+                                 "implementer (provision → implementar → verificar)")
 
     # repair
     p_repair = sub.add_parser(
@@ -1938,6 +1943,7 @@ def main():
                 generation_id=args.generation_id,
                 launch_dsh=args.launch_dsh,
                 reevaluate=args.reevaluate,
+                change_request=args.change_request,
             )
 
         elif args.command == "stack":

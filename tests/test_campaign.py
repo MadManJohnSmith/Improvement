@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -225,9 +226,6 @@ class CampaignGateTests(unittest.TestCase):
         self.assertFalse(ledger.exists())
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 class ImplementPhasesTests(unittest.TestCase):
     """Las fases Host del modo implementador: aprovisionamiento y aceptación.
 
@@ -284,11 +282,20 @@ class ImplementPhasesTests(unittest.TestCase):
         code, output = self.run_phase('provision-implement')
         self.assertEqual(code, campaign.EXIT_PASS, output[-800:])
         candidate = self.registered()
-        self.assertEqual(candidate['kind'], 'implement')
-        self.assertEqual(candidate['base_revision'], self.registered()['head'])
-        self.assertTrue(Path(candidate['path']).is_dir(), 'sombra no creada')
-        self.assertTrue((Path(candidate['path']) / '.git').is_dir())
-        self.assertEqual(candidate['status'], 'CLEAN')
+        self.assertEqual(candidate['base_revision'], candidate['head'])
+        self.assertEqual(candidate['status'], 'PROVISIONED')
+        shadow = self.tmp / candidate['path']
+        self.assertTrue(shadow.is_dir(), 'sombra no creada')
+        self.assertTrue((shadow / '.git').is_dir())
+        # La candidata registrada debe cumplir el schema de estado del propio
+        # módulo (el hallazgo bloqueante B1 de la revisión: la forma con
+        # kind/request la rechazaba y rompía la cadena de identidad).
+        import mode_lifecycle
+        schema = mode_lifecycle.state_schema()
+        candidate_schema = (schema['files']['work-items.json']['candidate'])
+        self.assertTrue(mode_lifecycle._is_valid(candidate, candidate_schema,
+                                                 'candidate'),
+                        'la candidata registrada viola el schema de estado')
 
     def test_verify_blocks_while_the_shadow_has_no_changes(self):
         self.run_phase('provision-implement')
@@ -296,10 +303,29 @@ class ImplementPhasesTests(unittest.TestCase):
         self.assertEqual(code, campaign.EXIT_FAIL)
         self.assertIn('no-change', output)
 
+    def test_provision_without_request_is_blocked(self):
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            code = campaign.main(['--workspace', str(self.workspace),
+                                  '--fase', 'provision-implement'])
+        self.assertEqual(code, campaign.EXIT_FAIL)
+        self.assertIn('exige --request', stream.getvalue())
+
+    def test_provision_with_dirty_product_is_blocked(self):
+        self.run_phase('provision-implement')
+        # Una segunda provisión sobre candidata existente reutiliza; el camino
+        # BLOCKED medido es el producto canónico sucio: ensuciamos el producto.
+        (self.product / 'uncommitted.py').write_text('x = 1\n',
+                                                     encoding='utf-8')
+        code, output = self.run_phase('provision-implement')
+        self.assertEqual(code, campaign.EXIT_FAIL)
+        self.assertIn('aprovisionamiento de implement', output)
+
     def test_verify_passes_after_an_edit_inside_the_shadow(self):
         self.run_phase('provision-implement')
         candidate = self.registered()
-        (Path(candidate['path']) / 'tests' / 'test_change.py').write_text(
+        shadow = self.tmp / candidate['path']
+        (shadow / 'tests' / 'test_change.py').write_text(
             'import unittest\n\n\nclass Change(unittest.TestCase):\n'
             '    def test_new(self):\n        self.assertTrue(True)\n',
             encoding='utf-8')
@@ -318,3 +344,9 @@ class ImplementPhasesTests(unittest.TestCase):
                                   '--request', 'otra petición distinta'])
         self.assertEqual(code, campaign.EXIT_FAIL)
         self.assertIn('candidata/producto derivó', stream.getvalue())
+
+
+
+
+if __name__ == '__main__':
+    unittest.main()

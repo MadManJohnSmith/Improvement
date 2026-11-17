@@ -213,17 +213,45 @@ def _product_head(product):
 
 
 def _register_candidate(workspace, candidate):
-    """Registra/actualiza la candidata en work-items.json (escritura atómica)."""
+    """Registra/actualiza la candidata en work-items.json, sin seguir enlaces.
+
+    Reemplazo atómico (temporal + os.replace con O_NOFOLLOW), el mismo
+    disciplinamiento que write_verdict aplica a su veredicto.
+    """
     state = workspace / STATE_DIRNAME
-    path = state / WORK_ITEMS_NAME
-    work_items = _read_bounded(path, BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
+    work_items = _read_bounded(state / WORK_ITEMS_NAME,
+                               BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
     if not isinstance(work_items, dict):
         raise CampaignBlocked(WORK_ITEMS_NAME + " no tiene la forma del contrato")
     work_items["candidate"] = candidate
     payload = json.dumps(work_items, ensure_ascii=False, indent=2) + "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        stream.write(payload)
+    state_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        temporary = ".work-items-" + secrets.token_hex(12)
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     os.O_NOFOLLOW, 0o600, dir_fd=state_fd)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payload.encode("utf-8"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                current = os.stat(WORK_ITEMS_NAME, dir_fd=state_fd,
+                                  follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            if current is not None and not stat.S_ISREG(current.st_mode):
+                raise CampaignBlocked("work-items.json no es un fichero regular")
+            os.replace(temporary, WORK_ITEMS_NAME, src_dir_fd=state_fd,
+                       dst_dir_fd=state_fd)
+        except BaseException:
+            try:
+                os.unlink(temporary, dir_fd=state_fd)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(state_fd)
 
 
 def provision_implement(workspace, request):
@@ -232,23 +260,39 @@ def provision_implement(workspace, request):
     La candidata la provisiona el Host, ligada a la petición exacta y a la base
     limpia del producto (mode_lifecycle.provision_implementation); el registro
     en work-items.json es lo que la sesión del implementer lee para verificar
-    su base y trabajar dentro de la sombra.
+    su base y trabajar dentro de la sombra. El registro respeta el schema de
+    estado (`state_schema()`): la identidad de la candidata implement viaja en
+    `finding_ids_digest`, su estado inicial es `PROVISIONED`.
     """
     import mode_lifecycle
-    plan = capability_plan.load(workspace)
-    product = Path(plan["product"])
-    base = _product_head(product)
-    receipt = mode_lifecycle.provision_implementation(
-        Path(product), Path(workspace), request, declared_base=base)
+    try:
+        plan = capability_plan.load(workspace)
+        product = Path(plan["product"])
+        base = _product_head(product)
+        receipt = mode_lifecycle.provision_implementation(
+            Path(product), Path(workspace), request, declared_base=base)
+    except (ValueError, OSError) as error:
+        raise CampaignBlocked("aprovisionamiento de implement: " + str(error))
+    receipt_path = Path(receipt["path"])
+    # El schema de estado guarda la ruta RELATIVA a la raíz de
+    # sesión (^[^/]...): el convenio que la variante repair usó en
+    # la campaña completada ("workspace/candidates/...").
+    try:
+        relative = receipt_path.relative_to(Path(workspace).parent)
+    except ValueError:
+        raise CampaignBlocked(
+            "la candidata provisionada no cuelga de la raíz de sesión: "
+            + str(receipt_path))
     candidate = {
-        "kind": "implement",
-        "request": request[:300],
         "base_revision": receipt["base_revision"],
-        "request_sha256": receipt["request_sha256"],
-        "path": receipt["path"],
+        # La identidad de la candidata implement: implementation_identity(base,
+        # petición). El schema de estado nombra el campo por la variante repair;
+        # es el mismo digest de enlace de 64 hex para ambas variantes.
+        "finding_ids_digest": receipt["request_sha256"],
+        "path": relative.as_posix(),
         "branch": "candidate",
-        "head": base,
-        "status": "CLEAN",
+        "head": receipt["base_revision"],
+        "status": "PROVISIONED",
         "changed_paths": [],
     }
     _register_candidate(workspace, candidate)
@@ -265,15 +309,22 @@ def verify_implement(workspace, request):
     exit 0; FAIL y BLOCKED por exit 1 con el veredicto en el payload.
     """
     import mode_lifecycle
-    plan = capability_plan.load(workspace)
+    try:
+        plan = capability_plan.load(workspace)
+    except (ValueError, OSError) as error:
+        raise CampaignBlocked("plan de capacidades: " + str(error))
     product = Path(plan["product"])
-    state = workspace / STATE_DIRNAME
-    work_items = _read_bounded(state / WORK_ITEMS_NAME,
-                               BYTE_LIMITS[WORK_ITEMS_NAME]) or {}
-    candidate = work_items.get("candidate") or {}
-    receipt = {"path": candidate.get("path"),
-               "base_revision": candidate.get("base_revision"),
-               "request_sha256": candidate.get("request_sha256")}
+    candidate = _candidate(workspace / STATE_DIRNAME) or {}
+    base = _product_head(product)
+    # La ruta registrada es relativa a la raíz de sesión (workspace.parent).
+    stored = candidate.get("path")
+    session_root = Path(workspace).parent
+    receipt_path = ((session_root / stored).resolve() if stored
+                    else Path(workspace) / "implement" / "candidates")
+    receipt = {"path": str(receipt_path),
+               "base_revision": candidate.get("base_revision") or base,
+               "request_sha256": mode_lifecycle.implementation_identity(
+                   base, request)}
     ready = [entry for entry in plan.get("stacks", [])
              if entry.get("verification_ready")]
     if not ready:
