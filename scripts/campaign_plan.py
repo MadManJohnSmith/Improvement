@@ -49,11 +49,14 @@ ROUNDS_DEFAULT = 2
 # (input + cacheRead + output; la cifra totalTokens que reporta cada
 # petición). Derivados de la medición de las campañas r-b3765472 y
 # r-7b069c26 (2026-11-17, propuesta-presupuesto-lectura.md) con margen ~20%
-# sobre el máximo legítimo observado por fase: auditar midió 692k, reparar
-# 401k legítimos (el 877k de reparar-2 fue re-verificación redundante que el
-# techo corta) e implementar 728k. El runner retiene al superarlos con causa
-# `ask-techo-tokens` citable; el techo solo sube si el reason lo dice (R2).
-BUDGET_AUDIT_TOKENS = 850000
+# sobre el máximo legítimo observado por fase: auditar midió 692k (11-14) y
+# 851.908 reales (11-17, r-043710b0: cancelada en el techo 850k mientras
+# registraba hallazgos con workflow_write — trabajo convergente, no bucle),
+# reparar 401k legítimos (el 877k de reparar-2 fue re-verificación redundante
+# que el techo corta) e implementar 728k. El runner retiene al superarlos con
+# causa `ask-techo-tokens` citable; el techo solo sube si el reason lo dice
+# (R2).
+BUDGET_AUDIT_TOKENS = 1020000
 BUDGET_REPAIR_TOKENS = 500000
 BUDGET_IMPLEMENT_TOKENS = 900000
 # Las dos primeras rondas llevan nombre propio porque son las que el operador

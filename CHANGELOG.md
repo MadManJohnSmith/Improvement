@@ -1,5 +1,18 @@
 # Cambios
 
+## workflow: el techo de auditar se recalibra con la primera retención real — 2026-11-17
+
+La campaña de aceptación r-043710b0 (2026-11-17) retuvo `auditar` con causa
+`ask-techo-tokens:auditar:851908/850000:cancelada y quiescente`: el enforcement
+fail-closed de f069132 funcionó a la primera, y midió el máximo legítimo real
+de la fase. La sesión muestra trabajo convergente, no bucle: la auditoría
+citaba el defecto A-04 con bash de verificación y estaba registrando hallazgos
+con `workflow_write` (pasos 35-44) cuando el techo la canceló. La medición del
+11-14 (692k) subestimaba la varianza entre corridas (+23%). `BUDGET_AUDIT_TOKENS`
+850000 → 1020000 (misma regla ~20% de la misión del presupuesto, aplicada sobre
+la nueva medición; `reparar` e `implementar` intactos). El techo solo sube si
+el reason lo dice (R2) — aquí el reason lo decía y la evidencia lo probó.
+
 ## ciclo: ruta de operador para INTEGRATED, retire de sombras implement/ y recibo del slot candidate — 2026-11-17
 
 Cierra los issues #33 y #34 (hallazgo operativo del 2026-11-17, integración de
