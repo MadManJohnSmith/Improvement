@@ -1,0 +1,56 @@
+{
+  "case": "verificacion-1.11.0-1",
+  "counts": {
+    "reader_calls": 0,
+    "schema_read_events": {},
+    "schema_reads": {},
+    "tool_calls": {
+      "bash": 15,
+      "edit": 1,
+      "grep": 1,
+      "read": 16,
+      "workflow_write": 1
+    }
+  },
+  "descriptive": {
+    "cache_read_tokens": 1096000,
+    "cache_share": 0.8979,
+    "elapsed_seconds": 656.58,
+    "steps": 34,
+    "usage_tokens": 1220672
+  },
+  "digests": {
+    "criteria": "592ae74585cb6ac7971a03b8804f63cfe9d7b85a8244fd4ff8795a0332f5658a",
+    "facts": "b77fd0f9c2db9b6524e458d7c82d8d0aa6c46554dc35ccb5808b7d94d2686dc7",
+    "journal": "09c0a1dd493a0039be0721a5dadd985625315b8f7490b9f7b77d6700f60feb70"
+  },
+  "evidence": [
+    {
+      "criterion": "integrity",
+      "detail": "hechos y journal concuerdan",
+      "ok": true
+    },
+    {
+      "criterion": "completion",
+      "detail": "paquete completo",
+      "ok": true
+    },
+    {
+      "criterion": "mechanism",
+      "detail": "sin lecturas completas de los schemas del caso",
+      "ok": true
+    }
+  ],
+  "journal_file": "session.v4.jsonl.zstd",
+  "malformed_events": 0,
+  "reason": "criterios cumplidos",
+  "seq_checked": true,
+  "unknown_types": {
+    "assistant/attempt": 1,
+    "job/registered": 15,
+    "job/settled": 15,
+    "session/end-seed": 1,
+    "workspace/changes": 1
+  },
+  "verdict": "PASS"
+}

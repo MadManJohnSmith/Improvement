@@ -1,0 +1,29 @@
+{
+  "budget": {
+    "max_attempts": 3,
+    "max_seconds": 1800,
+    "max_tokens": 1200000
+  },
+  "elapsed_seconds": 656.58,
+  "framework_revision": "0deeee12ea85e41569d46f5352d279f33cbab959",
+  "generation_id": "gen-e9b8a23da747",
+  "journal_event_count": 220,
+  "journal_last_seq": 218,
+  "manifest_present": true,
+  "model": "omniroute-responses/kc/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "prevalidation_passed": true,
+  "product_tree_digest": "85cd1e8890419103ba4cee86f44c5607528b4f58bdef6dfceb037fd9527af56e",
+  "project": {
+    "name": "project",
+    "root_identity": "c06018d2419582803eab14526a21312e97f6600de628d1380ff56ae416311983"
+  },
+  "prompt_version": "1.12.0",
+  "stop_reason": "CANCELLED_QUIESCENT",
+  "terminal_turn": true,
+  "turns_started": 1,
+  "usage_cache_read_tokens": 1096000,
+  "usage_input_tokens": 117647,
+  "usage_output_tokens": 7025,
+  "usage_steps": 34,
+  "usage_tokens": 1220672
+}

@@ -1,0 +1,9 @@
+{
+  "forbidden_schema_reads": [
+    "modes.schema.json",
+    "skills.schema.json"
+  ],
+  "id": "verificacion-1.11.0-1",
+  "require_manifest": true,
+  "require_prevalidation": true
+}

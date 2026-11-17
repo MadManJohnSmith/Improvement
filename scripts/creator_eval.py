@@ -195,6 +195,26 @@ def frame_count(events):
                if not (isinstance(event, dict) and event.get("type") == "session"))
 
 
+# Eventos que la sesión escribe DESPUÉS de que el runner deja de observar el
+# turno terminal (recibos de cierre). Solo esta cola puede separar el cursor de
+# los hechos del último seq del journal sin que la integridad sea sospechosa.
+POST_TERMINAL_TYPES = frozenset({
+    "turn/end", "workspace/changes", "session/end-seed",
+    "job/registered", "job/settled",
+})
+
+
+def _tail_is_post_terminal(events, cursor):
+    """True si todo lo que sigue al cursor observado es cierre post-terminal."""
+    for event in events:
+        seq = event.get("seq")
+        if not is_int(seq) or seq <= cursor:
+            continue
+        if event.get("type") not in POST_TERMINAL_TYPES:
+            return False
+    return True
+
+
 def _last_seq(events):
     seqs = [event["seq"] for event in events
             if isinstance(event, dict) and is_int(event.get("seq"))]
@@ -297,7 +317,13 @@ def grade(facts, events, criteria):
           not is_int(facts["journal_last_seq"])):
         integrity = "last_seq inválido en los hechos"
     elif ("journal_last_seq" in facts and
-          facts["journal_last_seq"] != _last_seq(events)):
+          facts["journal_last_seq"] != _last_seq(events) and
+          not _tail_is_post_terminal(events, facts["journal_last_seq"])):
+        # Una corrida completada cierra su journal DESPUÉS del último cursor
+        # observado por el runner: la cola post-terminal (turn/end, recibos de
+        # workspace, jobs) es el cierre normal, no una corrida distinta
+        # (medido 2026-11-16: la corrida ACTIVE terminó con cursor 218 y el
+        # journal en 219 con workspace/changes).
         integrity = ("last_seq no coincide: hechos=%r journal=%d"
                      % (facts["journal_last_seq"], _last_seq(events)))
     elif (criteria["require_manifest"] and
