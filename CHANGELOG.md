@@ -1,5 +1,19 @@
 # Cambios
 
+## workflow: el techo de reparar se recalibra con la segunda retención real — 2026-11-17
+
+La corrida r-19f240b3 (2026-11-17, aceptación tras la recalibración de
+`auditar`) avanzó hasta `reparar-1` y quedó retenida con causa
+`ask-techo-tokens:reparar-1:521780/500000:cancelada y quiescente`. La sesión
+muestra trabajo convergente: el reparador estaba aplicando el fix de A-04 con
+`edit` (pasos 23-25) al cancelarse. `BUDGET_REPAIR_TOKENS` 500000 → 630000
+(misma regla ~20% sobre la nueva medición). En la misma corrida, `auditar`
+completó con 544.695 tokens (53% del techo recalibrado — la varianza entre
+corridas, 851k vs 545k, es real) y el gate `verificar-pre` registró los tres
+primeros episodios reales del ledger de memoria (`signatures: 3, episodes: 3`
+en `bootstrap.py state`) — el ciclo de memoria cableado en `4d4d413` opera en
+campaña real.
+
 ## workflow: el techo de auditar se recalibra con la primera retención real — 2026-11-17
 
 La campaña de aceptación r-043710b0 (2026-11-17) retuvo `auditar` con causa
